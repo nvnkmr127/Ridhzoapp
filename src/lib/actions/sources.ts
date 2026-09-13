@@ -218,8 +218,15 @@ async function flagIfAuthError(e: unknown, sourceId: string): Promise<boolean> {
   return true;
 }
 
-export async function syncPastFacebookLeadsAction(sourceId: string) {
+const syncRangeSchema = z
+  .object({ since: z.number().int().positive().optional(), until: z.number().int().positive().optional() })
+  .optional();
+
+export async function syncPastFacebookLeadsAction(sourceId: string, range?: { since?: number; until?: number }) {
   const { organizationId } = await requirePermission("sources.manage");
+  const parsedRange = syncRangeSchema.safeParse(range);
+  if (!parsedRange.success) return fail("VALIDATION", "Invalid date range.");
+  const window = parsedRange.data ?? {};
   try {
     const source = await LeadSourceService.getSource(sourceId);
     if (!source || source.organizationId !== organizationId) {
@@ -241,14 +248,19 @@ export async function syncPastFacebookLeadsAction(sourceId: string) {
       const { facebookSyncQueue } = await import("@/lib/jobs/workers/facebookSyncWorker");
       const newConfig = { ...config, syncStatus: "running", syncStartedAt: new Date().toISOString() };
       await LeadSourceService.updateSource(source.id, { config: newConfig }, organizationId);
-      await facebookSyncQueue.add(`fb-sync-${source.id}`, { sourceId: source.id, organizationId });
+      await facebookSyncQueue.add(`fb-sync-${source.id}`, {
+        sourceId: source.id,
+        organizationId,
+        since: window.since,
+        until: window.until,
+      });
       revalidatePath("/settings/sources");
       return ok({ queued: true });
     }
 
     // Dev fallback (no Redis): run inline and return counts directly.
     const { FacebookSyncService } = await import("@/domains/leads/facebookSyncService");
-    const result = await FacebookSyncService.run(source.id, organizationId);
+    const result = await FacebookSyncService.run(source.id, organizationId, window);
     revalidatePath("/leads");
     revalidatePath("/settings/sources");
     return ok(result);

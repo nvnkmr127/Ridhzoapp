@@ -6,6 +6,7 @@ import { SourcesManager } from "@/components/sources/SourcesManager";
 
 export default async function LeadSourcesPage() {
   const sources = await LeadSourceService.getSources();
+  const leadCounts = await LeadSourceService.getLeadCounts(sources.map((s) => s.id));
 
   return (
     <div className="flex-1 space-y-6 p-8 pt-6">
@@ -18,7 +19,7 @@ export default async function LeadSourcesPage() {
           <p className="text-sm text-muted-foreground">Connect ad platforms and webhooks that feed leads into your CRM.</p>
         </div>
       </div>
-      <SourcesManager initialSources={sources} />
+      <SourcesManager initialSources={sources} leadCounts={leadCounts} />
     </div>
   );
 }

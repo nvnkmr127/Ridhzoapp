@@ -16,7 +16,11 @@ export interface FacebookSyncResult {
 // inline (dev / no Redis) or in the background worker (prod). Throws on Graph errors; the caller
 // decides how to surface them (auth errors → mark the source needs-reconnect).
 export class FacebookSyncService {
-  static async run(sourceId: string, organizationId: string): Promise<FacebookSyncResult> {
+  static async run(
+    sourceId: string,
+    organizationId: string,
+    opts: { since?: number; until?: number } = {},
+  ): Promise<FacebookSyncResult> {
     const source = await LeadSourceService.getSource(sourceId);
     if (!source || source.organizationId !== organizationId) {
       throw new Error("Source not found");
@@ -56,7 +60,7 @@ export class FacebookSyncService {
     let skippedNoContact = 0;
 
     for (const form of forms) {
-      const rawLeads = await MetaTokenRefreshService.fetchFormLeads(form.id, pageAccessToken, 100);
+      const rawLeads = await MetaTokenRefreshService.fetchFormLeads(form.id, pageAccessToken, 100, 1000, opts);
       totalFetched += rawLeads.length;
 
       for (const fbLead of rawLeads) {

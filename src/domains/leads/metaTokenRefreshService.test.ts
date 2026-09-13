@@ -56,6 +56,21 @@ describe("MetaTokenRefreshService", () => {
       expect(leads.map((l) => l.id)).toEqual(["l1", "l2", "l3"]);
     });
 
+    it("adds a time_created filter to the request when a window is given", async () => {
+      let seenUrl = "";
+      globalThis.fetch = (async (url: string) => {
+        seenUrl = url;
+        return { ok: true, json: async () => ({ data: [], paging: {} }) } as Response;
+      }) as typeof fetch;
+
+      await MetaTokenRefreshService.fetchFormLeads("form_1", "tok", 100, 1000, { since: 1000, until: 2000 });
+      expect(seenUrl).toContain("filtering=");
+      const decoded = decodeURIComponent(seenUrl);
+      expect(decoded).toContain("time_created");
+      expect(decoded).toContain("GREATER_THAN");
+      expect(decoded).toContain("LESS_THAN");
+    });
+
     it("respects maxTotal so a huge form can't run away", async () => {
       globalThis.fetch = (async () =>
         ({ ok: true, json: async () => ({ data: [{ id: "x" }, { id: "y" }], paging: { next: "https://graph.facebook.com/next" } }) } as Response)) as typeof fetch;

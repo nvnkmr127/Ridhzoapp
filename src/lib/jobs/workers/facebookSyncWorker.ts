@@ -15,6 +15,8 @@ export const facebookSyncQueue = new Queue(FACEBOOK_SYNC_QUEUE_NAME, {
 export interface FacebookSyncJobData {
   sourceId: string;
   organizationId: string;
+  since?: number;
+  until?: number;
 }
 
 // Merge a patch into the source's config without clobbering other keys.
@@ -29,11 +31,11 @@ export function createFacebookSyncWorker() {
   const worker = new Worker<FacebookSyncJobData>(
     FACEBOOK_SYNC_QUEUE_NAME,
     async (job: Job<FacebookSyncJobData>) => {
-      const { sourceId, organizationId } = job.data;
+      const { sourceId, organizationId, since, until } = job.data;
       const { FacebookSyncService } = await import("@/domains/leads/facebookSyncService");
       const { MetaTokenRefreshService } = await import("@/domains/leads/metaTokenRefreshService");
       try {
-        const result = await FacebookSyncService.run(sourceId, organizationId);
+        const result = await FacebookSyncService.run(sourceId, organizationId, { since, until });
         await patchSyncState(sourceId, {
           syncStatus: "idle",
           lastSync: { ...result, ok: true, finishedAt: new Date().toISOString() },

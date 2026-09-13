@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { leadSources, leads, assignmentRules } from "@/db/schema/leads";
-import { and, eq } from "drizzle-orm";
+import { and, eq, count, inArray, isNull } from "drizzle-orm";
 import crypto from "crypto";
 
 export class LeadSourceService {
@@ -9,6 +9,19 @@ export class LeadSourceService {
       return db.select().from(leadSources).where(eq(leadSources.organizationId, organizationId));
     }
     return db.select().from(leadSources);
+  }
+
+  /** Count of live (non-deleted) leads per source, for the given source ids. */
+  static async getLeadCounts(sourceIds: string[]): Promise<Record<string, number>> {
+    if (sourceIds.length === 0) return {};
+    const rows = await db
+      .select({ sourceId: leads.sourceId, c: count() })
+      .from(leads)
+      .where(and(inArray(leads.sourceId, sourceIds), isNull(leads.deletedAt)))
+      .groupBy(leads.sourceId);
+    const out: Record<string, number> = {};
+    for (const r of rows) if (r.sourceId) out[r.sourceId] = Number(r.c);
+    return out;
   }
 
   static async getSource(id: string) {

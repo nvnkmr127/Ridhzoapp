@@ -163,6 +163,7 @@ type SourceCardProps = {
   onSyncPastLeads?: (s: Source) => void;
   isSyncing?: boolean;
   onOpenFilter?: (s: Source) => void;
+  leadCount?: number;
 };
 
 const SourceCard = React.memo(function SourceCard({
@@ -177,6 +178,7 @@ const SourceCard = React.memo(function SourceCard({
   onSyncPastLeads,
   isSyncing,
   onOpenFilter,
+  leadCount,
 }: SourceCardProps) {
   const webhookUrl = `${origin}/api/webhooks/${s.type}?sourceId=${s.id}`;
   const formFilter = (s.config as any)?.formFilter;
@@ -199,6 +201,11 @@ const SourceCard = React.memo(function SourceCard({
           <Badge variant={s.isActive ? "default" : "secondary"}>
             {s.isActive ? "Active" : "Inactive"}
           </Badge>
+          {typeof leadCount === "number" && (
+            <Badge variant="outline" className="text-xs">
+              {leadCount.toLocaleString()} lead{leadCount === 1 ? "" : "s"}
+            </Badge>
+          )}
           {s.type === "facebook_lead_ads" && hasFormFilter && (
             <Badge variant="outline" className="text-xs text-primary border-primary/30">
               {formFilter.length} form{formFilter.length === 1 ? "" : "s"} selected
@@ -354,7 +361,13 @@ const SourceCard = React.memo(function SourceCard({
   );
 });
 
-export function SourcesManager({ initialSources }: { initialSources: Source[] }) {
+export function SourcesManager({
+  initialSources,
+  leadCounts = {},
+}: {
+  initialSources: Source[];
+  leadCounts?: Record<string, number>;
+}) {
   const { toast } = useToast();
   const [sources, setSources] = React.useState<Source[]>(initialSources);
   const [connectingId, setConnectingId] = React.useState<string | null>(null);
@@ -505,6 +518,17 @@ export function SourcesManager({ initialSources }: { initialSources: Source[] })
 
   // Facebook Past Leads Sync state
   const [syncingSourceId, setSyncingSourceId] = React.useState<string | null>(null);
+  const [syncDialogSource, setSyncDialogSource] = React.useState<Source | null>(null);
+  const [syncPreset, setSyncPreset] = React.useState<string>("30"); // days, or "all" / "custom"
+  const [syncFrom, setSyncFrom] = React.useState("");
+  const [syncTo, setSyncTo] = React.useState("");
+
+  const openSyncDialog = React.useCallback((s: Source) => {
+    setSyncPreset("30");
+    setSyncFrom("");
+    setSyncTo("");
+    setSyncDialogSource(s);
+  }, []);
 
   const handleOpenFilter = React.useCallback(
     async (s: Source) => {
@@ -576,15 +600,10 @@ export function SourcesManager({ initialSources }: { initialSources: Source[] })
   };
 
   const handleSyncPastLeads = React.useCallback(
-    async (s: Source) => {
+    async (s: Source, range?: { since?: number; until?: number }) => {
       setSyncingSourceId(s.id);
       try {
-        toast({
-          title: "Syncing Past Leads...",
-          description: `Querying Meta Graph API for historical leads on "${s.name}".`,
-        });
-
-        const res = await syncPastFacebookLeadsAction(s.id);
+        const res = await syncPastFacebookLeadsAction(s.id, range);
         if (!res.ok) {
           toast({
             variant: "destructive",
@@ -632,6 +651,25 @@ export function SourcesManager({ initialSources }: { initialSources: Source[] })
     },
     [toast]
   );
+
+  const confirmSync = async () => {
+    if (!syncDialogSource) return;
+    let range: { since?: number; until?: number } | undefined;
+    if (syncPreset === "all") {
+      range = undefined;
+    } else if (syncPreset === "custom") {
+      const since = syncFrom ? Math.floor(new Date(syncFrom).getTime() / 1000) : undefined;
+      // include the whole "to" day by adding one day (86400s)
+      const until = syncTo ? Math.floor(new Date(syncTo).getTime() / 1000) + 86400 : undefined;
+      range = since || until ? { since, until } : undefined;
+    } else {
+      const days = parseInt(syncPreset, 10);
+      range = { since: Math.floor(Date.now() / 1000) - days * 86400 };
+    }
+    const src = syncDialogSource;
+    setSyncDialogSource(null);
+    await handleSyncPastLeads(src, range);
+  };
 
   const copy = React.useCallback((text: string, what: string) => {
     navigator.clipboard.writeText(text).then(
@@ -902,8 +940,9 @@ export function SourcesManager({ initialSources }: { initialSources: Source[] })
                 onCopy={copy}
                 onToggleEdit={toggleEdit}
                 onOpenFilter={handleOpenFilter}
-                onSyncPastLeads={handleSyncPastLeads}
+                onSyncPastLeads={openSyncDialog}
                 isSyncing={syncingSourceId === s.id}
+                leadCount={leadCounts[s.id]}
               />
             ))}
           </div>
@@ -963,6 +1002,81 @@ export function SourcesManager({ initialSources }: { initialSources: Source[] })
               {isSubmittingPages
                 ? "Connecting..."
                 : `Connect ${selectedPageIds.length} Selected Page${selectedPageIds.length === 1 ? "" : "s"}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sync Past Leads — pick a time window */}
+      <Dialog open={Boolean(syncDialogSource)} onOpenChange={(open) => !open && setSyncDialogSource(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Sync Past Leads</DialogTitle>
+            <DialogDescription>
+              Choose how far back to pull historical leads from Meta for this Page. Leads are deduplicated against your existing pipeline.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 py-2">
+            {[
+              { v: "7", label: "Last 7 days" },
+              { v: "30", label: "Last 30 days" },
+              { v: "90", label: "Last 90 days" },
+              { v: "all", label: "All time" },
+              { v: "custom", label: "Custom range" },
+            ].map((opt) => (
+              <label
+                key={opt.v}
+                className={`flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer transition-colors ${
+                  syncPreset === opt.v ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="sync-preset"
+                  value={opt.v}
+                  checked={syncPreset === opt.v}
+                  onChange={(e) => setSyncPreset(e.target.value)}
+                  className="accent-primary"
+                />
+                <span className="text-sm">{opt.label}</span>
+              </label>
+            ))}
+
+            {syncPreset === "custom" && (
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">From</label>
+                  <input
+                    type="date"
+                    value={syncFrom}
+                    onChange={(e) => setSyncFrom(e.target.value)}
+                    className="w-full bg-background border border-input rounded-xl px-3 py-2 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-muted-foreground">To</label>
+                  <input
+                    type="date"
+                    value={syncTo}
+                    onChange={(e) => setSyncTo(e.target.value)}
+                    className="w-full bg-background border border-input rounded-xl px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setSyncDialogSource(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmSync}
+              disabled={syncPreset === "custom" && !syncFrom && !syncTo}
+              className="rounded-2xl gap-2"
+            >
+              <DownloadCloud className="h-4 w-4" /> Start sync
             </Button>
           </DialogFooter>
         </DialogContent>

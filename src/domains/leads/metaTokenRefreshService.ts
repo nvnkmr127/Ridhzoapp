@@ -178,15 +178,22 @@ export class MetaTokenRefreshService {
     formId: string,
     pageAccessToken: string,
     pageSize: number = 100,
-    maxTotal: number = 1000
+    maxTotal: number = 1000,
+    opts: { since?: number; until?: number } = {}
   ): Promise<any[]> {
     if (!formId || !pageAccessToken) {
       throw new Error("formId and pageAccessToken are required to fetch form leads");
     }
+    // Optional time window: Meta filters the leads edge on time_created (unix seconds).
+    const filters: Array<{ field: string; operator: string; value: number }> = [];
+    if (opts.since) filters.push({ field: "time_created", operator: "GREATER_THAN", value: opts.since });
+    if (opts.until) filters.push({ field: "time_created", operator: "LESS_THAN", value: opts.until });
+    const filtering = filters.length ? `&filtering=${encodeURIComponent(JSON.stringify(filters))}` : "";
+
     const out: any[] = [];
     let url: string | null =
       `${GRAPH}/${encodeURIComponent(formId)}/leads?fields=${this.LEAD_FIELDS}` +
-      `&limit=${pageSize}&access_token=${encodeURIComponent(pageAccessToken)}`;
+      `&limit=${pageSize}${filtering}&access_token=${encodeURIComponent(pageAccessToken)}`;
 
     while (url && out.length < maxTotal) {
       const json: any = await graphGet(url);
