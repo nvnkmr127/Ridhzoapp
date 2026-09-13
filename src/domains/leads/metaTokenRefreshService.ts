@@ -100,6 +100,28 @@ export class MetaTokenRefreshService {
   }
 
   /**
+   * Subscribes the Page to THIS app's `leadgen` webhooks. Without this, Meta never delivers lead
+   * webhooks for the Page and live leads never arrive — the most common "leads not importing" cause.
+   * Uses the Page access token. Docs: /{page-id}/subscribed_apps.
+   */
+  static async subscribePageToLeadgen(pageId: string, pageAccessToken: string): Promise<boolean> {
+    if (!pageId || !pageAccessToken) throw new Error("pageId and pageAccessToken are required to subscribe the Page");
+    const url =
+      `${GRAPH}/${encodeURIComponent(pageId)}/subscribed_apps` +
+      `?subscribed_fields=leadgen&access_token=${encodeURIComponent(pageAccessToken)}`;
+    const res = await fetch(url, { method: "POST" });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = json?.error?.message || `Meta subscribe failed (${res.status})`;
+      const e = new Error(msg) as Error & { metaCode?: number; metaType?: string };
+      e.metaCode = json?.error?.code;
+      e.metaType = json?.error?.type;
+      throw e;
+    }
+    return Boolean(json?.success);
+  }
+
+  /**
    * Lists the Pages the user manages, each with its own Page access token. This is what turns a
    * user OAuth grant into a connectable lead source — /me/accounts returns id, name and access_token
    * per Page in one call, so no separate fetchPageAccessToken round trip is needed.

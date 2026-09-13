@@ -13,6 +13,7 @@ import {
   updateSourceFormFilterAction,
   listFacebookFormsAction,
   syncPastFacebookLeadsAction,
+  subscribeFacebookWebhooksAction,
 } from "@/lib/actions/sources";
 import {
   Copy,
@@ -163,6 +164,8 @@ type SourceCardProps = {
   onSyncPastLeads?: (s: Source) => void;
   isSyncing?: boolean;
   onOpenFilter?: (s: Source) => void;
+  onSubscribe?: (s: Source) => void;
+  isSubscribing?: boolean;
   leadCount?: { total: number; new: number; deleted: number };
 };
 
@@ -178,6 +181,8 @@ const SourceCard = React.memo(function SourceCard({
   onSyncPastLeads,
   isSyncing,
   onOpenFilter,
+  onSubscribe,
+  isSubscribing,
   leadCount,
 }: SourceCardProps) {
   const webhookUrl = `${origin}/api/webhooks/${s.type}?sourceId=${s.id}`;
@@ -234,6 +239,17 @@ const SourceCard = React.memo(function SourceCard({
         <div className="flex items-center gap-1.5 flex-wrap">
           {s.type === "facebook_lead_ads" && (
             <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 rounded-2xl text-xs text-primary font-medium"
+                onClick={() => onSubscribe?.(s)}
+                disabled={isSubscribing}
+                title="Subscribe this Page to Meta webhooks so live leads are delivered instantly"
+              >
+                {isSubscribing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                {isSubscribing ? "Enabling…" : "Enable Live Leads"}
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -488,12 +504,21 @@ export function SourcesManager({
       }
 
       const replayed = (res.data as any)?.replayed ?? 0;
-      toast({
-        title: "Facebook Page Connected",
-        description:
-          `Successfully connected ${selectedPageIds.length} Page(s) for lead capture.` +
-          (replayed ? ` Recovered ${replayed} lead(s) that arrived while disconnected.` : ""),
-      });
+      const subscribeErrors: string[] = (res.data as any)?.subscribeErrors ?? [];
+      if (subscribeErrors.length > 0) {
+        toast({
+          variant: "destructive",
+          title: "Connected, but live leads couldn't be enabled",
+          description: `${subscribeErrors.join("; ")}. Use "Enable Live Leads" on the source to retry.`,
+        });
+      } else {
+        toast({
+          title: "Facebook Page Connected",
+          description:
+            `Connected ${selectedPageIds.length} Page(s) and enabled live lead delivery.` +
+            (replayed ? ` Recovered ${replayed} lead(s) that arrived while disconnected.` : ""),
+        });
+      }
 
       const newlyAdded: Source[] = (res.data?.connected || []).map((s: any) => ({
         id: s.id,
@@ -543,6 +568,29 @@ export function SourcesManager({
     setSyncTo("");
     setSyncDialogSource(s);
   }, []);
+
+  const [subscribingSourceId, setSubscribingSourceId] = React.useState<string | null>(null);
+  const handleSubscribe = React.useCallback(
+    async (s: Source) => {
+      setSubscribingSourceId(s.id);
+      try {
+        const res = await subscribeFacebookWebhooksAction(s.id);
+        if (!res.ok) {
+          toast({ variant: "destructive", title: "Couldn't enable live leads", description: res.message });
+          return;
+        }
+        toast({
+          title: "Live leads enabled",
+          description: "This Page is now subscribed to Meta webhooks — new leads will arrive instantly.",
+        });
+      } catch (e: any) {
+        toast({ variant: "destructive", title: "Couldn't enable live leads", description: e?.message || "Please try again." });
+      } finally {
+        setSubscribingSourceId(null);
+      }
+    },
+    [toast],
+  );
 
   const handleOpenFilter = React.useCallback(
     async (s: Source) => {
@@ -725,7 +773,8 @@ export function SourcesManager({
         // the result back to the message listener above, which surfaces success OR the error reason,
         // so the click never dead-ends silently.
         const redirectUri = encodeURIComponent(`${origin}/api/auth/facebook/callback`);
-        const scope = encodeURIComponent("pages_show_list,leads_retrieval,pages_manage_ads");
+        // pages_manage_metadata is required to subscribe the Page to leadgen webhooks (subscribed_apps).
+        const scope = encodeURIComponent("pages_show_list,leads_retrieval,pages_manage_ads,pages_manage_metadata");
         // CSRF double-submit: same nonce in a first-party cookie and in `state` (kept as popup_<nonce>
         // so the callback still detects popup mode). The callback rejects any mismatch.
         const nonce = (crypto.randomUUID?.() ?? String(Math.random()).slice(2)) + Date.now().toString(36);
@@ -975,6 +1024,8 @@ export function SourcesManager({
                 onOpenFilter={handleOpenFilter}
                 onSyncPastLeads={openSyncDialog}
                 isSyncing={syncingSourceId === s.id}
+                onSubscribe={handleSubscribe}
+                isSubscribing={subscribingSourceId === s.id}
                 leadCount={leadCounts[s.id]}
               />
             ))}

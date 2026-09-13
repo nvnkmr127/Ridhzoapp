@@ -131,9 +131,11 @@ export async function connectFacebookPagesAction(pageIds: z.infer<typeof faceboo
     const chosen = pending.pages.filter((p) => parsed.data.includes(p.pageId));
     if (chosen.length === 0) return fail("VALIDATION", "The selected Pages weren't found. Please reconnect and try again.");
 
+    const { MetaTokenRefreshService } = await import("@/domains/leads/metaTokenRefreshService");
     const expiresAt = pending.expiresAt ? new Date(pending.expiresAt) : null;
     const connected = [];
     let replayed = 0;
+    const subscribeErrors: string[] = [];
     for (const p of chosen) {
       const source = await LeadSourceService.upsertFacebookPageSource(organizationId, {
         pageId: p.pageId,
@@ -142,11 +144,17 @@ export async function connectFacebookPagesAction(pageIds: z.infer<typeof faceboo
         expiresAt,
       });
       connected.push(source);
+      // Subscribe the Page to leadgen webhooks — without this Meta never sends live leads.
+      try {
+        await MetaTokenRefreshService.subscribePageToLeadgen(p.pageId, p.pageAccessToken);
+      } catch (e: any) {
+        subscribeErrors.push(`${p.name}: ${e?.message ?? "subscription failed"}`);
+      }
       // Recover any leads that failed while this Page's token was dead.
       replayed += await requeueAuthFailedEvents(p.pageId);
     }
     revalidatePath("/settings/sources");
-    return ok({ connected, replayed });
+    return ok({ connected, replayed, subscribeErrors });
   } catch (e) {
     return actionFail(e);
   }
@@ -182,6 +190,28 @@ export async function updateSourceFormFilterAction(input: z.infer<typeof formFil
     revalidatePath("/settings/sources");
     return ok(updated);
   } catch (e) {
+    return actionFail(e);
+  }
+}
+
+/** Subscribes an already-connected Page to leadgen webhooks (enables live lead delivery). */
+export async function subscribeFacebookWebhooksAction(sourceId: string) {
+  const { organizationId } = await requirePermission("sources.manage");
+  try {
+    const source = await LeadSourceService.getSource(sourceId);
+    if (!source || source.organizationId !== organizationId) return fail("NOT_FOUND", "Source not found");
+    if (source.type !== "facebook_lead_ads") return fail("VALIDATION", "Not a Facebook Lead Ads source.");
+    const config = (source.config as Record<string, any>) ?? {};
+    if (!config.pageId || !config.pageAccessToken) {
+      return fail("VALIDATION", "Missing Facebook Page ID or Access Token. Reconnect the Page first.");
+    }
+    const { MetaTokenRefreshService } = await import("@/domains/leads/metaTokenRefreshService");
+    await MetaTokenRefreshService.subscribePageToLeadgen(config.pageId, config.pageAccessToken);
+    return ok({ subscribed: true });
+  } catch (e) {
+    if (await flagIfAuthError(e, sourceId)) {
+      return fail("VALIDATION", "Facebook access for this Page has expired. Please reconnect the Page, then try again.");
+    }
     return actionFail(e);
   }
 }
