@@ -979,14 +979,21 @@ export function SourcesManager({
                     <div className={`p-3 rounded-2xl border ${platform.brandColor}`}>
                       <IconComponent className="h-6 w-6" />
                     </div>
-                    <Badge variant={unavailable ? "secondary" : "outline"} className="text-xs font-medium">
-                      {unavailable ? "Coming soon" : platform.badge}
-                    </Badge>
+                    {isConnected && !unavailable ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-300">
+                        <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                        Connected
+                      </span>
+                    ) : (
+                      <Badge variant={unavailable ? "secondary" : "outline"} className="text-xs font-medium">
+                        {unavailable ? "Coming soon" : platform.badge}
+                      </Badge>
+                    )}
                   </div>
                   <div>
                     <h5 className="font-bold text-foreground flex items-center gap-2">
                       {platform.name}
-                      {isConnected && <CheckCircle2 className="h-4 w-4 text-muted-foreground inline" />}
+                      {isConnected && <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400 inline" />}
                     </h5>
                     <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{platform.description}</p>
                   </div>
@@ -996,10 +1003,21 @@ export function SourcesManager({
                   <Button
                     onClick={() => handleConnectPlatform(platform)}
                     disabled={connectingId === platform.id || unavailable}
-                    className={`w-full font-medium gap-2 rounded-2xl py-5 ${platform.buttonBg}`}
+                    variant={isConnected && !unavailable ? "outline" : "default"}
+                    className={`w-full font-medium gap-2 rounded-2xl py-5 ${isConnected && !unavailable ? "" : platform.buttonBg}`}
                   >
-                    <IconComponent className="h-4 w-4" />
-                    {unavailable ? "Coming soon" : connectingId === platform.id ? "Connecting..." : platform.buttonText}
+                    {isConnected && !unavailable ? (
+                      <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                    ) : (
+                      <IconComponent className="h-4 w-4" />
+                    )}
+                    {unavailable
+                      ? "Coming soon"
+                      : connectingId === platform.id
+                      ? "Connecting..."
+                      : isConnected
+                      ? "Connected · Add another"
+                      : platform.buttonText}
                   </Button>
                   <a
                     href={platform.docsUrl}
