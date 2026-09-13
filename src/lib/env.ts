@@ -38,6 +38,8 @@ export function validateEnv(): void {
   }
 
   for (const [feature, keys] of Object.entries(OPTIONAL_FEATURES)) {
+    // FCM is also satisfied by a single FIREBASE_SERVICE_ACCOUNT JSON (see fcm.ts) — don't warn then.
+    if (feature.startsWith("Mobile push") && process.env.FIREBASE_SERVICE_ACCOUNT?.trim()) continue;
     const absent = keys.filter((k) => !process.env[k]?.trim());
     if (absent.length) {
       console.warn(`[env] ${feature} disabled — missing: ${absent.join(", ")}`);
