@@ -89,6 +89,17 @@ export function CustomFieldInputs({
               onChange={(e) => onChange(f.key, e.target.checked ? "true" : "")} className="h-4 w-4" />
             {f.label}{req && <span className="text-destructive"> *</span>}
           </label>
+        ) : f.type === "currency" ? (
+          // No hardcoded symbol — the field label carries the currency (e.g. "Budget (₹)"), so it
+          // stays tenant/locale-agnostic. Decimal keypad on mobile, tabular figures, right-aligned.
+          <Input
+            id={id}
+            inputMode="decimal"
+            value={val}
+            onChange={(e) => onChange(f.key, e.target.value.replace(/[^0-9.]/g, ""))}
+            placeholder="0.00"
+            className={`text-right tabular-nums ${req && !val.trim() ? "border-destructive/60" : ""}`}
+          />
         ) : (
           <Input
             id={id}

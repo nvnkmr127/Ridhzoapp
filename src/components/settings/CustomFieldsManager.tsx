@@ -23,7 +23,7 @@ type Field = {
   subsection?: string | null;
 };
 
-const TYPES = ["text", "textarea", "number", "date", "datetime", "select", "multiselect", "checkbox", "url"] as const;
+const TYPES = ["text", "textarea", "number", "currency", "date", "datetime", "select", "multiselect", "checkbox", "url"] as const;
 const HAS_OPTIONS = (t: string) => t === "select" || t === "multiselect";
 
 export function CustomFieldsManager({ initial }: { initial: Field[] }) {

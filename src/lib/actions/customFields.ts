@@ -13,7 +13,7 @@ export async function listCustomFieldsAction() {
   return fields;
 }
 
-const TYPES = ["text", "textarea", "number", "date", "datetime", "select", "multiselect", "checkbox", "url"] as const;
+const TYPES = ["text", "textarea", "number", "currency", "date", "datetime", "select", "multiselect", "checkbox", "url"] as const;
 
 const createSchema = z.object({
   label: z.string().trim().min(1).max(100),

@@ -3,7 +3,7 @@ import { customFieldDefs } from "@/db/schema";
 import { and, asc, eq } from "drizzle-orm";
 
 export type CustomFieldType =
-  | "text" | "textarea" | "number" | "date" | "datetime"
+  | "text" | "textarea" | "number" | "currency" | "date" | "datetime"
   | "select" | "multiselect" | "checkbox" | "url";
 
 const OPTION_TYPES: CustomFieldType[] = ["select", "multiselect"];
