@@ -240,31 +240,30 @@ export async function syncPastFacebookLeadsAction(sourceId: string, range?: { si
       return fail("VALIDATION", "Missing Facebook Page ID or Access Token in source configuration.");
     }
 
-    const { redisConfigured } = await import("@/lib/jobs/redis");
-
-    // Prod: run in the background so a high-volume Page can't time out the request. The worker writes
-    // progress/result onto the source config (syncStatus + lastSync), shown on the sources page.
-    if (redisConfigured()) {
-      const { facebookSyncQueue } = await import("@/lib/jobs/workers/facebookSyncWorker");
-      const newConfig = { ...config, syncStatus: "running", syncStartedAt: new Date().toISOString() };
-      await LeadSourceService.updateSource(source.id, { config: newConfig }, organizationId);
-      await facebookSyncQueue.add(`fb-sync-${source.id}`, {
-        sourceId: source.id,
-        organizationId,
-        since: window.since,
-        until: window.until,
-      });
-      revalidatePath("/settings/sources");
-      return ok({ queued: true });
-    }
-
-    // Dev fallback (no Redis): run inline and return counts directly.
+    // Run the sync inline. Vercel functions allow up to 300s and the pull is bounded (per-form cap +
+    // the chosen date window), so we don't need a background worker — which also removes the
+    // dependency on the droplet worker being redeployed for sync to work at all.
     const { FacebookSyncService } = await import("@/domains/leads/facebookSyncService");
     const result = await FacebookSyncService.run(source.id, organizationId, window);
+
+    // Record the outcome and clear any stale "running" flag left by a previous queued attempt.
+    await LeadSourceService.updateSource(
+      source.id,
+      { config: { ...config, syncStatus: "idle", lastSync: { ...result, ok: true, finishedAt: new Date().toISOString() } } },
+      organizationId,
+    ).catch(() => {});
+
     revalidatePath("/leads");
     revalidatePath("/settings/sources");
     return ok(result);
   } catch (e) {
+    // Clear any stuck "running" flag so the card isn't disabled forever.
+    await LeadSourceService.getSource(sourceId)
+      .then((s) => {
+        if (!s || (s.config as any)?.syncStatus !== "running") return;
+        return LeadSourceService.updateSource(sourceId, { config: { ...(s.config as any), syncStatus: "idle" } }, organizationId);
+      })
+      .catch(() => {});
     if (await flagIfAuthError(e, sourceId)) {
       return fail("VALIDATION", "Facebook access for this Page has expired. Please reconnect the Page, then sync again.");
     }

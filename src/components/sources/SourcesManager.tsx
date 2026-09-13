@@ -188,7 +188,9 @@ const SourceCard = React.memo(function SourceCard({
   const lastSync = (s.config as any)?.lastSync as
     | { ok?: boolean; importedCount?: number; deduplicatedCount?: number; skippedNoContact?: number; error?: string; finishedAt?: string; message?: string }
     | undefined;
-  const syncRunning = isSyncing || (s.config as any)?.syncStatus === "running";
+  // Only the in-flight local state disables the button — never a stale config.syncStatus, or a
+  // source stuck "running" from an old queued attempt could never be re-synced.
+  const syncRunning = Boolean(isSyncing);
 
   return (
     <div className="border rounded-2xl p-5 bg-card space-y-3">
@@ -353,7 +355,7 @@ const SourceCard = React.memo(function SourceCard({
             </div>
             {syncRunning ? (
               <p className="mt-1.5 text-xs text-muted-foreground flex items-center gap-1.5">
-                <Loader2 className="h-3 w-3 animate-spin" /> Sync running in the background… refresh to see results.
+                <Loader2 className="h-3 w-3 animate-spin" /> Syncing past leads…
               </p>
             ) : lastSync ? (
               <p className="mt-1.5 text-xs text-muted-foreground">
@@ -626,19 +628,6 @@ export function SourcesManager({
         }
 
         const data = res.data as any;
-
-        // Background path: the worker imports and writes the result onto the source config.
-        if (data?.queued) {
-          setSources((prev) =>
-            prev.map((x) => (x.id === s.id ? { ...x, config: { ...((x.config as any) || {}), syncStatus: "running" } } : x)),
-          );
-          toast({
-            title: "Sync started",
-            description: "Importing past leads in the background. Refresh this page in a moment to see the result.",
-          });
-          return;
-        }
-
         const { totalFetched, importedCount, deduplicatedCount, skippedNoContact, formsProcessed, message } = data;
 
         if (message) {

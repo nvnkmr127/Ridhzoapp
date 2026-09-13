@@ -47,8 +47,5 @@ export async function startWorkers(): Promise<void> {
   const { createEnrichmentWorker } = await import("@/lib/jobs/workers/enrichmentWorker");
   createEnrichmentWorker();
 
-  const { createFacebookSyncWorker } = await import("@/lib/jobs/workers/facebookSyncWorker");
-  createFacebookSyncWorker();
-
   console.log("[workers] all background workers started.");
 }
