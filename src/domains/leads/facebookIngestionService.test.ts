@@ -4,7 +4,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 const h = vi.hoisted(() => ({
   sources: [] as any[],
   updates: [] as any[],
-  processLead: vi.fn(async () => ({ status: "success", leadId: "lead-1" })),
+  processLead: vi.fn(async (_payload: any) => ({ status: "success", leadId: "lead-1" })),
   fetchLeadgenData: vi.fn(async () => ({
     id: "lg1",
     form_id: "f1",
