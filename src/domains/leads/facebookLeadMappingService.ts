@@ -105,6 +105,9 @@ export class FacebookLeadMappingService {
     }
 
     // Campaign & Meta Ad Attribution
+    // The leadgen id is the key Meta's Conversion Leads (CRM postback) uses to attribute a CRM
+    // stage change back to the originating ad — persist it so we can report progression later.
+    customData["facebook_lead_id"] = facebookLead.id;
     customData["facebook_form_id"] = facebookLead.form_id;
     if (facebookLead.ad_id) customData["meta_ad_id"] = facebookLead.ad_id;
     if (facebookLead.ad_name) customData["meta_ad_name"] = facebookLead.ad_name;

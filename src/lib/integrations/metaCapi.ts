@@ -79,6 +79,35 @@ export function buildEvent(
   };
 }
 
+/**
+ * Build a CRM lead-stage event for Meta's Conversion Leads integration. Unlike a standard CAPI
+ * event, attribution here is by the Facebook `lead_id` (the leadgen id) rather than hashed PII, so
+ * Meta can tie a CRM stage change back to the exact ad that produced the lead and optimise for
+ * lead *quality*. The id is sent as a string to avoid precision loss on large ids.
+ * Docs: https://developers.facebook.com/documentation/ads-commerce/conversions-api/conversion-leads-integration
+ */
+export function buildCrmLeadEvent(
+  eventName: string,
+  opts: { leadgenId: string; crmName: string; eventTime?: number; value?: number | null; currency?: string | null },
+): Record<string, unknown> {
+  const custom_data: Record<string, unknown> = {
+    event_source: "crm",
+    lead_event_source: opts.crmName,
+  };
+  if (typeof opts.value === "number" && opts.value > 0) {
+    custom_data.value = opts.value;
+    custom_data.currency = (opts.currency || "USD").toUpperCase();
+  }
+  return {
+    event_name: eventName,
+    event_time: opts.eventTime ?? Math.floor(Date.now() / 1000),
+    action_source: "system_generated",
+    // Meta attributes the CRM event via the leadgen id, not hashed PII.
+    user_data: { lead_id: String(opts.leadgenId) },
+    custom_data,
+  };
+}
+
 /** POST events to Meta, surfacing Meta's error text. `ok` is true on 2xx. Never throws. */
 export async function postEventsDetailed(
   config: CapiConfig,

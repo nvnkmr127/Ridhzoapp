@@ -112,10 +112,16 @@ eventBus.on('lead.status_changed', async (p) => {
   dispatchTrigger('lead.status_changed', p);
   await ActivityService.addActivity({ leadId: p.leadId, userId: p.userId, type: 'note', content: `Status changed from ${p.oldStatus} to ${p.newStatus}.` });
   await fireLeadWebhook(p.leadId, 'lead.status_changed', { oldStatus: p.oldStatus, newStatus: p.newStatus });
-  // Meta CAPI: a won lead is the conversion worth optimising toward.
+  const { MetaCapiService, metaEventForStatus } = await import("@/domains/leads/metaCapiService");
+  // Meta CAPI: a won lead is the conversion worth optimising toward (hashed-PII event).
   if (p.newStatus === 'won') {
-    const { MetaCapiService } = await import("@/domains/leads/metaCapiService");
     await MetaCapiService.track(p.leadId, 'Purchase');
+  }
+  // Conversion Leads postback: report the CRM stage back to Meta by leadgen id, so ad delivery
+  // optimises toward leads that actually progress. No-op for non-Meta leads / unconfigured tenants.
+  const stageEvent = metaEventForStatus(p.newStatus);
+  if (stageEvent) {
+    await MetaCapiService.trackCrmStage(p.leadId, stageEvent);
   }
 });
 

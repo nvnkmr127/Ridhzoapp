@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import crypto from "crypto";
-import { hashEmail, hashPhone, buildEvent } from "./metaCapi";
+import { hashEmail, hashPhone, buildEvent, buildCrmLeadEvent } from "./metaCapi";
 
 const sha = (v: string) => crypto.createHash("sha256").update(v).digest("hex");
 
@@ -50,5 +50,22 @@ describe("buildEvent", () => {
     expect(ud.em).toBeDefined();
     expect(ud.ph).toBeUndefined();
     expect(ud.fn).toBeUndefined();
+  });
+
+  describe("buildCrmLeadEvent (Conversion Leads)", () => {
+    it("attributes by lead_id (string, not hashed) with crm event source", () => {
+      const ev = buildCrmLeadEvent("qualified", { leadgenId: "1584693463226978", crmName: "Ridhzo" });
+      expect(ev.event_name).toBe("qualified");
+      expect(ev.action_source).toBe("system_generated");
+      expect(ev.user_data).toEqual({ lead_id: "1584693463226978" }); // string → no precision loss
+      expect(ev.custom_data).toMatchObject({ event_source: "crm", lead_event_source: "Ridhzo" });
+    });
+
+    it("includes value + currency only when positive", () => {
+      const noVal = buildCrmLeadEvent("converted", { leadgenId: "1", crmName: "Ridhzo" });
+      expect((noVal.custom_data as any).value).toBeUndefined();
+      const withVal = buildCrmLeadEvent("converted", { leadgenId: "1", crmName: "Ridhzo", value: 50000, currency: "inr" });
+      expect(withVal.custom_data).toMatchObject({ value: 50000, currency: "INR" });
+    });
   });
 });
