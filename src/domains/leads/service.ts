@@ -438,8 +438,14 @@ export class LeadService {
 
     const orderExpr = options.sortOrder === "asc" ? asc(sortCol) : desc(sortCol);
 
+    // Default view surfaces unworked "new" leads first (then newest). An explicit column sort from
+    // the user overrides this — their choice wins.
+    const orderBy = options.sortField
+      ? [orderExpr]
+      : [sql`(${leads.status} = 'new') desc`, desc(leads.createdAt)];
+
     const [data, [{ total }]] = await Promise.all([
-      db.select().from(leads).where(where).orderBy(orderExpr).limit(limit).offset(offset),
+      db.select().from(leads).where(where).orderBy(...orderBy).limit(limit).offset(offset),
       db.select({ total: count() }).from(leads).where(where),
     ]);
 
