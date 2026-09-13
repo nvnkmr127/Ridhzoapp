@@ -125,21 +125,54 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     (source && source.organizationId === organizationId ? source.name : null) ||
     (typeof cd.leadSource === "string" ? cd.leadSource : null) ||
     "Manual entry";
-  // Resolve the form's name from the source's saved id→name map; fall back to the raw form id.
+  // Friendly label for the source's channel/type.
+  const SOURCE_TYPE_LABELS: Record<string, string> = {
+    facebook_lead_ads: "Facebook Lead Ads",
+    google_lead_ads: "Google Lead Ads",
+    generic_webhook: "Website Webhook",
+    webform: "Web Form",
+    web_form: "Web Form",
+    linkedin_lead_gen: "LinkedIn Lead Gen",
+    whatsapp_inbound: "WhatsApp Inbound",
+  };
+  const sourceType = source?.type
+    ? SOURCE_TYPE_LABELS[source.type] ?? source.type.replace(/_/g, " ")
+    : null;
+
+  // Generic attribution: render any of these keys that a source dropped into customData. Covers
+  // Facebook (meta_*), Google/UTM tracking, and web forms — new sources display for free just by
+  // writing these keys. Only present values show.
+  const ATTR_LABELS: Record<string, string> = {
+    meta_campaign_name: "Campaign",
+    meta_adset_name: "Ad set",
+    meta_ad_name: "Ad",
+    utm_campaign: "Campaign",
+    utm_source: "UTM source",
+    utm_medium: "UTM medium",
+    utm_term: "Keyword",
+    utm_content: "Ad content",
+    gclid: "Google click ID",
+    campaign: "Campaign",
+    ad_group: "Ad group",
+    adgroup: "Ad group",
+    keyword: "Keyword",
+    page_url: "Page",
+    referrer: "Referrer",
+  };
+  const attribution: Array<[string, string]> = [];
+  const seenLabels = new Set<string>();
+  for (const [key, label] of Object.entries(ATTR_LABELS)) {
+    const v = cd[key];
+    if (typeof v === "string" && v && !seenLabels.has(label)) {
+      attribution.push([label, v]);
+      seenLabels.add(label);
+    }
+  }
+  // Facebook form: resolve the id to a name via the source's saved map; fall back to the raw id.
   const formNames = (source?.config as any)?.formFilterNames as Record<string, string> | undefined;
-  const formName = cd.facebook_form_id
-    ? formNames?.[String(cd.facebook_form_id)] || String(cd.facebook_form_id)
-    : undefined;
-  const attribution: Array<[string, string]> = (
-    [
-      ["Campaign", cd.meta_campaign_name],
-      ["Ad set", cd.meta_adset_name],
-      ["Ad", cd.meta_ad_name],
-      ["Form", formName],
-    ] as Array<[string, unknown]>
-  )
-    .filter(([, v]) => typeof v === "string" && v)
-    .map(([k, v]) => [k, v as string]);
+  if (cd.facebook_form_id) {
+    attribution.push(["Form", formNames?.[String(cd.facebook_form_id)] || String(cd.facebook_form_id)]);
+  }
   const whatsappMode: "personal" | "bsp" = org?.whatsappMode === "bsp" ? "bsp" : "personal";
 
   // A content open in the last 3 days is a hot buying signal — surface it to the coach.
@@ -297,7 +330,14 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             <div className="space-y-3 text-sm">
               <div>
                 <span className="text-xs text-muted-foreground block">Source</span>
-                <p className="font-medium">{sourceName}</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-medium">{sourceName}</p>
+                  {sourceType && (
+                    <Badge variant="secondary" className="text-xs capitalize font-normal">
+                      {sourceType}
+                    </Badge>
+                  )}
+                </div>
               </div>
               {attribution.map(([label, value]) => (
                 <div key={label}>
