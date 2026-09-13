@@ -1,8 +1,9 @@
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, User, Phone, Mail, Building, Sparkles, Flame } from "lucide-react";
+import { ArrowLeft, User, Phone, Mail, Building, Sparkles, Flame, Radio } from "lucide-react";
 import Link from "next/link";
 import { LeadService } from "@/domains/leads/service";
+import { LeadSourceService } from "@/domains/leads/sourceService";
 import { NextBestActionService } from "@/domains/leads/nextBestActionService";
 import { ShareContentCard } from "@/components/leads/ShareContentCard";
 import { ReengagementPlanCard } from "@/components/leads/ReengagementPlanCard";
@@ -72,6 +73,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     stagesList,
     automationsList,
     duplicateRows,
+    source,
   ] = await Promise.all([
     ActivityService.getLeadActivities(id),
     WhatsAppService.listForLead(id),
@@ -112,9 +114,26 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           )
           .catch(() => [])
       : Promise.resolve([]),
+    lead.sourceId ? LeadSourceService.getSource(lead.sourceId).catch(() => null) : Promise.resolve(null),
   ]);
 
   const dupCount = duplicateRows.length;
+
+  // Lead source + ad attribution (Facebook/Meta leads carry campaign/ad in customData).
+  const cd = (lead.customData as Record<string, any>) ?? {};
+  const sourceName =
+    (source && source.organizationId === organizationId ? source.name : null) ||
+    (typeof cd.leadSource === "string" ? cd.leadSource : null) ||
+    "Manual entry";
+  const attribution: Array<[string, string]> = (
+    [
+      ["Campaign", cd.meta_campaign_name],
+      ["Ad set", cd.meta_adset_name],
+      ["Ad", cd.meta_ad_name],
+    ] as Array<[string, unknown]>
+  )
+    .filter(([, v]) => typeof v === "string" && v)
+    .map(([k, v]) => [k, v as string]);
   const whatsappMode: "personal" | "bsp" = org?.whatsappMode === "bsp" ? "bsp" : "personal";
 
   // A content open in the last 3 days is a hot buying signal — surface it to the coach.
@@ -261,6 +280,25 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                   stages={stagesList}
                 />
               </div>
+            </div>
+          </div>
+
+          {/* Lead Source & Attribution Card */}
+          <div className="rounded-2xl border border-border p-5 bg-card space-y-4">
+            <h3 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <Radio className="h-4 w-4" /> Lead Source
+            </h3>
+            <div className="space-y-3 text-sm">
+              <div>
+                <span className="text-xs text-muted-foreground block">Source</span>
+                <p className="font-medium">{sourceName}</p>
+              </div>
+              {attribution.map(([label, value]) => (
+                <div key={label}>
+                  <span className="text-xs text-muted-foreground block">{label}</span>
+                  <p className="font-medium break-words">{value}</p>
+                </div>
+              ))}
             </div>
           </div>
 
