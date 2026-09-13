@@ -86,6 +86,22 @@ export async function updateCapiAction(input: z.infer<typeof capiSchema>) {
   }
 }
 
+const stageMapSchema = z.record(z.string(), z.string());
+
+/** Save the tenant's Conversion Leads status → Meta stage-event map. Empty resets to the default. */
+export async function updateCapiStageMapAction(map: Record<string, string>) {
+  const { organizationId } = await requirePermission("settings.manage");
+  const parsed = stageMapSchema.safeParse(map);
+  if (!parsed.success) return fail("VALIDATION", "Invalid stage mapping.");
+  try {
+    const view = await TenantIntegrationsService.upsertCapiStageMap(organizationId, parsed.data);
+    revalidatePath("/settings/lead-intelligence");
+    return ok(view);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
 export async function sendTestCapiEventAction() {
   const { organizationId } = await requirePermission("settings.manage");
   const { MetaCapiService } = await import("@/domains/leads/metaCapiService");

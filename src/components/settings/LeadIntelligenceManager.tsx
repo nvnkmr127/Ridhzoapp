@@ -12,6 +12,7 @@ import {
   rotateInboundTokenAction,
   updateCapiAction,
   sendTestCapiEventAction,
+  updateCapiStageMapAction,
 } from "@/lib/actions/tenantIntegrations";
 
 type View = {
@@ -26,6 +27,7 @@ type View = {
   capiPixelId: string | null;
   hasCapiAccessToken: boolean;
   capiTestEventCode: string | null;
+  capiLeadStageMap: Record<string, string>;
 };
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -54,6 +56,11 @@ export function LeadIntelligenceManager({ initial }: { initial: View }) {
   const [capiEnabled, setCapiEnabled] = React.useState(initial.capiEnabled);
   const [savingCapi, setSavingCapi] = React.useState(false);
   const [testingCapi, setTestingCapi] = React.useState(false);
+  // Conversion Leads stage map, edited as rows so a tenant can rename/add/remove stages.
+  const [stageRows, setStageRows] = React.useState<Array<{ status: string; event: string }>>(
+    Object.entries(initial.capiLeadStageMap ?? {}).map(([status, event]) => ({ status, event })),
+  );
+  const [savingStageMap, setSavingStageMap] = React.useState(false);
 
   const webhookUrl =
     v.inboundEmailToken && typeof window !== "undefined"
@@ -134,6 +141,29 @@ export function LeadIntelligenceManager({ initial }: { initial: View }) {
       toast({ variant: "destructive", title: "Couldn't save", description: "We couldn't reach the server." });
     } finally {
       setSavingCapi(false);
+    }
+  }
+
+  async function saveStageMap() {
+    setSavingStageMap(true);
+    try {
+      const map: Record<string, string> = {};
+      for (const r of stageRows) {
+        const status = r.status.trim().toLowerCase();
+        const event = r.event.trim();
+        if (status && event) map[status] = event;
+      }
+      const res = await updateCapiStageMapAction(map);
+      if (!res.ok) {
+        toast({ variant: "destructive", title: "Couldn't save stage mapping", description: res.message });
+        return;
+      }
+      setV((prev) => ({ ...prev, capiLeadStageMap: (res.data as View).capiLeadStageMap }));
+      toast({ title: "Conversion Leads mapping saved" });
+    } catch {
+      toast({ variant: "destructive", title: "Couldn't save stage mapping", description: "Please try again." });
+    } finally {
+      setSavingStageMap(false);
     }
   }
 
@@ -269,6 +299,64 @@ export function LeadIntelligenceManager({ initial }: { initial: View }) {
           <Button variant="outline" onClick={testCapi} disabled={testingCapi} className="gap-2">
             <Target className="h-4 w-4" /> {testingCapi ? "Sending…" : "Send test event"}
           </Button>
+        </div>
+
+        {/* Conversion Leads — CRM stage postback by Facebook lead_id */}
+        <div className="mt-2 rounded-xl border border-dashed p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-medium">Conversion Leads (CRM postback)</p>
+            <span
+              className={`text-xs rounded-full px-2 py-0.5 ${
+                v.capiEnabled ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300" : "bg-muted text-muted-foreground"
+              }`}
+            >
+              {v.capiEnabled ? "Active" : "Enable CAPI above to activate"}
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            When a Facebook-sourced lead changes status, its progress is reported back to Meta by
+            lead ID so delivery optimises toward leads that convert. Map each CRM status to the Meta
+            event name you configured under <strong>Events Manager → Conversion Leads</strong>.
+          </p>
+
+          <div className="space-y-2">
+            {stageRows.map((row, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <Input
+                  value={row.status}
+                  onChange={(e) => setStageRows((rows) => rows.map((r, j) => (j === i ? { ...r, status: e.target.value } : r)))}
+                  placeholder="CRM status (e.g. qualified)"
+                  autoCapitalize="none"
+                  className="flex-1"
+                />
+                <span className="text-muted-foreground text-sm">→</span>
+                <Input
+                  value={row.event}
+                  onChange={(e) => setStageRows((rows) => rows.map((r, j) => (j === i ? { ...r, event: e.target.value } : r)))}
+                  placeholder="Meta event (e.g. converted)"
+                  autoCapitalize="none"
+                  className="flex-1"
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setStageRows((rows) => rows.filter((_, j) => j !== i))}
+                  aria-label="Remove mapping"
+                >
+                  ✕
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setStageRows((rows) => [...rows, { status: "", event: "" }])}>
+              Add stage
+            </Button>
+            <Button size="sm" onClick={saveStageMap} disabled={savingStageMap}>
+              {savingStageMap ? "Saving…" : "Save mapping"}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

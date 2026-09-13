@@ -239,6 +239,13 @@
       "when": 1788954807553,
       "tag": "0033_simple_fallen_one",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1789284166242,
+      "tag": "0034_capi_lead_stage_map",
+      "breakpoints": true
     }
   ]
 }

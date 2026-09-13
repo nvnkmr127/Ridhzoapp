@@ -5,20 +5,6 @@ import { buildEvent, buildCrmLeadEvent, postEvents, postEventsDetailed } from "@
 // The CRM name reported to Meta as lead_event_source in Conversion Leads postbacks.
 const CRM_NAME = "Ridhzo";
 
-// CRM status → the Meta lead-stage event name reported for Conversion Leads optimisation. Only the
-// stages that signal lead quality are worth reporting; the rest are noise. Tenants map these names
-// to their funnel in Meta Events Manager. ponytail: static default map; make it per-tenant config
-// if orgs need custom stage names.
-const STATUS_EVENT_MAP: Record<string, string> = {
-  contacted: "contacted",
-  qualified: "qualified",
-  won: "converted",
-};
-
-export function metaEventForStatus(status?: string | null): string | undefined {
-  return status ? STATUS_EVENT_MAP[status.toLowerCase()] : undefined;
-}
-
 // Sends a lead conversion event to the lead's tenant Meta CAPI destination. Best-effort: no config
 // = no-op, and it never throws into the caller (fired from event handlers).
 // ponytail: fire-once, no retry queue — add one if delivery guarantees matter.
@@ -49,13 +35,18 @@ export class MetaCapiService {
    * leadgen id, so Meta can optimise ad delivery toward leads that actually progress/convert.
    * No-op unless the lead came from Meta (has a stored lead id) and the tenant has CAPI configured.
    */
-  static async trackCrmStage(leadId: string, eventName: string): Promise<void> {
+  static async trackCrmStage(leadId: string, crmStatus: string): Promise<void> {
     try {
       const lead = await LeadService.getLeadById(leadId);
       if (!lead?.organizationId) return;
 
       const fbLeadId = (lead.customData as Record<string, unknown> | null)?.["facebook_lead_id"];
       if (!fbLeadId) return; // not a Meta-sourced lead → nothing to attribute back
+
+      // Resolve the CRM status → Meta lead-stage event via the tenant's (or default) map.
+      const stageMap = await TenantIntegrationsService.getCapiStageMap(lead.organizationId);
+      const eventName = stageMap[(crmStatus ?? "").toLowerCase()];
+      if (!eventName) return; // this status isn't mapped to a reported stage
 
       const config = await TenantIntegrationsService.getCapiConfig(lead.organizationId);
       if (!config) return;

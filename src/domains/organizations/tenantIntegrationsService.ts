@@ -20,7 +20,15 @@ export interface TenantIntegrationsView {
   capiPixelId: string | null;
   hasCapiAccessToken: boolean;
   capiTestEventCode: string | null;
+  capiLeadStageMap: Record<string, string>; // resolved (tenant override or default)
 }
+
+// Default Conversion Leads mapping: CRM status → Meta lead-stage event name. Tenants can override.
+export const DEFAULT_CAPI_STAGE_MAP: Record<string, string> = {
+  contacted: "contacted",
+  qualified: "qualified",
+  won: "converted",
+};
 
 export interface CapiConfig {
   pixelId: string;
@@ -82,7 +90,31 @@ export class TenantIntegrationsService {
       capiPixelId: row?.capiPixelId ?? null,
       hasCapiAccessToken: !!row?.capiAccessTokenEnc,
       capiTestEventCode: row?.capiTestEventCode ?? null,
+      capiLeadStageMap: row?.capiLeadStageMap ?? DEFAULT_CAPI_STAGE_MAP,
     };
+  }
+
+  /** Resolved Conversion Leads stage map for the backend: tenant override, else the default. */
+  static async getCapiStageMap(organizationId: string): Promise<Record<string, string>> {
+    const row = await this.getRaw(organizationId);
+    return row?.capiLeadStageMap ?? DEFAULT_CAPI_STAGE_MAP;
+  }
+
+  /** Save a tenant's Conversion Leads stage map. An empty map clears back to the default on read. */
+  static async upsertCapiStageMap(organizationId: string, map: Record<string, string>): Promise<TenantIntegrationsView> {
+    const clean = Object.fromEntries(
+      Object.entries(map)
+        .map(([k, v]) => [k.trim().toLowerCase(), String(v).trim()])
+        .filter(([k, v]) => k && v),
+    );
+    await db
+      .insert(tenantIntegrationSettings)
+      .values({ organizationId, capiLeadStageMap: clean, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: tenantIntegrationSettings.organizationId,
+        set: { capiLeadStageMap: clean, updatedAt: new Date() },
+      });
+    return this.getView(organizationId);
   }
 
   /** Upsert enrichment config. Keeps the stored auth value when the form leaves it blank. */

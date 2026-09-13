@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, integer, text, timestamp } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, integer, text, timestamp, jsonb } from 'drizzle-orm/pg-core';
 import { organizations } from './organizations';
 
 // Per-tenant integration config that used to live in platform env vars. Tenants configure these
@@ -30,6 +30,8 @@ export const tenantIntegrationSettings = pgTable('tenant_integration_settings', 
   capiPixelId: varchar('capi_pixel_id', { length: 64 }),
   capiAccessTokenEnc: text('capi_access_token_enc'),
   capiTestEventCode: varchar('capi_test_event_code', { length: 64 }),
+  // Conversion Leads: CRM status → Meta lead-stage event name. Null = use the built-in default map.
+  capiLeadStageMap: jsonb('capi_lead_stage_map').$type<Record<string, string>>(),
 
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
