@@ -15,7 +15,7 @@ function toStr(v: unknown): string {
 
 // Internal bookkeeping we stash in customData (lead scoring, ingestion provenance, attribution).
 // Never show these as "captured data" or let a Save stringify them — preserve them untouched.
-const INTERNAL_EXTRA_KEYS = new Set(["leadSource", "expectedValue"]);
+const INTERNAL_EXTRA_KEYS = new Set(["leadSource", "expectedValue", "facebook_lead_id"]);
 const isInternalKey = (k: string) => k.startsWith("_") || INTERNAL_EXTRA_KEYS.has(k);
 
 // Renders the org's DEFINED custom fields as typed inputs bound to this lead's customData.

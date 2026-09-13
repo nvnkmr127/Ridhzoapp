@@ -775,6 +775,10 @@ export function SourcesManager({
       const since = syncFrom ? Math.floor(new Date(syncFrom).getTime() / 1000) : undefined;
       // include the whole "to" day by adding one day (86400s)
       const until = syncTo ? Math.floor(new Date(syncTo).getTime() / 1000) + 86400 : undefined;
+      if (since && until && since >= until) {
+        toast({ variant: "destructive", title: "Invalid date range", description: "The From date must be before the To date." });
+        return;
+      }
       range = since || until ? { since, until } : undefined;
     } else {
       const days = parseInt(syncPreset, 10);

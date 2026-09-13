@@ -319,7 +319,13 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 <Mail className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
                 <div className="min-w-0 flex-1">
                   <span className="text-xs text-muted-foreground block">Email</span>
-                  <p className="font-medium truncate">{lead.email || "—"}</p>
+                  {lead.email ? (
+                    <a href={`mailto:${lead.email}`} className="font-medium truncate block text-primary hover:underline underline-offset-2">
+                      {lead.email}
+                    </a>
+                  ) : (
+                    <p className="font-medium truncate">—</p>
+                  )}
                 </div>
               </div>
 
@@ -327,7 +333,23 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 <Phone className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
                 <div className="min-w-0 flex-1">
                   <span className="text-xs text-muted-foreground block">Phone</span>
-                  <p className="font-medium truncate">{lead.phone || "—"}</p>
+                  {lead.phone ? (
+                    <div className="flex items-center gap-3">
+                      <a href={`tel:${lead.phone}`} className="font-medium truncate text-primary hover:underline underline-offset-2">
+                        {lead.phone}
+                      </a>
+                      <a
+                        href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, "")}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-green-600 dark:text-green-400 hover:underline underline-offset-2 shrink-0"
+                      >
+                        WhatsApp
+                      </a>
+                    </div>
+                  ) : (
+                    <p className="font-medium truncate">—</p>
+                  )}
                 </div>
               </div>
 

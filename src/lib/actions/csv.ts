@@ -102,7 +102,13 @@ export async function uploadCsvAction(input: z.infer<typeof uploadCsvSchema>) {
     }));
 
     if (queueJobs.length > 0) {
-      await ingestionQueue.addBulk(queueJobs);
+      // Fail fast instead of hanging the request if Redis is unreachable (the queue connection
+      // buffers commands indefinitely otherwise). The event rows are already persisted, so an admin
+      // can retry the import once background processing is back.
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Background import is temporarily unavailable — please try again shortly.")), 8000),
+      );
+      await Promise.race([ingestionQueue.addBulk(queueJobs), timeout]);
     }
 
     return ok({ count: batchJobs.length });
