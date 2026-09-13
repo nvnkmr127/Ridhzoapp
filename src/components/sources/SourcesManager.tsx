@@ -31,6 +31,8 @@ import {
   Filter,
   DownloadCloud,
   Loader2,
+  PauseCircle,
+  PlayCircle,
 } from "lucide-react";
 import { FormFieldsEditor } from "./FormFieldsEditor";
 import {
@@ -308,13 +310,20 @@ const SourceCard = React.memo(function SourceCard({
               </Button>
             </>
           )}
-          <Button variant="outline" size="sm" onClick={() => onToggle(s)} className="rounded-2xl">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onToggle(s)}
+            className={`gap-1.5 rounded-2xl ${s.isActive ? "text-muted-foreground" : "text-green-600 dark:text-green-400 border-green-500/30"}`}
+            title={s.isActive ? "Pause lead capture for this source" : "Resume lead capture for this source"}
+          >
+            {s.isActive ? <PauseCircle className="h-3.5 w-3.5" /> : <PlayCircle className="h-3.5 w-3.5" />}
             {s.isActive ? "Deactivate" : "Activate"}
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => onRename(s)} title="Rename">
+          <Button variant="ghost" size="icon" onClick={() => onRename(s)} aria-label="Rename source" title="Rename">
             <Pencil className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => onRemove(s)} title="Delete" className="text-destructive hover:text-destructive">
+          <Button variant="ghost" size="icon" onClick={() => onRemove(s)} aria-label="Delete source" title="Delete" className="text-destructive hover:text-destructive">
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
