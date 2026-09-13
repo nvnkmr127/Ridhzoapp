@@ -115,7 +115,7 @@ export class LeadSourceService {
   static async markNeedsReconnect(id: string) {
     const [source] = await db.select().from(leadSources).where(eq(leadSources.id, id)).limit(1);
     if (!source) return;
-    const config = { ...((source.config as Record<string, unknown>) ?? {}), needsReconnect: true };
+    const config = { ...((source.config as Record<string, unknown>) ?? {}), needsReconnect: true, webhookSubscribed: false };
     await db.update(leadSources).set({ config, isActive: 0 }).where(eq(leadSources.id, id));
   }
 }

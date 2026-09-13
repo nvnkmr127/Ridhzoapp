@@ -147,6 +147,11 @@ export async function connectFacebookPagesAction(pageIds: z.infer<typeof faceboo
       // Subscribe the Page to leadgen webhooks — without this Meta never sends live leads.
       try {
         await MetaTokenRefreshService.subscribePageToLeadgen(p.pageId, p.pageAccessToken);
+        await LeadSourceService.updateSource(
+          source.id,
+          { config: { ...(source.config as Record<string, unknown>), webhookSubscribed: true } },
+          organizationId,
+        );
       } catch (e: any) {
         subscribeErrors.push(`${p.name}: ${e?.message ?? "subscription failed"}`);
       }
@@ -207,6 +212,9 @@ export async function subscribeFacebookWebhooksAction(sourceId: string) {
     }
     const { MetaTokenRefreshService } = await import("@/domains/leads/metaTokenRefreshService");
     await MetaTokenRefreshService.subscribePageToLeadgen(config.pageId, config.pageAccessToken);
+    // Persist so the UI can show "Live" instead of prompting to enable it again.
+    await LeadSourceService.updateSource(source.id, { config: { ...config, webhookSubscribed: true } }, organizationId);
+    revalidatePath("/settings/sources");
     return ok({ subscribed: true });
   } catch (e) {
     if (await flagIfAuthError(e, sourceId)) {

@@ -190,6 +190,8 @@ const SourceCard = React.memo(function SourceCard({
   const hasFormFilter = Array.isArray(formFilter) && formFilter.length > 0;
   const formFilterNames = ((s.config as any)?.formFilterNames ?? {}) as Record<string, string>;
   const needsReconnect = Boolean((s.config as any)?.needsReconnect);
+  const webhookSubscribed = Boolean((s.config as any)?.webhookSubscribed);
+  const isFacebook = s.type === "facebook_lead_ads";
   const lastSync = (s.config as any)?.lastSync as
     | { ok?: boolean; importedCount?: number; deduplicatedCount?: number; skippedNoContact?: number; error?: string; finishedAt?: string; message?: string }
     | undefined;
@@ -205,9 +207,29 @@ const SourceCard = React.memo(function SourceCard({
           <Badge variant="secondary" className="capitalize">
             {s.type?.replace(/_/g, " ")}
           </Badge>
-          <Badge variant={s.isActive ? "default" : "secondary"}>
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${
+              s.isActive
+                ? "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300"
+                : "border-border bg-muted text-muted-foreground"
+            }`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${s.isActive ? "bg-green-500" : "bg-muted-foreground/50"}`} />
             {s.isActive ? "Active" : "Inactive"}
-          </Badge>
+          </span>
+          {isFacebook && !needsReconnect && (
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${
+                webhookSubscribed
+                  ? "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300"
+                  : "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+              }`}
+              title={webhookSubscribed ? "Subscribed to Meta webhooks — live leads on" : "Live leads not enabled yet"}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${webhookSubscribed ? "bg-green-500" : "bg-amber-500"}`} />
+              {webhookSubscribed ? "Live" : "Webhooks off"}
+            </span>
+          )}
           {leadCount && (
             <>
               <Badge variant="outline" className="text-xs">
@@ -242,20 +264,33 @@ const SourceCard = React.memo(function SourceCard({
               <Button
                 variant="outline"
                 size="sm"
-                className="gap-1.5 rounded-2xl text-xs text-primary font-medium"
+                className={`gap-1.5 rounded-2xl text-xs font-medium ${webhookSubscribed ? "text-green-600 dark:text-green-400" : "text-primary"}`}
                 onClick={() => onSubscribe?.(s)}
-                disabled={isSubscribing}
-                title="Subscribe this Page to Meta webhooks so live leads are delivered instantly"
+                disabled={isSubscribing || needsReconnect}
+                title={
+                  needsReconnect
+                    ? "Reconnect the Page first"
+                    : webhookSubscribed
+                    ? "Live leads are on — click to re-subscribe if needed"
+                    : "Subscribe this Page to Meta webhooks so live leads are delivered instantly"
+                }
               >
-                {isSubscribing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
-                {isSubscribing ? "Enabling…" : "Enable Live Leads"}
+                {isSubscribing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : webhookSubscribed ? (
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                ) : (
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                )}
+                {isSubscribing ? "Enabling…" : webhookSubscribed ? "Live leads on" : "Enable Live Leads"}
               </Button>
               <Button
                 variant="outline"
                 size="sm"
                 className="gap-1.5 rounded-2xl text-xs"
                 onClick={() => onOpenFilter?.(s)}
-                title="Choose which lead forms to capture"
+                disabled={needsReconnect}
+                title={needsReconnect ? "Reconnect the Page first" : "Choose which lead forms to capture"}
               >
                 <Filter className="h-3.5 w-3.5" />
                 Select Forms
@@ -265,8 +300,8 @@ const SourceCard = React.memo(function SourceCard({
                 size="sm"
                 className="gap-1.5 rounded-2xl text-xs text-primary font-medium"
                 onClick={() => onSyncPastLeads?.(s)}
-                disabled={syncRunning}
-                title="Fetch past leads from Meta Graph API for this page"
+                disabled={syncRunning || needsReconnect}
+                title={needsReconnect ? "Reconnect the Page first" : "Fetch past leads from Meta Graph API for this page"}
               >
                 {syncRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DownloadCloud className="h-3.5 w-3.5" />}
                 {syncRunning ? "Syncing..." : "Sync Past Leads"}
