@@ -113,7 +113,7 @@ export async function updateLeadAction(input: z.infer<typeof updateLeadSchema>) 
   }
 }
 
-export async function updateCustomDataAction(leadId: string, data: Record<string, string>) {
+export async function updateCustomDataAction(leadId: string, data: Record<string, unknown>) {
   const { organizationId } = await requireOrg();
   try {
     const updated = await LeadService.updateCustomData(leadId, data, organizationId);

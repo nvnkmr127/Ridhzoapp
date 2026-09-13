@@ -13,6 +13,11 @@ function toStr(v: unknown): string {
   return typeof v === "string" ? v : v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
 }
 
+// Internal bookkeeping we stash in customData (lead scoring, ingestion provenance, attribution).
+// Never show these as "captured data" or let a Save stringify them — preserve them untouched.
+const INTERNAL_EXTRA_KEYS = new Set(["leadSource", "expectedValue"]);
+const isInternalKey = (k: string) => k.startsWith("_") || INTERNAL_EXTRA_KEYS.has(k);
+
 // Renders the org's DEFINED custom fields as typed inputs bound to this lead's customData.
 // Any extra keys (e.g. raw webhook payload) are shown read-only so nothing is hidden.
 export function LeadCustomFields({ leadId, initialData }: { leadId: string; initialData: Record<string, unknown> }) {
@@ -21,7 +26,10 @@ export function LeadCustomFields({ leadId, initialData }: { leadId: string; init
   const [defs, setDefs] = React.useState<CustomFieldDef[]>([]);
   const [values, setValues] = React.useState<Record<string, string>>(() => {
     const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(initialData || {})) out[k] = toStr(v);
+    for (const [k, v] of Object.entries(initialData || {})) {
+      if (isInternalKey(k)) continue; // don't expose or stringify internal keys
+      out[k] = toStr(v);
+    }
     return out;
   });
   const [saving, setSaving] = React.useState(false);
@@ -31,7 +39,7 @@ export function LeadCustomFields({ leadId, initialData }: { leadId: string; init
   }, []);
 
   const definedKeys = new Set(defs.map((d) => d.key));
-  const extraKeys = Object.keys(initialData || {}).filter((k) => !definedKeys.has(k));
+  const extraKeys = Object.keys(initialData || {}).filter((k) => !definedKeys.has(k) && !isInternalKey(k));
 
   async function save() {
     setSaving(true);
@@ -42,7 +50,11 @@ export function LeadCustomFields({ leadId, initialData }: { leadId: string; init
         toast({ variant: "destructive", title: "Required field missing", description: missing.map((m) => m.label).join(", ") });
         return;
       }
-      const res = await updateCustomDataAction(leadId, values);
+      // updateCustomData replaces customData wholesale, so carry the hidden internal keys back with
+      // their original (un-stringified) values, or Save would drop / corrupt _scoreFactors etc.
+      const preserved: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(initialData || {})) if (isInternalKey(k)) preserved[k] = v;
+      const res = await updateCustomDataAction(leadId, { ...preserved, ...values });
       if (!res.ok) {
         toast({ variant: "destructive", title: "Could not save details", description: res.message });
         return;
