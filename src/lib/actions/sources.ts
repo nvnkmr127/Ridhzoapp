@@ -166,8 +166,19 @@ export async function listFacebookFormsAction(sourceId: string) {
     const forms = await MetaTokenRefreshService.listPageLeadForms(config.pageId, config.pageAccessToken);
     return ok({ forms });
   } catch (e) {
+    if (await flagIfAuthError(e, sourceId)) {
+      return fail("VALIDATION", "Facebook access for this Page has expired. Please reconnect the Page, then try again.");
+    }
     return actionFail(e);
   }
+}
+
+/** If the error is a dead-token error, mark the source as needing reconnect. Returns whether it was. */
+async function flagIfAuthError(e: unknown, sourceId: string): Promise<boolean> {
+  const { MetaTokenRefreshService } = await import("@/domains/leads/metaTokenRefreshService");
+  if (!MetaTokenRefreshService.isAuthError(e)) return false;
+  await LeadSourceService.markNeedsReconnect(sourceId);
+  return true;
 }
 
 export async function syncPastFacebookLeadsAction(sourceId: string) {
@@ -252,6 +263,9 @@ export async function syncPastFacebookLeadsAction(sourceId: string) {
       formsProcessed: forms.length,
     });
   } catch (e) {
+    if (await flagIfAuthError(e, sourceId)) {
+      return fail("VALIDATION", "Facebook access for this Page has expired. Please reconnect the Page, then sync again.");
+    }
     return actionFail(e);
   }
 }

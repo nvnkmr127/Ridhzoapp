@@ -181,6 +181,7 @@ const SourceCard = React.memo(function SourceCard({
   const webhookUrl = `${origin}/api/webhooks/${s.type}?sourceId=${s.id}`;
   const formFilter = (s.config as any)?.formFilter;
   const hasFormFilter = Array.isArray(formFilter) && formFilter.length > 0;
+  const needsReconnect = Boolean((s.config as any)?.needsReconnect);
 
   return (
     <div className="border rounded-2xl p-5 bg-card space-y-3">
@@ -196,6 +197,11 @@ const SourceCard = React.memo(function SourceCard({
           {s.type === "facebook_lead_ads" && hasFormFilter && (
             <Badge variant="outline" className="text-xs text-primary border-primary/30">
               {formFilter.length} form{formFilter.length === 1 ? "" : "s"} selected
+            </Badge>
+          )}
+          {s.type === "facebook_lead_ads" && needsReconnect && (
+            <Badge variant="destructive" className="text-xs">
+              Needs reconnect
             </Badge>
           )}
         </div>
@@ -294,6 +300,12 @@ const SourceCard = React.memo(function SourceCard({
               </Button>
             </div>
             {isEditing && <FormFieldsEditor sourceId={s.id} initialConfig={s.config} />}
+          </div>
+        )}
+
+        {s.type === "facebook_lead_ads" && needsReconnect && (
+          <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-xl px-3 py-2">
+            Facebook access for this Page has expired or was revoked, so leads have stopped arriving. Click <strong>Connect Facebook Lead Ads</strong> above and re-select this Page to restore it.
           </div>
         )}
 

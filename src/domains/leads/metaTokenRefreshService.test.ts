@@ -65,6 +65,18 @@ describe("MetaTokenRefreshService", () => {
     });
   });
 
+  describe("isAuthError", () => {
+    it("flags dead-token errors (code 190 / OAuthException / message)", () => {
+      expect(MetaTokenRefreshService.isAuthError(Object.assign(new Error("x"), { metaCode: 190 }))).toBe(true);
+      expect(MetaTokenRefreshService.isAuthError(Object.assign(new Error("x"), { metaType: "OAuthException" }))).toBe(true);
+      expect(MetaTokenRefreshService.isAuthError(new Error("Error validating access token: expired"))).toBe(true);
+    });
+    it("does not flag transient/other errors", () => {
+      expect(MetaTokenRefreshService.isAuthError(new Error("Meta Graph API error (500)"))).toBe(false);
+      expect(MetaTokenRefreshService.isAuthError(Object.assign(new Error("rate limit"), { metaCode: 4 }))).toBe(false);
+    });
+  });
+
   it("should correctly detect if a Meta OAuth access token is expiring within buffer threshold", () => {
     const expiringAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000); // 3 days remaining
     expect(MetaTokenRefreshService.isTokenExpiringSoon(expiringAt, 7)).toBe(true);

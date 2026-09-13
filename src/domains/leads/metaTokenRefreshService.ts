@@ -32,7 +32,10 @@ async function graphGet(url: string): Promise<any> {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg = json?.error?.message || `Meta Graph API error (${res.status})`;
-    throw new Error(msg);
+    const e = new Error(msg) as Error & { metaCode?: number; metaType?: string };
+    e.metaCode = json?.error?.code;
+    e.metaType = json?.error?.type;
+    throw e;
   }
   return json;
 }
@@ -101,6 +104,16 @@ export class MetaTokenRefreshService {
     return data
       .filter((p) => p?.id && p?.access_token)
       .map((p) => ({ pageId: String(p.id), name: String(p.name ?? p.id), pageAccessToken: String(p.access_token) }));
+  }
+
+  /** True when an error from a Graph call means the Page token is dead (revoked/expired/invalid),
+   *  i.e. retrying won't help and the source needs a reconnect. */
+  static isAuthError(e: any): boolean {
+    return (
+      e?.metaCode === 190 ||
+      e?.metaType === "OAuthException" ||
+      /access token|session (has been )?(invalidated|expired)|permission/i.test(String(e?.message ?? ""))
+    );
   }
 
   /** True if the token is within the refresh-warning buffer (e.g. < 7 days remaining). */

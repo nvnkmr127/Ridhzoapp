@@ -86,7 +86,21 @@ export const ingestionWorker = new Worker<IngestionJobData>(
         // If the payload only has the leadgen_id (standard Meta webhook), fetch actual lead answers from Graph API
         if ((!rawPayload.field_data || rawPayload.field_data.length === 0) && leadgenId && pageAccessToken) {
           const { MetaTokenRefreshService } = await import("@/domains/leads/metaTokenRefreshService");
-          fbLeadData = await MetaTokenRefreshService.fetchLeadgenData(leadgenId, pageAccessToken);
+          try {
+            fbLeadData = await MetaTokenRefreshService.fetchLeadgenData(leadgenId, pageAccessToken);
+          } catch (e: any) {
+            // Dead token: flag the source for reconnect and stop — retrying a revoked token is futile.
+            if (MetaTokenRefreshService.isAuthError(e)) {
+              const { LeadSourceService } = await import("@/domains/leads/sourceService");
+              await LeadSourceService.markNeedsReconnect(matchedSource.id);
+              await db
+                .update(webhookEvents)
+                .set({ status: "failed", errorLog: { reason: "auth_error_needs_reconnect", message: e.message } })
+                .where(eq(webhookEvents.id, event.id));
+              return { status: "failed", reason: "needs_reconnect" };
+            }
+            throw e; // transient → outer catch marks failed and BullMQ retries
+          }
         }
 
         const { FacebookLeadMappingService } = await import("@/domains/leads/facebookLeadMappingService");

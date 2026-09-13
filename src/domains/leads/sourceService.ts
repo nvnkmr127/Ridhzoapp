@@ -52,12 +52,14 @@ export class LeadSourceService {
       .where(and(eq(leadSources.organizationId, organizationId), eq(leadSources.type, "facebook_lead_ads")));
     const existing = rows.find((s) => (s.config as any)?.pageId === page.pageId);
     // Merge onto any existing config so reconnecting (token refresh / re-auth) preserves the
-    // user's formFilter and other settings instead of wiping them.
+    // user's formFilter and other settings instead of wiping them. Reconnecting also clears any
+    // "needs reconnect" flag a prior auth failure raised.
     const config = {
       ...((existing?.config as Record<string, unknown>) ?? {}),
       pageId: page.pageId,
       pageAccessToken: page.pageAccessToken,
       expiresAt: page.expiresAt ? page.expiresAt.toISOString() : null,
+      needsReconnect: false,
     };
     if (existing) {
       const [updated] = await db
@@ -84,5 +86,14 @@ export class LeadSourceService {
       .returning();
 
     return updated;
+  }
+
+  /** Flags a source as needing re-auth (dead Meta token) and deactivates it, so ingestion stops
+   *  wasting Graph calls and the UI can prompt a reconnect instead of failing silently. */
+  static async markNeedsReconnect(id: string) {
+    const [source] = await db.select().from(leadSources).where(eq(leadSources.id, id)).limit(1);
+    if (!source) return;
+    const config = { ...((source.config as Record<string, unknown>) ?? {}), needsReconnect: true };
+    await db.update(leadSources).set({ config, isActive: 0 }).where(eq(leadSources.id, id));
   }
 }
