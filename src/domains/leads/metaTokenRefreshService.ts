@@ -195,10 +195,15 @@ export class MetaTokenRefreshService {
       `${GRAPH}/${encodeURIComponent(formId)}/leads?fields=${this.LEAD_FIELDS}` +
       `&limit=${pageSize}${filtering}&access_token=${encodeURIComponent(pageAccessToken)}`;
 
+    let pages = 0;
     while (url && out.length < maxTotal) {
       const json: any = await graphGet(url);
       const batch: any[] = Array.isArray(json?.data) ? json.data : [];
+      if (pages === 0) {
+        console.log(`[FB_SYNC] GET /${formId}/leads → ${batch.length} in first page (filtered=${filters.length > 0})`);
+      }
       out.push(...batch);
+      pages++;
       // `paging.next` already carries the cursor + access_token; stop when absent or batch empty.
       url = batch.length > 0 ? (json?.paging?.next ?? null) : null;
     }

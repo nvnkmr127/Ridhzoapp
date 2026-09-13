@@ -10,6 +10,7 @@ export interface FacebookSyncResult {
   skippedNoContact: number;
   formsProcessed: number;
   message?: string;
+  perForm?: Array<{ id: string; name: string; fetched: number }>;
 }
 
 // Core of the historical Facebook lead sync. Extracted from the server action so it can run either
@@ -58,10 +59,18 @@ export class FacebookSyncService {
     let importedCount = 0;
     let deduplicatedCount = 0;
     let skippedNoContact = 0;
+    const perForm: Array<{ id: string; name: string; fetched: number }> = [];
+
+    console.log(
+      `[FB_SYNC] source=${source.id} page=${pageId} forms=${forms.length}/${allForms.length} ` +
+        `since=${opts.since ?? "-"} until=${opts.until ?? "-"}`,
+    );
 
     for (const form of forms) {
       const rawLeads = await MetaTokenRefreshService.fetchFormLeads(form.id, pageAccessToken, 100, 1000, opts);
       totalFetched += rawLeads.length;
+      perForm.push({ id: form.id, name: form.name, fetched: rawLeads.length });
+      console.log(`[FB_SYNC] form=${form.id} name="${form.name}" fetched=${rawLeads.length}`);
 
       for (const fbLead of rawLeads) {
         const mapped = FacebookLeadMappingService.mapFacebookLeadToStandardLead(fbLead);
@@ -85,6 +94,6 @@ export class FacebookSyncService {
       }
     }
 
-    return { totalFetched, importedCount, deduplicatedCount, skippedNoContact, formsProcessed: forms.length };
+    return { totalFetched, importedCount, deduplicatedCount, skippedNoContact, formsProcessed: forms.length, perForm };
   }
 }

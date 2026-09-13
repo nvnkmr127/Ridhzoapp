@@ -628,10 +628,24 @@ export function SourcesManager({
         }
 
         const data = res.data as any;
-        const { totalFetched, importedCount, deduplicatedCount, skippedNoContact, formsProcessed, message } = data;
+        const { totalFetched, importedCount, deduplicatedCount, skippedNoContact, formsProcessed, message, perForm } = data;
 
         if (message) {
           toast({ title: "Past Leads Sync", description: message });
+          return;
+        }
+
+        // When Meta returned nothing, show the per-form breakdown so it's clear which form is empty.
+        if (!totalFetched) {
+          const breakdown = Array.isArray(perForm) && perForm.length
+            ? " " + perForm.map((f: any) => `${f.name}: ${f.fetched}`).join(", ")
+            : "";
+          toast({
+            title: "No leads returned by Meta",
+            description:
+              `Processed ${formsProcessed || 0} form(s), but Meta returned 0 leads.${breakdown}. ` +
+              `Try "All time", select more forms, or note that test-tool leads aren't returned by the historical API.`,
+          });
           return;
         }
 
