@@ -225,85 +225,33 @@ export async function syncPastFacebookLeadsAction(sourceId: string) {
     if (!source || source.organizationId !== organizationId) {
       return fail("NOT_FOUND", "Source not found");
     }
-
     if (source.type !== "facebook_lead_ads") {
       return fail("VALIDATION", "Past lead sync is only supported for Facebook Lead Ads.");
     }
-
     const config = (source.config as Record<string, any>) ?? {};
-    const pageId = config.pageId;
-    const pageAccessToken = config.pageAccessToken;
-
-    if (!pageId || !pageAccessToken) {
+    if (!config.pageId || !config.pageAccessToken) {
       return fail("VALIDATION", "Missing Facebook Page ID or Access Token in source configuration.");
     }
 
-    const { MetaTokenRefreshService } = await import("@/domains/leads/metaTokenRefreshService");
-    const { FacebookLeadMappingService } = await import("@/domains/leads/facebookLeadMappingService");
-    const { IngestionService } = await import("@/lib/leads/ingestion");
+    const { redisConfigured } = await import("@/lib/jobs/redis");
 
-    // 1. Fetch live lead forms on this Page
-    const allForms = await MetaTokenRefreshService.listPageLeadForms(pageId, pageAccessToken);
-    if (allForms.length === 0) {
-      return ok({ totalFetched: 0, importedCount: 0, deduplicatedCount: 0, message: "No lead forms found on this Page." });
+    // Prod: run in the background so a high-volume Page can't time out the request. The worker writes
+    // progress/result onto the source config (syncStatus + lastSync), shown on the sources page.
+    if (redisConfigured()) {
+      const { facebookSyncQueue } = await import("@/lib/jobs/workers/facebookSyncWorker");
+      const newConfig = { ...config, syncStatus: "running", syncStartedAt: new Date().toISOString() };
+      await LeadSourceService.updateSource(source.id, { config: newConfig }, organizationId);
+      await facebookSyncQueue.add(`fb-sync-${source.id}`, { sourceId: source.id, organizationId });
+      revalidatePath("/settings/sources");
+      return ok({ queued: true });
     }
 
-    // 2. Restrict to the user-selected forms (empty = every form on the Page).
-    const rawFilter = config.formFilter;
-    const formFilter: string[] = Array.isArray(rawFilter) ? rawFilter.map((s) => String(s)) : [];
-    const forms = formFilter.length > 0 ? allForms.filter((f) => formFilter.includes(f.id)) : allForms;
-    if (forms.length === 0) {
-      return ok({ totalFetched: 0, importedCount: 0, deduplicatedCount: 0, message: "None of the selected forms exist on this Page." });
-    }
-
-    let totalFetched = 0;
-    let importedCount = 0;
-    let deduplicatedCount = 0;
-    let skippedNoContact = 0;
-
-    for (const form of forms) {
-      const rawLeads = await MetaTokenRefreshService.fetchFormLeads(form.id, pageAccessToken, 100);
-      totalFetched += rawLeads.length;
-
-      for (const fbLead of rawLeads) {
-        const mapped = FacebookLeadMappingService.mapFacebookLeadToStandardLead(fbLead);
-        if (!mapped.email && !mapped.phone) {
-          skippedNoContact++;
-          continue;
-        }
-
-        const normalized = {
-          name: mapped.name,
-          email: mapped.email || undefined,
-          phone: mapped.phone || undefined,
-          sourceId: source.id,
-          organizationId,
-          externalId: mapped.facebookLeadgenId || fbLead.id,
-          expectedValue: mapped.expectedValue,
-          customData: {
-            ...mapped.customData,
-            leadSource: mapped.source,
-            _syncedFromMetaGraph: true,
-          },
-        };
-
-        const res = await IngestionService.processLead(normalized);
-        // processLead returns "success" for a new lead, "deduplicated" for an existing match.
-        if (res.status === "success") importedCount++;
-        else if (res.status === "deduplicated") deduplicatedCount++;
-      }
-    }
-
+    // Dev fallback (no Redis): run inline and return counts directly.
+    const { FacebookSyncService } = await import("@/domains/leads/facebookSyncService");
+    const result = await FacebookSyncService.run(source.id, organizationId);
     revalidatePath("/leads");
     revalidatePath("/settings/sources");
-
-    return ok({
-      totalFetched,
-      importedCount,
-      deduplicatedCount,
-      skippedNoContact,
-      formsProcessed: forms.length,
-    });
+    return ok(result);
   } catch (e) {
     if (await flagIfAuthError(e, sourceId)) {
       return fail("VALIDATION", "Facebook access for this Page has expired. Please reconnect the Page, then sync again.");

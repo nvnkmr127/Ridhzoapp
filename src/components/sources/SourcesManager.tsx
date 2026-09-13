@@ -183,6 +183,10 @@ const SourceCard = React.memo(function SourceCard({
   const hasFormFilter = Array.isArray(formFilter) && formFilter.length > 0;
   const formFilterNames = ((s.config as any)?.formFilterNames ?? {}) as Record<string, string>;
   const needsReconnect = Boolean((s.config as any)?.needsReconnect);
+  const lastSync = (s.config as any)?.lastSync as
+    | { ok?: boolean; importedCount?: number; deduplicatedCount?: number; skippedNoContact?: number; error?: string; finishedAt?: string; message?: string }
+    | undefined;
+  const syncRunning = isSyncing || (s.config as any)?.syncStatus === "running";
 
   return (
     <div className="border rounded-2xl p-5 bg-card space-y-3">
@@ -224,11 +228,11 @@ const SourceCard = React.memo(function SourceCard({
                 size="sm"
                 className="gap-1.5 rounded-2xl text-xs text-primary font-medium"
                 onClick={() => onSyncPastLeads?.(s)}
-                disabled={isSyncing}
+                disabled={syncRunning}
                 title="Fetch past leads from Meta Graph API for this page"
               >
-                {isSyncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DownloadCloud className="h-3.5 w-3.5" />}
-                {isSyncing ? "Syncing..." : "Sync Past Leads"}
+                {syncRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DownloadCloud className="h-3.5 w-3.5" />}
+                {syncRunning ? "Syncing..." : "Sync Past Leads"}
               </Button>
             </>
           )}
@@ -328,6 +332,21 @@ const SourceCard = React.memo(function SourceCard({
                 </span>
               )}
             </div>
+            {syncRunning ? (
+              <p className="mt-1.5 text-xs text-muted-foreground flex items-center gap-1.5">
+                <Loader2 className="h-3 w-3 animate-spin" /> Sync running in the background… refresh to see results.
+              </p>
+            ) : lastSync ? (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                {lastSync.ok === false
+                  ? `Last sync failed: ${lastSync.error ?? "unknown error"}`
+                  : lastSync.message
+                  ? `Last sync: ${lastSync.message}`
+                  : `Last sync: ${lastSync.importedCount ?? 0} imported, ${lastSync.deduplicatedCount ?? 0} updated${
+                      lastSync.skippedNoContact ? `, ${lastSync.skippedNoContact} skipped` : ""
+                    }.`}
+              </p>
+            ) : null}
           </div>
         )}
       </div>
@@ -575,7 +594,21 @@ export function SourcesManager({ initialSources }: { initialSources: Source[] })
           return;
         }
 
-        const { totalFetched, importedCount, deduplicatedCount, skippedNoContact, formsProcessed, message } = res.data as any;
+        const data = res.data as any;
+
+        // Background path: the worker imports and writes the result onto the source config.
+        if (data?.queued) {
+          setSources((prev) =>
+            prev.map((x) => (x.id === s.id ? { ...x, config: { ...((x.config as any) || {}), syncStatus: "running" } } : x)),
+          );
+          toast({
+            title: "Sync started",
+            description: "Importing past leads in the background. Refresh this page in a moment to see the result.",
+          });
+          return;
+        }
+
+        const { totalFetched, importedCount, deduplicatedCount, skippedNoContact, formsProcessed, message } = data;
 
         if (message) {
           toast({ title: "Past Leads Sync", description: message });

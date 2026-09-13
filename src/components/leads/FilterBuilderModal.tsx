@@ -36,6 +36,11 @@ const FIELD_OPTIONS = [
   { key: "createdAt", label: "Created Date", type: "date" },
   { key: "updatedAt", label: "Updated Date", type: "date" },
   { key: "nextFollowUpAt", label: "Follow-up Date", type: "date" },
+  // Facebook/Meta ad attribution captured on ingested leads (stored in customData).
+  { key: "customData.meta_campaign_name", label: "FB Campaign", type: "string" },
+  { key: "customData.meta_adset_name", label: "FB Ad Set", type: "string" },
+  { key: "customData.meta_ad_name", label: "FB Ad", type: "string" },
+  { key: "customData.facebook_form_id", label: "FB Form ID", type: "string" },
 ];
 
 const OPERATORS_BY_TYPE: Record<string, { key: string; label: string }[]> = {
