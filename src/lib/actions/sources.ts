@@ -81,28 +81,33 @@ export async function deleteSourceAction(id: string) {
   }
 }
 
-const facebookPagesSchema = z.array(
-  z.object({
-    pageId: z.string().min(1),
-    name: z.string().min(1),
-    pageAccessToken: z.string().min(1),
-    expiresAt: z.string().optional().nullable(),
-  })
-).min(1);
+const facebookPageIdsSchema = z.array(z.string().min(1)).min(1);
 
-export async function connectFacebookPagesAction(pages: z.infer<typeof facebookPagesSchema>) {
-  const { organizationId } = await requirePermission("sources.manage");
-  const parsed = facebookPagesSchema.safeParse(pages);
-  if (!parsed.success) return fail("VALIDATION", "Please select at least one valid Facebook Page.");
+/**
+ * Connects the Pages the user selected. Page access tokens are NOT accepted from the client — they
+ * were stashed server-side during OAuth (keyed to this user) and are read back here by pageId.
+ */
+export async function connectFacebookPagesAction(pageIds: z.infer<typeof facebookPageIdsSchema>) {
+  const { organizationId, userId } = await requirePermission("sources.manage");
+  const parsed = facebookPageIdsSchema.safeParse(pageIds);
+  if (!parsed.success) return fail("VALIDATION", "Please select at least one Facebook Page.");
 
   try {
+    const { takePendingPages } = await import("@/lib/leads/fbPendingStore");
+    const pending = await takePendingPages(userId);
+    if (!pending) return fail("VALIDATION", "Your Facebook connection session expired. Please reconnect and try again.");
+
+    const chosen = pending.pages.filter((p) => parsed.data.includes(p.pageId));
+    if (chosen.length === 0) return fail("VALIDATION", "The selected Pages weren't found. Please reconnect and try again.");
+
+    const expiresAt = pending.expiresAt ? new Date(pending.expiresAt) : null;
     const connected = [];
-    for (const p of parsed.data) {
+    for (const p of chosen) {
       const source = await LeadSourceService.upsertFacebookPageSource(organizationId, {
         pageId: p.pageId,
         name: p.name,
         pageAccessToken: p.pageAccessToken,
-        expiresAt: p.expiresAt ? new Date(p.expiresAt) : null,
+        expiresAt,
       });
       connected.push(source);
     }
@@ -222,9 +227,9 @@ export async function syncPastFacebookLeadsAction(sourceId: string) {
           sourceId: source.id,
           organizationId,
           externalId: mapped.facebookLeadgenId || fbLead.id,
+          expectedValue: mapped.expectedValue,
           customData: {
             ...mapped.customData,
-            expectedValue: mapped.expectedValue,
             leadSource: mapped.source,
             _syncedFromMetaGraph: true,
           },

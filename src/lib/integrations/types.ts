@@ -6,6 +6,7 @@ export interface NormalizedLeadPayload {
   sourceId: string;
   organizationId?: string;
   externalId?: string; // ID from the external system (e.g., Meta Lead ID)
+  expectedValue?: number | null; // e.g. a numeric budget answer → the lead's Opportunity Size
   teamId?: string;
   ownerId?: string;
   customData: Record<string, any>;

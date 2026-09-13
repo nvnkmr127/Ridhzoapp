@@ -43,9 +43,15 @@ export class IngestionService {
 
     if (existingLead) {
       // Basic Deduplication: We update the existing lead's custom data and updated_at
+      // Only fill Opportunity Size if it isn't already set — never overwrite a value a rep entered.
+      const setExpectedValue =
+        existingLead.expectedValue == null && payload.expectedValue != null
+          ? { expectedValue: String(payload.expectedValue) }
+          : {};
       const [updatedLead] = await db.update(leads)
         .set({
           customData: { ...(existingLead.customData as Record<string, any>), ...payload.customData, _lastIngestionSource: payload.sourceId },
+          ...setExpectedValue,
           updatedAt: new Date(),
         })
         .where(and(eq(leads.id, existingLead.id), eq(leads.organizationId, organizationId)))
@@ -70,6 +76,7 @@ export class IngestionService {
       phone: payload.phone,
       company: payload.company,
       sourceId: payload.sourceId,
+      expectedValue: payload.expectedValue != null ? String(payload.expectedValue) : undefined,
       customData: payload.customData,
     }).returning();
 

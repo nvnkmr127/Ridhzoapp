@@ -109,9 +109,9 @@ export const ingestionWorker = new Worker<IngestionJobData>(
           sourceId,
           organizationId,
           externalId: mapped.facebookLeadgenId || leadgenId,
+          expectedValue: mapped.expectedValue,
           customData: {
             ...mapped.customData,
-            expectedValue: mapped.expectedValue,
             leadSource: mapped.source,
           },
         };

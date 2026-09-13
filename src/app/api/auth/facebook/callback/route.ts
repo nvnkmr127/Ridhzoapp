@@ -14,6 +14,12 @@ export async function GET(req: NextRequest) {
   // Popup mode is requested via the `popup=true` query or a `state` that includes "popup".
   const isPopup = searchParams.get("popup") === "true" || (state ?? "").includes("popup");
 
+  // CSRF (double-submit): the client puts a random nonce in both `state` (as popup_<nonce>) and a
+  // first-party cookie. A forged callback can't know/set the victim's cookie, so a mismatch is
+  // rejected. Enforced only in the popup flow the real client uses.
+  const stateNonce = (state ?? "").startsWith("popup_") ? state!.slice("popup_".length) : null;
+  const cookieNonce = req.cookies.get("fb_oauth_state")?.value ?? null;
+
   // Single exit point: in popup mode, post the outcome back to the opener and close; otherwise
   // fall back to a normal redirect. This is why a denied/failed connection now shows a message
   // instead of leaving the popup stranded on a full page.
@@ -46,6 +52,11 @@ export async function GET(req: NextRequest) {
     return respond({ error: "missing_code" }, false);
   }
 
+  if (isPopup && (!stateNonce || !cookieNonce || stateNonce !== cookieNonce)) {
+    console.warn("[META_OAUTH_CALLBACK] state/cookie nonce mismatch — rejecting as possible CSRF");
+    return respond({ error: "csrf" }, false);
+  }
+
   // Honest gate: without real Meta app credentials we cannot connect a Page. Don't fake it.
   if (!MetaTokenRefreshService.isConfigured()) {
     console.warn("[META_OAUTH_CALLBACK] Facebook integration not configured — set FACEBOOK_APP_ID / FACEBOOK_APP_SECRET");
@@ -68,19 +79,24 @@ export async function GET(req: NextRequest) {
 
     const session = await getServerSession(authOptions);
     const organizationId = session?.user?.organizationId;
+    const userId = session?.user?.id;
     if (pages.length === 0) return respond({ error: "no_pages" }, false);
 
-    // In popup mode, send the discovered pages to the opener so the user can choose which page to connect
+    // In popup mode, stash the Page tokens server-side (keyed to this user) and send the opener only
+    // pageId + name — tokens never touch the browser. connectFacebookPagesAction reads them back.
     if (isPopup) {
+      if (!userId) return respond({ error: "server_error" }, false);
+      const { setPendingPages } = await import("@/lib/leads/fbPendingStore");
+      await setPendingPages(userId, {
+        pages: pages.map((p) => ({ pageId: p.pageId, name: p.name, pageAccessToken: p.pageAccessToken })),
+        expiresAt: longLivedResult.expiresAt.toISOString(),
+      });
+
       const payload = {
         type: "OAUTH_RESPONSE",
         provider: "facebook",
         status: "pages_ready",
-        pages: pages.map((p) => ({
-          pageId: p.pageId,
-          name: p.name,
-          pageAccessToken: p.pageAccessToken,
-        })),
+        pages: pages.map((p) => ({ pageId: p.pageId, name: p.name })),
         expiresAt: longLivedResult.expiresAt.toISOString(),
       };
       const json = JSON.stringify(payload).replace(/</g, "\\u003c");
@@ -90,7 +106,9 @@ export async function GET(req: NextRequest) {
   if (window.opener) { window.opener.postMessage(${json}, window.location.origin); window.close(); }
   else { window.location.href = "/settings/sources"; }
 </script></body></html>`;
-      return new NextResponse(html, { headers: { "Content-Type": "text/html" } });
+      return new NextResponse(html, {
+        headers: { "Content-Type": "text/html", "Set-Cookie": "fb_oauth_state=; Max-Age=0; Path=/; SameSite=Lax" },
+      });
     }
 
     // Non-popup fallback

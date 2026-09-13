@@ -328,8 +328,7 @@ export function SourcesManager({ initialSources }: { initialSources: Source[] })
 
   // Facebook Page Selection modal state
   const [pageSelectorOpen, setPageSelectorOpen] = React.useState(false);
-  const [discoveredPages, setDiscoveredPages] = React.useState<Array<{ pageId: string; name: string; pageAccessToken: string }>>([]);
-  const [discoveredExpiresAt, setDiscoveredExpiresAt] = React.useState<string | null>(null);
+  const [discoveredPages, setDiscoveredPages] = React.useState<Array<{ pageId: string; name: string }>>([]);
   const [selectedPageIds, setSelectedPageIds] = React.useState<string[]>([]);
   const [isSubmittingPages, setIsSubmittingPages] = React.useState(false);
 
@@ -344,6 +343,7 @@ export function SourcesManager({ initialSources }: { initialSources: Source[] })
       facebook_not_configured: "Facebook isn't fully configured on the server (FACEBOOK_APP_ID / FACEBOOK_APP_SECRET).",
       server_error: "Something went wrong completing the connection. Please try again.",
       no_pages: "No Facebook Pages found on your account. Create or get admin access to a Page, then reconnect.",
+      csrf: "This connection request couldn't be verified. Please start the connection again from this page.",
     };
 
     function handleOAuthMessage(event: MessageEvent) {
@@ -362,8 +362,7 @@ export function SourcesManager({ initialSources }: { initialSources: Source[] })
       }
 
       if (event.data.status === "pages_ready") {
-        const pages: Array<{ pageId: string; name: string; pageAccessToken: string }> = event.data.pages || [];
-        const expiresAt: string | null = event.data.expiresAt || null;
+        const pages: Array<{ pageId: string; name: string }> = event.data.pages || [];
         if (pages.length === 0) {
           toast({
             variant: "destructive",
@@ -373,7 +372,6 @@ export function SourcesManager({ initialSources }: { initialSources: Source[] })
           return;
         }
         setDiscoveredPages(pages);
-        setDiscoveredExpiresAt(expiresAt);
         // Default select first page
         setSelectedPageIds([pages[0].pageId]);
         setPageSelectorOpen(true);
@@ -414,18 +412,9 @@ export function SourcesManager({ initialSources }: { initialSources: Source[] })
       return;
     }
 
-    const toConnect = discoveredPages
-      .filter((p) => selectedPageIds.includes(p.pageId))
-      .map((p) => ({
-        pageId: p.pageId,
-        name: p.name,
-        pageAccessToken: p.pageAccessToken,
-        expiresAt: discoveredExpiresAt,
-      }));
-
     setIsSubmittingPages(true);
     try {
-      const res = await connectFacebookPagesAction(toConnect);
+      const res = await connectFacebookPagesAction(selectedPageIds);
       if (!res.ok) {
         toast({
           variant: "destructive",
@@ -437,7 +426,7 @@ export function SourcesManager({ initialSources }: { initialSources: Source[] })
 
       toast({
         title: "Facebook Page Connected",
-        description: `Successfully connected ${toConnect.length} Page(s) for lead capture.`,
+        description: `Successfully connected ${selectedPageIds.length} Page(s) for lead capture.`,
       });
 
       const newlyAdded: Source[] = (res.data?.connected || []).map((s: any) => ({
@@ -623,9 +612,14 @@ export function SourcesManager({ initialSources }: { initialSources: Source[] })
         // so the click never dead-ends silently.
         const redirectUri = encodeURIComponent(`${origin}/api/auth/facebook/callback`);
         const scope = encodeURIComponent("pages_show_list,leads_retrieval,pages_manage_ads");
+        // CSRF double-submit: same nonce in a first-party cookie and in `state` (kept as popup_<nonce>
+        // so the callback still detects popup mode). The callback rejects any mismatch.
+        const nonce = (crypto.randomUUID?.() ?? String(Math.random()).slice(2)) + Date.now().toString(36);
+        document.cookie = `fb_oauth_state=${nonce}; Max-Age=600; Path=/; SameSite=Lax`;
+        const state = `popup_${nonce}`;
         const authUrl =
           `https://www.facebook.com/v20.0/dialog/oauth?client_id=${appId}` +
-          `&redirect_uri=${redirectUri}&scope=${scope}&response_type=code&state=tenant_oauth_popup`;
+          `&redirect_uri=${redirectUri}&scope=${scope}&response_type=code&state=${encodeURIComponent(state)}`;
         const w = 600;
         const h = 720;
         const left = window.screenX + Math.max(0, (window.outerWidth - w) / 2);

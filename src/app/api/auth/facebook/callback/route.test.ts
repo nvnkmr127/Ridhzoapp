@@ -2,7 +2,17 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { GET } from "./route";
 import { NextRequest } from "next/server";
 
-vi.mock("next-auth/next", () => ({ getServerSession: vi.fn().mockResolvedValue(null) }));
+vi.mock("next-auth/next", () => ({
+  getServerSession: vi.fn().mockResolvedValue({ user: { id: "user-1", organizationId: "org-1" } }),
+}));
+
+// Stash is exercised separately; here we just confirm the callback no longer leaks tokens to the client.
+vi.mock("@/lib/leads/fbPendingStore", () => ({ setPendingPages: vi.fn().mockResolvedValue(undefined) }));
+
+// Non-popup fallback writes sources directly; keep it off the real DB.
+vi.mock("@/domains/leads/sourceService", () => ({
+  LeadSourceService: { upsertFacebookPageSource: vi.fn().mockResolvedValue({ id: "src-1" }) },
+}));
 
 vi.mock("@/domains/leads/metaTokenRefreshService", () => {
   const configured = () => Boolean(process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET);
@@ -68,15 +78,31 @@ describe("Meta OAuth Callback Endpoint", () => {
     expect(res.headers.get("location")).toContain("pageId=page_100200300");
   });
 
-  it("should return HTML postMessage with pages_ready in popup mode", async () => {
+  it("should return HTML postMessage with pages_ready in popup mode (matching CSRF nonce)", async () => {
     process.env.FACEBOOK_APP_ID = "real_app_id";
     process.env.FACEBOOK_APP_SECRET = "real_app_secret";
-    const req = new NextRequest("http://localhost:3000/api/auth/facebook/callback?code=auth_code_123&state=tenant_oauth_popup");
+    const req = new NextRequest("http://localhost:3000/api/auth/facebook/callback?code=auth_code_123&state=popup_n0nce", {
+      headers: { cookie: "fb_oauth_state=n0nce" },
+    });
     const res = await GET(req);
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("pages_ready");
     expect(html).toContain("page_100200300");
     expect(html).toContain("Acme Corp");
+    // Page access token must NOT be sent to the browser anymore.
+    expect(html).not.toContain("page_access_token_abc");
+  });
+
+  it("should reject popup callback when the CSRF nonce cookie is missing/mismatched", async () => {
+    process.env.FACEBOOK_APP_ID = "real_app_id";
+    process.env.FACEBOOK_APP_SECRET = "real_app_secret";
+    const req = new NextRequest("http://localhost:3000/api/auth/facebook/callback?code=auth_code_123&state=popup_expected", {
+      headers: { cookie: "fb_oauth_state=different" },
+    });
+    const res = await GET(req);
+    const html = await res.text();
+    expect(html).toContain("error");
+    expect(html).not.toContain("pages_ready");
   });
 });
