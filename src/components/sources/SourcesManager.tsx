@@ -1047,14 +1047,9 @@ export function SourcesManager({
             {discoveredPages.map((page) => {
               const isSelected = selectedPageIds.includes(page.pageId);
               return (
-                <div
+                <label
                   key={page.pageId}
-                  onClick={() => {
-                    setSelectedPageIds((prev) =>
-                      prev.includes(page.pageId) ? prev.filter((id) => id !== page.pageId) : [...prev, page.pageId]
-                    );
-                  }}
-                  className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-colors ${
+                  className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary ${
                     isSelected ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
                   }`}
                 >
@@ -1062,14 +1057,25 @@ export function SourcesManager({
                     <p className="font-medium text-sm text-foreground">{page.name}</p>
                     <p className="text-xs text-muted-foreground font-mono">Page ID: {page.pageId}</p>
                   </div>
+                  <input
+                    type="checkbox"
+                    className="sr-only"
+                    checked={isSelected}
+                    onChange={() =>
+                      setSelectedPageIds((prev) =>
+                        prev.includes(page.pageId) ? prev.filter((id) => id !== page.pageId) : [...prev, page.pageId]
+                      )
+                    }
+                  />
                   <div
+                    aria-hidden="true"
                     className={`h-5 w-5 rounded-md border flex items-center justify-center transition-colors ${
                       isSelected ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground/40"
                     }`}
                   >
                     {isSelected && <CheckCircle2 className="h-4 w-4" />}
                   </div>
-                </div>
+                </label>
               );
             })}
           </div>
@@ -1190,14 +1196,9 @@ export function SourcesManager({
                 {availableForms.map((form) => {
                   const isSelected = selectedFormIds.includes(form.id);
                   return (
-                    <div
+                    <label
                       key={form.id}
-                      onClick={() =>
-                        setSelectedFormIds((prev) =>
-                          prev.includes(form.id) ? prev.filter((id) => id !== form.id) : [...prev, form.id]
-                        )
-                      }
-                      className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-colors ${
+                      className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary ${
                         isSelected ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
                       }`}
                     >
@@ -1205,14 +1206,25 @@ export function SourcesManager({
                         <p className="font-medium text-sm text-foreground truncate">{form.name}</p>
                         <p className="text-xs text-muted-foreground font-mono truncate">ID: {form.id}</p>
                       </div>
+                      <input
+                        type="checkbox"
+                        className="sr-only"
+                        checked={isSelected}
+                        onChange={() =>
+                          setSelectedFormIds((prev) =>
+                            prev.includes(form.id) ? prev.filter((id) => id !== form.id) : [...prev, form.id]
+                          )
+                        }
+                      />
                       <div
+                        aria-hidden="true"
                         className={`h-5 w-5 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
                           isSelected ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground/40"
                         }`}
                       >
                         {isSelected && <CheckCircle2 className="h-4 w-4" />}
                       </div>
-                    </div>
+                    </label>
                   );
                 })}
               </div>
