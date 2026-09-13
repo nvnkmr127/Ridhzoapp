@@ -40,6 +40,7 @@ export const assignmentRules = pgTable('assignment_rules', {
 
 export const leads = pgTable('leads', {
   id: uuid('id').defaultRandom().primaryKey(),
+  displayId: integer('display_id'), // human-friendly per-org sequential number (Lead #1042); assigned by DB trigger on insert
   organizationId: uuid('organization_id').references(() => organizations.id).notNull(), // tenant; backfilled
   name: varchar('name', { length: 255 }).notNull(),
   phone: varchar('phone', { length: 255 }),
@@ -85,7 +86,16 @@ export const leads = pgTable('leads', {
   orgPhoneUnique: uniqueIndex('leads_org_phone_unique')
     .on(table.organizationId, table.phone)
     .where(sql`${table.deletedAt} IS NULL AND ${table.phone} IS NOT NULL AND ${table.phone} <> ''`),
+  // Per-tenant sequential display number. Multiple NULLs are allowed pre-backfill.
+  orgDisplayIdUnique: uniqueIndex('leads_org_display_id_unique').on(table.organizationId, table.displayId),
 }));
+
+// Per-org counter for the human-friendly lead number. A trigger bumps last_value atomically on
+// each lead insert (ON CONFLICT upsert), so every insert path gets a number without app code.
+export const leadCounters = pgTable('lead_counters', {
+  organizationId: uuid('organization_id').primaryKey().references(() => organizations.id),
+  lastValue: integer('last_value').notNull().default(0),
+});
 
 export const leadStatusHistory = pgTable('lead_status_history', {
   id: uuid('id').defaultRandom().primaryKey(),

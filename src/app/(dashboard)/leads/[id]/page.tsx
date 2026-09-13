@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, User, Phone, Mail, Building, Sparkles, Flame, Radio } from "lucide-react";
+import { ArrowLeft, User, Phone, Mail, Building, Sparkles, Flame, Radio, SlidersHorizontal, Braces } from "lucide-react";
 import Link from "next/link";
 import { LeadService } from "@/domains/leads/service";
 import { LeadSourceService } from "@/domains/leads/sourceService";
@@ -29,6 +29,7 @@ import { LeadStageAndValueControl } from "@/components/leads/LeadStageAndValueCo
 import { LeadSequencesCard } from "@/components/leads/LeadSequencesCard";
 import { LeadAiRecap } from "@/components/leads/LeadAiRecap";
 import { LeadInsightsCard } from "@/components/leads/LeadInsightsCard";
+import { SectionCard } from "@/components/leads/SectionCard";
 import { SequenceService } from "@/domains/leads/sequenceService";
 import { LeadHeaderQuickActions } from "@/components/leads/LeadHeaderQuickActions";
 import { LeadRemindersTab } from "@/components/leads/LeadRemindersTab";
@@ -214,7 +215,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
 
       {/* Buying signal — a recent content open is a hot moment to reach out. */}
       {recentOpen && (
-        <div className="rounded-xl border border-orange-500/40 bg-orange-500/5 px-4 py-3 text-sm flex items-center gap-2.5">
+        <div className="rounded-2xl border border-orange-500/40 bg-orange-500/5 px-4 py-3 text-sm flex items-center gap-2.5 shadow-[inset_0_1px_0_0_hsl(0_0%_100%/0.05)]">
           <Flame className="h-4 w-4 text-orange-500 shrink-0" />
           <span>
             <span className="font-semibold">Buying signal:</span> {lead.name?.split(" ")[0] || "This lead"} opened{" "}
@@ -224,7 +225,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       )}
 
       {(lead.status === "lost" || lead.status === "unqualified") && lead.lostReason && (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-sm">
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-sm shadow-[inset_0_1px_0_0_hsl(0_0%_100%/0.05)]">
           <span className="font-medium capitalize">{lead.status}</span>
           <span className="text-muted-foreground"> — reason: {lead.lostReason}</span>
         </div>
@@ -249,6 +250,12 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground mt-0.5">
+              {lead.displayId != null && (
+                <>
+                  <span className="font-medium tabular-nums text-foreground">Lead #{lead.displayId}</span>
+                  {" · "}
+                </>
+              )}
               Created{" "}
               {lead.createdAt ? (
                 <LocalTime iso={lead.createdAt} mode="date" fallback="recently" />
@@ -267,14 +274,13 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
         {/* Left Column: Lead Info & Attributes */}
         <div className="lg:col-span-1 space-y-6">
           {/* Next Best Action — the coach prompt */}
-          <div className={`rounded-2xl border p-5 space-y-2 ${nbaAccent}`}>
-            <h3 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-              <Sparkles className="h-4 w-4" /> Next Best Action
-            </h3>
-            <p className="text-base font-semibold leading-snug">{nba.label}</p>
-            <p className="text-sm text-muted-foreground">{nba.reason}</p>
-            <LeadAiRecap leadId={lead.id} />
-          </div>
+          <SectionCard icon={Sparkles} title="Next Best Action" className={nbaAccent}>
+            <div className="space-y-2">
+              <p className="text-base font-semibold leading-snug">{nba.label}</p>
+              <p className="text-sm text-muted-foreground">{nba.reason}</p>
+              <LeadAiRecap leadId={lead.id} />
+            </div>
+          </SectionCard>
 
           {/* Why this score + enrichment evidence — only renders when there's something to show */}
           <LeadInsightsCard score={lead.score} customData={lead.customData} />
@@ -289,11 +295,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           <ReengagementPlanCard leadId={lead.id} organizationId={organizationId} />
 
           {/* Quick Controls Card */}
-          <div className="rounded-2xl border border-border p-5 bg-card space-y-4">
-            <h3 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-              Lead Management
-            </h3>
-
+          <SectionCard icon={SlidersHorizontal} title="Lead Management">
             <div className="space-y-4">
               <div>
                 <span className="text-xs text-muted-foreground block mb-1.5">Status</span>
@@ -320,13 +322,10 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 />
               </div>
             </div>
-          </div>
+          </SectionCard>
 
           {/* Lead Source & Attribution Card */}
-          <div className="rounded-2xl border border-border p-5 bg-card space-y-4">
-            <h3 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-              <Radio className="h-4 w-4" /> Lead Source
-            </h3>
+          <SectionCard icon={Radio} title="Lead Source">
             <div className="space-y-3 text-sm">
               <div>
                 <span className="text-xs text-muted-foreground block">Source</span>
@@ -346,14 +345,10 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 </div>
               ))}
             </div>
-          </div>
+          </SectionCard>
 
           {/* Contact Information Card */}
-          <div className="rounded-2xl border border-border p-5 bg-card space-y-4">
-            <h3 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-              <User className="h-4 w-4" /> Contact Info
-            </h3>
-
+          <SectionCard icon={User} title="Contact Info">
             <div className="space-y-3.5 text-sm">
               <div className="flex items-start gap-3">
                 <Mail className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
@@ -401,15 +396,12 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 </div>
               </div>
             </div>
-          </div>
+          </SectionCard>
 
           {/* Custom Fields Card */}
-          <div className="rounded-2xl border border-border p-5 bg-card space-y-4">
-            <h3 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground">
-              Custom Attributes
-            </h3>
+          <SectionCard icon={Braces} title="Custom Attributes">
             <LeadCustomFields leadId={lead.id} initialData={(lead.customData as Record<string, unknown>) ?? {}} />
-          </div>
+          </SectionCard>
         </div>
 
         {/* Right Column: Sequences & Activity/Messaging Tabs */}
@@ -418,7 +410,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           <LeadSequencesCard leadId={lead.id} availableSequences={availableSequences} initialEnrolled={enrolledSequences} />
 
           {/* Tabs Container */}
-          <div className="rounded-2xl border border-border bg-card overflow-hidden">
+          <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-[inset_0_1px_0_0_hsl(0_0%_100%/0.05)]">
             <Tabs defaultValue="activity" className="w-full">
               <div className="border-b border-border px-4 overflow-x-auto">
                 <TabsList className="h-auto bg-transparent gap-1 p-0 justify-start">

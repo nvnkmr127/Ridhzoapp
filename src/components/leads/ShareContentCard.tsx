@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { SectionCard } from "./SectionCard";
 import { createShareAction } from "@/lib/actions/sharedContent";
 import type { SharedLinkSummary } from "@/domains/leads/contentSharingService";
 import { formatDistanceToNow } from "date-fns";
@@ -77,16 +78,12 @@ export function ShareContentCard({
   }
 
   return (
-    <div className="rounded-2xl border border-border p-5 bg-card space-y-4">
-      <div>
-        <h3 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-          <Send className="h-4 w-4" /> Share &amp; Track Content
-        </h3>
-        <p className="text-xs text-muted-foreground mt-1">
-          Share a brochure or page link and get alerted the moment they open it.
-        </p>
-      </div>
-
+    <SectionCard
+      icon={Send}
+      title="Share & Track Content"
+      description="Share a brochure or page link and get alerted the moment they open it."
+    >
+      <div className="space-y-4">
       <form onSubmit={create} className="space-y-2">
         <Input
           placeholder="Title (e.g. Pricing brochure)"
@@ -152,6 +149,7 @@ export function ShareContentCard({
           ))}
         </div>
       )}
-    </div>
+      </div>
+    </SectionCard>
   );
 }

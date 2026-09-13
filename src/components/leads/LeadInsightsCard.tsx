@@ -1,4 +1,5 @@
 import { Gauge } from "lucide-react";
+import { SectionCard } from "./SectionCard";
 
 // Server-rendered "why" for a lead: the score broken into its contributing factors (#3) and any
 // provider enrichment as observed evidence (#1). Reads straight from customData — no AI call, no
@@ -22,11 +23,8 @@ export function LeadInsightsCard({ score, customData }: { score: number | null; 
   if (factors.length === 0 && attrEntries.length === 0) return null;
 
   return (
-    <div className="rounded-2xl border border-border p-5 bg-card space-y-4">
-      <h3 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-        <Gauge className="h-4 w-4" /> Why this score
-      </h3>
-
+    <SectionCard icon={Gauge} title="Why this score">
+      <div className="space-y-4">
       {factors.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-baseline gap-2">
@@ -61,6 +59,7 @@ export function LeadInsightsCard({ score, customData }: { score: number | null; 
           </dl>
         </div>
       )}
-    </div>
+      </div>
+    </SectionCard>
   );
 }

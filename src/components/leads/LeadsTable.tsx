@@ -29,7 +29,7 @@ import { getTenantStatusSchemaAction } from "@/lib/actions/customStatuses";
 import { LocalTime } from "@/components/LocalTime";
 
 type Lead = {
-  id: string; name: string; email: string | null; phone: string | null; status: string; createdAt: Date;
+  id: string; displayId?: number | null; name: string; email: string | null; phone: string | null; status: string; createdAt: Date;
   company?: string | null;
   customData?: unknown;
   score?: number | null; lastContactedAt?: Date | null; nextFollowUpAt?: Date | null;
@@ -321,6 +321,7 @@ export function LeadsTable({
                   aria-label="Select all leads on page"
                 />
               </TableHead>
+              <TableHead>ID</TableHead>
               <TableHead>Name</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Phone</TableHead>
@@ -341,6 +342,9 @@ export function LeadsTable({
                     onChange={() => toggle(lead.id)}
                     aria-label={`Select ${lead.name}`}
                   />
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground tabular-nums">
+                  {lead.displayId != null ? `#${lead.displayId}` : "—"}
                 </TableCell>
                 <TableCell className="font-medium">
                   <Link href={`/leads/${lead.id}`} className="hover:underline text-primary">

@@ -7,6 +7,7 @@ import { GitFork, Plus, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { SectionCard } from "./SectionCard";
 import { enrollLeadsAction, stopEnrollmentAction } from "@/lib/actions/sequences";
 
 interface SequenceOption {
@@ -60,12 +61,10 @@ export function LeadSequencesCard({ leadId, availableSequences = [], initialEnro
   }
 
   return (
-    <div className="border rounded-2xl p-5 bg-card space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-          <GitFork className="h-4 w-4" /> Sequences
-        </h3>
-
+    <SectionCard
+      icon={GitFork}
+      title="Sequences"
+      action={
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 font-medium text-primary">
@@ -104,8 +103,8 @@ export function LeadSequencesCard({ leadId, availableSequences = [], initialEnro
             </div>
           </DialogContent>
         </Dialog>
-      </div>
-
+      }
+    >
       {enrolled.length === 0 ? (
         <div className="text-center py-8 px-4 border border-dashed rounded-lg bg-muted/20 space-y-2">
           <GitFork className="h-8 w-8 text-muted-foreground/60 mx-auto stroke-[1.5]" />
@@ -147,6 +146,6 @@ export function LeadSequencesCard({ leadId, availableSequences = [], initialEnro
           ))}
         </div>
       )}
-    </div>
+    </SectionCard>
   );
 }
