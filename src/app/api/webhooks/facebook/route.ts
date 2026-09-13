@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { FacebookLeadMappingService } from "@/domains/leads/facebookLeadMappingService";
+import { FacebookIngestionService } from "@/domains/leads/facebookIngestionService";
 import { db } from "@/db";
 import { webhookEvents, leadSources } from "@/db/schema";
 import { eq, and, sql } from "drizzle-orm";
-import { ingestionQueue } from "@/lib/jobs/workers/ingestionWorker";
 import { verifyMetaSignature } from "@/lib/webhooks/signature";
 
 /** True if any Facebook source is connected for this Page. Meta can deliver leadgen events for
@@ -67,65 +67,84 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Unrecognized Facebook payload" }, { status: 400 });
     }
 
-    const processedEvents = [];
+    const processedEvents: string[] = [];
+    let hadTransientFailure = false;
 
     for (const entry of body.entry) {
       if (!Array.isArray(entry.changes)) continue;
 
       for (const change of entry.changes) {
-        if (change.field === "leadgen" && change.value) {
-          const leadgenValue = change.value;
-          const leadgenId = leadgenValue.leadgen_id;
-          const formId = leadgenValue.form_id;
-          const idempotencyKey = `fb_${leadgenId}`;
+        if (change.field !== "leadgen" || !change.value) continue;
 
-          // Ignore leads for Pages nobody has connected — don't create events the worker can only fail.
-          if (!(await hasSourceForPage(leadgenValue.page_id))) {
-            continue;
-          }
+        const leadgenValue = change.value;
+        const leadgenId = leadgenValue.leadgen_id;
+        const formId = leadgenValue.form_id;
+        const pageId = leadgenValue.page_id;
+        const idempotencyKey = `fb_${leadgenId}`;
 
-          // Meta retries deliveries; dedupe on the leadgen id so we don't store duplicate events or
-          // make duplicate Graph calls. ponytail: app-level check (no unique index / prod migration);
-          // a rare concurrent double-delivery still gets caught by lead-level dedup downstream.
-          const existing = await db
-            .select({ id: webhookEvents.id })
-            .from(webhookEvents)
-            .where(eq(webhookEvents.idempotencyKey, idempotencyKey))
-            .limit(1);
-          if (existing.length > 0) {
-            processedEvents.push(existing[0].id);
-            continue;
-          }
+        // Always log receipt so it's provable Meta is actually calling us (top debugging question).
+        console.log(`[FACEBOOK_WEBHOOK] leadgen received page=${pageId} form=${formId} leadgen=${leadgenId}`);
 
-          // Store event in database
-          const [event] = await db
+        // Ignore leads for Pages nobody has connected — but log it, so a page-id mismatch is visible
+        // instead of a silent drop.
+        if (!(await hasSourceForPage(pageId))) {
+          console.warn(`[FACEBOOK_WEBHOOK] no connected source for page=${pageId} — skipping leadgen=${leadgenId}`);
+          continue;
+        }
+
+        // Find-or-create the event, idempotent on the leadgen id (Meta re-delivers). A previously
+        // failed event is reprocessed on redelivery; a processed one is skipped.
+        const existing = await db
+          .select()
+          .from(webhookEvents)
+          .where(eq(webhookEvents.idempotencyKey, idempotencyKey))
+          .limit(1);
+        let event = existing[0];
+        if (event?.status === "processed") {
+          processedEvents.push(event.id);
+          continue;
+        }
+        if (!event) {
+          const [created] = await db
             .insert(webhookEvents)
             .values({
               provider: "facebook",
               payload: {
                 leadgen_id: leadgenId,
                 form_id: formId,
-                page_id: leadgenValue.page_id,
+                page_id: pageId,
                 ad_id: leadgenValue.ad_id,
                 raw: leadgenValue,
               },
               idempotencyKey,
             })
             .returning();
+          event = created;
+        }
+        if (!event) continue;
 
-          // Enqueue for async lead ingestion & Graph API field resolution
-          await ingestionQueue.add(`ingest-fb-${event.id}`, {
-            webhookEventId: event.id,
-            provider: "facebook",
-            leadgenId,
-            formId,
-          });
-
+        // Process INLINE — no dependency on the droplet worker. On a transient failure we mark the
+        // event failed and return 5xx so Meta re-delivers (its built-in retry), and the redelivery
+        // reprocesses the still-unprocessed event. Auth/skip/success are terminal (handled inside).
+        try {
+          const result = await FacebookIngestionService.processEvent(event);
+          console.log(`[FACEBOOK_WEBHOOK] processed leadgen=${leadgenId} → ${result.status}${result.reason ? ` (${result.reason})` : ""}`);
           processedEvents.push(event.id);
+        } catch (e: any) {
+          console.error(`[FACEBOOK_WEBHOOK] inline processing failed for leadgen=${leadgenId}:`, e?.message);
+          await db
+            .update(webhookEvents)
+            .set({ status: "failed", errorLog: { message: e?.message, stack: e?.stack } })
+            .where(eq(webhookEvents.id, event.id));
+          hadTransientFailure = true;
         }
       }
     }
 
+    // A 5xx tells Meta to redeliver so transient failures get another attempt; otherwise 202.
+    if (hadTransientFailure) {
+      return NextResponse.json({ success: false, error: "Retry later", processedEvents }, { status: 503 });
+    }
     return NextResponse.json({ success: true, processedEvents }, { status: 202 });
   } catch (error: any) {
     console.error("[FACEBOOK_WEBHOOK_ERROR]", error);
