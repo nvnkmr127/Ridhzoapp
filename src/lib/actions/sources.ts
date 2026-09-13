@@ -6,6 +6,37 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { ok, fail, actionFail } from "@/lib/actions/result";
 import { sanitizeFields } from "@/lib/leads/formFields";
+import { db } from "@/db";
+import { webhookEvents } from "@/db/schema";
+import { and, eq, sql } from "drizzle-orm";
+
+/** After a Page reconnects, requeue the leads that failed during the token outage so nothing is
+ *  permanently lost. Scoped to auth-failure events for that page. Best-effort. */
+async function requeueAuthFailedEvents(pageId: string): Promise<number> {
+  try {
+    const rows = await db
+      .select({ id: webhookEvents.id })
+      .from(webhookEvents)
+      .where(
+        and(
+          eq(webhookEvents.provider, "facebook"),
+          eq(webhookEvents.status, "failed"),
+          sql`${webhookEvents.payload}->>'page_id' = ${pageId}`,
+          sql`${webhookEvents.errorLog}->>'reason' = 'auth_error_needs_reconnect'`,
+        ),
+      );
+    if (rows.length === 0) return 0;
+    const { ingestionQueue } = await import("@/lib/jobs/workers/ingestionWorker");
+    for (const r of rows) {
+      await db.update(webhookEvents).set({ status: "pending", errorLog: null }).where(eq(webhookEvents.id, r.id));
+      await ingestionQueue.add(`ingest-fb-replay-${r.id}`, { webhookEventId: r.id, provider: "facebook" });
+    }
+    return rows.length;
+  } catch (e) {
+    console.error("[sources] requeueAuthFailedEvents failed (non-fatal)", e);
+    return 0;
+  }
+}
 
 export async function listSourcesAction() {
   const { organizationId } = await requireOrg();
@@ -102,6 +133,7 @@ export async function connectFacebookPagesAction(pageIds: z.infer<typeof faceboo
 
     const expiresAt = pending.expiresAt ? new Date(pending.expiresAt) : null;
     const connected = [];
+    let replayed = 0;
     for (const p of chosen) {
       const source = await LeadSourceService.upsertFacebookPageSource(organizationId, {
         pageId: p.pageId,
@@ -110,9 +142,11 @@ export async function connectFacebookPagesAction(pageIds: z.infer<typeof faceboo
         expiresAt,
       });
       connected.push(source);
+      // Recover any leads that failed while this Page's token was dead.
+      replayed += await requeueAuthFailedEvents(p.pageId);
     }
     revalidatePath("/settings/sources");
-    return ok({ connected });
+    return ok({ connected, replayed });
   } catch (e) {
     return actionFail(e);
   }
@@ -121,6 +155,8 @@ export async function connectFacebookPagesAction(pageIds: z.infer<typeof faceboo
 const formFilterSchema = z.object({
   sourceId: z.string().uuid(),
   formFilter: z.array(z.string()).optional(),
+  // id → name, so the source card can show which forms are selected without a Graph round-trip.
+  formNames: z.record(z.string(), z.string()).optional(),
 });
 
 /** Saves the whitelist of Facebook lead-form IDs this source should capture. Empty = all forms. */
@@ -139,6 +175,7 @@ export async function updateSourceFormFilterAction(input: z.infer<typeof formFil
     const newConfig = {
       ...currentConfig,
       formFilter: parsed.data.formFilter || [],
+      formFilterNames: parsed.data.formNames || {},
     };
 
     const updated = await LeadSourceService.updateSource(source.id, { config: newConfig }, organizationId);
@@ -222,6 +259,7 @@ export async function syncPastFacebookLeadsAction(sourceId: string) {
     let totalFetched = 0;
     let importedCount = 0;
     let deduplicatedCount = 0;
+    let skippedNoContact = 0;
 
     for (const form of forms) {
       const rawLeads = await MetaTokenRefreshService.fetchFormLeads(form.id, pageAccessToken, 100);
@@ -229,7 +267,10 @@ export async function syncPastFacebookLeadsAction(sourceId: string) {
 
       for (const fbLead of rawLeads) {
         const mapped = FacebookLeadMappingService.mapFacebookLeadToStandardLead(fbLead);
-        if (!mapped.email && !mapped.phone) continue;
+        if (!mapped.email && !mapped.phone) {
+          skippedNoContact++;
+          continue;
+        }
 
         const normalized = {
           name: mapped.name,
@@ -260,6 +301,7 @@ export async function syncPastFacebookLeadsAction(sourceId: string) {
       totalFetched,
       importedCount,
       deduplicatedCount,
+      skippedNoContact,
       formsProcessed: forms.length,
     });
   } catch (e) {

@@ -181,6 +181,7 @@ const SourceCard = React.memo(function SourceCard({
   const webhookUrl = `${origin}/api/webhooks/${s.type}?sourceId=${s.id}`;
   const formFilter = (s.config as any)?.formFilter;
   const hasFormFilter = Array.isArray(formFilter) && formFilter.length > 0;
+  const formFilterNames = ((s.config as any)?.formFilterNames ?? {}) as Record<string, string>;
   const needsReconnect = Boolean((s.config as any)?.needsReconnect);
 
   return (
@@ -314,9 +315,13 @@ const SourceCard = React.memo(function SourceCard({
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-semibold text-muted-foreground">Lead forms:</span>
               {hasFormFilter ? (
-                <span className="text-xs text-foreground">
-                  Capturing from {formFilter.length} selected form{formFilter.length === 1 ? "" : "s"}.
-                </span>
+                <div className="flex flex-wrap gap-1">
+                  {formFilter.map((id: string) => (
+                    <Badge key={id} variant="secondary" className="text-xs font-normal">
+                      {formFilterNames[id] || id}
+                    </Badge>
+                  ))}
+                </div>
               ) : (
                 <span className="text-xs text-muted-foreground italic">
                   Capturing from all forms on this Page (no selection set)
@@ -436,9 +441,12 @@ export function SourcesManager({ initialSources }: { initialSources: Source[] })
         return;
       }
 
+      const replayed = (res.data as any)?.replayed ?? 0;
       toast({
         title: "Facebook Page Connected",
-        description: `Successfully connected ${selectedPageIds.length} Page(s) for lead capture.`,
+        description:
+          `Successfully connected ${selectedPageIds.length} Page(s) for lead capture.` +
+          (replayed ? ` Recovered ${replayed} lead(s) that arrived while disconnected.` : ""),
       });
 
       const newlyAdded: Source[] = (res.data?.connected || []).map((s: any) => ({
@@ -507,9 +515,16 @@ export function SourcesManager({ initialSources }: { initialSources: Source[] })
     if (!filterSource) return;
     setIsSavingFilter(true);
     try {
+      // Capture id → name for the selected forms so the card can show names without a Graph call.
+      const formNames: Record<string, string> = {};
+      for (const f of availableForms) {
+        if (selectedFormIds.includes(f.id)) formNames[f.id] = f.name;
+      }
+
       const res = await updateSourceFormFilterAction({
         sourceId: filterSource.id,
         formFilter: selectedFormIds,
+        formNames,
       });
 
       if (!res.ok) {
@@ -520,7 +535,7 @@ export function SourcesManager({ initialSources }: { initialSources: Source[] })
       setSources((prev) =>
         prev.map((s) =>
           s.id === filterSource.id
-            ? { ...s, config: { ...((s.config as any) || {}), formFilter: selectedFormIds } }
+            ? { ...s, config: { ...((s.config as any) || {}), formFilter: selectedFormIds, formFilterNames: formNames } }
             : s
         )
       );
@@ -560,16 +575,17 @@ export function SourcesManager({ initialSources }: { initialSources: Source[] })
           return;
         }
 
-        const { totalFetched, importedCount, deduplicatedCount, formsProcessed, message } = res.data as any;
+        const { totalFetched, importedCount, deduplicatedCount, skippedNoContact, formsProcessed, message } = res.data as any;
 
         if (message) {
           toast({ title: "Past Leads Sync", description: message });
           return;
         }
 
+        const skippedNote = skippedNoContact ? ` ${skippedNoContact} skipped (no email/phone).` : "";
         toast({
           title: "Past Leads Sync Complete",
-          description: `Processed ${formsProcessed || 0} form(s). Found ${totalFetched || 0} lead(s): ${importedCount || 0} new imported, ${deduplicatedCount || 0} updated.`,
+          description: `Processed ${formsProcessed || 0} form(s). Found ${totalFetched || 0} lead(s): ${importedCount || 0} new imported, ${deduplicatedCount || 0} updated.${skippedNote}`,
         });
       } catch (e: any) {
         toast({

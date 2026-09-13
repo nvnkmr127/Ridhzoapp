@@ -27,13 +27,24 @@ function isConfigured(): boolean {
   return Boolean(id && secret && id !== "mock_app_id" && secret !== "mock_app_secret");
 }
 
-async function graphGet(url: string): Promise<any> {
+// Meta rate-limit error codes (app/user/page throttling) plus HTTP 429.
+const RATE_LIMIT_CODES = new Set([4, 17, 32, 613]);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function graphGet(url: string, attempt = 0): Promise<any> {
   const res = await fetch(url);
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
+    const code = json?.error?.code;
+    // Transient throttle → back off and retry a few times before giving up, so one 429 doesn't
+    // abort a whole historical sync.
+    if ((res.status === 429 || RATE_LIMIT_CODES.has(code)) && attempt < 3) {
+      await sleep(2000 * Math.pow(2, attempt)); // 2s, 4s, 8s
+      return graphGet(url, attempt + 1);
+    }
     const msg = json?.error?.message || `Meta Graph API error (${res.status})`;
     const e = new Error(msg) as Error & { metaCode?: number; metaType?: string };
-    e.metaCode = json?.error?.code;
+    e.metaCode = code;
     e.metaType = json?.error?.type;
     throw e;
   }

@@ -4,6 +4,7 @@ import { NormalizedLeadPayload } from "../integrations/types";
 import { eq, or, and } from "drizzle-orm";
 import { eventBus } from "@/lib/events/emitter";
 import { LeadSourceService } from "@/domains/leads/sourceService";
+import { normalizeEmail, normalizePhone } from "@/lib/leads/normalize";
 
 export class IngestionService {
   /**
@@ -11,7 +12,11 @@ export class IngestionService {
    * Handles deduplication and insertion scoped strictly per organization.
    */
   static async processLead(payload: NormalizedLeadPayload): Promise<{ status: string; leadId: string }> {
-    if (!payload.email && !payload.phone) {
+    // Canonicalize contact keys so dedup matches across channels/formats (see normalize.ts).
+    const email = normalizeEmail(payload.email);
+    const phone = normalizePhone(payload.phone);
+
+    if (!email && !phone) {
       await this.logIngestion(null, payload.sourceId, payload, "failed", "Email or phone is required for deduplication.");
       throw new Error("Email or phone is required");
     }
@@ -31,8 +36,8 @@ export class IngestionService {
     }
 
     const searchConditions = [];
-    if (payload.email) searchConditions.push(eq(leads.email, payload.email));
-    if (payload.phone) searchConditions.push(eq(leads.phone, payload.phone));
+    if (email) searchConditions.push(eq(leads.email, email));
+    if (phone) searchConditions.push(eq(leads.phone, phone));
 
     // 2. Organization-Scoped Deduplication
     const [existingLead] = await db
@@ -72,8 +77,8 @@ export class IngestionService {
     const [newLead] = await db.insert(leads).values({
       organizationId,
       name: payload.name,
-      email: payload.email,
-      phone: payload.phone,
+      email,
+      phone,
       company: payload.company,
       sourceId: payload.sourceId,
       expectedValue: payload.expectedValue != null ? String(payload.expectedValue) : undefined,
@@ -100,23 +105,21 @@ export class IngestionService {
       await AssignmentService.executeAutomaticAssignment(newLead.id, payload.sourceId, organizationId);
     }
 
-    // Alert the account that a lead arrived — push + mobile to the org's admins/owners, even if it
-    // landed unassigned so nothing sits unseen. The assignee (if any) already got their own
-    // "assigned" alert via the lead.assigned handler, so exclude them here to avoid a double ping.
+    // Notify on receipt. If the lead got an owner, the lead.assigned handler already pinged them —
+    // so here we only alert the account's admins when the lead landed UNASSIGNED (needs triage).
+    // That keeps every lead surfaced without blasting every admin on every assigned lead.
     // Best-effort: a notification failure must never fail (and re-trigger) lead ingestion.
     try {
       const [assigned] = await db.select({ ownerId: leads.ownerId }).from(leads).where(eq(leads.id, newLead.id)).limit(1);
-      const { NotificationService } = await import("@/domains/notifications/service");
-      await NotificationService.notifyOrgAdmins(
-        organizationId,
-        {
+      if (!assigned?.ownerId) {
+        const { NotificationService } = await import("@/domains/notifications/service");
+        await NotificationService.notifyOrgAdmins(organizationId, {
           type: "lead_received",
-          title: `New lead received: ${payload.name || "Unknown"}`,
-          body: payload.phone || payload.email || undefined,
+          title: `New lead needs assignment: ${payload.name || "Unknown"}`,
+          body: phone || email || undefined,
           leadId: newLead.id,
-        },
-        assigned?.ownerId ?? undefined,
-      );
+        });
+      }
     } catch (e) {
       console.error("[ingestion] lead-received notification failed (non-fatal)", e);
     }

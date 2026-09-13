@@ -1,10 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { FacebookLeadMappingService } from "@/domains/leads/facebookLeadMappingService";
 import { db } from "@/db";
-import { webhookEvents } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { webhookEvents, leadSources } from "@/db/schema";
+import { eq, and, sql } from "drizzle-orm";
 import { ingestionQueue } from "@/lib/jobs/workers/ingestionWorker";
 import { verifyMetaSignature } from "@/lib/webhooks/signature";
+
+/** True if any Facebook source is connected for this Page. Meta can deliver leadgen events for
+ *  Pages we don't manage (broad app subscription); enqueuing those just burns worker retries. */
+async function hasSourceForPage(pageId?: string): Promise<boolean> {
+  if (!pageId) return true; // no page id → let the worker decide, don't drop silently
+  const rows = await db
+    .select({ id: leadSources.id })
+    .from(leadSources)
+    .where(and(eq(leadSources.type, "facebook_lead_ads"), sql`${leadSources.config}->>'pageId' = ${pageId}`))
+    .limit(1);
+  return rows.length > 0;
+}
 
 const FB_VERIFY_TOKEN = process.env.FACEBOOK_VERIFY_TOKEN || "privyr_fb_webhook_secret";
 
@@ -66,6 +78,11 @@ export async function POST(req: NextRequest) {
           const leadgenId = leadgenValue.leadgen_id;
           const formId = leadgenValue.form_id;
           const idempotencyKey = `fb_${leadgenId}`;
+
+          // Ignore leads for Pages nobody has connected — don't create events the worker can only fail.
+          if (!(await hasSourceForPage(leadgenValue.page_id))) {
+            continue;
+          }
 
           // Meta retries deliveries; dedupe on the leadgen id so we don't store duplicate events or
           // make duplicate Graph calls. ponytail: app-level check (no unique index / prod migration);

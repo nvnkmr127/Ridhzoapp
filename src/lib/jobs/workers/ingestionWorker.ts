@@ -54,10 +54,16 @@ export const ingestionWorker = new Worker<IngestionJobData>(
           .from(leadSources)
           .where(eq(leadSources.type, "facebook_lead_ads"));
 
-        const matchedSource =
-          allFbSources.find((s) => (s.config as any)?.pageId === pageId && s.isActive === 1) ||
-          allFbSources.find((s) => (s.config as any)?.pageId === pageId);
+        const pageMatches = allFbSources.filter((s) => (s.config as any)?.pageId === pageId);
 
+        // Tenant safety: a Page must belong to exactly one org. If two orgs have connected the same
+        // Page, routing is ambiguous — refuse rather than leak a lead into the wrong tenant.
+        const matchedOrgs = new Set(pageMatches.map((s) => s.organizationId));
+        if (matchedOrgs.size > 1) {
+          throw new Error(`Page ID ${pageId} is connected by multiple organizations — refusing to route ambiguously`);
+        }
+
+        const matchedSource = pageMatches.find((s) => s.isActive === 1) || pageMatches[0];
         if (!matchedSource || !matchedSource.organizationId) {
           throw new Error(`No Facebook Lead Ads source configured for Page ID: ${pageId || "unknown"}`);
         }
