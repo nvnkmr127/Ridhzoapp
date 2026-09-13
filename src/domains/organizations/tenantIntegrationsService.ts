@@ -68,12 +68,42 @@ function newToken(): string {
 
 export class TenantIntegrationsService {
   static async getRaw(organizationId: string) {
-    const [row] = await db
-      .select()
-      .from(tenantIntegrationSettings)
-      .where(eq(tenantIntegrationSettings.organizationId, organizationId))
-      .limit(1);
-    return row ?? null;
+    try {
+      const [row] = await db
+        .select()
+        .from(tenantIntegrationSettings)
+        .where(eq(tenantIntegrationSettings.organizationId, organizationId))
+        .limit(1);
+      return row ?? null;
+    } catch (e) {
+      // Tolerate the capi_lead_stage_map column not existing yet (a deploy that ran before the
+      // migration). Re-select the stable columns so the whole settings page + CAPI don't 500; the
+      // new column defaults to null until the ALTER is applied. Self-heals once the column exists.
+      if (!(e instanceof Error) || !/capi_lead_stage_map/.test(e.message)) throw e;
+      const t = tenantIntegrationSettings;
+      const [row] = await db
+        .select({
+          id: t.id,
+          organizationId: t.organizationId,
+          enrichmentEnabled: t.enrichmentEnabled,
+          enrichmentApiUrl: t.enrichmentApiUrl,
+          enrichmentAuthHeader: t.enrichmentAuthHeader,
+          enrichmentAuthValueEnc: t.enrichmentAuthValueEnc,
+          enrichmentTimeoutMs: t.enrichmentTimeoutMs,
+          inboundEmailEnabled: t.inboundEmailEnabled,
+          inboundEmailToken: t.inboundEmailToken,
+          capiEnabled: t.capiEnabled,
+          capiPixelId: t.capiPixelId,
+          capiAccessTokenEnc: t.capiAccessTokenEnc,
+          capiTestEventCode: t.capiTestEventCode,
+          createdAt: t.createdAt,
+          updatedAt: t.updatedAt,
+        })
+        .from(t)
+        .where(eq(t.organizationId, organizationId))
+        .limit(1);
+      return row ? { ...row, capiLeadStageMap: null } : null;
+    }
   }
 
   static async getView(organizationId: string): Promise<TenantIntegrationsView> {
