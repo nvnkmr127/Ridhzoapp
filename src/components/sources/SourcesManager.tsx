@@ -564,19 +564,22 @@ export function SourcesManager({
         });
       }
 
-      const newlyAdded: Source[] = (res.data?.connected || []).map((s: any) => ({
-        id: s.id,
-        name: s.name,
-        type: s.type,
-        isActive: s.isActive,
-        webhookSecret: s.webhookSecret,
-        config: s.config,
-      }));
+      // Reflect the subscription outcome immediately so the card shows Live/Active without a refresh.
+      const subscribedOk = subscribeErrors.length === 0;
+      const withState = (cfg: any) => ({ ...(cfg || {}), webhookSubscribed: subscribedOk, needsReconnect: false });
+      const connectedById = new Map<string, any>(
+        (res.data?.connected || []).map((s: any) => [
+          s.id,
+          { id: s.id, name: s.name, type: s.type, isActive: s.isActive, webhookSecret: s.webhookSecret, config: withState(s.config) },
+        ]),
+      );
 
       setSources((prev) => {
+        // Update existing rows (reconnect returns the same id) and append any genuinely new ones.
+        const updated = prev.map((x) => (connectedById.has(x.id) ? { ...x, ...connectedById.get(x.id) } : x));
         const existingIds = new Set(prev.map((x) => x.id));
-        const filtered = newlyAdded.filter((x) => !existingIds.has(x.id));
-        return [...prev, ...filtered];
+        const added = [...connectedById.values()].filter((x) => !existingIds.has(x.id));
+        return [...updated, ...added];
       });
 
       setPageSelectorOpen(false);
@@ -623,6 +626,10 @@ export function SourcesManager({
           toast({ variant: "destructive", title: "Couldn't enable live leads", description: res.message });
           return;
         }
+        // Flip the card to "Live" immediately, no refresh needed.
+        setSources((prev) =>
+          prev.map((x) => (x.id === s.id ? { ...x, config: { ...((x.config as any) || {}), webhookSubscribed: true } } : x)),
+        );
         toast({
           title: "Live leads enabled",
           description: "This Page is now subscribed to Meta webhooks — new leads will arrive instantly.",
