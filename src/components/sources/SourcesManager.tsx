@@ -163,7 +163,7 @@ type SourceCardProps = {
   onSyncPastLeads?: (s: Source) => void;
   isSyncing?: boolean;
   onOpenFilter?: (s: Source) => void;
-  leadCount?: number;
+  leadCount?: { total: number; new: number; deleted: number };
 };
 
 const SourceCard = React.memo(function SourceCard({
@@ -201,10 +201,22 @@ const SourceCard = React.memo(function SourceCard({
           <Badge variant={s.isActive ? "default" : "secondary"}>
             {s.isActive ? "Active" : "Inactive"}
           </Badge>
-          {typeof leadCount === "number" && (
-            <Badge variant="outline" className="text-xs">
-              {leadCount.toLocaleString()} lead{leadCount === 1 ? "" : "s"}
-            </Badge>
+          {leadCount && (
+            <>
+              <Badge variant="outline" className="text-xs">
+                {leadCount.total.toLocaleString()} lead{leadCount.total === 1 ? "" : "s"}
+              </Badge>
+              {leadCount.new > 0 && (
+                <Badge variant="outline" className="text-xs text-primary border-primary/30">
+                  {leadCount.new.toLocaleString()} new
+                </Badge>
+              )}
+              {leadCount.deleted > 0 && (
+                <Badge variant="outline" className="text-xs text-muted-foreground">
+                  {leadCount.deleted.toLocaleString()} in recycle bin
+                </Badge>
+              )}
+            </>
           )}
           {s.type === "facebook_lead_ads" && hasFormFilter && (
             <Badge variant="outline" className="text-xs text-primary border-primary/30">
@@ -366,7 +378,7 @@ export function SourcesManager({
   leadCounts = {},
 }: {
   initialSources: Source[];
-  leadCounts?: Record<string, number>;
+  leadCounts?: Record<string, { total: number; new: number; deleted: number }>;
 }) {
   const { toast } = useToast();
   const [sources, setSources] = React.useState<Source[]>(initialSources);

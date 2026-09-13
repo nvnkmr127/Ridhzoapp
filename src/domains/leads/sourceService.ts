@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { leadSources, leads, assignmentRules } from "@/db/schema/leads";
-import { and, eq, count, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import crypto from "crypto";
 
 export class LeadSourceService {
@@ -11,16 +11,25 @@ export class LeadSourceService {
     return db.select().from(leadSources);
   }
 
-  /** Count of live (non-deleted) leads per source, for the given source ids. */
-  static async getLeadCounts(sourceIds: string[]): Promise<Record<string, number>> {
+  /** Lead counts per source: total live, unworked "new", and recycle-bin (soft-deleted). */
+  static async getLeadCounts(
+    sourceIds: string[],
+  ): Promise<Record<string, { total: number; new: number; deleted: number }>> {
     if (sourceIds.length === 0) return {};
     const rows = await db
-      .select({ sourceId: leads.sourceId, c: count() })
+      .select({
+        sourceId: leads.sourceId,
+        total: sql<number>`count(*) filter (where ${leads.deletedAt} is null)`,
+        newCount: sql<number>`count(*) filter (where ${leads.deletedAt} is null and ${leads.status} = 'new')`,
+        deleted: sql<number>`count(*) filter (where ${leads.deletedAt} is not null)`,
+      })
       .from(leads)
-      .where(and(inArray(leads.sourceId, sourceIds), isNull(leads.deletedAt)))
+      .where(inArray(leads.sourceId, sourceIds))
       .groupBy(leads.sourceId);
-    const out: Record<string, number> = {};
-    for (const r of rows) if (r.sourceId) out[r.sourceId] = Number(r.c);
+    const out: Record<string, { total: number; new: number; deleted: number }> = {};
+    for (const r of rows) {
+      if (r.sourceId) out[r.sourceId] = { total: Number(r.total), new: Number(r.newCount), deleted: Number(r.deleted) };
+    }
     return out;
   }
 
