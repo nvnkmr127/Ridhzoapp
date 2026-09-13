@@ -125,11 +125,17 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     (source && source.organizationId === organizationId ? source.name : null) ||
     (typeof cd.leadSource === "string" ? cd.leadSource : null) ||
     "Manual entry";
+  // Resolve the form's name from the source's saved id→name map; fall back to the raw form id.
+  const formNames = (source?.config as any)?.formFilterNames as Record<string, string> | undefined;
+  const formName = cd.facebook_form_id
+    ? formNames?.[String(cd.facebook_form_id)] || String(cd.facebook_form_id)
+    : undefined;
   const attribution: Array<[string, string]> = (
     [
       ["Campaign", cd.meta_campaign_name],
       ["Ad set", cd.meta_adset_name],
       ["Ad", cd.meta_ad_name],
+      ["Form", formName],
     ] as Array<[string, unknown]>
   )
     .filter(([, v]) => typeof v === "string" && v)
