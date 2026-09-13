@@ -12,6 +12,12 @@ export async function startWorkers(): Promise<void> {
     return;
   }
 
+  // Bind the domain event handlers in THIS process. The event bus is in-process, so without this
+  // the standalone worker would emit lead.created / lead.assigned into a void — no notifications,
+  // push, activity logging, automations, or outbound webhooks for anything the worker ingests.
+  // Idempotent: a global guard stops double-binding when the web process already loaded it.
+  await import("@/lib/events/handlers");
+
   // Consumers whose worker is constructed at module load.
   await import("@/lib/jobs/workers/reminderWorker");
   await import("@/lib/jobs/workers/automationWorker");

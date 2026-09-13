@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { notifications, users } from "@/db/schema";
+import { notifications, users, roles } from "@/db/schema";
 import { and, desc, eq, isNull, inArray } from "drizzle-orm";
 
 // High-signal notification types that also warrant an email. Chatty ones (self-completions) don't.
@@ -24,6 +24,27 @@ export class NotificationService {
     });
     if (EMAIL_TYPES.has(data.type)) void NotificationService.email({ ...data, type: data.type });
     return row;
+  }
+
+  // Notify the org's admins/owners (role "admin" or a wildcard permission) — used to alert the
+  // account that a lead came in, even when it lands unassigned. `excludeUserId` skips the assignee,
+  // who already gets their own "assigned" alert, so a solo owner isn't pinged twice for one lead.
+  static async notifyOrgAdmins(
+    organizationId: string,
+    payload: { type: string; title: string; body?: string; leadId?: string },
+    excludeUserId?: string,
+  ) {
+    const rows = await db
+      .select({ id: users.id, roleName: roles.name, perms: roles.permissions })
+      .from(users)
+      .leftJoin(roles, eq(users.roleId, roles.id))
+      .where(and(eq(users.organizationId, organizationId), eq(users.isActive, true)));
+    const admins = rows.filter((u) => {
+      if (excludeUserId && u.id === excludeUserId) return false;
+      const name = (u.roleName ?? "").toLowerCase();
+      return name === "admin" || (u.perms ?? []).includes("*");
+    });
+    await Promise.all(admins.map((a) => this.create({ userId: a.id, ...payload })));
   }
 
   // Best-effort email channel — never throws into the caller. Real delivery needs RESEND_API_KEY;

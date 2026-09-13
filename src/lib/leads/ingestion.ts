@@ -100,6 +100,27 @@ export class IngestionService {
       await AssignmentService.executeAutomaticAssignment(newLead.id, payload.sourceId, organizationId);
     }
 
+    // Alert the account that a lead arrived — push + mobile to the org's admins/owners, even if it
+    // landed unassigned so nothing sits unseen. The assignee (if any) already got their own
+    // "assigned" alert via the lead.assigned handler, so exclude them here to avoid a double ping.
+    // Best-effort: a notification failure must never fail (and re-trigger) lead ingestion.
+    try {
+      const [assigned] = await db.select({ ownerId: leads.ownerId }).from(leads).where(eq(leads.id, newLead.id)).limit(1);
+      const { NotificationService } = await import("@/domains/notifications/service");
+      await NotificationService.notifyOrgAdmins(
+        organizationId,
+        {
+          type: "lead_received",
+          title: `New lead received: ${payload.name || "Unknown"}`,
+          body: payload.phone || payload.email || undefined,
+          leadId: newLead.id,
+        },
+        assigned?.ownerId ?? undefined,
+      );
+    } catch (e) {
+      console.error("[ingestion] lead-received notification failed (non-fatal)", e);
+    }
+
     return { status: "success", leadId: newLead.id };
   }
 
