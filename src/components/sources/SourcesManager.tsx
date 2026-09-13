@@ -931,7 +931,25 @@ export function SourcesManager({
 
       {/* Connected Sources & Webhook Endpoints */}
       <div className="space-y-4">
-        <h4 className="text-base font-semibold text-foreground">Active Tenant Connected Endpoints ({sources.length})</h4>
+        <div className="flex items-baseline justify-between gap-3 flex-wrap">
+          <h4 className="text-base font-semibold text-foreground">Active Tenant Connected Endpoints ({sources.length})</h4>
+          {(() => {
+            const totals = Object.values(leadCounts).reduce(
+              (a, c) => ({ total: a.total + c.total, new: a.new + c.new, deleted: a.deleted + c.deleted }),
+              { total: 0, new: 0, deleted: 0 },
+            );
+            if (totals.total === 0 && totals.deleted === 0) return null;
+            return (
+              <p className="text-sm text-muted-foreground">
+                <span className="font-semibold text-foreground">{totals.total.toLocaleString()}</span> leads
+                {" · "}
+                <span className="font-semibold text-primary">{totals.new.toLocaleString()}</span> new
+                {" · "}
+                <span className="font-semibold text-foreground">{totals.deleted.toLocaleString()}</span> in recycle bin
+              </p>
+            );
+          })()}
+        </div>
         {sources.length === 0 ? (
           <div className="text-center py-12 border rounded-2xl bg-card text-muted-foreground space-y-2">
             <Globe className="h-8 w-8 mx-auto text-foreground" />
