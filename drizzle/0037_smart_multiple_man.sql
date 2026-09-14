@@ -1,0 +1,1 @@
+ALTER TABLE "organizations" ADD COLUMN "auto_merge_duplicates" integer DEFAULT 0 NOT NULL;

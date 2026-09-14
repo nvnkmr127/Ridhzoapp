@@ -75,6 +75,12 @@ if (!__handlerGuard.__eventHandlersBound) {
   __handlerGuard.__eventHandlersBound = true;
 
 eventBus.on('lead.created', async (p) => {
+  // Auto-merge a returning lead into its existing record before any new-lead fan-out. If it merges,
+  // the arrival is gone — skip automations/webhook/distribution/CAPI so a returning lead isn't
+  // treated as brand new. No-op unless the org enabled auto-merge and a match exists.
+  const { DedupService } = await import("@/domains/leads/dedupService");
+  if (await DedupService.autoMergeOnCreate(p.leadId).catch(() => false)) return;
+
   dispatchTrigger('lead.created', p);
   await ActivityService.addActivity({ leadId: p.leadId, userId: isUuid(p.userId) ? p.userId : undefined, type: 'note', content: 'Lead was created manually.' });
   await fireLeadWebhook(p.leadId, 'lead.created');

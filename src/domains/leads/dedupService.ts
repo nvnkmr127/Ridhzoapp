@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import {
   leads,
+  organizations,
   activities,
   followUps,
   leadStatusHistory,
@@ -8,7 +9,7 @@ import {
   whatsappMessages,
   notifications,
 } from "@/db/schema";
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, ne, or, isNull, asc, sql } from "drizzle-orm";
 
 // Child tables that carry a lead_id and should follow the surviving lead on merge.
 const REASSIGN = [activities, followUps, leadStatusHistory, whatsappMessages, notifications] as const;
@@ -42,6 +43,59 @@ export class DedupService {
       groups.push({ key, leads: g });
     }
     return groups;
+  }
+
+  // Auto-merge a just-created lead into a pre-existing one with the same email/phone, when the org
+  // has it enabled. The older lead stays primary (keeps its id, owner, history); the arrival's fresh
+  // fields backfill any blanks and its customData is merged in, then it's merged away. Returns true
+  // if a merge happened, so the caller can skip the normal new-lead fan-out for a returning lead.
+  static async autoMergeOnCreate(leadId: string): Promise<boolean> {
+    const [incoming] = await db.select().from(leads).where(eq(leads.id, leadId)).limit(1);
+    if (!incoming || incoming.deletedAt) return false;
+
+    const [org] = await db
+      .select({ on: organizations.autoMergeDuplicates })
+      .from(organizations)
+      .where(eq(organizations.id, incoming.organizationId));
+    if (!org?.on) return false;
+
+    const email = incoming.email?.trim() || null;
+    const phone = incoming.phone?.trim() || null;
+    if (!email && !phone) return false; // nothing to match on
+
+    const keys = [];
+    if (email) keys.push(eq(leads.email, email));
+    if (phone) keys.push(eq(leads.phone, phone));
+
+    // Oldest live lead of this org (not the arrival) sharing a key = the record to keep.
+    const [primary] = await db
+      .select()
+      .from(leads)
+      .where(and(eq(leads.organizationId, incoming.organizationId), ne(leads.id, incoming.id), isNull(leads.deletedAt), or(...keys)))
+      .orderBy(asc(leads.createdAt))
+      .limit(1);
+    if (!primary) return false;
+
+    // Backfill primary's empty fields from the arrival; merge customData (primary wins on conflicts).
+    const backfill: Record<string, unknown> = {};
+    for (const f of ["email", "phone", "company", "name"] as const) {
+      if (!primary[f] && incoming[f]) backfill[f] = incoming[f];
+    }
+    const mergedCustom = { ...(incoming.customData as any), ...(primary.customData as any) };
+    backfill.customData = mergedCustom;
+    if (Object.keys(backfill).length > 0) {
+      await db.update(leads).set(backfill).where(eq(leads.id, primary.id));
+    }
+
+    await this.merge(incoming.organizationId, primary.id, incoming.id);
+
+    const { ActivityService } = await import("@/domains/activities/service");
+    await ActivityService.addActivity({
+      leadId: primary.id,
+      type: "note",
+      content: `Auto-merged a duplicate lead (${email || phone}) on arrival.`,
+    }).catch(() => {});
+    return true;
   }
 
   // Merge `duplicateId` into `primaryId`: move child rows, then delete the duplicate. Org-scoped.

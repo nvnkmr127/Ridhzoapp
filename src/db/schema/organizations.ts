@@ -33,6 +33,9 @@ export const organizations = pgTable('organizations', {
   // Hours a new lead may sit unactioned before it escalates. Null = SLA escalation off.
   slaHours: integer('sla_hours'),
 
+  // When 1, a new lead sharing an email/phone with an existing one is auto-merged into it on arrival.
+  autoMergeDuplicates: integer('auto_merge_duplicates').default(0).notNull(),
+
   // WhatsApp send mode: 'personal' = one-tap wa.me from the rep's own number (Privyr-style,
   // no BSP setup); 'bsp' = send through the WhatsApp Business API. Solos default to personal.
   whatsappMode: varchar('whatsapp_mode', { length: 10 }).default('personal').notNull(),

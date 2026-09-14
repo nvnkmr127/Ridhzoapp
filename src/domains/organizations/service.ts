@@ -104,6 +104,7 @@ export class OrgService {
       requiredLeadFields: string[];
       slaHours: number | null;
       whatsappMode: string;
+      autoMergeDuplicates: number;
     }>,
   ) {
     const [updated] = await db

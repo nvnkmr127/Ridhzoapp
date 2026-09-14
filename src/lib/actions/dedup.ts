@@ -12,6 +12,19 @@ export async function findDuplicatesAction() {
   return DedupService.findDuplicateGroups(organizationId);
 }
 
+export async function setAutoMergeAction(enabled: boolean) {
+  const { organizationId, userId } = await requirePermission("settings.manage");
+  try {
+    const { OrgService } = await import("@/domains/organizations/service");
+    await OrgService.updateOrganization(organizationId, { autoMergeDuplicates: enabled ? 1 : 0 });
+    await AuditService.log({ organizationId, userId, action: "org.settings_update", entityType: "organization", entityId: organizationId, metadata: { autoMergeDuplicates: enabled } });
+    revalidatePath("/leads/duplicates");
+    return ok({ enabled });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
 const mergeSchema = z.object({ primaryId: z.string().uuid(), duplicateId: z.string().uuid() });
 
 export async function mergeLeadsAction(input: z.infer<typeof mergeSchema>) {
