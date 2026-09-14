@@ -76,7 +76,8 @@ export async function setUserActiveAction(id: string, isActive: boolean) {
   const { organizationId, userId } = await requirePermission("users.manage");
   if (id === userId && !isActive) return fail("VALIDATION", "You can't deactivate your own account.");
   try {
-    await UserService.setActive(organizationId, id, isActive);
+    const u = await UserService.setActive(organizationId, id, isActive);
+    if (!u) return fail("NOT_FOUND", "That user no longer exists. Refresh the page.");
     revalidateTag("active-users");
     revalidatePath("/settings/users");
     return ok({ id, isActive });
@@ -88,7 +89,8 @@ export async function setUserActiveAction(id: string, isActive: boolean) {
 export async function setUserTeamAction(id: string, teamId: string | null) {
   const { organizationId } = await requirePermission("users.manage");
   try {
-    await UserService.setTeam(organizationId, id, teamId);
+    const u = await UserService.setTeam(organizationId, id, teamId);
+    if (!u) return fail("NOT_FOUND", "That user no longer exists. Refresh the page.");
     revalidatePath("/settings/users");
     return ok({ id, teamId });
   } catch (e) {
@@ -100,7 +102,8 @@ export async function setUserRoleAction(id: string, roleId: string | null) {
   const { organizationId, userId } = await requirePermission("users.manage");
   if (id === userId) return fail("VALIDATION", "You can't change your own role.");
   try {
-    await UserService.setRole(organizationId, id, roleId);
+    const u = await UserService.setRole(organizationId, id, roleId);
+    if (!u) return fail("NOT_FOUND", "That user no longer exists. Refresh the page.");
     await AuditService.log({ organizationId, userId, action: "user.role_change", entityType: "user", entityId: id, metadata: { roleId } });
     revalidatePath("/settings/users");
     return ok({ id, roleId });
@@ -113,7 +116,8 @@ export async function deleteUserAction(id: string) {
   const { organizationId, userId } = await requirePermission("users.manage");
   if (id === userId) return fail("VALIDATION", "You can't delete your own account.");
   try {
-    await UserService.remove(organizationId, id);
+    const u = await UserService.remove(organizationId, id);
+    if (!u) return fail("NOT_FOUND", "That user no longer exists. Refresh the page.");
     revalidateTag("active-users");
     await AuditService.log({ organizationId, userId, action: "user.delete", entityType: "user", entityId: id });
     revalidatePath("/settings/users");

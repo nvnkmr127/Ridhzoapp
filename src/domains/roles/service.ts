@@ -10,6 +10,16 @@ function clean(permissions: string[]) {
   return ALL_PERMISSIONS.filter((k) => permissions.includes(k));
 }
 
+// Names reserved for shared system roles. A tenant role must not use them: "admin" in particular
+// is a magic name the RBAC layer treats specially, so allowing a custom "admin" would be confusing
+// even now that hasPermission ignores the name for tenant roles.
+const RESERVED_NAMES = new Set(["admin", "member"]);
+function assertNameAllowed(name: string) {
+  if (RESERVED_NAMES.has(name.trim().toLowerCase())) {
+    throw new Error(`"${name.trim()}" is a reserved role name. Please choose a different name.`);
+  }
+}
+
 export class RoleService {
   // Shared system roles (org null) plus this org's custom roles.
   static async list(organizationId: string) {
@@ -21,6 +31,7 @@ export class RoleService {
   }
 
   static async create(organizationId: string, name: string, permissions: string[]) {
+    assertNameAllowed(name);
     const [r] = await db
       .insert(roles)
       .values({ organizationId, name, permissions: clean(permissions) })
@@ -31,7 +42,7 @@ export class RoleService {
   // Only org-owned roles are editable — never a shared system role.
   static async update(organizationId: string, id: string, data: { name?: string; permissions?: string[] }) {
     const set: Record<string, unknown> = { updatedAt: new Date() };
-    if (data.name !== undefined) set.name = data.name;
+    if (data.name !== undefined) { assertNameAllowed(data.name); set.name = data.name; }
     if (data.permissions !== undefined) set.permissions = clean(data.permissions);
     const [r] = await db
       .update(roles)

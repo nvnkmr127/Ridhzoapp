@@ -57,18 +57,51 @@ export class InvitationService {
     if (!inv) throw new Error("This invitation is invalid or has expired");
 
     const passwordHash = await bcrypt.hash(input.password, 10);
-    const [user] = await db
-      .insert(users)
-      .values({
-        organizationId: inv.organizationId,
-        email: inv.email,
-        passwordHash,
-        firstName: input.firstName,
-        lastName: input.lastName,
-        roleId: inv.roleId,
-        isActive: true,
-      })
-      .returning({ id: users.id, email: users.email });
+
+    // email is globally UNIQUE, so a previously soft-deleted user still holds this address. A blind
+    // INSERT would hit the unique constraint and the invitee could never join. Mirror
+    // UserService.create: restore the tombstoned row in the same org; reject a live collision.
+    const [existing] = await db
+      .select({ id: users.id, organizationId: users.organizationId, deletedAt: users.deletedAt, firstName: users.firstName, lastName: users.lastName })
+      .from(users)
+      .where(eq(users.email, inv.email))
+      .limit(1);
+
+    let user: { id: string; email: string };
+    if (existing) {
+      if (existing.organizationId === inv.organizationId && existing.deletedAt) {
+        const [restored] = await db
+          .update(users)
+          .set({
+            passwordHash,
+            firstName: input.firstName || existing.firstName,
+            lastName: input.lastName || existing.lastName,
+            roleId: inv.roleId,
+            isActive: true,
+            deletedAt: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(users.id, existing.id))
+          .returning({ id: users.id, email: users.email });
+        user = restored;
+      } else {
+        throw new Error("A user with that email already exists");
+      }
+    } else {
+      const [created] = await db
+        .insert(users)
+        .values({
+          organizationId: inv.organizationId,
+          email: inv.email,
+          passwordHash,
+          firstName: input.firstName,
+          lastName: input.lastName,
+          roleId: inv.roleId,
+          isActive: true,
+        })
+        .returning({ id: users.id, email: users.email });
+      user = created;
+    }
 
     await db.update(invitations).set({ acceptedAt: new Date() }).where(eq(invitations.id, inv.id));
     return user;

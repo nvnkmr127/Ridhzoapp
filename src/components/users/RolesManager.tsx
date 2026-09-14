@@ -95,7 +95,9 @@ export function RolesManager({ initialRoles }: { initialRoles: Role[] }) {
       <div className="space-y-3">
         {roles.map((role) => {
           const isSystem = role.organizationId === null;
-          const isAdmin = role.name === "admin";
+          // Only the shared SYSTEM admin implicitly holds every permission. A tenant role named
+          // "admin" (legacy data) shows its real permissions, matching hasPermission.
+          const isAdmin = isSystem && role.name === "admin";
           return (
             <div key={role.id} className="border rounded-lg p-4 space-y-3">
               <div className="flex items-center justify-between">

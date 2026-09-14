@@ -27,7 +27,9 @@ type User = {
 };
 type Team = { id: string; name: string };
 type Role = { id: string; name: string };
-type Invite = { id: string; email: string; roleId: string | null; expiresAt: string };
+// `link` is only present for invites created in this session whose email failed to send —
+// the token is hashed server-side and can't be recovered after a reload.
+type Invite = { id: string; email: string; roleId: string | null; expiresAt: string; link?: string };
 
 const NO_TEAM = "__none__"; // Select can't use "" as a value
 const NO_ROLE = "__none__";
@@ -50,6 +52,8 @@ export function UsersManager({
   const [teams, setTeams] = React.useState<Team[]>(initialTeams);
   const [invites, setInvites] = React.useState<Invite[]>(initialInvites);
   const [teamName, setTeamName] = React.useState("");
+  const [creatingTeam, setCreatingTeam] = React.useState(false);
+  const [query, setQuery] = React.useState("");
   const [form, setForm] = React.useState({ firstName: "", lastName: "", email: "", password: "", roleId: NO_ROLE });
   const [saving, setSaving] = React.useState(false);
   const [inviteEmail, setInviteEmail] = React.useState("");
@@ -67,7 +71,8 @@ export function UsersManager({
       }
       const { invite: inv, emailed, link } = res.data as unknown as { invite: Invite; emailed: boolean; link: string };
       // Show the pending invite immediately, replacing any earlier pending row for the same email.
-      setInvites((prev) => [...prev.filter((i) => i.email !== inv.email), inv]);
+      // Keep the join link on the row when email didn't send, so the admin can still copy it.
+      setInvites((prev) => [...prev.filter((i) => i.email !== inv.email), { ...inv, link: emailed ? undefined : link }]);
       setInviteEmail(""); setInviteRole(NO_ROLE);
       if (emailed) {
         toast({ title: "Invitation sent", description: "They'll get an email with a link to join." });
@@ -82,7 +87,8 @@ export function UsersManager({
   }
 
   async function createTeam() {
-    if (!teamName.trim()) return;
+    if (!teamName.trim() || creatingTeam) return; // guard double-submit (no duplicate teams)
+    setCreatingTeam(true);
     try {
       const res = await createTeamAction({ name: teamName.trim() });
       if (!res.ok) {
@@ -94,6 +100,8 @@ export function UsersManager({
       toast({ title: "Team created" });
     } catch {
       toast({ variant: "destructive", title: "Could not create team", description: "We couldn't reach the server. Please try again." });
+    } finally {
+      setCreatingTeam(false);
     }
   }
 
@@ -132,6 +140,15 @@ export function UsersManager({
   function set(k: keyof typeof form, v: string) {
     setForm((f) => ({ ...f, [k]: v }));
   }
+
+  // Case-insensitive, trimmed search over name + email.
+  const filteredUsers = React.useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return users;
+    return users.filter((u) =>
+      [u.firstName, u.lastName, u.email].filter(Boolean).join(" ").toLowerCase().includes(q),
+    );
+  }, [users, query]);
 
   async function create() {
     const trimmedEmail = form.email.trim();
@@ -228,8 +245,8 @@ export function UsersManager({
         <div className="flex gap-2">
           <Input placeholder="New team name" value={teamName} onChange={(e) => setTeamName(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); createTeam(); } }} className="flex-1" />
-          <Button variant="outline" onClick={createTeam} disabled={!teamName.trim()} className="gap-1">
-            <Plus className="h-4 w-4" /> Add team
+          <Button variant="outline" onClick={createTeam} disabled={creatingTeam || !teamName.trim()} className="gap-1">
+            <Plus className="h-4 w-4" /> {creatingTeam ? "Adding…" : "Add team"}
           </Button>
         </div>
       </div>
@@ -297,6 +314,21 @@ export function UsersManager({
                     <Badge variant="secondary">Pending</Badge>
                   </div>
                   <div className="flex items-center gap-3">
+                    {inv.link && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          navigator.clipboard?.writeText(inv.link!).then(
+                            () => toast({ title: "Join link copied" }),
+                            () => toast({ variant: "destructive", title: "Couldn't copy", description: inv.link }),
+                          );
+                        }}
+                        title="Email delivery failed — copy the join link to share manually"
+                      >
+                        Copy link
+                      </Button>
+                    )}
                     <span className="text-xs text-muted-foreground">Expires {new Date(inv.expiresAt).toLocaleDateString()}</span>
                     <Button
                       variant="ghost"
@@ -315,8 +347,23 @@ export function UsersManager({
         </div>
       )}
 
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="font-semibold">Members</h3>
+        <Input
+          placeholder="Search by name or email"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="max-w-xs"
+        />
+      </div>
+
       <div className="border rounded-2xl bg-card divide-y">
-        {users.map((u) => {
+        {filteredUsers.length === 0 && (
+          <p className="p-4 text-sm text-muted-foreground">
+            {query.trim() ? "No members match your search." : "No members yet."}
+          </p>
+        )}
+        {filteredUsers.map((u) => {
           const isSelf = u.id === currentUserId;
           return (
             <div key={u.id} className="flex items-center justify-between p-4">

@@ -65,17 +65,17 @@ export async function isSuperAdmin(): Promise<boolean> {
   return Boolean(session?.user?.isSuperAdmin);
 }
 
-// Resolve the current user's role (name + permissions) from the roleId carried in the JWT.
-async function currentRole(): Promise<{ name: string; permissions: string[] } | null> {
+// Resolve the current user's role (name + permissions + tenant) from the roleId carried in the JWT.
+async function currentRole(): Promise<{ name: string; permissions: string[]; organizationId: string | null } | null> {
   const session = await getServerSession(authOptions);
   const roleId = session?.user?.roleId;
   if (!roleId) return null;
   const [role] = await db
-    .select({ name: roles.name, permissions: roles.permissions })
+    .select({ name: roles.name, permissions: roles.permissions, organizationId: roles.organizationId })
     .from(roles)
     .where(eq(roles.id, roleId))
     .limit(1);
-  return role ? { name: role.name, permissions: role.permissions ?? [] } : null;
+  return role ? { name: role.name, permissions: role.permissions ?? [], organizationId: role.organizationId } : null;
 }
 
 export async function currentRoleName(): Promise<string | null> {
@@ -89,8 +89,12 @@ export async function hasPermission(key: PermissionKey): Promise<boolean> {
   if (session?.user?.isSuperAdmin) return true;
   const role = await currentRole();
   if (!role) return false;
-  // Admin (any casing) and the "*" wildcard grant every permission — as the seed intends.
-  if (role.name.toLowerCase() === "admin" || role.permissions.includes("*") || role.permissions.includes(key)) {
+  // The "*" wildcard grants every permission. The "admin" NAME only grants everything for the
+  // shared SYSTEM admin role (organizationId === null) — a tenant-owned role named "admin" gets
+  // only what its permissions array lists, so `roles.manage` can't be used to mint a full-power
+  // role by naming it "admin" (privilege escalation).
+  const isSystemAdmin = role.organizationId === null && role.name.toLowerCase() === "admin";
+  if (isSystemAdmin || role.permissions.includes("*") || role.permissions.includes(key)) {
     return true;
   }
   // Shared system roles (member/admin, org-less) derive their baseline from code, so a stored

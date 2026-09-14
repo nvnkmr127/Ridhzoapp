@@ -63,6 +63,8 @@ export function actionFail(e: unknown): ActionError {
   const raw = e instanceof Error ? e.message : "";
   const m = raw.toLowerCase();
   if (m.includes("forbidden")) return fail("FORBIDDEN", "You don't have permission to do this. Contact an admin.", fieldErrors);
+  // Intentional guard messages that should reach the user verbatim as validation errors.
+  if (m.includes("last active administrator") || m.includes("reserved role name")) return fail("VALIDATION", raw, fieldErrors);
   if (m.includes("duplicate") || m.includes("already exists")) return fail("CONFLICT", raw, fieldErrors);
   if (m.includes("limit") || m.includes("plan")) return fail("LIMIT", raw, fieldErrors);
   if (m.includes("not found")) return fail("NOT_FOUND", raw, fieldErrors);

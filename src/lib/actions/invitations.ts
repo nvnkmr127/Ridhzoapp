@@ -90,6 +90,11 @@ export async function acceptInvitationAction(input: z.infer<typeof acceptSchema>
   } catch (e) {
     // Invalid/expired/already-used token surfaces here.
     const msg = e instanceof Error ? e.message : "";
+    // A live account already owns this email (couldn't be restored) — tell them to sign in instead
+    // of showing the misleading "invalid or expired" copy.
+    if (/already exists/i.test(msg)) {
+      return fail("CONFLICT", "An account with this email already exists. Please sign in instead.");
+    }
     if (/expired|invalid|not found|used|already/i.test(msg)) {
       return fail("NOT_FOUND", "This invitation is invalid or has expired. Ask an admin to send a new one.");
     }
