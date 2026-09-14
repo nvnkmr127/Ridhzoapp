@@ -1,5 +1,5 @@
 {
-  "id": "b274be7c-e324-4830-9d6b-1a47576e3f70",
+  "id": "9844884a-a9c5-4019-93a4-a5af01d72ae2",
   "prevId": "9a039d44-8345-42d1-a227-acb6be7d66a8",
   "version": "7",
   "dialect": "postgresql",
@@ -2637,12 +2637,33 @@
           "primaryKey": false,
           "notNull": false
         },
+        "conditions": {
+          "name": "conditions",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
         "recipients": {
           "name": "recipients",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true,
           "default": "'[]'::jsonb"
+        },
+        "mode": {
+          "name": "mode",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'all'"
+        },
+        "rr_cursor": {
+          "name": "rr_cursor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "skip_save": {
           "name": "skip_save",

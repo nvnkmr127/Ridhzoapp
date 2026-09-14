@@ -2,7 +2,10 @@ CREATE TABLE "lead_distribution_rules" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"organization_id" uuid NOT NULL,
 	"source_id" uuid,
+	"conditions" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"recipients" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"mode" varchar(20) DEFAULT 'all' NOT NULL,
+	"rr_cursor" integer DEFAULT 0 NOT NULL,
 	"skip_save" integer DEFAULT 0 NOT NULL,
 	"is_active" integer DEFAULT 1 NOT NULL,
 	"created_at" timestamp DEFAULT now() NOT NULL

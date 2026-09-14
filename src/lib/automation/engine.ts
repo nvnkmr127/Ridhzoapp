@@ -8,6 +8,7 @@ import { WhatsAppService } from "@/lib/messaging/whatsapp/service";
 import { EventPayload } from "@/lib/events/emitter";
 
 import { AssignmentService } from "@/domains/leads/assignmentService";
+import { evaluateConditionGroup } from "@/lib/leads/conditions";
 
 export class AutomationEngine {
   static async evaluateAndExecute(automationId: string, leadId: string, payload?: EventPayload) {
@@ -50,50 +51,9 @@ export class AutomationEngine {
     return { skipped: false, executedCount };
   }
 
+  // Condition matching lives in one shared, pure module (also used by lead-distribution rules).
   private static evaluateConditionGroup(lead: any, group: any): boolean {
-    if (!group) return true;
-
-    if (group.type === 'AND' || group.type === 'OR') {
-      const conditions = group.conditions || [];
-      if (conditions.length === 0) return true;
-
-      if (group.type === 'AND') {
-        return conditions.every((cond: any) => this.evaluateConditionGroup(lead, cond));
-      } else {
-        return conditions.some((cond: any) => this.evaluateConditionGroup(lead, cond));
-      }
-    } else if (group.field && group.operator) {
-      // Base condition
-      return this.evaluateCondition(lead, group);
-    }
-    
-    return true; // Fallback
-  }
-
-  private static evaluateCondition(lead: any, condition: any): boolean {
-    const { field, operator, value } = condition;
-    const leadValue = lead[field];
-
-    // Handle null/undefined appropriately
-    const normalize = (val: any) => val === null || val === undefined ? '' : String(val).toLowerCase();
-
-    switch (operator) {
-      case 'equals':
-        return leadValue === value;
-      case 'not_equals':
-        return leadValue !== value;
-      case 'contains':
-        return normalize(leadValue).includes(normalize(value));
-      case 'does_not_contain':
-        return !normalize(leadValue).includes(normalize(value));
-      case 'greater_than':
-        return Number(leadValue) > Number(value);
-      case 'less_than':
-        return Number(leadValue) < Number(value);
-      default:
-        console.warn(`Unsupported operator: ${operator}`);
-        return false;
-    }
+    return evaluateConditionGroup(lead, group);
   }
 
   private static async executeAction(leadId: string, type: string, config: any, payload?: EventPayload) {

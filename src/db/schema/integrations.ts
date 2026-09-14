@@ -18,11 +18,20 @@ export const webhookEndpoints = pgTable('webhook_endpoints', {
 
 // Lead distribution rules: when a new lead matches a rule's criteria, forward a copy to the rule's
 // recipients. On lead.created we evaluate every active rule of the org and email the matching ones.
+export type DistributionRecipient = {
+  channel: 'email' | 'in_app' | 'whatsapp';
+  value: string; // email address, user id, or phone number depending on channel
+};
+export type DistributionCondition = { field: string; operator: string; value: string };
+
 export const leadDistributionRules = pgTable('lead_distribution_rules', {
   id: uuid('id').defaultRandom().primaryKey(),
   organizationId: uuid('organization_id').references(() => organizations.id).notNull(),
   sourceId: uuid('source_id').references(() => leadSources.id), // null = match any source
-  recipients: jsonb('recipients').$type<string[]>().default([]).notNull(), // email addresses
+  conditions: jsonb('conditions').$type<DistributionCondition[]>().default([]).notNull(), // extra criteria (AND)
+  recipients: jsonb('recipients').$type<DistributionRecipient[]>().default([]).notNull(),
+  mode: varchar('mode', { length: 20 }).default('all').notNull(), // 'all' | 'round_robin'
+  rrCursor: integer('rr_cursor').default(0).notNull(), // round-robin rotation position
   skipSave: integer('skip_save').default(0).notNull(), // 1 = forward only, drop from the CRM
   isActive: integer('is_active').default(1).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
