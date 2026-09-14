@@ -1,5 +1,5 @@
 {
-  "id": "9ef412f0-51e9-43f7-8ee8-8c44e7046463",
+  "id": "b274be7c-e324-4830-9d6b-1a47576e3f70",
   "prevId": "9a039d44-8345-42d1-a227-acb6be7d66a8",
   "version": "7",
   "dialect": "postgresql",
@@ -2614,8 +2614,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.lead_distribution_recipients": {
-      "name": "lead_distribution_recipients",
+    "public.lead_distribution_rules": {
+      "name": "lead_distribution_rules",
       "schema": "",
       "columns": {
         "id": {
@@ -2631,18 +2631,25 @@
           "primaryKey": false,
           "notNull": true
         },
-        "channel": {
-          "name": "channel",
-          "type": "varchar(20)",
+        "source_id": {
+          "name": "source_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recipients": {
+          "name": "recipients",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": true,
-          "default": "'email'"
+          "default": "'[]'::jsonb"
         },
-        "destination": {
-          "name": "destination",
-          "type": "varchar(320)",
+        "skip_save": {
+          "name": "skip_save",
+          "type": "integer",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "default": 0
         },
         "is_active": {
           "name": "is_active",
@@ -2677,12 +2684,25 @@
         }
       },
       "foreignKeys": {
-        "lead_distribution_recipients_organization_id_organizations_id_fk": {
-          "name": "lead_distribution_recipients_organization_id_organizations_id_fk",
-          "tableFrom": "lead_distribution_recipients",
+        "lead_distribution_rules_organization_id_organizations_id_fk": {
+          "name": "lead_distribution_rules_organization_id_organizations_id_fk",
+          "tableFrom": "lead_distribution_rules",
           "tableTo": "organizations",
           "columnsFrom": [
             "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "lead_distribution_rules_source_id_lead_sources_id_fk": {
+          "name": "lead_distribution_rules_source_id_lead_sources_id_fk",
+          "tableFrom": "lead_distribution_rules",
+          "tableTo": "lead_sources",
+          "columnsFrom": [
+            "source_id"
           ],
           "columnsTo": [
             "id"

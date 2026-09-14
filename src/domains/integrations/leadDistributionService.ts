@@ -1,11 +1,6 @@
 import { db } from "@/db";
-import { leadDistributionRecipients } from "@/db/schema";
+import { leadDistributionRules, leads } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
-
-// The channels a new lead can be forwarded on. Only 'email' is wired today; in_app/whatsapp
-// are reserved so adding them later is a switch-case extension, not a migration.
-export const DISTRIBUTION_CHANNELS = ["email"] as const;
-export type DistributionChannel = (typeof DISTRIBUTION_CHANNELS)[number];
 
 type LeadForDistribution = {
   id: string;
@@ -14,6 +9,7 @@ type LeadForDistribution = {
   phone: string | null;
   company: string | null;
   status: string | null;
+  sourceId: string | null;
   organizationId: string;
 };
 
@@ -34,69 +30,90 @@ function leadEmail(lead: LeadForDistribution, link: string) {
     </div>`;
 }
 
+export type DistributionRuleInput = {
+  sourceId: string | null;
+  recipients: string[];
+  skipSave: boolean;
+};
+
 export class LeadDistributionService {
   static list(organizationId: string) {
     return db
       .select()
-      .from(leadDistributionRecipients)
-      .where(eq(leadDistributionRecipients.organizationId, organizationId));
+      .from(leadDistributionRules)
+      .where(eq(leadDistributionRules.organizationId, organizationId));
   }
 
-  static async create(organizationId: string, channel: DistributionChannel, destination: string) {
+  static async create(organizationId: string, input: DistributionRuleInput) {
     const [row] = await db
-      .insert(leadDistributionRecipients)
-      .values({ organizationId, channel, destination })
+      .insert(leadDistributionRules)
+      .values({
+        organizationId,
+        sourceId: input.sourceId,
+        recipients: input.recipients,
+        skipSave: input.skipSave ? 1 : 0,
+      })
       .returning();
     return row;
   }
 
   static async setActive(organizationId: string, id: string, isActive: boolean) {
     const [row] = await db
-      .update(leadDistributionRecipients)
+      .update(leadDistributionRules)
       .set({ isActive: isActive ? 1 : 0 })
-      .where(and(eq(leadDistributionRecipients.id, id), eq(leadDistributionRecipients.organizationId, organizationId)))
+      .where(and(eq(leadDistributionRules.id, id), eq(leadDistributionRules.organizationId, organizationId)))
       .returning();
     return row;
   }
 
   static async remove(organizationId: string, id: string) {
     await db
-      .delete(leadDistributionRecipients)
-      .where(and(eq(leadDistributionRecipients.id, id), eq(leadDistributionRecipients.organizationId, organizationId)));
+      .delete(leadDistributionRules)
+      .where(and(eq(leadDistributionRules.id, id), eq(leadDistributionRules.organizationId, organizationId)));
   }
 
-  // Fan a freshly-created lead out to every active recipient. Best-effort and per-recipient
-  // isolated — one bad address must not stop the others or the caller (the lead.created handler).
+  // Evaluate every active rule against a freshly-created lead. Matching rules (source matches, or
+  // rule has no source filter) get their recipients emailed. Best-effort and per-recipient isolated.
   static async distribute(leadId: string) {
     const { LeadService } = await import("@/domains/leads/service");
     const lead = (await LeadService.getLeadById(leadId)) as LeadForDistribution | null;
     if (!lead?.organizationId) return;
 
-    const recipients = await db
+    const rules = await db
       .select()
-      .from(leadDistributionRecipients)
+      .from(leadDistributionRules)
       .where(
         and(
-          eq(leadDistributionRecipients.organizationId, lead.organizationId),
-          eq(leadDistributionRecipients.isActive, 1),
+          eq(leadDistributionRules.organizationId, lead.organizationId),
+          eq(leadDistributionRules.isActive, 1),
         ),
       );
-    if (recipients.length === 0) return;
 
-    const { sendEmail, appUrl } = await import("@/lib/mail/mailer");
-    const html = leadEmail(lead, appUrl(`/leads/${lead.id}`));
-    const subject = `New lead: ${lead.name || lead.email || lead.phone || "Unnamed"}`;
+    const matching = rules.filter((r) => r.sourceId === null || r.sourceId === lead.sourceId);
+    if (matching.length === 0) return;
 
-    await Promise.all(
-      recipients.map(async (r) => {
-        try {
-          if (r.channel === "email") {
-            await sendEmail({ to: r.destination, subject, html }, lead.organizationId);
+    // Union of recipient emails across all matching rules — each address is emailed at most once.
+    const emails = [...new Set(matching.flatMap((r) => r.recipients ?? []))];
+    if (emails.length > 0) {
+      const { sendEmail, appUrl } = await import("@/lib/mail/mailer");
+      const html = leadEmail(lead, appUrl(`/leads/${lead.id}`));
+      const subject = `New lead: ${lead.name || lead.email || lead.phone || "Unnamed"}`;
+      await Promise.all(
+        emails.map(async (to) => {
+          try {
+            await sendEmail({ to, subject, html }, lead.organizationId);
+          } catch (e) {
+            console.error(`[distribution] email to ${to} failed`, (e as Error)?.message);
           }
-        } catch (e) {
-          console.error(`[distribution] ${r.channel} to ${r.destination} failed`, (e as Error)?.message);
-        }
-      }),
-    );
+        }),
+      );
+    }
+
+    // "Don't save into my account": forward-only. We soft-delete after distributing.
+    // ponytail: lead is created then soft-deleted, so lead.created side-effects (webhook, CAPI,
+    // enrichment) still fire once. A true pre-persist skip would need a gate in the ingest path.
+    if (matching.some((r) => r.skipSave)) {
+      await db.update(leads).set({ deletedAt: new Date() }).where(eq(leads.id, lead.id));
+    }
   }
 }

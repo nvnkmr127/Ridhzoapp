@@ -4,12 +4,16 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { requireOrg, hasPermission } from "@/lib/rbac";
 import { LeadDistributionService } from "@/domains/integrations/leadDistributionService";
+import { LeadSourceService } from "@/domains/leads/sourceService";
 import { LeadDistributionManager } from "@/components/settings/LeadDistributionManager";
 
 export default async function DistributionPage() {
   if (!(await hasPermission("api.manage"))) redirect("/leads");
   const { organizationId } = await requireOrg();
-  const recipients = await LeadDistributionService.list(organizationId);
+  const [rules, sources] = await Promise.all([
+    LeadDistributionService.list(organizationId),
+    LeadSourceService.getSources(organizationId),
+  ]);
 
   return (
     <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6 max-w-4xl">
@@ -22,7 +26,10 @@ export default async function DistributionPage() {
           </p>
         </div>
       </div>
-      <LeadDistributionManager initial={recipients} />
+      <LeadDistributionManager
+        initial={rules}
+        sources={sources.map((s) => ({ id: s.id, name: s.name }))}
+      />
     </div>
   );
 }

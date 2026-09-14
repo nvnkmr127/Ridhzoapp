@@ -1,5 +1,6 @@
 import { pgTable, uuid, varchar, text, timestamp, jsonb, integer, index } from 'drizzle-orm/pg-core';
 import { organizations } from './organizations';
+import { leadSources } from './leads';
 
 // Outbound webhook endpoints registered per org. On subscribed lead events we POST a signed
 // JSON payload to `url`; failures retry with backoff and land in the DLQ.
@@ -15,13 +16,14 @@ export const webhookEndpoints = pgTable('webhook_endpoints', {
   orgIdx: index('webhook_endpoints_org_idx').on(t.organizationId),
 }));
 
-// Lead distribution: forward a copy of every new lead to recipients. Each row is one
-// destination on one channel; on lead.created we fan the lead out to all active rows of the org.
-export const leadDistributionRecipients = pgTable('lead_distribution_recipients', {
+// Lead distribution rules: when a new lead matches a rule's criteria, forward a copy to the rule's
+// recipients. On lead.created we evaluate every active rule of the org and email the matching ones.
+export const leadDistributionRules = pgTable('lead_distribution_rules', {
   id: uuid('id').defaultRandom().primaryKey(),
   organizationId: uuid('organization_id').references(() => organizations.id).notNull(),
-  channel: varchar('channel', { length: 20 }).default('email').notNull(), // 'email' (in_app/whatsapp: future)
-  destination: varchar('destination', { length: 320 }).notNull(), // email address (max RFC length)
+  sourceId: uuid('source_id').references(() => leadSources.id), // null = match any source
+  recipients: jsonb('recipients').$type<string[]>().default([]).notNull(), // email addresses
+  skipSave: integer('skip_save').default(0).notNull(), // 1 = forward only, drop from the CRM
   isActive: integer('is_active').default(1).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (t) => ({
