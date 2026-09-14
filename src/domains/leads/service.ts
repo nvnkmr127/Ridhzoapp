@@ -22,6 +22,7 @@ import {
 import { eventBus } from "@/lib/events/emitter";
 import { ActivityService } from "@/domains/activities/service";
 import { FilterGroup, FilterRule } from "@/domains/savedViews/service";
+import { normalizeEmail, normalizePhone } from "@/lib/leads/normalize";
 
 export type ListLeadsOptions = {
   organizationId: string;
@@ -46,8 +47,10 @@ export class LeadService {
     organizationId: string,
   ): Promise<typeof leads.$inferSelect> {
     // Dedup within THIS org only — same email/phone in another tenant is a different lead.
-    const cleanEmail = data.email?.trim() || undefined;
-    const cleanPhone = data.phone?.trim() || undefined;
+    // Canonicalize first so "+1 555-0101" and "+15550101" are stored and compared identically;
+    // otherwise formatting differences slip past both the app check and the DB unique index.
+    const cleanEmail = normalizeEmail(data.email);
+    const cleanPhone = normalizePhone(data.phone);
     if (cleanEmail || cleanPhone) {
       const orConds = [];
       if (cleanEmail) orConds.push(eq(leads.email, cleanEmail));
@@ -171,8 +174,12 @@ export class LeadService {
     organizationId: string,
   ) {
     try {
+      // Canonicalize contact keys on edit too, so they match the dedup index and stored formats.
+      const patch: Record<string, unknown> = { ...data, updatedAt: new Date() };
+      if ("email" in data) patch.email = normalizeEmail(data.email) ?? null;
+      if ("phone" in data) patch.phone = normalizePhone(data.phone) ?? null;
       const [updatedLead] = await db.update(leads)
-        .set({ ...data, updatedAt: new Date() })
+        .set(patch)
         .where(and(eq(leads.id, leadId), eq(leads.organizationId, organizationId)))
         .returning();
       if (updatedLead) eventBus.emit('lead.updated', { leadId, userId: updatedById, changes: data });
@@ -575,12 +582,22 @@ export class LeadService {
     // Capture disposition: a loss reason for lost/unqualified, a won timestamp for won.
     // Moving back to an open status clears the loss reason so stale reasons don't linger.
     const isLoss = newStatus === "lost" || newStatus === "unqualified";
+    const isClosed = isLoss || newStatus === "won";
     const patch: Record<string, unknown> = { status: newStatus, updatedAt: new Date() };
     if (isLoss) patch.lostReason = reason?.trim() || null;
     else patch.lostReason = null;
     if (newStatus === "won") patch.wonAt = new Date();
+    // A resolved lead is no longer an active follow-up opportunity: drop its pending follow-up so it
+    // stops surfacing in overdue lists, the dashboard and "next best action". Reopening schedules anew.
+    if (isClosed) patch.nextFollowUpAt = null;
 
     const [updatedLead] = await db.update(leads).set(patch).where(idWhere).returning();
+
+    if (isClosed) {
+      await db.update(followUps)
+        .set({ status: "cancelled", updatedAt: new Date() })
+        .where(and(eq(followUps.leadId, leadId), eq(followUps.status, "pending")));
+    }
 
     const validChangedById = (changedById && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(changedById))
       ? changedById

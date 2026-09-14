@@ -41,6 +41,19 @@ describe("NextBestActionService", () => {
     expect(rec.priority).toBe("medium");
   });
 
+  it("never recommends chasing resolved leads, even with an overdue follow-up", () => {
+    for (const status of ["won", "lost", "unqualified"]) {
+      const rec = NextBestActionService.getRecommendation({
+        status,
+        score: 90,
+        phone: "+1234567890",
+        nextFollowUpAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // overdue
+        lastContactedAt: null,
+      });
+      expect(rec.priority).toBe("low");
+    }
+  });
+
   it("prioritizes a recent content open over routine cadence", () => {
     const rec = NextBestActionService.getRecommendation({
       status: "new", // would otherwise recommend welcome template

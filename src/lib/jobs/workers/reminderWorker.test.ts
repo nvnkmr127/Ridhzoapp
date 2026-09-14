@@ -11,6 +11,7 @@ vi.mock('@/db', () => ({
     select: vi.fn().mockReturnThis(),
     from: vi.fn().mockReturnThis(),
     where: vi.fn().mockReturnThis(),
+    orderBy: vi.fn().mockReturnThis(),
     limit: vi.fn().mockResolvedValue([]),
     update: vi.fn().mockReturnThis(),
     set: vi.fn().mockReturnThis(),
@@ -276,7 +277,7 @@ describe('Reminder Worker & Delivery Architecture', () => {
         where: vi.fn().mockResolvedValue([mockSub]),
         then: (resolve: any) => resolve([mockSub]),
       };
-      ((db as any).from as any).mockReturnValue(queryChain);
+      ((db as any).from as any).mockReturnValueOnce(queryChain);
 
       (webpush.sendNotification as any).mockRejectedValueOnce({ statusCode: 410 });
 

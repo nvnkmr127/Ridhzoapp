@@ -1,12 +1,13 @@
 "use server";
 
 import { db } from "@/db";
-import { followUps, leads } from "@/db/schema";
+import { followUps } from "@/db/schema";
 import { requireOrg } from "@/lib/rbac";
 import { eq, and, desc } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { ActivityService } from "@/domains/activities/service";
 import { assertLeadInOrg } from "@/domains/leads/ownership";
+import { syncLeadFollowUpState, markLeadContacted } from "@/domains/follow-ups/state";
 import { z } from "zod";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
 
@@ -47,11 +48,8 @@ export async function createReminderAction(input: z.infer<typeof createReminderS
       })
       .returning();
 
-    // Also update lead's nextFollowUpAt if it's earlier or not set
-    await db
-      .update(leads)
-      .set({ nextFollowUpAt: dueDate, updatedAt: new Date() })
-      .where(and(eq(leads.id, parsed.data.leadId), eq(leads.organizationId, organizationId)));
+    // Keep lead.next_follow_up_at = the soonest pending follow-up (may be an earlier existing one).
+    await syncLeadFollowUpState(parsed.data.leadId);
 
     await ActivityService.addActivity({
       leadId: parsed.data.leadId,
@@ -107,12 +105,7 @@ export async function updateReminderAction(input: z.infer<typeof updateReminderS
 
     if (!updated) return fail("NOT_FOUND", "This reminder no longer exists.");
 
-    if (updated.status === "pending") {
-      await db
-        .update(leads)
-        .set({ nextFollowUpAt: dueDate, updatedAt: new Date() })
-        .where(and(eq(leads.id, parsed.data.leadId), eq(leads.organizationId, organizationId)));
-    }
+    await syncLeadFollowUpState(parsed.data.leadId);
 
     await ActivityService.addActivity({
       leadId: parsed.data.leadId,
@@ -159,6 +152,9 @@ export async function toggleReminderStatusAction(reminderId: string, leadId: str
 
     if (!updated) return fail("NOT_FOUND", "This reminder no longer exists.");
 
+    if (isCompleted) await markLeadContacted(leadId, updated.completedAt ?? new Date());
+    await syncLeadFollowUpState(leadId);
+
     await ActivityService.addActivity({
       leadId,
       userId,
@@ -184,6 +180,8 @@ export async function deleteReminderAction(reminderId: string, leadId: string) {
       .returning();
 
     if (!deleted) return fail("NOT_FOUND", "This reminder was already deleted.");
+
+    await syncLeadFollowUpState(leadId);
 
     await ActivityService.addActivity({
       leadId,

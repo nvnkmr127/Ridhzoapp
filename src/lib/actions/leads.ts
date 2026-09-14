@@ -16,10 +16,20 @@ const emptyStringToUndefined = z.string().regex(/^\s*$/).transform(() => "");
 const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 const uuidSchema = z.string().regex(uuidRegex, "Invalid ID");
 
+// A present phone must carry at least 7 digits — rejects "abc"/"123" while allowing any format.
+const phoneField = z
+  .string()
+  .trim()
+  .max(50, "Phone number too long")
+  .refine((v) => v.replace(/\D/g, "").length >= 7, "Enter a valid phone number")
+  .optional()
+  .or(z.literal(""))
+  .or(emptyStringToUndefined);
+
 const createLeadSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(255),
   email: z.string().trim().email("Invalid email").optional().or(z.literal("")).or(emptyStringToUndefined),
-  phone: z.string().trim().max(50, "Phone number too long").optional().or(z.literal("")).or(emptyStringToUndefined),
+  phone: phoneField,
   company: z.string().trim().max(255).optional().or(z.literal("")).or(emptyStringToUndefined),
   ownerId: uuidSchema.optional().or(z.literal("")).or(emptyStringToUndefined),
   customData: z.record(z.string(), z.unknown()).optional(),
@@ -80,7 +90,7 @@ const updateLeadSchema = z.object({
   id: uuidSchema,
   name: z.string().min(1, "Name is required").max(255).optional(),
   email: z.string().email("Invalid email").optional().or(z.literal("")),
-  phone: z.string().optional().or(z.literal("")),
+  phone: phoneField,
   company: z.string().optional().or(z.literal("")),
 });
 
@@ -509,6 +519,10 @@ export async function updateLeadFollowUpAction(leadId: string, nextFollowUpAt: s
         .set({ status: "cancelled", updatedAt: new Date() })
         .where(and(eq(followUps.leadId, leadId), eq(followUps.status, "pending")));
     }
+
+    // Normalize next_follow_up_at to the soonest pending follow-up (not just the date clicked).
+    const { syncLeadFollowUpState } = await import("@/domains/follow-ups/state");
+    await syncLeadFollowUpState(leadId);
 
     revalidatePath(`/leads/${leadId}`);
     revalidatePath('/leads');

@@ -30,6 +30,16 @@ export class NextBestActionService {
    * Evaluates lead status and activity metrics to recommend the immediate Next Best Action.
    */
   static getRecommendation(input: NextBestActionInput): NextBestActionRecommendation {
+    // Resolved leads (won/lost/unqualified) are not active opportunities — never recommend chasing them.
+    if (["won", "lost", "unqualified"].includes(input.status)) {
+      return {
+        action: "call_lead",
+        label: input.status === "won" ? "Deal won" : "Lead closed",
+        reason: "No action needed — lead is resolved.",
+        priority: "low",
+      };
+    }
+
     const now = Date.now();
     const lastContactDays = input.lastContactedAt
       ? (now - new Date(input.lastContactedAt).getTime()) / (1000 * 60 * 60 * 24)

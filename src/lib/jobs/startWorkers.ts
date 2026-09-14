@@ -19,11 +19,14 @@ export async function startWorkers(): Promise<void> {
   await import("@/lib/events/handlers");
 
   // Consumers whose worker is constructed at module load.
-  await import("@/lib/jobs/workers/reminderWorker");
   await import("@/lib/jobs/workers/automationWorker");
   await import("@/lib/jobs/workers/ingestionWorker");
 
   // Consumers + their repeatable producer scans.
+  const { createFollowUpReminderWorker, scheduleFollowUpReminderScan } = await import("@/lib/jobs/workers/followUpReminderWorker");
+  createFollowUpReminderWorker();
+  await scheduleFollowUpReminderScan();
+
   const { createEscalationWorker, scheduleEscalationScan } = await import("@/lib/jobs/workers/escalationWorker");
   createEscalationWorker();
   await scheduleEscalationScan();

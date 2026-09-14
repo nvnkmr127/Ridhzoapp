@@ -101,7 +101,9 @@ export class AnalyticsService {
     const unqualified = allLeads.filter(l => l.status === 'unqualified').length;
     const qualified = activeLeads + won;
     
-    const closed = won + lost;
+    // Win rate = won out of all resolved leads. Unqualified counts as a loss, otherwise disqualifying
+    // a lead would flatter the rate (1 won / 0 lost showed a misleading 100%).
+    const closed = won + lost + unqualified;
     const conversionRate = closed > 0 ? (won / closed) * 100 : 0;
     
     const pipelineValue = allLeads
@@ -149,7 +151,7 @@ export class AnalyticsService {
    * Retrieves follow-up specific metrics.
    */
   static async getFollowUpMetrics(filters: AnalyticsFilters) {
-    const conditions = [eq(leads.organizationId, filters.organizationId)];
+    const conditions = [eq(leads.organizationId, filters.organizationId), isNull(leads.deletedAt)];
     if (filters.ownerId) {
       conditions.push(eq(followUps.userId, filters.ownerId));
     }

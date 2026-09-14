@@ -32,6 +32,8 @@ export default async function FollowUpsDashboard() {
   const overdue = userFollowUps.filter(f => f.followUp.status === 'pending' && new Date(f.followUp.dueAt) < now);
   const completed = userFollowUps.filter(f => f.followUp.status === 'completed');
   const upcoming = userFollowUps.filter(f => f.followUp.status === 'pending' && new Date(f.followUp.dueAt) >= now);
+  // Anything pending that falls on today's date — including items already past their time today.
+  const dueToday = userFollowUps.filter(f => f.followUp.status === 'pending' && new Date(f.followUp.dueAt).toDateString() === now.toDateString());
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl mx-auto space-y-6">
@@ -43,7 +45,7 @@ export default async function FollowUpsDashboard() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-2"><CardTitle>Due Today</CardTitle></CardHeader>
-          <CardContent><p className="text-2xl font-bold">{upcoming.filter(f => new Date(f.followUp.dueAt).toDateString() === now.toDateString()).length}</p></CardContent>
+          <CardContent><p className="text-2xl font-bold">{dueToday.length}</p></CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-foreground">Overdue</CardTitle></CardHeader>

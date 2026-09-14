@@ -41,8 +41,8 @@ describe('AnalyticsService Calculations', () => {
     expect(metrics.won).toBe(1);
     expect(metrics.lost).toBe(1);
     
-    // Won / (Won + Lost) = 1 / 2 = 50%
-    expect(metrics.conversionRate).toBe(50);
+    // Win rate = Won / (Won + Lost + Unqualified) = 1 / 3 ≈ 33.3%
+    expect(metrics.conversionRate).toBeCloseTo(33.333, 2);
     
     // Active leads expected value sum = 1000 + 2000 = 3000
     expect(metrics.pipelineValue).toBe(3000);
