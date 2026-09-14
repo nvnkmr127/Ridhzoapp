@@ -92,13 +92,20 @@ export class AnalyticsService {
     const where = conditions.length > 0 ? and(...conditions) : undefined;
     
     const allLeads = await db.select().from(leads).where(where);
-    
+
+    // Resolve each lead's CATEGORY via the tenant status schema so custom statuses (e.g. a "closed_won"
+    // in the won category) are counted correctly. Base keys map to their own category, so behaviour is
+    // unchanged for tenants that never customise.
+    const { CustomStatusSchemaService } = await import("@/domains/leads/customStatusSchemaService");
+    const catMap = await CustomStatusSchemaService.getStatusCategoryMap(filters.organizationId);
+    const catOf = (s: string | null) => catMap.get(s ?? "") ?? "open";
+
     const total = allLeads.length;
-    const newLeads = allLeads.filter(l => l.status === 'new').length;
-    const activeLeads = allLeads.filter(l => l.status === 'active').length;
-    const won = allLeads.filter(l => l.status === 'won').length;
-    const lost = allLeads.filter(l => l.status === 'lost').length;
-    const unqualified = allLeads.filter(l => l.status === 'unqualified').length;
+    const newLeads = allLeads.filter(l => catOf(l.status) === 'open').length;
+    const activeLeads = allLeads.filter(l => catOf(l.status) === 'in_progress').length;
+    const won = allLeads.filter(l => catOf(l.status) === 'won').length;
+    const lost = allLeads.filter(l => catOf(l.status) === 'lost').length;
+    const unqualified = allLeads.filter(l => catOf(l.status) === 'unqualified').length;
     const qualified = activeLeads + won;
     
     // Win rate = won out of all resolved leads. Unqualified counts as a loss, otherwise disqualifying
@@ -107,11 +114,11 @@ export class AnalyticsService {
     const conversionRate = closed > 0 ? (won / closed) * 100 : 0;
     
     const pipelineValue = allLeads
-      .filter(l => l.status === 'active')
+      .filter(l => catOf(l.status) === 'in_progress')
       .reduce((sum, l) => sum + Number(l.expectedValue || 0), 0);
 
     const expectedRevenue = allLeads
-      .filter(l => l.status === 'won')
+      .filter(l => catOf(l.status) === 'won')
       .reduce((sum, l) => sum + Number(l.expectedValue || 0), 0);
 
     // Speed-to-lead: the core metric for this product. Response time = first

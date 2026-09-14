@@ -188,7 +188,9 @@ export class AssignmentService {
   ) {
     let leadId: string;
     let ownerId: string | null;
-    let teamId: string | null;
+    // undefined = "leave the lead's team untouched"; null = "explicitly clear the team".
+    // Owner-only reassignment must NOT wipe an existing team, so team is only written when provided.
+    let teamId: string | null | undefined;
     let assignedById: string;
     let organizationId: string | undefined;
     let source: string | undefined;
@@ -196,14 +198,14 @@ export class AssignmentService {
     if (typeof leadIdOrOptions === "object") {
       leadId = leadIdOrOptions.leadId;
       ownerId = leadIdOrOptions.ownerId;
-      teamId = leadIdOrOptions.teamId ?? null;
+      teamId = leadIdOrOptions.teamId;
       assignedById = leadIdOrOptions.assignedById ?? "system";
       organizationId = leadIdOrOptions.organizationId;
       source = leadIdOrOptions.source;
     } else {
       leadId = leadIdOrOptions;
       ownerId = ownerIdArg ?? null;
-      teamId = teamIdArg ?? null;
+      teamId = teamIdArg;
       assignedById = assignedByIdArg ?? "system";
       organizationId = organizationIdArg;
     }
@@ -234,13 +236,16 @@ export class AssignmentService {
       await this.validateTeamAssignment(teamId, effectiveOrgId);
     }
 
-    // 4. Update Lead record
+    // 4. Update Lead record — only overwrite team when a team was explicitly supplied.
     const whereCondition = organizationId
       ? and(eq(leads.id, leadId), eq(leads.organizationId, organizationId))
       : eq(leads.id, leadId);
 
+    const setData: Record<string, unknown> = { ownerId, updatedAt: new Date() };
+    if (teamId !== undefined) setData.teamId = teamId;
+
     const [updatedLead] = await db.update(leads)
-      .set({ ownerId, teamId, updatedAt: new Date() })
+      .set(setData)
       .where(whereCondition)
       .returning();
 
@@ -249,7 +254,7 @@ export class AssignmentService {
       eventBus.emit('lead.assigned', {
         leadId,
         ownerId: ownerId || undefined,
-        teamId,
+        teamId: updatedLead.teamId,
         assignedById,
         source,
       });

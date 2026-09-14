@@ -16,7 +16,7 @@ type StageState = {
   loading: boolean;
 };
 
-const COLUMNS: { key: string; label: string }[] = [
+const DEFAULT_COLUMNS: { key: string; label: string }[] = [
   { key: "new", label: "New" },
   { key: "active", label: "Active" },
   { key: "won", label: "Won" },
@@ -26,10 +26,13 @@ const COLUMNS: { key: string; label: string }[] = [
 
 export function KanbanBoard({
   initialStages,
+  columns,
 }: {
   initialStages: Record<string, { data: Card[]; total: number }>;
+  columns?: { key: string; label: string }[];
 }) {
   const { toast } = useToast();
+  const COLUMNS = columns && columns.length ? columns : DEFAULT_COLUMNS;
 
   // Initialize stage state
   const [stages, setStages] = React.useState<Record<string, StageState>>(() => {

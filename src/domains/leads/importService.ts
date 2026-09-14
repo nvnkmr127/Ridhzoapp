@@ -2,6 +2,8 @@ import { db } from "@/db";
 import { leads } from "@/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { PlanService } from "@/domains/billing/planService";
+import { normalizeEmail, normalizePhone } from "@/lib/leads/normalize";
+import { CustomStatusSchemaService } from "@/domains/leads/customStatusSchemaService";
 
 // Columns the importer understands. `name` is the only required one.
 export const IMPORT_FIELDS = [
@@ -134,22 +136,32 @@ export class LeadImportService {
     if (toInsert.length > 0) {
       await PlanService.assertCanAddLead(organizationId);
 
+      // Canonicalize contact keys the same way every other ingestion path does, so imported leads
+      // dedup against manual/webhook leads and the DB unique index actually applies to them.
+      // Only accept a status that exists in this tenant's schema — otherwise fall back — so an import
+      // can't strand leads on a status key with no config (raw label, no category).
+      const validStatuses = new Set((await CustomStatusSchemaService.getTenantStatusSchema(organizationId)).map((s) => s.key));
+      const fallbackStatus = (config.fallbackStatus && validStatuses.has(config.fallbackStatus)) ? config.fallbackStatus : "new";
+
       // Batch in chunks of 250 rows to avoid exceeding Postgres parameter limits
       const CHUNK_SIZE = 250;
       for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
         const chunk = toInsert.slice(i, i + CHUNK_SIZE);
         await db.insert(leads).values(
-          chunk.map((r) => ({
-            organizationId,
-            name: r.name!.trim().slice(0, 255),
-            email: r.email?.trim().slice(0, 255) || null,
-            phone: r.phone?.trim().slice(0, 255) || null,
-            company: r.company?.trim().slice(0, 255) || null,
-            status: (r.status?.trim().slice(0, 50) || config.fallbackStatus || "new").toLowerCase(),
-            sourceId: config.sourceId || null,
-            ownerId: config.ownerId || userId || null,
-            expectedValue: r.cleanedExpectedValue || null,
-          }))
+          chunk.map((r) => {
+            const wanted = r.status?.trim().toLowerCase().slice(0, 50);
+            return {
+              organizationId,
+              name: r.name!.trim().slice(0, 255),
+              email: normalizeEmail(r.email)?.slice(0, 255) || null,
+              phone: normalizePhone(r.phone)?.slice(0, 255) || null,
+              company: r.company?.trim().slice(0, 255) || null,
+              status: wanted && validStatuses.has(wanted) ? wanted : fallbackStatus,
+              sourceId: config.sourceId || null,
+              ownerId: config.ownerId || userId || null,
+              expectedValue: r.cleanedExpectedValue || null,
+            };
+          })
         );
       }
     }

@@ -1,6 +1,6 @@
 import { db } from "@/db";
-import { customStatusConfigs } from "@/db/schema";
-import { and, eq, asc } from "drizzle-orm";
+import { customStatusConfigs, leads } from "@/db/schema";
+import { and, eq, asc, count, isNull } from "drizzle-orm";
 
 export type StatusCategory = "open" | "in_progress" | "won" | "lost" | "unqualified";
 
@@ -22,7 +22,36 @@ export const DEFAULT_SYSTEM_STATUSES: CustomStatusItem[] = [
   { key: "unqualified", label: "Unqualified", color: "#6B7280", category: "unqualified", orderIndex: 5, isSystemDefault: true },
 ];
 
+// Base-key → category, always available even before a tenant seeds its schema. Every status-driven
+// decision (won/lost bookkeeping, analytics, board grouping) must resolve category through the map
+// below, NOT by comparing against the literal base keys — otherwise custom statuses are invisible.
+const BASE_CATEGORY: Record<string, StatusCategory> = Object.fromEntries(
+  DEFAULT_SYSTEM_STATUSES.map((s) => [s.key, s.category]),
+) as Record<string, StatusCategory>;
+
 export class CustomStatusSchemaService {
+  /**
+   * Resolves each status key in the tenant to its category. Read-only (never seeds), and always
+   * includes the five base keys so callers get a category even for tenants that haven't customised.
+   */
+  static async getStatusCategoryMap(organizationId: string): Promise<Map<string, StatusCategory>> {
+    const map = new Map<string, StatusCategory>(Object.entries(BASE_CATEGORY) as [string, StatusCategory][]);
+    const rows = await db
+      .select({ key: customStatusConfigs.key, category: customStatusConfigs.category })
+      .from(customStatusConfigs)
+      .where(eq(customStatusConfigs.organizationId, organizationId));
+    for (const r of rows) {
+      if (r.key) map.set(r.key, (r.category as StatusCategory) ?? "open");
+    }
+    return map;
+  }
+
+  /** Category for a single status key (base fallback → 'open' for an unknown custom key). */
+  static async getStatusCategory(organizationId: string, key: string): Promise<StatusCategory> {
+    const map = await this.getStatusCategoryMap(organizationId);
+    return map.get(key) ?? map.get(key.toLowerCase()) ?? BASE_CATEGORY[key] ?? "open";
+  }
+
   /**
    * Retrieves tenant status schema configuration, seeding default statuses if none exist yet.
    */
@@ -154,6 +183,16 @@ export class CustomStatusSchemaService {
     if (!existing) return false;
     if (existing.isSystemDefault === 1) {
       throw new Error("System default statuses cannot be deleted.");
+    }
+
+    // Don't strand leads on a status that will no longer exist (they'd render a raw key and fall out
+    // of category-based logic). Require the tenant to move them off it first.
+    const [{ inUse }] = await db
+      .select({ inUse: count() })
+      .from(leads)
+      .where(and(eq(leads.organizationId, organizationId), eq(leads.status, statusKey), isNull(leads.deletedAt)));
+    if (Number(inUse) > 0) {
+      throw new Error(`${inUse} lead(s) still use this status. Move them to another status before deleting it.`);
     }
 
     await db

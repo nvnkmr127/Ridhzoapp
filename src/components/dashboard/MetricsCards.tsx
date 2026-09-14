@@ -25,7 +25,7 @@ export async function MetricsCards({ filters }: { filters: AnalyticsFilters }) {
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">{metrics.total === 0 ? "0%" : `${metrics.conversionRate.toFixed(1)}%`}</div>
-          <p className="text-xs text-muted-foreground">{metrics.won} won / {metrics.lost} lost</p>
+          <p className="text-xs text-muted-foreground">{metrics.won} won / {metrics.lost + metrics.unqualified} lost or disqualified</p>
         </CardContent>
       </Card>
 

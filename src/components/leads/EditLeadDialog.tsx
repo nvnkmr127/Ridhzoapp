@@ -25,6 +25,7 @@ const formSchema = z.object({
   email: z.string().email("Invalid email address").optional().or(z.literal("")),
   phone: z.string().max(50, "Phone number too long").optional().or(z.literal("")),
   company: z.string().max(255, "Company name cannot exceed 255 characters").optional().or(z.literal("")),
+  expectedUpdatedAt: z.string().optional(),
 });
 
 interface EditLeadDialogProps {
@@ -34,8 +35,12 @@ interface EditLeadDialogProps {
     email?: string | null;
     phone?: string | null;
     company?: string | null;
+    updatedAt?: string | Date | null;
   }
 }
+
+// The exact timestamp the editor loaded, sent back so the server can reject a stale overwrite.
+const toIso = (v?: string | Date | null) => (v ? new Date(v).toISOString() : undefined);
 
 export function EditLeadDialog({ lead }: EditLeadDialogProps) {
   const router = useRouter();
@@ -50,6 +55,7 @@ export function EditLeadDialog({ lead }: EditLeadDialogProps) {
       email: lead.email || "",
       phone: lead.phone || "",
       company: lead.company || "",
+      expectedUpdatedAt: toIso(lead.updatedAt),
     },
   });
 
@@ -62,6 +68,7 @@ export function EditLeadDialog({ lead }: EditLeadDialogProps) {
         email: lead.email || "",
         phone: lead.phone || "",
         company: lead.company || "",
+        expectedUpdatedAt: toIso(lead.updatedAt),
       });
     }
   }, [open, lead, form]);

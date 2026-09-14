@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { roles } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import type { PermissionKey } from "@/lib/permissions";
+import { SYSTEM_ROLE_PERMISSIONS } from "@/lib/permissions";
 
 export async function requireAuth() {
   const session = await getServerSession(authOptions);
@@ -89,7 +90,14 @@ export async function hasPermission(key: PermissionKey): Promise<boolean> {
   const role = await currentRole();
   if (!role) return false;
   // Admin (any casing) and the "*" wildcard grant every permission — as the seed intends.
-  return role.name.toLowerCase() === "admin" || role.permissions.includes("*") || role.permissions.includes(key);
+  if (role.name.toLowerCase() === "admin" || role.permissions.includes("*") || role.permissions.includes(key)) {
+    return true;
+  }
+  // Shared system roles (member/admin, org-less) derive their baseline from code, so a stored
+  // `member` row with an empty permissions array still gets its defaults (e.g. leads.edit) without
+  // a data migration. Custom roles are unaffected (their name isn't in the map).
+  const systemDefaults = SYSTEM_ROLE_PERMISSIONS[role.name.toLowerCase()];
+  return systemDefaults ? systemDefaults.includes(key) : false;
 }
 
 // Throws "Forbidden" unless the caller holds the permission; returns the tenant scope on success.

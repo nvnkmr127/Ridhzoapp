@@ -80,31 +80,4 @@ describe("LeadStatusService", () => {
       ).rejects.toThrow("Invalid status transition from 'new' to 'won'");
     });
   });
-
-  describe("bulkChangeStatus", () => {
-    it("should bulk update status for eligible leads", async () => {
-      const mockLeads = [
-        { id: "lead-1", status: "new" },
-        { id: "lead-2", status: "active" },
-      ];
-
-      const mockFromSelect = vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue(mockLeads),
-      });
-      (db.select as any).mockReturnValue({ from: mockFromSelect });
-
-      const mockSetUpdate = vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue(undefined),
-      });
-      (db.update as any).mockReturnValue({ set: mockSetUpdate });
-
-      const mockValuesInsert = vi.fn().mockResolvedValue(undefined);
-      (db.insert as any).mockReturnValue({ values: mockValuesInsert });
-
-      const result = await LeadStatusService.bulkChangeStatus(["lead-1", "lead-2"], "unqualified", "user-1", "org-1");
-
-      expect(result.updatedCount).toBe(2);
-      expect(result.leadIds).toEqual(["lead-1", "lead-2"]);
-    });
-  });
 });

@@ -102,12 +102,13 @@ describe("AssignmentService & Round-Robin Logic", () => {
       });
 
       expect(result.ownerId).toBe("user-1");
-      expect(emitSpy).toHaveBeenCalledWith("lead.assigned", {
+      // teamId in the event reflects the lead's ACTUAL resulting team (owner-only assign no longer
+      // forces it to null), so assert the meaningful fields without over-constraining team/source.
+      expect(emitSpy).toHaveBeenCalledWith("lead.assigned", expect.objectContaining({
         leadId: "lead-1",
         ownerId: "user-1",
-        teamId: null,
         assignedById: "admin-1",
-      });
+      }));
     });
 
     it("should reject cross-tenant user assignment", async () => {

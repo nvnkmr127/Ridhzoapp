@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { leads, leadIngestionLogs } from "@/db/schema";
 import { NormalizedLeadPayload } from "../integrations/types";
-import { eq, or, and } from "drizzle-orm";
+import { eq, or, and, isNull, sql } from "drizzle-orm";
 import { eventBus } from "@/lib/events/emitter";
 import { LeadSourceService } from "@/domains/leads/sourceService";
 import { normalizeEmail, normalizePhone } from "@/lib/leads/normalize";
@@ -35,15 +35,19 @@ export class IngestionService {
       throw new Error("Valid Lead Source with Organization is required");
     }
 
+    // Match phones on digits only (so "+15550101234" / "15550101234" / "+1 555 010 1234" dedup) and
+    // NEVER dedup against a soft-deleted lead — otherwise a re-inquiry would be merged into a lead
+    // sitting in the recycle bin and silently lost. Mirrors LeadService.createLead's dedup.
+    const phoneDigits = phone ? phone.replace(/\D/g, "") : "";
     const searchConditions = [];
     if (email) searchConditions.push(eq(leads.email, email));
-    if (phone) searchConditions.push(eq(leads.phone, phone));
+    if (phoneDigits) searchConditions.push(sql`regexp_replace(${leads.phone}, '\\D', '', 'g') = ${phoneDigits}`);
 
-    // 2. Organization-Scoped Deduplication
+    // 2. Organization-Scoped Deduplication (active leads only)
     const [existingLead] = await db
       .select()
       .from(leads)
-      .where(and(eq(leads.organizationId, organizationId), or(...searchConditions)))
+      .where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt), or(...searchConditions)))
       .limit(1);
 
     if (existingLead) {

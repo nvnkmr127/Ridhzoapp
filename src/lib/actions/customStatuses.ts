@@ -3,7 +3,8 @@
 import { requireOrg } from "@/lib/rbac";
 import { revalidatePath } from "next/cache";
 import { CustomStatusSchemaService, StatusCategory } from "@/domains/leads/customStatusSchemaService";
-import { LeadStatusService, LeadStatus } from "@/domains/leads/leadStatusService";
+import { LeadStatusService } from "@/domains/leads/leadStatusService";
+import { LeadService } from "@/domains/leads/service";
 import { z } from "zod";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
 
@@ -55,13 +56,22 @@ export async function deleteCustomStatusAction(statusKey: string) {
   }
 }
 
-export async function bulkUpdateLeadStatusAction(leadIds: string[], newStatus: LeadStatus) {
+export async function bulkUpdateLeadStatusAction(leadIds: string[], newStatus: string) {
   const { userId, organizationId } = await requireOrg();
   if (!leadIds || leadIds.length === 0) throw new Error("No lead IDs provided");
 
-  const result = await LeadStatusService.bulkChangeStatus(leadIds, newStatus, userId, organizationId);
+  // Route through the single canonical status engine so won/lost bookkeeping (won_at, loss reason,
+  // follow-up cancellation) and custom-status categories apply — same path as single/bulk edits.
+  let updated = 0;
+  const updatedIds: string[] = [];
+  for (const id of leadIds) {
+    try {
+      const lead = await LeadService.changeStatus(id, newStatus, userId, organizationId);
+      if (lead) { updated++; updatedIds.push(id); }
+    } catch { /* skip a lead that no longer exists / can't transition */ }
+  }
   revalidatePath("/leads");
-  return result;
+  return { updatedCount: updated, leadIds: updatedIds };
 }
 
 export async function getLeadStatusHistoryAction(leadId: string) {

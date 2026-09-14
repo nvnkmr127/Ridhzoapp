@@ -51,10 +51,14 @@ export class LeadService {
     // otherwise formatting differences slip past both the app check and the DB unique index.
     const cleanEmail = normalizeEmail(data.email);
     const cleanPhone = normalizePhone(data.phone);
+    // Compare phones on digits only so "+15550101234", "15550101234" and "+1 (555) 010-1234" are
+    // treated as the same number — the DB unique index only catches exact-string matches, so this
+    // app-level check is what dedups country-code / plus-vs-no-plus variants at create time.
+    const phoneDigits = cleanPhone ? cleanPhone.replace(/\D/g, "") : "";
     if (cleanEmail || cleanPhone) {
       const orConds = [];
       if (cleanEmail) orConds.push(eq(leads.email, cleanEmail));
-      if (cleanPhone) orConds.push(eq(leads.phone, cleanPhone));
+      if (phoneDigits) orConds.push(sql`regexp_replace(${leads.phone}, '\\D', '', 'g') = ${phoneDigits}`);
       const existing = await db
         .select({ id: leads.id, name: leads.name, email: leads.email, phone: leads.phone, deletedAt: leads.deletedAt })
         .from(leads)
@@ -64,7 +68,7 @@ export class LeadService {
       const inRecycleBin = existing.filter((r) => r.deletedAt);
 
       const dupActiveEmail = cleanEmail && active.find((r) => r.email?.toLowerCase() === cleanEmail.toLowerCase());
-      const dupActivePhone = cleanPhone && active.find((r) => r.phone === cleanPhone);
+      const dupActivePhone = phoneDigits && active.find((r) => r.phone && r.phone.replace(/\D/g, "") === phoneDigits);
 
       if (dupActiveEmail && dupActivePhone) {
         const err = new Error(`A lead with this email and phone already exists ("${dupActivePhone.name}")`);
@@ -96,7 +100,7 @@ export class LeadService {
           if (cleanEmail && trashed.email?.toLowerCase() === cleanEmail.toLowerCase()) {
             updates.email = null;
           }
-          if (cleanPhone && trashed.phone === cleanPhone) {
+          if (phoneDigits && trashed.phone && trashed.phone.replace(/\D/g, "") === phoneDigits) {
             updates.phone = null;
           }
           if (Object.keys(updates).length > 0) {
@@ -172,16 +176,38 @@ export class LeadService {
     data: Partial<{ name: string; email: string; phone: string; company: string }>,
     updatedById: string,
     organizationId: string,
+    expectedUpdatedAt?: Date,
   ) {
     try {
       // Canonicalize contact keys on edit too, so they match the dedup index and stored formats.
       const patch: Record<string, unknown> = { ...data, updatedAt: new Date() };
       if ("email" in data) patch.email = normalizeEmail(data.email) ?? null;
       if ("phone" in data) patch.phone = normalizePhone(data.phone) ?? null;
+      const conds = [eq(leads.id, leadId), eq(leads.organizationId, organizationId)];
+      // Optimistic concurrency: only write if the row hasn't changed since the editor loaded it.
+      // Truncate to milliseconds so Postgres' microsecond precision doesn't cause false conflicts
+      // (every write sets updated_at from a JS Date, which is millisecond-precision).
+      if (expectedUpdatedAt) {
+        // Bind as a naive-UTC string (updated_at is `timestamp without time zone`, stored in UTC);
+        // a raw Date can't be a parameter inside a sql template.
+        const expIso = expectedUpdatedAt.toISOString().replace("Z", "");
+        conds.push(sql`date_trunc('milliseconds', ${leads.updatedAt}) = ${expIso}::timestamp`);
+      }
       const [updatedLead] = await db.update(leads)
         .set(patch)
-        .where(and(eq(leads.id, leadId), eq(leads.organizationId, organizationId)))
+        .where(and(...conds))
         .returning();
+      if (!updatedLead && expectedUpdatedAt) {
+        // Nothing updated: either the lead is gone or it was changed concurrently. Distinguish so the
+        // UI can tell the user to reload rather than silently clobbering a colleague's edit.
+        const [exists] = await db.select({ id: leads.id }).from(leads)
+          .where(and(eq(leads.id, leadId), eq(leads.organizationId, organizationId))).limit(1);
+        if (exists) {
+          const err = new Error("This lead was changed by someone else. Reload and try again.");
+          (err as any).code = "CONFLICT";
+          throw err;
+        }
+      }
       if (updatedLead) eventBus.emit('lead.updated', { leadId, userId: updatedById, changes: data });
       return updatedLead;
     } catch (e: any) {
@@ -499,11 +525,11 @@ export class LeadService {
       .limit(limit);
   }
 
-  static async listLeadsByStage(organizationId: string, limitPerStage = 20) {
-    const statuses = ["new", "active", "won", "lost", "unqualified"];
+  static async listLeadsByStage(organizationId: string, limitPerStage = 20, statuses?: string[]) {
+    const cols = statuses && statuses.length ? statuses : ["new", "active", "won", "lost", "unqualified"];
     const results: Record<string, { data: any[]; total: number }> = {};
 
-    for (const st of statuses) {
+    for (const st of cols) {
       const { data, total } = await this.listLeads({
         organizationId,
         status: st,
@@ -606,18 +632,23 @@ export class LeadService {
       ? and(eq(leads.id, leadId), eq(leads.organizationId, organizationId))
       : eq(leads.id, leadId);
 
-    const [currentLead] = await db.select({ status: leads.status }).from(leads).where(idWhere).limit(1);
+    const [currentLead] = await db.select({ status: leads.status, organizationId: leads.organizationId }).from(leads).where(idWhere).limit(1);
     if (!currentLead) throw new Error("Lead not found");
     if (currentLead.status === newStatus) return currentLead;
 
-    // Capture disposition: a loss reason for lost/unqualified, a won timestamp for won.
-    // Moving back to an open status clears the loss reason so stale reasons don't linger.
-    const isLoss = newStatus === "lost" || newStatus === "unqualified";
-    const isClosed = isLoss || newStatus === "won";
+    // Capture disposition by the target status's CATEGORY, not its literal key — so custom statuses
+    // (e.g. "closed_won" in the won category, "disqualified" in the lost category) get the same
+    // won/lost bookkeeping as the base keys. Resolving via the tenant schema is the single fix that
+    // keeps won_at, loss reason, follow-up cancellation and analytics correct for custom statuses.
+    const { CustomStatusSchemaService } = await import("./customStatusSchemaService");
+    const category = await CustomStatusSchemaService.getStatusCategory(currentLead.organizationId, newStatus);
+    const isLoss = category === "lost" || category === "unqualified";
+    const isWon = category === "won";
+    const isClosed = isLoss || isWon;
     const patch: Record<string, unknown> = { status: newStatus, updatedAt: new Date() };
     if (isLoss) patch.lostReason = reason?.trim() || null;
     else patch.lostReason = null;
-    if (newStatus === "won") patch.wonAt = new Date();
+    if (isWon) patch.wonAt = new Date();
     // A resolved lead is no longer an active follow-up opportunity: drop its pending follow-up so it
     // stops surfacing in overdue lists, the dashboard and "next best action". Reopening schedules anew.
     if (isClosed) patch.nextFollowUpAt = null;

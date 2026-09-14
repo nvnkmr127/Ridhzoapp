@@ -38,7 +38,7 @@ const createLeadSchema = z.object({
 export async function createLeadAction(
   input: z.infer<typeof createLeadSchema>,
 ): Promise<ActionResult<Awaited<ReturnType<typeof LeadService.createLead>>>> {
-  const { userId, organizationId } = await requireOrg();
+  const { userId, organizationId } = await requirePermission("leads.edit");
 
   const parsed = createLeadSchema.safeParse(input);
   if (!parsed.success) {
@@ -92,17 +92,19 @@ const updateLeadSchema = z.object({
   email: z.string().email("Invalid email").optional().or(z.literal("")),
   phone: phoneField,
   company: z.string().optional().or(z.literal("")),
+  // ISO timestamp the editor loaded the lead with — enables optimistic concurrency.
+  expectedUpdatedAt: z.string().optional().or(z.literal("")),
 });
 
 export async function updateLeadAction(input: z.infer<typeof updateLeadSchema>) {
-  const { userId, organizationId } = await requireOrg();
+  const { userId, organizationId } = await requirePermission("leads.edit");
 
   const parsed = updateLeadSchema.safeParse(input);
   if (!parsed.success) {
     return fail("VALIDATION", "Please fix the highlighted fields.", zodFieldErrors(parsed.error));
   }
 
-  const { id, ...data } = parsed.data;
+  const { id, expectedUpdatedAt, ...data } = parsed.data;
 
   // Cleanup empty strings to undefined
   const cleanData = {
@@ -113,7 +115,8 @@ export async function updateLeadAction(input: z.infer<typeof updateLeadSchema>) 
   };
 
   try {
-    const lead = await LeadService.updateLead(id, cleanData, userId, organizationId);
+    const expected = expectedUpdatedAt ? new Date(expectedUpdatedAt) : undefined;
+    const lead = await LeadService.updateLead(id, cleanData, userId, organizationId, expected);
     if (!lead) return fail("NOT_FOUND", "This lead no longer exists or was moved.");
     revalidatePath('/leads');
     revalidatePath(`/leads/${id}`);
@@ -124,7 +127,7 @@ export async function updateLeadAction(input: z.infer<typeof updateLeadSchema>) 
 }
 
 export async function updateCustomDataAction(leadId: string, data: Record<string, unknown>) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requirePermission("leads.edit");
   try {
     const updated = await LeadService.updateCustomData(leadId, data, organizationId);
     if (!updated) return fail("NOT_FOUND", "This lead no longer exists or was moved.");
@@ -235,7 +238,7 @@ export async function emptyRecycleBinAction() {
 }
 
 export async function changeLeadStatusAction(id: string, status: string, reason?: string) {
-  const { userId, organizationId } = await requireOrg();
+  const { userId, organizationId } = await requirePermission("leads.edit");
   try {
     const lead = await LeadService.changeStatus(id, status, userId, organizationId, reason);
     if (!lead) return fail("NOT_FOUND", "This lead no longer exists or was moved.");
@@ -256,7 +259,7 @@ const bulkChangeStatusSchema = z.object({
 
 // Reports partial success — one failing row never aborts the batch.
 export async function bulkChangeLeadStatusAction(input: z.infer<typeof bulkChangeStatusSchema>) {
-  const { userId, organizationId } = await requireOrg();
+  const { userId, organizationId } = await requirePermission("leads.edit");
 
   const parsed = bulkChangeStatusSchema.safeParse(input);
   if (!parsed.success) return fail("VALIDATION", "Select at least one lead and a status.");
@@ -285,7 +288,7 @@ const addNoteSchema = z.object({
 });
 
 export async function addNoteAction(input: z.infer<typeof addNoteSchema>) {
-  const { userId, organizationId } = await requireOrg();
+  const { userId, organizationId } = await requirePermission("leads.edit");
 
   const parsed = addNoteSchema.safeParse(input);
   if (!parsed.success) {
@@ -367,11 +370,12 @@ export async function updateNoteAction(input: z.infer<typeof updateNoteSchema>) 
   }
 }
 
-export const assignLeadAction = async (input: { leadId: string, ownerId: string | null, teamId: string | null }) => {
-  const { userId, organizationId } = await requireOrg();
+export const assignLeadAction = async (input: { leadId: string, ownerId: string | null, teamId?: string | null }) => {
+  const { userId, organizationId } = await requirePermission("leads.edit");
 
   if (!input.leadId) return fail("VALIDATION", "A lead is required.");
-  if (!input.ownerId && !input.teamId) return fail("VALIDATION", "Choose a user or a team to assign to.");
+  // teamId omitted (undefined) = change owner only, keep team. null = clear team.
+  if (!input.ownerId && input.teamId == null) return fail("VALIDATION", "Choose a user or a team to assign to.");
 
   try {
     const { AssignmentService } = await import("@/domains/leads/assignmentService");
@@ -396,7 +400,7 @@ export const assignLeadAction = async (input: { leadId: string, ownerId: string 
 };
 
 export const bulkAssignLeadAction = async (input: { leadIds: string[], ownerId: string | null, teamId: string | null }) => {
-  const { userId, organizationId } = await requireOrg();
+  const { userId, organizationId } = await requirePermission("leads.edit");
 
   if (!input.leadIds || input.leadIds.length === 0) return fail("VALIDATION", "Select at least one lead.");
   if (!input.ownerId && !input.teamId) return fail("VALIDATION", "Choose a user or a team to assign to.");

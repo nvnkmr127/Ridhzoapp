@@ -91,69 +91,10 @@ export class LeadStatusService {
     return updatedLead;
   }
 
-  /**
-   * Bulk updates lead status across multiple leads with tenant checks.
-   */
-  static async bulkChangeStatus(
-    leadIds: string[],
-    newStatus: LeadStatus,
-    changedById: string,
-    organizationId: string
-  ): Promise<{ updatedCount: number; leadIds: string[] }> {
-    if (leadIds.length === 0) {
-      return { updatedCount: 0, leadIds: [] };
-    }
-
-    const targetLeads = await db
-      .select({ id: leads.id, status: leads.status })
-      .from(leads)
-      .where(
-        and(
-          eq(leads.organizationId, organizationId),
-          inArray(leads.id, leadIds)
-        )
-      );
-
-    const eligibleLeads = targetLeads.filter(
-      (l) => l.status !== newStatus && this.isValidTransition(l.status, newStatus)
-    );
-
-    if (eligibleLeads.length === 0) {
-      return { updatedCount: 0, leadIds: [] };
-    }
-
-    const eligibleIds = eligibleLeads.map((l) => l.id);
-
-    await db
-      .update(leads)
-      .set({ status: newStatus, updatedAt: new Date() })
-      .where(
-        and(
-          eq(leads.organizationId, organizationId),
-          inArray(leads.id, eligibleIds)
-        )
-      );
-
-    const historyRows = eligibleLeads.map((l) => ({
-      leadId: l.id,
-      oldStatus: l.status,
-      newStatus,
-      changedById,
-    }));
-
-    await db.insert(leadStatusHistory).values(historyRows);
-
-    for (const l of eligibleLeads) {
-      eventBus.emit("lead.status_changed", {
-        leadId: l.id,
-        oldStatus: l.status,
-        newStatus,
-        userId: changedById,
-      });
-    }
-
-    return { updatedCount: eligibleIds.length, leadIds: eligibleIds };
-  }
+  // NOTE: bulk status changes route through LeadService.changeStatus (the single canonical status
+  // engine) so won/lost bookkeeping and custom-status categories always apply. A second bulk engine
+  // used to live here but diverged (it skipped won_at / loss-reason / follow-up cancellation), so it
+  // was removed. See lib/actions/customStatuses.ts and lib/actions/leads.ts.
 
   /**
    * Gets chronological status audit history for a lead with transition time calculations.

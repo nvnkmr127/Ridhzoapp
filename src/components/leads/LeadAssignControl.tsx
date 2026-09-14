@@ -25,7 +25,8 @@ export function LeadAssignControl({ leadId, ownerId }: { leadId: string; ownerId
     setValue(next);
     setBusy(true);
     try {
-      const res = await assignLeadAction({ leadId, ownerId: next, teamId: null });
+      // Owner-only change — omit teamId so the lead keeps its current team (passing null wiped it).
+      const res = await assignLeadAction({ leadId, ownerId: next });
       if (!res.ok) {
         setValue(prev);
         toast({ variant: "destructive", title: "Could not reassign", description: res.message });
