@@ -16,6 +16,7 @@ const ACTION_CONFIG_HINT: Record<string, string> = {
   create_task: '{"title": "Call lead", "dueAt": "2026-01-01T09:00:00Z"}',
   schedule_follow_up: '{"title": "First follow-up", "dueAt": "2026-01-01T09:00:00Z"}',
   send_whatsapp: '{"templateName": "welcome", "variables": ["{{name}}"]}',
+  enroll_in_sequence: '{"sequenceId": "..."}',
 };
 
 export function AutomationBuilder({ initialData = null, automationId }: { initialData?: any; automationId?: string }) {
@@ -110,6 +111,7 @@ export function AutomationBuilder({ initialData = null, automationId }: { initia
             <SelectItem value="create_task">Create Task</SelectItem>
             <SelectItem value="schedule_follow_up">Schedule Follow-up</SelectItem>
             <SelectItem value="send_whatsapp">Send WhatsApp</SelectItem>
+            <SelectItem value="enroll_in_sequence">Enroll in Sequence</SelectItem>
           </SelectContent>
         </Select>
         <div>

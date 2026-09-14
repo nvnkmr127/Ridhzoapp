@@ -113,6 +113,12 @@ export class AutomationEngine {
         });
         break;
 
+      case 'enroll_in_sequence':
+        if (!config.sequenceId) throw new Error("Missing sequenceId for enroll_in_sequence");
+        const { SequenceService } = await import("@/domains/leads/sequenceService");
+        await SequenceService.enrollFromAutomation(config.sequenceId, leadId);
+        break;
+
       case 'send_whatsapp':
         // Instant-reply to a fresh lead: outside the 24h window, so a template is required.
         if (!config.templateName) throw new Error("Missing templateName for send_whatsapp");

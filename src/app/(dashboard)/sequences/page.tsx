@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { GitFork, Users, Layers } from "lucide-react";
 import { listSequencesAction } from "@/lib/actions/sequences";
 import { SequenceBuilder } from "@/components/sequences/SequenceBuilder";
@@ -37,13 +38,13 @@ export default async function SequencesPage() {
               <ul className="divide-y divide-border">
                 {sequences.map((s) => (
                   <li key={s.id} className="flex items-center justify-between py-3">
-                    <div>
-                      <p className="font-medium">{s.name}</p>
-                      <p className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <Link href={`/sequences/${s.id}`} className="min-w-0 hover:underline underline-offset-2">
+                      <p className="font-medium truncate">{s.name}</p>
+                      <p className="flex items-center gap-3 text-xs text-muted-foreground no-underline">
                         <span className="flex items-center gap-1"><Layers className="h-3.5 w-3.5" /> {s.stepCount} steps</span>
                         <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> {s.activeEnrollments} active</span>
                       </p>
-                    </div>
+                    </Link>
                     <SequenceRowActions id={s.id} name={s.name} />
                   </li>
                 ))}

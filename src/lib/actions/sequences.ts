@@ -10,10 +10,13 @@ const stepSchema = z.object({
   dayOffset: z.coerce.number().int().min(0).max(365),
   channel: z.enum(["whatsapp", "email"]),
   body: z.string().min(1).max(2000),
+  attachmentUrl: z.string().url().max(2048).nullish().or(z.literal("")).transform((v) => v || null),
+  attachmentName: z.string().max(255).nullish().or(z.literal("")).transform((v) => v || null),
 });
 
 const createSchema = z.object({
   name: z.string().trim().min(1).max(255),
+  description: z.string().max(2000).nullish().or(z.literal("")).transform((v) => v || null),
   steps: z.array(stepSchema).min(1, "Add at least one step"),
 });
 
@@ -24,7 +27,7 @@ export async function createSequenceAction(input: unknown) {
     return fail("VALIDATION", "Add a name and at least one valid step (each with a message under 2,000 characters).");
   }
   try {
-    const seq = await SequenceService.create(organizationId, parsed.data.name, parsed.data.steps);
+    const seq = await SequenceService.create(organizationId, parsed.data.name, parsed.data.steps, parsed.data.description);
     revalidatePath("/sequences");
     return ok(seq);
   } catch (e) {
@@ -56,6 +59,11 @@ export async function getSequenceAction(sequenceId: string) {
   return SequenceService.getWithSteps(sequenceId, organizationId);
 }
 
+export async function getSequenceDetailAction(sequenceId: string) {
+  const { organizationId } = await requireOrg();
+  return SequenceService.getDetail(sequenceId, organizationId);
+}
+
 export async function updateSequenceAction(sequenceId: string, input: unknown) {
   const { organizationId } = await requireOrg();
   const parsed = createSchema.safeParse(input);
@@ -63,7 +71,7 @@ export async function updateSequenceAction(sequenceId: string, input: unknown) {
     return fail("VALIDATION", "Add a name and at least one valid step (each with a message under 2,000 characters).");
   }
   try {
-    const res = await SequenceService.update(organizationId, sequenceId, parsed.data.name, parsed.data.steps);
+    const res = await SequenceService.update(organizationId, sequenceId, parsed.data.name, parsed.data.steps, parsed.data.description);
     revalidatePath("/sequences");
     return ok(res);
   } catch (e) {

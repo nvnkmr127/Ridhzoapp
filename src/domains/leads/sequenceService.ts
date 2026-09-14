@@ -7,18 +7,25 @@ export interface SequenceStepInput {
   dayOffset: number;
   channel: "whatsapp" | "email";
   body: string;
+  attachmentUrl?: string | null;
+  attachmentName?: string | null;
 }
 
 const DAY = 24 * 60 * 60 * 1000;
 
-function renderTokens(body: string, lead: { name: string | null }): string {
+function renderTokens(body: string, lead: { name: string | null; company?: string | null; email?: string | null; phone?: string | null }): string {
   const first = (lead.name ?? "there").split(" ")[0];
-  return body.replace(/\{\{\s*first_name\s*\}\}/gi, first).replace(/\{\{\s*name\s*\}\}/gi, lead.name ?? "there");
+  return body
+    .replace(/\{\{\s*first_name\s*\}\}/gi, first)
+    .replace(/\{\{\s*name\s*\}\}/gi, lead.name ?? "there")
+    .replace(/\{\{\s*company\s*\}\}/gi, lead.company ?? "")
+    .replace(/\{\{\s*email\s*\}\}/gi, lead.email ?? "")
+    .replace(/\{\{\s*phone\s*\}\}/gi, lead.phone ?? "");
 }
 
 export class SequenceService {
-  static async create(organizationId: string, name: string, steps: SequenceStepInput[]) {
-    const [seq] = await db.insert(sequences).values({ organizationId, name }).returning();
+  static async create(organizationId: string, name: string, steps: SequenceStepInput[], description?: string | null) {
+    const [seq] = await db.insert(sequences).values({ organizationId, name, description: description ?? null }).returning();
     if (steps.length) {
       await db.insert(sequenceSteps).values(
         steps.map((s, i) => ({
@@ -27,6 +34,8 @@ export class SequenceService {
           dayOffset: Math.max(0, Math.floor(s.dayOffset)),
           channel: s.channel === "email" ? "email" : "whatsapp",
           body: s.body,
+          attachmentUrl: s.attachmentUrl || null,
+          attachmentName: s.attachmentName || null,
         }))
       );
     }
@@ -54,16 +63,63 @@ export class SequenceService {
     return {
       id: seq.id,
       name: seq.name,
-      steps: steps.map((s) => ({ dayOffset: s.dayOffset, channel: s.channel as "whatsapp" | "email", body: s.body })),
+      description: seq.description ?? "",
+      steps: steps.map((s) => ({
+        dayOffset: s.dayOffset,
+        channel: s.channel as "whatsapp" | "email",
+        body: s.body,
+        attachmentUrl: s.attachmentUrl ?? null,
+        attachmentName: s.attachmentName ?? null,
+      })),
+    };
+  }
+
+  // Read-only detail: sequence + steps with the count of active enrollments sitting on each step,
+  // plus the enrollment funnel (in-sequence / completed / removed).
+  static async getDetail(sequenceId: string, organizationId: string) {
+    const [seq] = await db.select().from(sequences).where(and(eq(sequences.id, sequenceId), eq(sequences.organizationId, organizationId)));
+    if (!seq) return null;
+    const steps = await db.select().from(sequenceSteps).where(eq(sequenceSteps.sequenceId, sequenceId)).orderBy(asc(sequenceSteps.stepIndex));
+
+    const funnelRows = await db
+      .select({ status: sequenceEnrollments.status, n: sql<number>`count(*)::int` })
+      .from(sequenceEnrollments)
+      .where(eq(sequenceEnrollments.sequenceId, sequenceId))
+      .groupBy(sequenceEnrollments.status);
+    const funnel = { active: 0, completed: 0, stopped: 0 } as Record<string, number>;
+    for (const r of funnelRows) funnel[r.status] = r.n;
+
+    const stepRows = await db
+      .select({ step: sequenceEnrollments.currentStep, n: sql<number>`count(*)::int` })
+      .from(sequenceEnrollments)
+      .where(and(eq(sequenceEnrollments.sequenceId, sequenceId), eq(sequenceEnrollments.status, "active")))
+      .groupBy(sequenceEnrollments.currentStep);
+    const perStep = new Map<number, number>(stepRows.map((r) => [r.step, r.n]));
+
+    return {
+      id: seq.id,
+      name: seq.name,
+      description: seq.description ?? "",
+      isActive: seq.isActive,
+      funnel: { active: funnel.active, completed: funnel.completed, removed: funnel.stopped },
+      steps: steps.map((s) => ({
+        stepIndex: s.stepIndex,
+        dayOffset: s.dayOffset,
+        channel: s.channel as "whatsapp" | "email",
+        body: s.body,
+        attachmentUrl: s.attachmentUrl,
+        attachmentName: s.attachmentName,
+        clients: perStep.get(s.stepIndex) ?? 0,
+      })),
     };
   }
 
   // Edit a sequence: rename + replace its steps wholesale. Active enrollments keep their
   // current step index; the new step list applies to what they run from here on.
-  static async update(organizationId: string, sequenceId: string, name: string, steps: SequenceStepInput[]) {
+  static async update(organizationId: string, sequenceId: string, name: string, steps: SequenceStepInput[], description?: string | null) {
     const [seq] = await db.select({ id: sequences.id }).from(sequences).where(and(eq(sequences.id, sequenceId), eq(sequences.organizationId, organizationId)));
     if (!seq) throw new Error("Sequence not found");
-    await db.update(sequences).set({ name }).where(eq(sequences.id, sequenceId));
+    await db.update(sequences).set({ name, description: description ?? null }).where(eq(sequences.id, sequenceId));
     await db.delete(sequenceSteps).where(eq(sequenceSteps.sequenceId, sequenceId));
     if (steps.length) {
       await db.insert(sequenceSteps).values(
@@ -73,10 +129,20 @@ export class SequenceService {
           dayOffset: Math.max(0, Math.floor(s.dayOffset)),
           channel: s.channel === "email" ? "email" : "whatsapp",
           body: s.body,
+          attachmentUrl: s.attachmentUrl || null,
+          attachmentName: s.attachmentName || null,
         }))
       );
     }
     return { id: sequenceId };
+  }
+
+  // Enroll a single lead from the automation engine — resolves the lead's org, then enrolls it into
+  // the sequence (org-checked). Used by the enroll_in_sequence automation action.
+  static async enrollFromAutomation(sequenceId: string, leadId: string) {
+    const [lead] = await db.select({ organizationId: leads.organizationId }).from(leads).where(eq(leads.id, leadId));
+    if (!lead?.organizationId) return { enrolled: 0 };
+    return this.enroll(lead.organizationId, sequenceId, [leadId]);
   }
 
   static async listForLead(leadId: string) {
@@ -154,7 +220,7 @@ export class SequenceService {
         await db.update(sequenceEnrollments).set({ status: "completed", nextRunAt: null }).where(eq(sequenceEnrollments.id, enr.id));
         continue;
       }
-      await this.deliver(enr.leadId, step.channel, step.body);
+      await this.deliver(enr.leadId, step.channel, step.body, step.attachmentUrl, step.attachmentName);
       processed++;
 
       const nextIndex = enr.currentStep + 1;
@@ -170,19 +236,23 @@ export class SequenceService {
 
   // Best-effort send. A failure (no BSP window, no email) must not stall the drip — we log a
   // manual-send nudge on the timeline and let the enrolment advance on schedule.
-  private static async deliver(leadId: string, channel: string, body: string) {
+  private static async deliver(leadId: string, channel: string, body: string, attachmentUrl?: string | null, attachmentName?: string | null) {
     const [lead] = await db.select().from(leads).where(eq(leads.id, leadId));
     if (!lead) return;
     const rendered = renderTokens(body, lead);
+    const label = attachmentName || "Attachment";
     try {
       if (channel === "email") {
         if (!lead.email) throw new Error("no email");
         const { sendEmail } = await import("@/lib/mail/mailer");
-        await sendEmail({ to: lead.email, subject: "Following up", html: `<p>${rendered.replace(/\n/g, "<br/>")}</p>` }, lead.organizationId ?? undefined);
+        const attachHtml = attachmentUrl ? `<p>📎 <a href="${attachmentUrl}">${label}</a></p>` : "";
+        await sendEmail({ to: lead.email, subject: "Following up", html: `<p>${rendered.replace(/\n/g, "<br/>")}</p>${attachHtml}` }, lead.organizationId ?? undefined);
         await ActivityService.addActivity({ leadId, type: "email", content: `[sequence email] ${rendered.slice(0, 120)}` });
       } else {
         const { WhatsAppService } = await import("@/lib/messaging/whatsapp/service");
-        await WhatsAppService.send({ leadId, body: rendered });
+        // WhatsApp text send: append the attachment link inline (no media upload path yet).
+        const waBody = attachmentUrl ? `${rendered}\n\n📎 ${label}: ${attachmentUrl}` : rendered;
+        await WhatsAppService.send({ leadId, body: waBody });
         await ActivityService.addActivity({ leadId, type: "whatsapp", content: `[sequence whatsapp] ${rendered.slice(0, 120)}` });
       }
     } catch {

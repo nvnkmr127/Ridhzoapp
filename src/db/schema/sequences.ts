@@ -7,6 +7,7 @@ export const sequences = pgTable("sequences", {
   id: uuid("id").defaultRandom().primaryKey(),
   organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -18,6 +19,8 @@ export const sequenceSteps = pgTable("sequence_steps", {
   dayOffset: integer("day_offset").default(0).notNull(),
   channel: varchar("channel", { length: 10 }).default("whatsapp").notNull(), // whatsapp | email
   body: text("body").notNull(),
+  attachmentUrl: varchar("attachment_url", { length: 2048 }), // optional file/brochure link
+  attachmentName: varchar("attachment_name", { length: 255 }),
 }, (t) => ({
   seqIdx: index("sequence_steps_seq_idx").on(t.sequenceId, t.stepIndex),
 }));

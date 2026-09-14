@@ -267,6 +267,13 @@
       "when": 1789363116315,
       "tag": "0037_smart_multiple_man",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1789363737774,
+      "tag": "0038_lame_hellcat",
+      "breakpoints": true
     }
   ]
 }

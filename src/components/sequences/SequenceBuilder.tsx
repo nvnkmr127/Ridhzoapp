@@ -11,14 +11,15 @@ import { useToast } from "@/hooks/use-toast";
 import { generateSequenceAction, type GeneratedSequenceStep } from "@/lib/actions/ai";
 import { createSequenceAction, updateSequenceAction } from "@/lib/actions/sequences";
 
-type Step = GeneratedSequenceStep;
+type Step = GeneratedSequenceStep & { attachmentUrl?: string | null; attachmentName?: string | null };
 
-const BLANK: Step = { dayOffset: 0, channel: "whatsapp", body: "" };
+const BLANK: Step = { dayOffset: 0, channel: "whatsapp", body: "", attachmentUrl: "", attachmentName: "" };
 
-export function SequenceBuilder({ initial }: { initial?: { id: string; name: string; steps: Step[] } }) {
+export function SequenceBuilder({ initial }: { initial?: { id: string; name: string; description?: string; steps: Step[] } }) {
   const router = useRouter();
   const { toast } = useToast();
   const [name, setName] = React.useState(initial?.name ?? "");
+  const [description, setDescription] = React.useState(initial?.description ?? "");
   const [goal, setGoal] = React.useState("");
   const [steps, setSteps] = React.useState<Step[]>(initial?.steps?.length ? initial.steps : [{ ...BLANK }]);
   const [generating, setGenerating] = React.useState(false);
@@ -65,9 +66,10 @@ export function SequenceBuilder({ initial }: { initial?: { id: string; name: str
     }
     setSaving(true);
     try {
+      const payload = { name: name.trim(), description: description.trim() || null, steps: clean };
       const res = initial?.id
-        ? await updateSequenceAction(initial.id, { name: name.trim(), steps: clean })
-        : await createSequenceAction({ name: name.trim(), steps: clean });
+        ? await updateSequenceAction(initial.id, payload)
+        : await createSequenceAction(payload);
       if (!res.ok) {
         toast({ variant: "destructive", title: "Couldn't save", description: res.message });
         return;
@@ -77,7 +79,7 @@ export function SequenceBuilder({ initial }: { initial?: { id: string; name: str
         router.push("/sequences");
       } else {
         toast({ title: "Sequence saved" });
-        setName(""); setGoal(""); setSteps([{ ...BLANK }]);
+        setName(""); setGoal(""); setDescription(""); setSteps([{ ...BLANK }]);
         router.refresh();
       }
     } catch {
@@ -94,6 +96,11 @@ export function SequenceBuilder({ initial }: { initial?: { id: string; name: str
       <div className="space-y-2">
         <Label htmlFor="seq-name">Name</Label>
         <Input id="seq-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. New lead nurture" />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="seq-desc">Description (optional)</Label>
+        <Input id="seq-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What this sequence is for" />
       </div>
 
       <div className="space-y-2">
@@ -132,6 +139,12 @@ export function SequenceBuilder({ initial }: { initial?: { id: string; name: str
             </div>
             <Textarea value={s.body} onChange={(e) => setStep(i, { body: e.target.value })}
               placeholder="Message… {{first_name}} is filled in automatically." className="min-h-[70px]" />
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Input value={s.attachmentName ?? ""} onChange={(e) => setStep(i, { attachmentName: e.target.value })}
+                placeholder="Attachment label (e.g. Brochure)" className="sm:w-56" />
+              <Input value={s.attachmentUrl ?? ""} onChange={(e) => setStep(i, { attachmentUrl: e.target.value })}
+                placeholder="Attachment link (https://…)" className="flex-1" />
+            </div>
           </div>
         ))}
         <Button type="button" variant="outline" size="sm" onClick={() => setSteps((s) => [...s, { ...BLANK, dayOffset: (s.at(-1)?.dayOffset ?? 0) + 2 }])} className="gap-2">
