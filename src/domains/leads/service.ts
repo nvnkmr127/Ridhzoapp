@@ -468,6 +468,37 @@ export class LeadService {
     };
   }
 
+  // Lean feed for the dashboard "Today's priorities" panel. Instead of loading every lead and scoring
+  // them all in JS, this returns only leads that CAN resolve to a high-priority next-best-action —
+  // a SQL superset of NextBestActionService's high-priority rules (new & uncontacted, overdue follow-up
+  // on an open lead, hot active lead, or a lead that recently opened shared content). NextBestAction
+  // stays the authority on the final label; this just narrows what we score.
+  static async listPriorityCandidates(organizationId: string, engagedIds: string[] = [], limit = 200) {
+    const now = new Date();
+    const openStatuses = ["new", "active"];
+    const orConds = [
+      and(eq(leads.status, "new"), isNull(leads.lastContactedAt)),
+      and(inArray(leads.status, openStatuses), isNotNull(leads.nextFollowUpAt), lt(leads.nextFollowUpAt, now)),
+      and(eq(leads.status, "active"), gte(leads.score, 70)),
+    ];
+    if (engagedIds.length) orConds.push(inArray(leads.id, engagedIds));
+
+    return db
+      .select({
+        id: leads.id,
+        name: leads.name,
+        status: leads.status,
+        score: leads.score,
+        phone: leads.phone,
+        email: leads.email,
+        lastContactedAt: leads.lastContactedAt,
+        nextFollowUpAt: leads.nextFollowUpAt,
+      })
+      .from(leads)
+      .where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt), or(...orConds)))
+      .limit(limit);
+  }
+
   static async listLeadsByStage(organizationId: string, limitPerStage = 20) {
     const statuses = ["new", "active", "won", "lost", "unqualified"];
     const results: Record<string, { data: any[]; total: number }> = {};

@@ -29,14 +29,8 @@ export class TagService {
       [tag] = await db.select().from(tags).where(eq(tags.name, name)).limit(1);
     }
 
-    const [linked] = await db
-      .select()
-      .from(leadTags)
-      .where(and(eq(leadTags.leadId, leadId), eq(leadTags.tagId, tag.id)))
-      .limit(1);
-    if (!linked) {
-      await db.insert(leadTags).values({ leadId, tagId: tag.id });
-    }
+    // The (lead_id, tag_id) PK makes this a no-op on re-add and safe under a concurrent double-add.
+    await db.insert(leadTags).values({ leadId, tagId: tag.id }).onConflictDoNothing();
     return { id: tag.id, name: tag.name };
   }
 

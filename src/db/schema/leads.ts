@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, timestamp, integer, jsonb, index, uniqueIndex, numeric } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, integer, jsonb, index, uniqueIndex, numeric, primaryKey } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 import { users, teams } from './users';
 import { organizations } from './organizations';
@@ -116,7 +116,9 @@ export const leadTags = pgTable('lead_tags', {
   leadId: uuid('lead_id').references(() => leads.id).notNull(),
   tagId: uuid('tag_id').references(() => tags.id).notNull(),
 }, (table) => ({
-  pk: index('lead_tags_pk').on(table.leadId, table.tagId), // using index as pseudo-PK for simplicity
+  // Real composite PK — prevents duplicate tag rows and makes onConflictDoNothing() in the tag
+  // services actually no-op on a re-add (the old plain index let duplicates through).
+  pk: primaryKey({ columns: [table.leadId, table.tagId] }),
 }));
 
 export const leadsRelations = relations(leads, ({ one, many }) => ({

@@ -23,10 +23,9 @@ function waLink(phone: string | null, label: string) {
 // NextBestAction engine, aggregated org-wide, floating content-openers to the top.
 export async function PriorityActions() {
   const { organizationId } = await requireOrg();
-  const [{ data }, engaged] = await Promise.all([
-    LeadService.listLeads({ organizationId, limit: 200 }),
-    ContentSharingService.recentlyEngagedLeadIds(organizationId),
-  ]);
+  const engaged = await ContentSharingService.recentlyEngagedLeadIds(organizationId);
+  // Only leads that can plausibly be high-priority are fetched + scored (not every lead in the org).
+  const data = await LeadService.listPriorityCandidates(organizationId, [...engaged]);
 
   const scored = data.map((l) => {
     const isEngaged = engaged.has(l.id);
