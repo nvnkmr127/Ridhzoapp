@@ -34,6 +34,21 @@ describe("SequenceService.enrollFromAutomation", () => {
   });
 });
 
+describe("SequenceService pause enforcement", () => {
+  beforeEach(() => vi.restoreAllMocks()); // restore the enroll spy from the previous describe
+
+  it("enroll refuses a paused sequence", async () => {
+    mockLeadOrg([{ id: "seq-1", isActive: false }]);
+    await expect(SequenceService.enroll("org-1", "seq-1", ["l1"])).rejects.toThrow(/paused/i);
+  });
+
+  it("setActive returns the toggled sequence", async () => {
+    (db.update as any).mockReturnValue({ set: () => ({ where: () => ({ returning: () => Promise.resolve([{ id: "seq-1", isActive: false }]) }) }) });
+    const res = await SequenceService.setActive("org-1", "seq-1", false);
+    expect(res).toEqual({ id: "seq-1", isActive: false });
+  });
+});
+
 describe("SequenceService.stopForLead", () => {
   beforeEach(() => { vi.clearAllMocks(); addActivity.mockResolvedValue(undefined); });
 

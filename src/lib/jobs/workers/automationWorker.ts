@@ -84,8 +84,10 @@ export const automationWorker = new Worker<AutomationJobData>(
         return { status: 'skipped', reason: 'conditions_not_met' };
       }
 
+      // Partial success still completes (no retry), but record which actions failed for visibility.
+      const partial = (result as { failures?: string[] }).failures;
       await db.update(automationRuns)
-        .set({ status: 'completed', completedAt: new Date() })
+        .set({ status: 'completed', completedAt: new Date(), error: partial && partial.length ? partial.join('; ') : null })
         .where(eq(automationRuns.id, runId));
 
       return { status: 'completed', executedActions: result.executedCount };

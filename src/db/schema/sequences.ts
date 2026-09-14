@@ -33,6 +33,7 @@ export const sequenceEnrollments = pgTable("sequence_enrollments", {
   organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   currentStep: integer("current_step").default(0).notNull(),
   status: varchar("status", { length: 10 }).default("active").notNull(), // active | completed | stopped
+  retryCount: integer("retry_count").default(0).notNull(), // transient send retries for the current step
   nextRunAt: timestamp("next_run_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => ({

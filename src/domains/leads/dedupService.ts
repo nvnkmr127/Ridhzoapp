@@ -8,11 +8,14 @@ import {
   leadTags,
   whatsappMessages,
   notifications,
+  leadAttachments,
+  sharedLinks,
+  sequenceEnrollments,
 } from "@/db/schema";
 import { and, eq, ne, or, isNull, asc, sql } from "drizzle-orm";
 
-// Child tables that carry a lead_id and should follow the surviving lead on merge.
-const REASSIGN = [activities, followUps, leadStatusHistory, whatsappMessages, notifications] as const;
+// Child tables with a plain lead_id (no per-lead unique) that should follow the surviving lead.
+const REASSIGN = [activities, followUps, leadStatusHistory, whatsappMessages, notifications, leadAttachments, sharedLinks] as const;
 
 export class DedupService {
   // Groups of leads in the org that share a normalized email or phone. Cheap heuristic, good enough
@@ -126,6 +129,24 @@ export class DedupService {
         }
       }
       await tx.update(leadTags).set({ leadId: primaryId }).where(eq(leadTags.leadId, duplicateId));
+
+      // Sequence enrollments: move the duplicate's onto the primary, but drop a duplicate's ACTIVE
+      // enrollment when the primary is already active in that same sequence (avoid two live drips).
+      const primaryActive = await tx
+        .select({ sequenceId: sequenceEnrollments.sequenceId })
+        .from(sequenceEnrollments)
+        .where(and(eq(sequenceEnrollments.leadId, primaryId), eq(sequenceEnrollments.status, "active")));
+      const activeSeq = new Set(primaryActive.map((s) => s.sequenceId));
+      const dupEnr = await tx
+        .select({ id: sequenceEnrollments.id, sequenceId: sequenceEnrollments.sequenceId, status: sequenceEnrollments.status })
+        .from(sequenceEnrollments)
+        .where(eq(sequenceEnrollments.leadId, duplicateId));
+      for (const e of dupEnr) {
+        if (e.status === "active" && activeSeq.has(e.sequenceId)) {
+          await tx.delete(sequenceEnrollments).where(eq(sequenceEnrollments.id, e.id));
+        }
+      }
+      await tx.update(sequenceEnrollments).set({ leadId: primaryId }).where(eq(sequenceEnrollments.leadId, duplicateId));
 
       await tx.delete(leads).where(and(eq(leads.id, duplicateId), eq(leads.organizationId, organizationId), ne(leads.id, primaryId)));
     });

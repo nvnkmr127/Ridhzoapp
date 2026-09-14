@@ -38,17 +38,25 @@ export class AutomationEngine {
       .where(eq(automationActions.automationId, automationId))
       .orderBy(asc(automationActions.orderIndex));
 
+    // Best-effort: one action failing (e.g. WhatsApp with no BSP) must not abort the rest, so a
+    // "welcome WhatsApp → enroll in sequence" automation still enrolls even if the WhatsApp step
+    // can't send. Only throw (→ job retry) when EVERY action failed; a partial success completes.
     let executedCount = 0;
+    const failures: string[] = [];
     for (const action of actions) {
       try {
         await this.executeAction(leadId, action.type, action.config as any, payload);
         executedCount++;
       } catch (error) {
-        throw new Error(`Action ${action.type} failed: ${(error as Error).message}`);
+        failures.push(`${action.type}: ${(error as Error).message}`);
       }
     }
 
-    return { skipped: false, executedCount };
+    if (actions.length > 0 && executedCount === 0) {
+      throw new Error(`All actions failed — ${failures.join("; ")}`);
+    }
+
+    return { skipped: false, executedCount, failures };
   }
 
   // Condition matching lives in one shared, pure module (also used by lead-distribution rules).

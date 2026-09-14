@@ -44,6 +44,9 @@ export class EmailInboundService {
       type: "email",
       content: formatInbound(input.subject, input.body),
     });
+    // A reply means the lead is engaged — stop any running drip so we don't keep auto-messaging.
+    const { SequenceService } = await import("./sequenceService");
+    await SequenceService.stopForLead(lead.id, "lead replied by email").catch(() => {});
     return { matched: true, leadId: lead.id };
   }
 }

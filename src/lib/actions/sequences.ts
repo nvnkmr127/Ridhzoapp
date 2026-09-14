@@ -79,6 +79,19 @@ export async function updateSequenceAction(sequenceId: string, input: unknown) {
   }
 }
 
+export async function setSequenceActiveAction(sequenceId: string, isActive: boolean) {
+  const { organizationId } = await requireOrg();
+  try {
+    const row = await SequenceService.setActive(organizationId, sequenceId, isActive);
+    if (!row) return fail("NOT_FOUND", "This sequence no longer exists.");
+    revalidatePath("/sequences");
+    revalidatePath(`/sequences/${sequenceId}`);
+    return ok(row);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
 export async function deleteSequenceAction(sequenceId: string) {
   const { organizationId } = await requireOrg();
   try {

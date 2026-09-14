@@ -165,6 +165,7 @@ export class SequenceService {
     if (leadIds.length === 0) return { enrolled: 0 };
     const [seq] = await db.select().from(sequences).where(and(eq(sequences.id, sequenceId), eq(sequences.organizationId, organizationId)));
     if (!seq) throw new Error("Sequence not found");
+    if (!seq.isActive) throw new Error("Sequence is paused");
     const steps = await db.select().from(sequenceSteps).where(eq(sequenceSteps.sequenceId, sequenceId)).orderBy(asc(sequenceSteps.stepIndex));
     if (steps.length === 0) throw new Error("Sequence has no steps");
 
@@ -188,6 +189,16 @@ export class SequenceService {
       enrolled++;
     }
     return { enrolled };
+  }
+
+  // Pause/resume a whole sequence. Paused sequences accept no new enrollments and deliver no steps.
+  static async setActive(organizationId: string, sequenceId: string, isActive: boolean) {
+    const [row] = await db
+      .update(sequences)
+      .set({ isActive })
+      .where(and(eq(sequences.id, sequenceId), eq(sequences.organizationId, organizationId)))
+      .returning({ id: sequences.id, isActive: sequences.isActive });
+    return row ?? null;
   }
 
   // Deletes a sequence; its steps and enrollments cascade via their foreign keys.
@@ -219,69 +230,118 @@ export class SequenceService {
   }
 
   // Scan worker entry point: deliver every due step, then advance or complete the enrolment.
+  // Only enrollments of ACTIVE (non-paused) sequences run.
   static async runDue(limit = 200): Promise<{ processed: number }> {
+    const now = new Date();
+    const MAX_RETRIES = 3;
+    const CLAIM_LEASE_MS = 15 * 60 * 1000; // if a worker crashes mid-send, the row frees after this
+
     const due = await db
-      .select()
+      .select({
+        id: sequenceEnrollments.id,
+        sequenceId: sequenceEnrollments.sequenceId,
+        leadId: sequenceEnrollments.leadId,
+        currentStep: sequenceEnrollments.currentStep,
+        retryCount: sequenceEnrollments.retryCount,
+        createdAt: sequenceEnrollments.createdAt,
+        nextRunAt: sequenceEnrollments.nextRunAt,
+      })
       .from(sequenceEnrollments)
-      .where(and(eq(sequenceEnrollments.status, "active"), lte(sequenceEnrollments.nextRunAt, new Date())))
+      .innerJoin(sequences, eq(sequenceEnrollments.sequenceId, sequences.id))
+      .where(and(eq(sequenceEnrollments.status, "active"), eq(sequences.isActive, true), lte(sequenceEnrollments.nextRunAt, now)))
       .limit(limit);
 
     let processed = 0;
     for (const enr of due) {
-      // Skip (and stop) enrollments whose lead was soft-deleted — e.g. a forward-only "don't save"
-      // lead or one sent to the recycle bin — so the bin never keeps receiving drip steps.
+      // Atomic claim: push nextRunAt to a lease in the future only if it's still the value we read.
+      // A second concurrent scan (or worker) sees the future value and its WHERE no longer matches,
+      // so exactly one worker delivers each step. On crash, the lease expires and it retries.
+      const claimed = await db
+        .update(sequenceEnrollments)
+        .set({ nextRunAt: new Date(now.getTime() + CLAIM_LEASE_MS) })
+        .where(and(eq(sequenceEnrollments.id, enr.id), eq(sequenceEnrollments.status, "active"), lte(sequenceEnrollments.nextRunAt, now)))
+        .returning({ id: sequenceEnrollments.id });
+      if (claimed.length === 0) continue; // someone else claimed it
+
+      // Skip (and stop) enrollments whose lead was soft-deleted (recycle bin / forward-only lead).
       const [leadRow] = await db.select({ deletedAt: leads.deletedAt }).from(leads).where(eq(leads.id, enr.leadId)).limit(1);
       if (!leadRow || leadRow.deletedAt) {
         await db.update(sequenceEnrollments).set({ status: "stopped", nextRunAt: null }).where(eq(sequenceEnrollments.id, enr.id));
         continue;
       }
+
       const steps = await db.select().from(sequenceSteps).where(eq(sequenceSteps.sequenceId, enr.sequenceId)).orderBy(asc(sequenceSteps.stepIndex));
       const step = steps[enr.currentStep];
       if (!step) {
         await db.update(sequenceEnrollments).set({ status: "completed", nextRunAt: null }).where(eq(sequenceEnrollments.id, enr.id));
         continue;
       }
-      await this.deliver(enr.leadId, step.channel, step.body, step.attachmentUrl, step.attachmentName);
-      processed++;
+
+      const res = await this.deliver(enr.leadId, step.channel, step.body, step.attachmentUrl, step.attachmentName);
+
+      // Transient failure (provider/network) → retry with backoff, don't advance, up to MAX_RETRIES.
+      if (!res.sent && !res.permanent && enr.retryCount + 1 < MAX_RETRIES) {
+        const backoff = new Date(now.getTime() + (enr.retryCount + 1) * 10 * 60 * 1000);
+        await db.update(sequenceEnrollments).set({ retryCount: enr.retryCount + 1, nextRunAt: backoff }).where(eq(sequenceEnrollments.id, enr.id));
+        continue;
+      }
+
+      // Sent, permanently un-sendable (no email/phone/BSP), or out of retries → advance. Leave a
+      // manual-send note when nothing actually went out so the rep can follow up.
+      if (!res.sent) {
+        await ActivityService.addActivity({
+          leadId: enr.leadId,
+          type: "note",
+          content: `Sequence step (${step.channel}) not sent — ${res.reason ?? "send manually"}.`,
+        }).catch(() => {});
+      } else {
+        processed++;
+      }
 
       const nextIndex = enr.currentStep + 1;
       if (steps[nextIndex]) {
         const nextRunAt = new Date(new Date(enr.createdAt).getTime() + steps[nextIndex].dayOffset * DAY);
-        await db.update(sequenceEnrollments).set({ currentStep: nextIndex, nextRunAt }).where(eq(sequenceEnrollments.id, enr.id));
+        await db.update(sequenceEnrollments).set({ currentStep: nextIndex, retryCount: 0, nextRunAt }).where(eq(sequenceEnrollments.id, enr.id));
       } else {
-        await db.update(sequenceEnrollments).set({ status: "completed", nextRunAt: null }).where(eq(sequenceEnrollments.id, enr.id));
+        await db.update(sequenceEnrollments).set({ status: "completed", retryCount: 0, nextRunAt: null }).where(eq(sequenceEnrollments.id, enr.id));
       }
     }
     return { processed };
   }
 
-  // Best-effort send. A failure (no BSP window, no email) must not stall the drip — we log a
-  // manual-send nudge on the timeline and let the enrolment advance on schedule.
-  private static async deliver(leadId: string, channel: string, body: string, attachmentUrl?: string | null, attachmentName?: string | null) {
+  // Attempt one send. Returns whether it sent; `permanent` = can't ever send as-is (no email/phone,
+  // BSP not configured) so the caller should advance; otherwise it's transient and worth a retry.
+  private static async deliver(
+    leadId: string,
+    channel: string,
+    body: string,
+    attachmentUrl?: string | null,
+    attachmentName?: string | null,
+  ): Promise<{ sent: boolean; permanent: boolean; reason?: string }> {
     const [lead] = await db.select().from(leads).where(eq(leads.id, leadId));
-    if (!lead) return;
+    if (!lead) return { sent: false, permanent: true, reason: "lead not found" };
     const rendered = renderTokens(body, lead);
     const label = attachmentName || "Attachment";
     try {
       if (channel === "email") {
-        if (!lead.email) throw new Error("no email");
+        if (!lead.email) return { sent: false, permanent: true, reason: "no email address" };
         const { sendEmail } = await import("@/lib/mail/mailer");
         const attachHtml = attachmentUrl ? `<p>📎 <a href="${attachmentUrl}">${label}</a></p>` : "";
         await sendEmail({ to: lead.email, subject: "Following up", html: `<p>${rendered.replace(/\n/g, "<br/>")}</p>${attachHtml}` }, lead.organizationId ?? undefined);
         await ActivityService.addActivity({ leadId, type: "email", content: `[sequence email] ${rendered.slice(0, 120)}` });
       } else {
+        if (!lead.phone) return { sent: false, permanent: true, reason: "no phone number" };
         const { WhatsAppService } = await import("@/lib/messaging/whatsapp/service");
-        // WhatsApp text send: append the attachment link inline (no media upload path yet).
         const waBody = attachmentUrl ? `${rendered}\n\n📎 ${label}: ${attachmentUrl}` : rendered;
         await WhatsAppService.send({ leadId, body: waBody });
         await ActivityService.addActivity({ leadId, type: "whatsapp", content: `[sequence whatsapp] ${rendered.slice(0, 120)}` });
       }
-    } catch {
-      await ActivityService.addActivity({
-        leadId,
-        type: "note",
-        content: `Sequence step due (${channel}) — send manually: ${rendered.slice(0, 160)}`,
-      });
+      return { sent: true, permanent: false };
+    } catch (e) {
+      const msg = (e as Error)?.message ?? "";
+      // BSP not configured (personal WhatsApp mode) is permanent for automated sends, not transient.
+      const permanent = /not configured|no email|no phone/i.test(msg);
+      return { sent: false, permanent, reason: msg.slice(0, 160) || "send failed" };
     }
   }
 }
