@@ -36,6 +36,11 @@ export const organizations = pgTable('organizations', {
   // When 1, a new lead sharing an email/phone with an existing one is auto-merged into it on arrival.
   autoMergeDuplicates: integer('auto_merge_duplicates').default(0).notNull(),
 
+  // Sequence "quiet hours": only send drip steps between these local hours (in `timezone`).
+  // Null on either = no window (send any time). Steps due outside defer to the next window open.
+  sequenceWindowStart: integer('sequence_window_start'), // 0-23
+  sequenceWindowEnd: integer('sequence_window_end'), // 1-24, exclusive
+
   // WhatsApp send mode: 'personal' = one-tap wa.me from the rep's own number (Privyr-style,
   // no BSP setup); 'bsp' = send through the WhatsApp Business API. Solos default to personal.
   whatsappMode: varchar('whatsapp_mode', { length: 10 }).default('personal').notNull(),

@@ -27,6 +27,7 @@ export interface AssignLeadOptions {
   teamId?: string | null;
   assignedById?: string;
   organizationId?: string;
+  source?: string; // 'automation' → don't let this assignment re-trigger automations
 }
 
 export interface BulkAssignLeadOptions {
@@ -190,6 +191,7 @@ export class AssignmentService {
     let teamId: string | null;
     let assignedById: string;
     let organizationId: string | undefined;
+    let source: string | undefined;
 
     if (typeof leadIdOrOptions === "object") {
       leadId = leadIdOrOptions.leadId;
@@ -197,6 +199,7 @@ export class AssignmentService {
       teamId = leadIdOrOptions.teamId ?? null;
       assignedById = leadIdOrOptions.assignedById ?? "system";
       organizationId = leadIdOrOptions.organizationId;
+      source = leadIdOrOptions.source;
     } else {
       leadId = leadIdOrOptions;
       ownerId = ownerIdArg ?? null;
@@ -248,6 +251,7 @@ export class AssignmentService {
         ownerId: ownerId || undefined,
         teamId,
         assignedById,
+        source,
       });
     }
 

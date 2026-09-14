@@ -13,6 +13,7 @@ export type EventPayload = {
   followUpId?: string;
   title?: string;
   type?: string;
+  source?: string; // e.g. 'automation' — used to stop automations from re-triggering automations
 };
 
 export interface SystemEvents {

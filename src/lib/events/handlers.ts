@@ -5,8 +5,23 @@ import { eq, and } from "drizzle-orm";
 import { automationQueue } from "@/lib/jobs/workers/automationWorker";
 import { enrichmentQueue } from "@/lib/jobs/workers/enrichmentWorker";
 
+// A per-event discriminator so a recurring trigger runs once per DISTINCT change, not once per lead.
+// lead.created is genuinely once-per-lead (no discriminator); status/assign/stage recur.
+function eventDiscriminator(eventType: string, p: EventPayload): string {
+  switch (eventType) {
+    case "lead.status_changed": return p.newStatus ?? "";
+    case "lead.assigned": return p.ownerId ?? "";
+    case "lead.stage_changed": return (p.changes?.stageId as string) ?? "";
+    case "lead.tag_added": return (p.changes?.tagId as string) ?? "";
+    default: return "";
+  }
+}
+
 async function dispatchTrigger(eventType: string, payload: EventPayload) {
   if (!payload.leadId) return;
+  // Stop automations from triggering automations: a change made BY an automation action doesn't
+  // cascade into more automations (prevents status ping-pong / assignment loops).
+  if (payload.source === "automation") return;
 
   // The lead is the tenancy source of truth — only automations of the lead's own org may fire.
   const [lead] = await db
@@ -31,8 +46,9 @@ async function dispatchTrigger(eventType: string, payload: EventPayload) {
       )
     );
 
+  const disc = eventDiscriminator(eventType, payload);
   for (const trigger of activeTriggers) {
-    const idempotencyKey = `${trigger.automationId}-${payload.leadId}-${eventType}`;
+    const idempotencyKey = `${trigger.automationId}-${payload.leadId}-${eventType}${disc ? `-${disc}` : ""}`;
 
     // jobId = idempotencyKey: BullMQ drops a duplicate enqueue of the same (automation, lead, event),
     // so an automation runs at most once per lead per trigger even if the event double-fires.
@@ -42,7 +58,7 @@ async function dispatchTrigger(eventType: string, payload: EventPayload) {
       triggerType: eventType,
       idempotencyKey,
       payload,
-    }, { jobId: idempotencyKey });
+    }, { jobId: idempotencyKey, attempts: 3, backoff: { type: "exponential", delay: 30_000 } });
   }
 }
 

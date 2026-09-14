@@ -33,6 +33,9 @@ const updateOrgSchema = z.object({
   country: z.string().trim().length(2).or(z.literal("")).nullish().transform((v) => v || null),
   // SLA escalation window in hours; 0/empty turns it off (stored as null).
   slaHours: z.coerce.number().int().min(0).max(720).nullish().transform((v) => (v ? v : null)),
+  // Sequence send window (quiet hours), local to the org timezone. Both null = always send.
+  sequenceWindowStart: z.coerce.number().int().min(0).max(23).nullish().transform((v) => (v == null || Number.isNaN(v) ? null : v)),
+  sequenceWindowEnd: z.coerce.number().int().min(1).max(24).nullish().transform((v) => (v == null || Number.isNaN(v) ? null : v)),
   // WhatsApp send mode: personal (wa.me one-tap) or bsp (Business API).
   whatsappMode: z.enum(["personal", "bsp"]).default("personal"),
   // "name" is always required; keep only known fields and force-include name.

@@ -105,6 +105,8 @@ export class OrgService {
       slaHours: number | null;
       whatsappMode: string;
       autoMergeDuplicates: number;
+      sequenceWindowStart: number | null;
+      sequenceWindowEnd: number | null;
     }>,
   ) {
     const [updated] = await db

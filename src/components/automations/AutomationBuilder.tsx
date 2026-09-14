@@ -12,10 +12,11 @@ import { createAutomation, updateAutomation } from "@/lib/actions/automations";
 // Per-action JSON hints so users know the shape each action's config expects.
 const ACTION_CONFIG_HINT: Record<string, string> = {
   assign_lead: '{"userId": "..."}',
+  assign_round_robin: '{} (optional {"maxCapacity": 25})',
   change_status: '{"status": "contacted"}',
   add_note: '{"content": "Reach out today"}',
-  create_task: '{"title": "Call lead", "dueAt": "2026-01-01T09:00:00Z"}',
-  schedule_follow_up: '{"title": "First follow-up", "dueAt": "2026-01-01T09:00:00Z"}',
+  create_task: '{"title": "Call lead", "dueInDays": 1}',
+  schedule_follow_up: '{"title": "First follow-up", "dueInDays": 1}',
   send_whatsapp: '{"templateName": "welcome", "variables": ["{{name}}"]}',
   enroll_in_sequence: '{"sequenceId": "..."}',
 };
@@ -170,7 +171,8 @@ export function AutomationBuilder({
               <Select value={a.type} onValueChange={(v) => setAction(i, { type: v, configStr: "" })}>
                 <SelectTrigger><SelectValue placeholder="Select action" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="assign_lead">Assign lead</SelectItem>
+                  <SelectItem value="assign_lead">Assign lead (to a person)</SelectItem>
+                  <SelectItem value="assign_round_robin">Assign round-robin (balance across team)</SelectItem>
                   <SelectItem value="change_status">Change status</SelectItem>
                   <SelectItem value="add_note">Add note</SelectItem>
                   <SelectItem value="create_task">Create task</SelectItem>

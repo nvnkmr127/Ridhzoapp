@@ -563,7 +563,7 @@ export class LeadService {
     });
   }
 
-  static async changeStatus(leadId: string, newStatus: string, changedById?: string | null, organizationId?: string, reason?: string | null) {
+  static async changeStatus(leadId: string, newStatus: string, changedById?: string | null, organizationId?: string, reason?: string | null, source?: string) {
     const idWhere = organizationId
       ? and(eq(leads.id, leadId), eq(leads.organizationId, organizationId))
       : eq(leads.id, leadId);
@@ -592,7 +592,7 @@ export class LeadService {
     if (isLoss && reason?.trim()) {
       await ActivityService.addActivity({ leadId, userId: validChangedById ?? undefined, type: "note", content: `Lost reason: ${reason.trim()}` });
     }
-    eventBus.emit('lead.status_changed', { leadId, oldStatus: currentLead.status, newStatus });
+    eventBus.emit('lead.status_changed', { leadId, oldStatus: currentLead.status, newStatus, userId: validChangedById ?? undefined, source });
     return updatedLead;
   }
 }

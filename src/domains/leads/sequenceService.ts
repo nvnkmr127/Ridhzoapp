@@ -1,7 +1,26 @@
 import { db } from "@/db";
-import { sequences, sequenceSteps, sequenceEnrollments, leads } from "@/db/schema";
+import { sequences, sequenceSteps, sequenceEnrollments, leads, organizations } from "@/db/schema";
 import { and, eq, lte, asc, sql, isNull } from "drizzle-orm";
 import { ActivityService } from "@/domains/activities/service";
+
+type SendWindow = { tz: string; start: number; end: number } | null;
+
+// Quiet hours: return null when `now` is inside the org's send window (deliver now), otherwise the
+// Date to defer to (next window open, hour granularity). ponytail: hour precision is plenty for a
+// day-scale drip; exact-minute timezone math would need a tz library we don't ship.
+export function nextSendableAt(now: Date, win: SendWindow): Date | null {
+  if (!win) return null;
+  const { tz, start, end } = win;
+  let h: number;
+  try {
+    h = Number(new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hour12: false }).format(now)) % 24;
+  } catch {
+    return null; // bad timezone → don't block sends
+  }
+  if (h >= start && h < end) return null;
+  const deferHours = h < start ? start - h : 24 - h + start;
+  return new Date(now.getTime() + deferHours * 3_600_000);
+}
 
 export interface SequenceStepInput {
   dayOffset: number;
@@ -241,6 +260,7 @@ export class SequenceService {
         id: sequenceEnrollments.id,
         sequenceId: sequenceEnrollments.sequenceId,
         leadId: sequenceEnrollments.leadId,
+        organizationId: sequenceEnrollments.organizationId,
         currentStep: sequenceEnrollments.currentStep,
         retryCount: sequenceEnrollments.retryCount,
         createdAt: sequenceEnrollments.createdAt,
@@ -250,6 +270,21 @@ export class SequenceService {
       .innerJoin(sequences, eq(sequenceEnrollments.sequenceId, sequences.id))
       .where(and(eq(sequenceEnrollments.status, "active"), eq(sequences.isActive, true), lte(sequenceEnrollments.nextRunAt, now)))
       .limit(limit);
+
+    const windowCache = new Map<string, SendWindow>();
+    const orgWindow = async (orgId: string): Promise<SendWindow> => {
+      if (windowCache.has(orgId)) return windowCache.get(orgId)!;
+      const [org] = await db
+        .select({ tz: organizations.timezone, start: organizations.sequenceWindowStart, end: organizations.sequenceWindowEnd })
+        .from(organizations)
+        .where(eq(organizations.id, orgId));
+      const win: SendWindow =
+        org && org.start != null && org.end != null && org.end > org.start
+          ? { tz: org.tz || "UTC", start: org.start, end: org.end }
+          : null;
+      windowCache.set(orgId, win);
+      return win;
+    };
 
     let processed = 0;
     for (const enr of due) {
@@ -267,6 +302,13 @@ export class SequenceService {
       const [leadRow] = await db.select({ deletedAt: leads.deletedAt }).from(leads).where(eq(leads.id, enr.leadId)).limit(1);
       if (!leadRow || leadRow.deletedAt) {
         await db.update(sequenceEnrollments).set({ status: "stopped", nextRunAt: null }).where(eq(sequenceEnrollments.id, enr.id));
+        continue;
+      }
+
+      // Quiet hours: if the step comes due outside the org's send window, defer to the next open.
+      const defer = nextSendableAt(now, await orgWindow(enr.organizationId));
+      if (defer) {
+        await db.update(sequenceEnrollments).set({ nextRunAt: defer }).where(eq(sequenceEnrollments.id, enr.id));
         continue;
       }
 

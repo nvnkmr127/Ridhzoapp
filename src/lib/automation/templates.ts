@@ -27,7 +27,6 @@ export const AUTOMATION_TEMPLATES = [
 export type AutomationTemplateId = (typeof AUTOMATION_TEMPLATES)[number]["id"];
 
 export function buildTemplatePayload(id: AutomationTemplateId) {
-  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
   switch (id) {
     case "welcome-whatsapp":
       return {
@@ -39,7 +38,8 @@ export function buildTemplatePayload(id: AutomationTemplateId) {
       return {
         name: "Schedule a first follow-up",
         trigger: { type: "lead.created", config: {} },
-        actions: [{ type: "schedule_follow_up", config: { title: "First follow-up call", dueAt: tomorrow } }],
+        // Relative offset so every future lead gets a follow-up 1 day out (not a fixed stale date).
+        actions: [{ type: "schedule_follow_up", config: { title: "First follow-up call", dueInDays: 1 } }],
       };
     case "reengage-overdue":
       return {

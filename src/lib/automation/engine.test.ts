@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AutomationEngine } from './engine';
+import { AutomationEngine, resolveDueAt } from './engine';
 import { db } from '@/db';
 
 vi.mock('@/db', () => ({ db: { select: vi.fn() } }));
@@ -79,5 +79,23 @@ describe('AutomationEngine action execution (best-effort)', () => {
     mockActions([{ type: 'send_whatsapp', config: {} }]);
     vi.spyOn(AutomationEngine as any, 'executeAction').mockRejectedValue(new Error('boom'));
     await expect(AutomationEngine.evaluateAndExecute('a1', 'l1')).rejects.toThrow(/All actions failed/);
+  });
+});
+
+describe('resolveDueAt (relative due dates)', () => {
+  it('computes relative offsets from now', () => {
+    const now = Date.now();
+    expect(resolveDueAt({ somethingElse: 1 } as any)).toBeNull(); // unknown key → no due
+    const d = resolveDueAt({ dueInDays: 2 })!;
+    expect(d.getTime()).toBeGreaterThan(now + 2 * 86_400_000 - 5000);
+    expect(d.getTime()).toBeLessThan(now + 2 * 86_400_000 + 5000);
+    const h = resolveDueAt({ dueInHours: 3 })!;
+    expect(Math.round((h.getTime() - now) / 3_600_000)).toBe(3);
+  });
+
+  it('honors an absolute dueAt override and rejects garbage', () => {
+    expect(resolveDueAt({ dueAt: '2030-01-01T00:00:00Z' })!.getUTCFullYear()).toBe(2030);
+    expect(resolveDueAt({ dueAt: 'not-a-date' })).toBeNull();
+    expect(resolveDueAt({})).toBeNull();
   });
 });

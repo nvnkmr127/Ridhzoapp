@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { SequenceService } from "./sequenceService";
+import { SequenceService, nextSendableAt } from "./sequenceService";
 import { db } from "@/db";
 
 vi.mock("@/db", () => ({ db: { select: vi.fn(), update: vi.fn() } }));
@@ -64,5 +64,28 @@ describe("SequenceService.stopForLead", () => {
     const res = await SequenceService.stopForLead("lead-1", "lead marked won");
     expect(res).toEqual({ stopped: 0 });
     expect(addActivity).not.toHaveBeenCalled();
+  });
+});
+
+describe("nextSendableAt (quiet hours)", () => {
+  const win = { tz: "UTC", start: 9, end: 17 };
+
+  it("returns null (send now) with no window or inside the window", () => {
+    expect(nextSendableAt(new Date("2026-01-01T10:00:00Z"), null)).toBeNull();
+    expect(nextSendableAt(new Date("2026-01-01T10:00:00Z"), win)).toBeNull();
+  });
+
+  it("defers to today's open when before the window", () => {
+    const d = nextSendableAt(new Date("2026-01-01T05:00:00Z"), win)!;
+    expect(d.toISOString()).toBe("2026-01-01T09:00:00.000Z"); // 5:00 → +4h
+  });
+
+  it("defers to tomorrow's open when after the window", () => {
+    const d = nextSendableAt(new Date("2026-01-01T20:00:00Z"), win)!;
+    expect(d.toISOString()).toBe("2026-01-02T09:00:00.000Z"); // 20:00 → +13h
+  });
+
+  it("does not block on a bad timezone", () => {
+    expect(nextSendableAt(new Date("2026-01-01T20:00:00Z"), { tz: "Not/AZone", start: 9, end: 17 })).toBeNull();
   });
 });

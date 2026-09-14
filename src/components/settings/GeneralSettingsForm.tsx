@@ -32,6 +32,8 @@ type Org = {
   requiredLeadFields?: string[] | null;
   slaHours?: number | null;
   whatsappMode?: string | null;
+  sequenceWindowStart?: number | null;
+  sequenceWindowEnd?: number | null;
 };
 
 const LEAD_FIELDS: { key: string; label: string }[] = [
@@ -121,6 +123,8 @@ export function GeneralSettingsForm({ organization }: { organization?: Org | nul
     country: organization?.country ?? "",
     slaHours: organization?.slaHours != null ? String(organization.slaHours) : "",
     whatsappMode: organization?.whatsappMode ?? "personal",
+    sequenceWindowStart: organization?.sequenceWindowStart != null ? String(organization.sequenceWindowStart) : "",
+    sequenceWindowEnd: organization?.sequenceWindowEnd != null ? String(organization.sequenceWindowEnd) : "",
   });
 
   // Prompt user before leaving with unsaved changes
@@ -194,6 +198,8 @@ export function GeneralSettingsForm({ organization }: { organization?: Org | nul
         name: f.name.trim(),
         whatsappMode: f.whatsappMode === "bsp" ? "bsp" : "personal",
         slaHours: f.slaHours === "" ? null : Number(f.slaHours),
+        sequenceWindowStart: f.sequenceWindowStart === "" ? null : Number(f.sequenceWindowStart),
+        sequenceWindowEnd: f.sequenceWindowEnd === "" ? null : Number(f.sequenceWindowEnd),
         requiredLeadFields: requiredFields as ("name" | "email" | "phone" | "company")[],
       });
       if (!res.ok) {
@@ -364,6 +370,17 @@ export function GeneralSettingsForm({ organization }: { organization?: Org | nul
             <Input id="slaHours" type="number" min={0} value={f.slaHours}
               onChange={(e) => set("slaHours", e.target.value)} placeholder="e.g. 24 — blank to disable" />
             <p className="text-xs text-muted-foreground">A new lead unactioned this long alerts its owner. Blank = off.</p>
+          </div>
+          <div className="space-y-2 max-w-md">
+            <Label>Sequence send window (quiet hours)</Label>
+            <div className="flex items-center gap-2">
+              <Input aria-label="Send from hour" type="number" min={0} max={23} value={f.sequenceWindowStart}
+                onChange={(e) => set("sequenceWindowStart", e.target.value)} placeholder="from (0–23)" className="w-28" />
+              <span className="text-sm text-muted-foreground">to</span>
+              <Input aria-label="Send until hour" type="number" min={1} max={24} value={f.sequenceWindowEnd}
+                onChange={(e) => set("sequenceWindowEnd", e.target.value)} placeholder="to (1–24)" className="w-28" />
+            </div>
+            <p className="text-xs text-muted-foreground">Drip steps only send between these hours ({f.timezone || "UTC"}); steps due outside defer to the next window. Blank = send any time.</p>
           </div>
           <div className="space-y-2 max-w-xs">
             <Label htmlFor="whatsappMode">WhatsApp sending</Label>
