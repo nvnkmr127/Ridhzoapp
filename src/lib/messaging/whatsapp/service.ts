@@ -150,6 +150,9 @@ export const WhatsAppService = {
       type: "message",
       content: `[whatsapp ← lead] ${input.body}`,
     });
+    // A reply means the lead is engaged — stop any running drip so we don't keep auto-messaging.
+    const { SequenceService } = await import("@/domains/leads/sequenceService");
+    await SequenceService.stopForLead(lead.id, "lead replied on WhatsApp").catch(() => {});
     return { matched: true, leadId: lead.id, organizationId: lead.organizationId };
   },
 };

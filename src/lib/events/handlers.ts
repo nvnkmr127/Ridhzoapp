@@ -120,6 +120,11 @@ eventBus.on('lead.assigned', async (p) => {
 eventBus.on('lead.status_changed', async (p) => {
   dispatchTrigger('lead.status_changed', p);
   await ActivityService.addActivity({ leadId: p.leadId, userId: p.userId, type: 'note', content: `Status changed from ${p.oldStatus} to ${p.newStatus}.` });
+  // Stop any running drip once the lead is resolved — no more sequence messages after a decision.
+  if (p.newStatus && ['won', 'lost', 'unqualified'].includes(p.newStatus)) {
+    const { SequenceService } = await import("@/domains/leads/sequenceService");
+    await SequenceService.stopForLead(p.leadId, `lead marked ${p.newStatus}`).catch(() => {});
+  }
   await fireLeadWebhook(p.leadId, 'lead.status_changed', { oldStatus: p.oldStatus, newStatus: p.newStatus });
   const { MetaCapiService } = await import("@/domains/leads/metaCapiService");
   // Meta CAPI: a won lead is the conversion worth optimising toward (hashed-PII event).

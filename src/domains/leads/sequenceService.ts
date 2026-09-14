@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { sequences, sequenceSteps, sequenceEnrollments, leads } from "@/db/schema";
-import { and, eq, lte, asc, sql } from "drizzle-orm";
+import { and, eq, lte, asc, sql, isNull } from "drizzle-orm";
 import { ActivityService } from "@/domains/activities/service";
 
 export interface SequenceStepInput {
@@ -168,12 +168,12 @@ export class SequenceService {
     const steps = await db.select().from(sequenceSteps).where(eq(sequenceSteps.sequenceId, sequenceId)).orderBy(asc(sequenceSteps.stepIndex));
     if (steps.length === 0) throw new Error("Sequence has no steps");
 
-    // Enforce tenant isolation on enrolled leadIds
+    // Enforce tenant isolation on enrolled leadIds; never enroll soft-deleted (recycle-bin) leads.
     const { inArray } = await import("drizzle-orm");
     const validLeads = await db
       .select({ id: leads.id })
       .from(leads)
-      .where(and(eq(leads.organizationId, organizationId), inArray(leads.id, leadIds)));
+      .where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt), inArray(leads.id, leadIds)));
     const validLeadIds = validLeads.map((l) => l.id);
 
     let enrolled = 0;
@@ -204,6 +204,20 @@ export class SequenceService {
     return { ok: true };
   }
 
+  // Stop every active enrollment for a lead — used when the lead replies or converts, so a drip
+  // never keeps messaging someone who's already responded. Best-effort; returns how many stopped.
+  static async stopForLead(leadId: string, reason?: string): Promise<{ stopped: number }> {
+    const rows = await db
+      .update(sequenceEnrollments)
+      .set({ status: "stopped", nextRunAt: null })
+      .where(and(eq(sequenceEnrollments.leadId, leadId), eq(sequenceEnrollments.status, "active")))
+      .returning({ id: sequenceEnrollments.id });
+    if (rows.length > 0 && reason) {
+      await ActivityService.addActivity({ leadId, type: "note", content: `Sequence stopped — ${reason}.` }).catch(() => {});
+    }
+    return { stopped: rows.length };
+  }
+
   // Scan worker entry point: deliver every due step, then advance or complete the enrolment.
   static async runDue(limit = 200): Promise<{ processed: number }> {
     const due = await db
@@ -214,6 +228,13 @@ export class SequenceService {
 
     let processed = 0;
     for (const enr of due) {
+      // Skip (and stop) enrollments whose lead was soft-deleted — e.g. a forward-only "don't save"
+      // lead or one sent to the recycle bin — so the bin never keeps receiving drip steps.
+      const [leadRow] = await db.select({ deletedAt: leads.deletedAt }).from(leads).where(eq(leads.id, enr.leadId)).limit(1);
+      if (!leadRow || leadRow.deletedAt) {
+        await db.update(sequenceEnrollments).set({ status: "stopped", nextRunAt: null }).where(eq(sequenceEnrollments.id, enr.id));
+        continue;
+      }
       const steps = await db.select().from(sequenceSteps).where(eq(sequenceSteps.sequenceId, enr.sequenceId)).orderBy(asc(sequenceSteps.stepIndex));
       const step = steps[enr.currentStep];
       if (!step) {

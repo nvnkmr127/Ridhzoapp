@@ -1,9 +1,10 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Pencil, Clock, Paperclip, MessageSquare, Mail } from "lucide-react";
+import { ArrowLeft, Pencil } from "lucide-react";
 import { getSequenceDetailAction } from "@/lib/actions/sequences";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { SequenceFlow } from "@/components/sequences/SequenceFlow";
 
 export default async function SequenceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -34,44 +35,13 @@ export default async function SequenceDetailPage({ params }: { params: Promise<{
 
       {seq.description && <p className="text-sm text-muted-foreground max-w-prose">{seq.description}</p>}
 
-      {/* Enrollment funnel */}
-      <div className="grid grid-cols-3 gap-3">
-        {([["In sequence", seq.funnel.active], ["Completed", seq.funnel.completed], ["Removed", seq.funnel.removed]] as const).map(([label, n]) => (
-          <div key={label} className="rounded-xl border bg-card p-4">
-            <p className="text-2xl font-bold tabular-nums">{n}</p>
-            <p className="text-xs text-muted-foreground">{label}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Steps */}
-      <div className="space-y-3">
-        <p className="text-sm font-medium">Sequence steps</p>
-        {seq.steps.map((s, i) => (
-          <div key={s.stepIndex}>
-            {i > 0 && s.dayOffset > 0 && (
-              <div className="flex items-center gap-1.5 pl-3 py-1 text-xs text-muted-foreground">
-                <Clock className="h-3.5 w-3.5" /> Wait until day {s.dayOffset}
-              </div>
-            )}
-            <div className="rounded-xl border bg-card p-4 space-y-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-                  {s.channel === "email" ? <Mail className="h-3.5 w-3.5" /> : <MessageSquare className="h-3.5 w-3.5" />}
-                  Step {i + 1} · {s.channel}
-                </span>
-                <span className="text-xs text-muted-foreground">{s.clients} client{s.clients === 1 ? "" : "s"}</span>
-              </div>
-              <p className="text-sm whitespace-pre-wrap">{s.body}</p>
-              {s.attachmentUrl && (
-                <a href={s.attachmentUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline">
-                  <Paperclip className="h-3.5 w-3.5" /> {s.attachmentName || "Attachment"}
-                </a>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
+      {seq.steps.length === 0 ? (
+        <div className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
+          This sequence has no steps yet. <Link href={`/sequences/${seq.id}/edit`} className="text-primary hover:underline">Add steps</Link>.
+        </div>
+      ) : (
+        <SequenceFlow steps={seq.steps} funnel={seq.funnel} />
+      )}
 
       <p className="text-xs text-muted-foreground">
         Enroll leads from any lead&apos;s page, or auto-enroll with an{" "}

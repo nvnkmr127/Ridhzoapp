@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { generateSequenceAction, type GeneratedSequenceStep } from "@/lib/actions/ai";
 import { createSequenceAction, updateSequenceAction } from "@/lib/actions/sequences";
@@ -116,23 +117,27 @@ export function SequenceBuilder({ initial }: { initial?: { id: string; name: str
 
       <div className="space-y-3">
         <Label>Steps</Label>
+        {steps.some((s) => s.channel === "whatsapp") && (
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            WhatsApp steps require the WhatsApp Business API. In personal mode they&apos;re logged as manual reminders instead of auto-sent.
+          </p>
+        )}
         {steps.map((s, i) => (
-          <div key={i} className="rounded-xl border p-3 space-y-2">
+          <div key={i} className="rounded-2xl border p-3 space-y-2">
             <div className="flex items-center gap-2 text-sm">
               <span className="text-muted-foreground">Day</span>
               <Input type="number" min={0} value={s.dayOffset}
                 onChange={(e) => setStep(i, { dayOffset: Math.max(0, Number(e.target.value) || 0) })}
                 className="w-20" />
-              <select
-                value={s.channel}
-                onChange={(e) => setStep(i, { channel: e.target.value === "email" ? "email" : "whatsapp" })}
-                className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-              >
-                <option value="whatsapp">WhatsApp</option>
-                <option value="email">Email</option>
-              </select>
+              <Select value={s.channel} onValueChange={(v) => setStep(i, { channel: v === "email" ? "email" : "whatsapp" })}>
+                <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                  <SelectItem value="email">Email</SelectItem>
+                </SelectContent>
+              </Select>
               {steps.length > 1 && (
-                <Button type="button" variant="ghost" size="icon" aria-label="Remove step" className="ml-auto text-white hover:text-white" onClick={() => setSteps((st) => st.filter((_, idx) => idx !== i))}>
+                <Button type="button" variant="ghost" size="icon" aria-label="Remove step" className="ml-auto text-muted-foreground hover:text-destructive" onClick={() => setSteps((st) => st.filter((_, idx) => idx !== i))}>
                   <Trash2 className="h-4 w-4" />
                 </Button>
               )}

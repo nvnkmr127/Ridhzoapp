@@ -76,13 +76,19 @@ export class DedupService {
       .limit(1);
     if (!primary) return false;
 
-    // Backfill primary's empty fields from the arrival; merge customData (primary wins on conflicts).
+    // Update primary's contact fields with the arrival's newest non-empty values (a returning lead
+    // may have a new phone/company), and merge customData with the arrival's fresh keys taking
+    // precedence. Never overwrite a value with a blank. Track what changed for the audit note.
     const backfill: Record<string, unknown> = {};
+    const changed: string[] = [];
     for (const f of ["email", "phone", "company", "name"] as const) {
-      if (!primary[f] && incoming[f]) backfill[f] = incoming[f];
+      const next = (incoming[f] as string | null)?.trim?.() || incoming[f];
+      if (next && next !== primary[f]) {
+        backfill[f] = incoming[f];
+        if (primary[f]) changed.push(f); // only note true overwrites, not blank backfills
+      }
     }
-    const mergedCustom = { ...(incoming.customData as any), ...(primary.customData as any) };
-    backfill.customData = mergedCustom;
+    backfill.customData = { ...(primary.customData as any), ...(incoming.customData as any) };
     if (Object.keys(backfill).length > 0) {
       await db.update(leads).set(backfill).where(eq(leads.id, primary.id));
     }
@@ -90,11 +96,10 @@ export class DedupService {
     await this.merge(incoming.organizationId, primary.id, incoming.id);
 
     const { ActivityService } = await import("@/domains/activities/service");
-    await ActivityService.addActivity({
-      leadId: primary.id,
-      type: "note",
-      content: `Auto-merged a duplicate lead (${email || phone}) on arrival.`,
-    }).catch(() => {});
+    const note = changed.length
+      ? `Auto-merged a duplicate lead (${email || phone}) on arrival; updated ${changed.join(", ")} with the newer details.`
+      : `Auto-merged a duplicate lead (${email || phone}) on arrival.`;
+    await ActivityService.addActivity({ leadId: primary.id, type: "note", content: note }).catch(() => {});
     return true;
   }
 
