@@ -1,5 +1,5 @@
 {
-  "id": "9844884a-a9c5-4019-93a4-a5af01d72ae2",
+  "id": "f6087928-becf-43b7-ace6-b19f584ba684",
   "prevId": "9a039d44-8345-42d1-a227-acb6be7d66a8",
   "version": "7",
   "dialect": "postgresql",
@@ -2614,6 +2614,131 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.lead_distribution_deliveries": {
+      "name": "lead_distribution_deliveries",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rule_id": {
+          "name": "rule_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "lead_id": {
+          "name": "lead_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "channel": {
+          "name": "channel",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recipient": {
+          "name": "recipient",
+          "type": "varchar(320)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_test": {
+          "name": "is_test",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "lead_distribution_deliveries_rule_idx": {
+          "name": "lead_distribution_deliveries_rule_idx",
+          "columns": [
+            {
+              "expression": "rule_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "lead_distribution_deliveries_organization_id_organizations_id_fk": {
+          "name": "lead_distribution_deliveries_organization_id_organizations_id_fk",
+          "tableFrom": "lead_distribution_deliveries",
+          "tableTo": "organizations",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "lead_distribution_deliveries_rule_id_lead_distribution_rules_id_fk": {
+          "name": "lead_distribution_deliveries_rule_id_lead_distribution_rules_id_fk",
+          "tableFrom": "lead_distribution_deliveries",
+          "tableTo": "lead_distribution_rules",
+          "columnsFrom": [
+            "rule_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.lead_distribution_rules": {
       "name": "lead_distribution_rules",
       "schema": "",
@@ -2631,6 +2756,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "name": {
+          "name": "name",
+          "type": "varchar(120)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "source_id": {
           "name": "source_id",
           "type": "uuid",
@@ -2642,7 +2773,7 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true,
-          "default": "'[]'::jsonb"
+          "default": "'{\"type\":\"AND\",\"conditions\":[]}'::jsonb"
         },
         "recipients": {
           "name": "recipients",

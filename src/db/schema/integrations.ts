@@ -23,12 +23,15 @@ export type DistributionRecipient = {
   value: string; // email address, user id, or phone number depending on channel
 };
 export type DistributionCondition = { field: string; operator: string; value: string };
+// Single-level condition group: match ALL (AND) or ANY (OR) of the leaf conditions.
+export type DistributionConditionGroup = { type: 'AND' | 'OR'; conditions: DistributionCondition[] };
 
 export const leadDistributionRules = pgTable('lead_distribution_rules', {
   id: uuid('id').defaultRandom().primaryKey(),
   organizationId: uuid('organization_id').references(() => organizations.id).notNull(),
+  name: varchar('name', { length: 120 }), // optional human label
   sourceId: uuid('source_id').references(() => leadSources.id), // null = match any source
-  conditions: jsonb('conditions').$type<DistributionCondition[]>().default([]).notNull(), // extra criteria (AND)
+  conditions: jsonb('conditions').$type<DistributionConditionGroup>().default({ type: 'AND', conditions: [] }).notNull(),
   recipients: jsonb('recipients').$type<DistributionRecipient[]>().default([]).notNull(),
   mode: varchar('mode', { length: 20 }).default('all').notNull(), // 'all' | 'round_robin'
   rrCursor: integer('rr_cursor').default(0).notNull(), // round-robin rotation position
@@ -37,6 +40,23 @@ export const leadDistributionRules = pgTable('lead_distribution_rules', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (t) => ({
   orgIdx: index('lead_distribution_org_idx').on(t.organizationId),
+}));
+
+// One row per (lead × recipient) forwarding attempt — the distribution delivery log. Also used to
+// show per-recipient lead counts for round-robin load visibility.
+export const leadDistributionDeliveries = pgTable('lead_distribution_deliveries', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').references(() => organizations.id).notNull(),
+  ruleId: uuid('rule_id').references(() => leadDistributionRules.id, { onDelete: 'cascade' }).notNull(),
+  leadId: uuid('lead_id'), // null for test sends
+  channel: varchar('channel', { length: 20 }).notNull(),
+  recipient: varchar('recipient', { length: 320 }).notNull(),
+  status: varchar('status', { length: 20 }).notNull(), // 'sent' | 'failed' | 'skipped'
+  error: text('error'),
+  isTest: integer('is_test').default(0).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => ({
+  ruleIdx: index('lead_distribution_deliveries_rule_idx').on(t.ruleId, t.createdAt),
 }));
 
 export const integrations = pgTable('integrations', {

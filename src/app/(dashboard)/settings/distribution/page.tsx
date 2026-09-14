@@ -11,10 +11,11 @@ import { LeadDistributionManager } from "@/components/settings/LeadDistributionM
 export default async function DistributionPage() {
   if (!(await hasPermission("api.manage"))) redirect("/leads");
   const { organizationId } = await requireOrg();
-  const [rules, sources, orgUsers] = await Promise.all([
+  const [rules, sources, orgUsers, deliveryCounts] = await Promise.all([
     LeadDistributionService.list(organizationId),
     LeadSourceService.getSources(organizationId),
     UserService.list(organizationId),
+    LeadDistributionService.deliveryCounts(organizationId),
   ]);
   const users = orgUsers.map((u: any) => ({
     id: u.id,
@@ -36,6 +37,7 @@ export default async function DistributionPage() {
         initial={rules}
         sources={sources.map((s) => ({ id: s.id, name: s.name }))}
         users={users}
+        deliveryCounts={deliveryCounts}
       />
     </div>
   );

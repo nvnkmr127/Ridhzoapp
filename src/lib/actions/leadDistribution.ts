@@ -18,8 +18,12 @@ const conditionSchema = z.object({
 });
 
 const ruleSchema = z.object({
+  name: z.string().trim().max(120).nullable(),
   sourceId: z.string().uuid().nullable(),
-  conditions: z.array(conditionSchema).max(10),
+  conditions: z.object({
+    type: z.enum(["AND", "OR"]),
+    conditions: z.array(conditionSchema).max(10),
+  }),
   recipients: z.array(recipientSchema).min(1, "Add at least one recipient").max(50),
   mode: z.enum(["all", "round_robin"]),
   skipSave: z.boolean(),
@@ -88,4 +92,20 @@ export async function deleteDistributionRuleAction(id: string) {
   } catch (e) {
     return actionFail(e);
   }
+}
+
+export async function testDistributionRuleAction(id: string) {
+  const { organizationId } = await requirePermission("api.manage");
+  try {
+    const res = await LeadDistributionService.sendTest(organizationId, id);
+    if (!res.ok) return fail("SERVER", res.message);
+    return ok({ sent: res.sent, total: res.total });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function listDistributionDeliveriesAction(ruleId: string) {
+  const { organizationId } = await requirePermission("api.manage");
+  return LeadDistributionService.listDeliveries(organizationId, ruleId);
 }
