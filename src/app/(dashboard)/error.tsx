@@ -16,7 +16,7 @@ export default function DashboardError({
   }, [error]);
 
   return (
-    <div className="flex-1 p-8">
+    <div className="flex-1 p-4 sm:p-8">
       <div className="mx-auto max-w-lg space-y-4 rounded-2xl border border-border bg-card p-6 shadow-sm text-center">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
           <AlertCircle className="h-6 w-6" />

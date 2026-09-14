@@ -58,7 +58,7 @@ export default async function HotLeadsPage() {
     });
 
   return (
-    <div className="flex-1 space-y-6 p-8 pt-6">
+    <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6">
       <div className="flex flex-col gap-2">
         <Link href="/leads" className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 w-fit">
           <ArrowLeft className="h-3.5 w-3.5" /> Back to all leads

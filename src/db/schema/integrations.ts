@@ -15,6 +15,19 @@ export const webhookEndpoints = pgTable('webhook_endpoints', {
   orgIdx: index('webhook_endpoints_org_idx').on(t.organizationId),
 }));
 
+// Lead distribution: forward a copy of every new lead to recipients. Each row is one
+// destination on one channel; on lead.created we fan the lead out to all active rows of the org.
+export const leadDistributionRecipients = pgTable('lead_distribution_recipients', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').references(() => organizations.id).notNull(),
+  channel: varchar('channel', { length: 20 }).default('email').notNull(), // 'email' (in_app/whatsapp: future)
+  destination: varchar('destination', { length: 320 }).notNull(), // email address (max RFC length)
+  isActive: integer('is_active').default(1).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => ({
+  orgIdx: index('lead_distribution_org_idx').on(t.organizationId),
+}));
+
 export const integrations = pgTable('integrations', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: varchar('name', { length: 255 }).notNull(),

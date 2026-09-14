@@ -34,7 +34,7 @@ export default async function FollowUpsDashboard() {
   const upcoming = userFollowUps.filter(f => f.followUp.status === 'pending' && new Date(f.followUp.dueAt) >= now);
 
   return (
-    <div className="p-8 max-w-6xl mx-auto space-y-6">
+    <div className="p-4 sm:p-8 max-w-6xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">My Follow-ups</h1>
         <a href="/follow-ups/calendar" className="text-sm font-medium text-muted-foreground hover:underline">Calendar view →</a>

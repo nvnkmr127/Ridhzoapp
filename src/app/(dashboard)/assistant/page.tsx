@@ -4,7 +4,7 @@ import { AiAssistant } from "@/components/assistant/AiAssistant";
 export default async function AssistantPage() {
   await requireOrg(); // gate + tenant context; the agent action re-derives org server-side
   return (
-    <div className="flex flex-col h-full p-8 pt-6">
+    <div className="flex flex-col h-full p-4 pt-4 sm:p-8 sm:pt-6">
       <div className="mb-4">
         <h2 className="text-3xl font-bold tracking-tight">Assistant</h2>
         <p className="text-sm text-muted-foreground">

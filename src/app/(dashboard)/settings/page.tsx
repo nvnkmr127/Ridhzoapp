@@ -1,13 +1,13 @@
 import { getOrganizationAction } from "@/lib/actions/organizations";
 import { GeneralSettingsForm } from "@/components/settings/GeneralSettingsForm";
 import Link from "next/link";
-import { Sliders, Database, MessageSquare, Users, ListPlus, KeyRound, ScrollText, CreditCard, Plug, Webhook, Mail, Sparkles } from "lucide-react";
+import { Sliders, Database, MessageSquare, Users, ListPlus, KeyRound, ScrollText, CreditCard, Plug, Webhook, Mail, Sparkles, Share2 } from "lucide-react";
 
 export default async function SettingsPage() {
   const organization = await getOrganizationAction();
 
   return (
-    <div className="flex-1 space-y-6 p-8 pt-6 max-w-7xl mx-auto">
+    <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between border-b border-border dark:border-border pb-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-foreground dark:text-foreground">Settings</h2>
@@ -84,6 +84,13 @@ export default async function SettingsPage() {
           >
             <Webhook className="h-4 w-4" />
             Webhooks
+          </Link>
+          <Link
+            href="/settings/distribution"
+            className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground dark:text-muted-foreground hover:bg-accent dark:hover:bg-accent"
+          >
+            <Share2 className="h-4 w-4" />
+            Lead Distribution
           </Link>
           <Link
             href="/settings/audit"

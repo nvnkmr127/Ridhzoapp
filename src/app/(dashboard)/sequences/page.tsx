@@ -9,7 +9,7 @@ export default async function SequencesPage() {
   const sequences = await listSequencesAction();
 
   return (
-    <div className="flex-1 space-y-6 p-8 pt-6">
+    <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6">
       <div>
         <h2 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
           <GitFork className="h-7 w-7" /> Sequences

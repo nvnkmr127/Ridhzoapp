@@ -78,6 +78,9 @@ eventBus.on('lead.created', async (p) => {
   dispatchTrigger('lead.created', p);
   await ActivityService.addActivity({ leadId: p.leadId, userId: isUuid(p.userId) ? p.userId : undefined, type: 'note', content: 'Lead was created manually.' });
   await fireLeadWebhook(p.leadId, 'lead.created');
+  // Lead distribution: forward a copy to every active recipient (no-op unless configured).
+  const { LeadDistributionService } = await import("@/domains/integrations/leadDistributionService");
+  await LeadDistributionService.distribute(p.leadId);
   // Meta CAPI: report the lead capture so ad campaigns can optimise (no-op unless configured).
   const { MetaCapiService } = await import("@/domains/leads/metaCapiService");
   await MetaCapiService.track(p.leadId, 'Lead');

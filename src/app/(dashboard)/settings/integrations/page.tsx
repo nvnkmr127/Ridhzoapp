@@ -35,7 +35,7 @@ export default async function IntegrationsPage() {
   const rzp = razorpayConfigured();
 
   return (
-    <div className="flex-1 space-y-6 p-8 pt-6 max-w-5xl">
+    <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6 max-w-5xl">
       <Suspense fallback={null}>
         <IntegrationStatusToast />
       </Suspense>

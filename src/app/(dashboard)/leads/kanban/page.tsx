@@ -11,7 +11,7 @@ export default async function KanbanPage() {
   const initialStages = await LeadService.listLeadsByStage(organizationId, 20);
 
   return (
-    <div className="flex-1 space-y-4 p-8 pt-6 h-full flex flex-col">
+    <div className="flex-1 space-y-4 p-4 pt-4 sm:p-8 sm:pt-6 h-full flex flex-col">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Pipeline Board</h2>

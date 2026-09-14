@@ -68,7 +68,7 @@ export default async function InsightsPage() {
   const GRADE_COLOR: Record<string, string> = { A: "text-emerald-500", B: "text-lime-500", C: "text-amber-500", D: "text-rose-500" };
 
   return (
-    <div className="flex-1 space-y-6 p-8 pt-6">
+    <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6">
       <div>
         <h2 className="text-3xl font-bold tracking-tight">Insights</h2>
         <p className="text-sm text-muted-foreground">Forecast, win/loss, source ROI, and pipeline health at a glance.</p>

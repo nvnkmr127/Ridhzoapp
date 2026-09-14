@@ -11,7 +11,7 @@ export default async function EditSequencePage({ params }: { params: Promise<{ i
   if (!sequence) notFound();
 
   return (
-    <div className="flex-1 space-y-6 p-8 pt-6">
+    <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6">
       <div className="flex items-center gap-3">
         <Button asChild variant="ghost" size="icon" aria-label="Go back">
           <Link href="/sequences"><ArrowLeft className="h-4 w-4" /></Link>

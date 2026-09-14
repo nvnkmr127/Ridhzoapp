@@ -8,6 +8,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useRouter } from "next/navigation";
 import { createAutomation, updateAutomation } from "@/lib/actions/automations";
 
+// Per-action JSON hints so users know the shape each action's config expects.
+const ACTION_CONFIG_HINT: Record<string, string> = {
+  assign_lead: '{"userId": "..."}',
+  change_status: '{"status": "contacted"}',
+  add_note: '{"content": "Reach out today"}',
+  create_task: '{"title": "Call lead", "dueAt": "2026-01-01T09:00:00Z"}',
+  schedule_follow_up: '{"title": "First follow-up", "dueAt": "2026-01-01T09:00:00Z"}',
+  send_whatsapp: '{"templateName": "welcome", "variables": ["{{name}}"]}',
+};
+
 export function AutomationBuilder({ initialData = null, automationId }: { initialData?: any; automationId?: string }) {
   const router = useRouter();
   const [name, setName] = useState(initialData?.name || "");
@@ -98,11 +108,16 @@ export function AutomationBuilder({ initialData = null, automationId }: { initia
             <SelectItem value="change_status">Change Status</SelectItem>
             <SelectItem value="add_note">Add Note</SelectItem>
             <SelectItem value="create_task">Create Task</SelectItem>
+            <SelectItem value="schedule_follow_up">Schedule Follow-up</SelectItem>
+            <SelectItem value="send_whatsapp">Send WhatsApp</SelectItem>
           </SelectContent>
         </Select>
         <div>
           <Label>Action Config (JSON)</Label>
-          <Input value={actionConfigStr} onChange={(e) => setActionConfigStr(e.target.value)} placeholder='{"userId": "..."}' />
+          <Input value={actionConfigStr} onChange={(e) => setActionConfigStr(e.target.value)} placeholder={ACTION_CONFIG_HINT[actionType] ?? "{}"} />
+          {ACTION_CONFIG_HINT[actionType] && (
+            <p className="text-xs text-muted-foreground mt-1">Example: {ACTION_CONFIG_HINT[actionType]}</p>
+          )}
         </div>
       </div>
 

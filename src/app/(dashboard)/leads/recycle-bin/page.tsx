@@ -18,7 +18,7 @@ export default async function RecycleBinPage() {
   ]);
 
   return (
-    <div className="space-y-6 p-8 pt-6">
+    <div className="space-y-6 p-4 pt-4 sm:p-8 sm:pt-6">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <Button asChild variant="ghost" size="icon" aria-label="Go back">

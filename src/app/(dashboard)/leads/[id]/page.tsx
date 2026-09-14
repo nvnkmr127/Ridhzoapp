@@ -209,7 +209,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       .toUpperCase() || "?";
 
   return (
-    <div className="flex-1 space-y-6 p-8 pt-6">
+    <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6">
       {/* Duplicate Warning Banner */}
       <LeadDuplicateBanner count={dupCount} searchQuery={lead.email || lead.phone || undefined} />
 

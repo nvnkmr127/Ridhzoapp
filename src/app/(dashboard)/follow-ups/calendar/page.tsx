@@ -46,7 +46,7 @@ export default async function FollowUpCalendarPage({ searchParams }: { searchPar
   const next = format(addMonths(cursor, 1), "yyyy-MM");
 
   return (
-    <div className="flex-1 p-8 pt-6 space-y-4">
+    <div className="flex-1 p-4 pt-4 sm:p-8 sm:pt-6 space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">{format(cursor, "MMMM yyyy")}</h1>
         <div className="flex items-center gap-2">
