@@ -57,6 +57,8 @@ export function LeadDistributionManager({ initial, sources, users }: { initial: 
 
   const sourceName = (id: string | null) => (id ? sources.find((s) => s.id === id)?.name ?? "Unknown source" : "Any source");
   const userName = (id: string) => users.find((u) => u.id === id)?.name ?? "Unknown user";
+  // Tolerate legacy rows where a recipient was a bare email string, not { channel, value }.
+  const norm = (r: any): Recipient => (typeof r === "string" ? { channel: "email", value: r } : r);
   const recipientLabel = (r: Recipient) => (r.channel === "in_app" ? userName(r.value) : r.value);
 
   function addRecipient() {
@@ -79,7 +81,7 @@ export function LeadDistributionManager({ initial, sources, users }: { initial: 
       id: r.id,
       sourceId: r.sourceId ?? ANY_SOURCE,
       conditions: r.conditions ?? [],
-      recipients: r.recipients ?? [],
+      recipients: (r.recipients ?? []).map(norm),
       mode: r.mode === "round_robin" ? "round_robin" : "all",
       skipSave: r.skipSave === 1,
     });
@@ -159,7 +161,7 @@ export function LeadDistributionManager({ initial, sources, users }: { initial: 
   }
 
   const ChannelIcon = ({ channel }: { channel: Channel }) => {
-    const Icon = CHANNELS.find((c) => c.v === channel)!.Icon;
+    const Icon = CHANNELS.find((c) => c.v === channel)?.Icon ?? Mail;
     return <Icon className="h-3.5 w-3.5 shrink-0" />;
   };
 
@@ -296,7 +298,7 @@ export function LeadDistributionManager({ initial, sources, users }: { initial: 
                   {(r.conditions?.length ?? 0) > 0 && <span className="text-xs font-normal text-muted-foreground">+{r.conditions.length} criteria</span>}
                 </p>
                 <div className="flex flex-wrap gap-1.5">
-                  {(r.recipients ?? []).map((rc) => (
+                  {(r.recipients ?? []).map(norm).map((rc) => (
                     <span key={`${rc.channel}-${rc.value}`} className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                       <ChannelIcon channel={rc.channel} />{recipientLabel(rc)}
                     </span>
