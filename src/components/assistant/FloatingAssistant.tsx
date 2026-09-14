@@ -8,11 +8,13 @@ import { Sparkles, X } from "lucide-react";
 // Mounted once in the dashboard layout → the assistant floats on every page.
 const STORE_KEY = "assistant-open";
 
-export function FloatingAssistant() {
+export function FloatingAssistant({ storageKey }: { storageKey?: string } = {}) {
   const [open, setOpen] = React.useState(false);
   // If the user is on a lead detail page, hand the assistant that lead's id so it's context-aware.
   const pathname = usePathname();
-  const currentLeadId = pathname?.match(/^\/leads\/([0-9a-f-]{36})/i)?.[1];
+  const currentLeadId = pathname?.match(
+    /^\/leads\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
+  )?.[1];
 
   // Remember open/closed across navigations (per-browser; safe if storage is blocked).
   React.useEffect(() => {
@@ -46,7 +48,7 @@ export function FloatingAssistant() {
             </button>
           </div>
           <div className="flex-1 min-h-0 px-4 pt-4 pb-3">
-            <AiAssistant currentLeadId={currentLeadId} />
+            <AiAssistant currentLeadId={currentLeadId} storageKey={storageKey} />
           </div>
         </div>
       )}

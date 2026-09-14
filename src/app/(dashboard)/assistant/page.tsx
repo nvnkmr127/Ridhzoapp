@@ -2,7 +2,7 @@ import { requireOrg } from "@/lib/rbac";
 import { AiAssistant } from "@/components/assistant/AiAssistant";
 
 export default async function AssistantPage() {
-  await requireOrg(); // gate + tenant context; the agent action re-derives org server-side
+  const { userId } = await requireOrg(); // gate + tenant context; the agent action re-derives org server-side
   return (
     <div className="flex flex-col h-full p-4 pt-4 sm:p-8 sm:pt-6">
       <div className="mb-4">
@@ -12,7 +12,7 @@ export default async function AssistantPage() {
         </p>
       </div>
       <div className="flex-1 min-h-0">
-        <AiAssistant />
+        <AiAssistant storageKey={userId} />
       </div>
     </div>
   );

@@ -2,7 +2,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { ImpersonationBanner } from "@/components/platform/ImpersonationBanner";
 import { FloatingAssistant } from "@/components/assistant/FloatingAssistant";
-import { isSuperAdmin } from "@/lib/rbac";
+import { isSuperAdmin, requireOrg } from "@/lib/rbac";
 
 // Every dashboard page is authed and DB-backed — render per request, never prerender at build.
 export const dynamic = "force-dynamic";
@@ -13,6 +13,7 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const superAdmin = await isSuperAdmin();
+  const { userId } = await requireOrg();
   return (
     <div className="flex h-dvh overflow-hidden bg-background text-foreground">
       <Sidebar isSuperAdmin={superAdmin} />
@@ -23,7 +24,7 @@ export default async function DashboardLayout({
           {children}
         </main>
       </div>
-      <FloatingAssistant />
+      <FloatingAssistant storageKey={userId} />
     </div>
   );
 }

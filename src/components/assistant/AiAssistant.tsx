@@ -8,6 +8,7 @@ import { runAgentAction } from "@/lib/actions/agent";
 import { sendWhatsAppAction, sendEmailAction } from "@/lib/actions/messaging";
 import { Bot, User, Send, Check, X, Loader2, Sparkles, History, Plus, MessageSquare, Trash2 } from "lucide-react";
 import type { AgentProposal } from "@/lib/ai/agent";
+import { flattenTurn } from "@/lib/ai/history";
 
 type Turn =
   | { role: "user"; content: string }
@@ -18,6 +19,10 @@ interface Conversation {
   title: string;
   updatedAt: number;
   turns: Turn[];
+  // The lead this chat was started on (pathname-derived at creation). Persisted so reopening the
+  // chat later — possibly from a different page — keeps acting on the ORIGINAL lead, not wherever
+  // the user happens to be now. undefined = chat had no lead context.
+  leadId?: string;
 }
 
 // Domain-smart starter prompts — one tap sends them. Keeps users from facing a blank box.
@@ -35,26 +40,32 @@ const LEAD_SUGGESTIONS = [
   "Set a reminder to follow up in 3 days",
 ];
 
-// History lives in localStorage (per-browser). ponytail: no table/migration needed for recent
-// chats; upgrade to a DB-backed store if history must sync across devices or a team.
-const CONV_KEY = "assistant-conversations";
+// History lives in localStorage (per-browser). The key is scoped per user so a shared browser never
+// shows one account's chats (with lead names/phones/drafts) to the next account that logs in.
+// ponytail: no table/migration needed for recent chats; upgrade to a DB-backed store if history
+// must sync across devices or a team.
+const CONV_KEY_BASE = "assistant-conversations";
 const MAX_CONVERSATIONS = 50;
 
-function loadConversations(): Conversation[] {
+function convKeyFor(storageKey?: string): string {
+  return storageKey ? `${CONV_KEY_BASE}:${storageKey}` : CONV_KEY_BASE;
+}
+function loadConversations(key: string): Conversation[] {
   try {
-    const raw = localStorage.getItem(CONV_KEY);
+    const raw = localStorage.getItem(key);
     return raw ? (JSON.parse(raw) as Conversation[]) : [];
   } catch {
     return [];
   }
 }
-function saveConversations(list: Conversation[]) {
+function saveConversations(key: string, list: Conversation[]) {
   try {
-    localStorage.setItem(CONV_KEY, JSON.stringify(list.slice(0, MAX_CONVERSATIONS)));
+    localStorage.setItem(key, JSON.stringify(list.slice(0, MAX_CONVERSATIONS)));
   } catch {
     /* storage unavailable — history just won't persist */
   }
 }
+
 function relativeTime(ts: number): string {
   const s = Math.round((Date.now() - ts) / 1000);
   if (s < 60) return "just now";
@@ -72,61 +83,83 @@ function newId(): string {
   }
 }
 
-export function AiAssistant({ currentLeadId }: { currentLeadId?: string } = {}) {
+export function AiAssistant({ currentLeadId, storageKey }: { currentLeadId?: string; storageKey?: string } = {}) {
   const { toast } = useToast();
   const suggestions = currentLeadId ? LEAD_SUGGESTIONS : SUGGESTIONS;
   const [turns, setTurns] = React.useState<Turn[]>([]);
   const [input, setInput] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  const [aiOff, setAiOff] = React.useState(false);
   const [conversations, setConversations] = React.useState<Conversation[]>([]);
   const [activeId, setActiveId] = React.useState<string | null>(null);
+  // Lead bound to the currently-open saved chat; undefined once activeId is set means "no lead".
+  // While the chat is still unsaved (activeId === null) we follow the live pathname (currentLeadId).
+  const [activeLeadId, setActiveLeadId] = React.useState<string | undefined>(undefined);
   const [showHistory, setShowHistory] = React.useState(false);
   const scroller = React.useRef<HTMLDivElement>(null);
 
+  const convKey = convKeyFor(storageKey);
   React.useEffect(() => {
-    setConversations(loadConversations());
-  }, []);
+    setConversations(loadConversations(convKey));
+  }, [convKey]);
 
   React.useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
   }, [turns, busy]);
 
-  // Upsert the current chat into history (creates an id on first save).
+  // The lead a new turn should act on: a saved chat keeps its original lead; an unsaved chat
+  // follows the page the user is on.
   const activeIdRef = React.useRef<string | null>(null);
   activeIdRef.current = activeId;
-  function persist(nextTurns: Turn[]) {
+  const activeLeadIdRef = React.useRef<string | undefined>(undefined);
+  activeLeadIdRef.current = activeLeadId;
+  function effectiveLeadId(): string | undefined {
+    return activeIdRef.current ? activeLeadIdRef.current : currentLeadId;
+  }
+
+  // Upsert the current chat into history (creates an id + binds the lead on first save).
+  function persist(nextTurns: Turn[], leadId: string | undefined) {
     if (nextTurns.length === 0) return;
     let id = activeIdRef.current;
     if (!id) {
       id = newId();
       setActiveId(id);
+      setActiveLeadId(leadId);
     }
     const title = (nextTurns.find((t) => t.role === "user")?.content ?? "New chat").slice(0, 60);
-    const conv: Conversation = { id, title, updatedAt: Date.now(), turns: nextTurns };
+    const conv: Conversation = { id, title, updatedAt: Date.now(), turns: nextTurns, leadId };
     setConversations((prev) => {
       const next = [conv, ...prev.filter((c) => c.id !== id)];
-      saveConversations(next);
+      saveConversations(convKey, next);
       return next;
     });
   }
 
+  // Synchronous re-entrancy guard: a fast double-Enter fires two keydowns before React re-renders
+  // `busy`, so both would pass the state check and double-submit. The ref closes that window.
+  const sendingRef = React.useRef(false);
+
   async function send(text?: string) {
     const msg = (text ?? input).trim();
-    if (!msg || busy) return;
+    if (!msg || busy || sendingRef.current) return;
+    sendingRef.current = true;
     setInput("");
     setBusy(true);
-    const history = turns.map((t) => ({ role: t.role, content: t.content }));
+    const leadId = effectiveLeadId();
+    const history = turns.map((t) => flattenTurn(t.role, t.content, t.role === "assistant" ? t.proposals : []));
     const withUser: Turn[] = [...turns, { role: "user", content: msg }];
     setTurns(withUser);
     try {
-      const res = await runAgentAction(msg, history, currentLeadId);
+      const res = await runAgentAction(msg, history, leadId);
+      if (!res.enabled) setAiOff(true);
       const withReply: Turn[] = [...withUser, { role: "assistant", content: res.text || "(no reply)", proposals: res.proposals }];
       setTurns(withReply);
-      persist(withReply);
+      persist(withReply, leadId);
     } catch {
       toast({ variant: "destructive", title: "Assistant failed", description: "Couldn't reach the server. Try again." });
     } finally {
       setBusy(false);
+      sendingRef.current = false;
     }
   }
 
@@ -149,7 +182,7 @@ export function AiAssistant({ currentLeadId }: { currentLeadId?: string } = {}) 
       const next = prev.map((t, i) =>
         i === turnIdx && t.role === "assistant" ? { ...t, proposals: t.proposals.filter((_, j) => j !== propIdx) } : t,
       );
-      persist(next);
+      persist(next, effectiveLeadId());
       return next;
     });
   }
@@ -157,6 +190,7 @@ export function AiAssistant({ currentLeadId }: { currentLeadId?: string } = {}) 
   function newChat() {
     setTurns([]);
     setActiveId(null);
+    setActiveLeadId(undefined);
     setInput("");
     setShowHistory(false);
   }
@@ -166,13 +200,14 @@ export function AiAssistant({ currentLeadId }: { currentLeadId?: string } = {}) 
     if (!conv) return;
     setTurns(conv.turns);
     setActiveId(id);
+    setActiveLeadId(conv.leadId);
     setShowHistory(false);
   }
 
   function deleteConversation(id: string) {
     setConversations((prev) => {
       const next = prev.filter((c) => c.id !== id);
-      saveConversations(next);
+      saveConversations(convKey, next);
       return next;
     });
     if (activeId === id) newChat();
@@ -241,17 +276,19 @@ export function AiAssistant({ currentLeadId }: { currentLeadId?: string } = {}) 
                   <p className="font-medium text-foreground">Your CRM assistant</p>
                   <p>Triage, tag, remind, or draft outreach across your leads.</p>
                 </div>
-                <div className="flex flex-col gap-2">
-                  {suggestions.map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => send(s)}
-                      className="text-left text-sm rounded-xl border border-border bg-card px-3.5 py-2.5 hover:bg-muted transition-colors"
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
+                {!aiOff && (
+                  <div className="flex flex-col gap-2">
+                    {suggestions.map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => send(s)}
+                        className="text-left text-sm rounded-xl border border-border bg-card px-3.5 py-2.5 hover:bg-muted transition-colors"
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -309,6 +346,11 @@ export function AiAssistant({ currentLeadId }: { currentLeadId?: string } = {}) 
             )}
           </div>
 
+          {aiOff && (
+            <div className="border-t pt-3 text-center text-xs text-muted-foreground">
+              The assistant isn&apos;t configured on this workspace yet.
+            </div>
+          )}
           <div className="border-t pt-4 flex gap-2">
             <Textarea
               value={input}
@@ -319,11 +361,12 @@ export function AiAssistant({ currentLeadId }: { currentLeadId?: string } = {}) 
                   send();
                 }
               }}
-              placeholder="Ask about your leads…"
+              placeholder={aiOff ? "Assistant unavailable" : "Ask about your leads…"}
+              disabled={aiOff}
               className="resize-none min-h-[44px] max-h-32"
               rows={1}
             />
-            <Button onClick={() => send()} disabled={busy || !input.trim()} size="icon" aria-label="Send message" className="h-11 w-11 shrink-0">
+            <Button onClick={() => send()} disabled={busy || aiOff || !input.trim()} size="icon" aria-label="Send message" className="h-11 w-11 shrink-0">
               <Send className="h-4 w-4" />
             </Button>
           </div>
