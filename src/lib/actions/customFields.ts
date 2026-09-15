@@ -1,16 +1,18 @@
 "use server";
 
-import { requireOrg, requirePermission } from "@/lib/rbac";
+import { requireOrg, requirePermission, hasPermission } from "@/lib/rbac";
 import { CustomFieldService } from "@/domains/customFields/service";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
 
+// Feeds the lead Add/Edit forms and detail view. Non-admins never receive admin-only defs, so
+// those fields are neither rendered nor submittable through the normal UI.
 export async function listCustomFieldsAction() {
   const { organizationId } = await requireOrg();
+  const isAdmin = await hasPermission("settings.manage");
   const fields = await CustomFieldService.list(organizationId);
-  console.log(`[CustomFields:Server] listCustomFieldsAction: org=${organizationId} count=${fields.length}`, fields.map((f) => ({ key: f.key, label: f.label, disabled: f.disabled })));
-  return fields;
+  return isAdmin ? fields : fields.filter((f) => !f.adminOnly);
 }
 
 const TYPES = ["text", "textarea", "number", "currency", "date", "datetime", "select", "multiselect", "checkbox", "url"] as const;

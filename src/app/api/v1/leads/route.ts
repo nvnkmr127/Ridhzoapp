@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { leads } from "@/db/schema";
 import { and, desc, eq, isNull, ilike, or, sql } from "drizzle-orm";
 import { LeadService } from "@/domains/leads/service";
-import { CustomFieldService } from "@/domains/customFields/service";
+import { CustomFieldService, FieldValidationError } from "@/domains/customFields/service";
 import { PlanService } from "@/domains/billing/planService";
 import { authorizeApiRequest } from "@/lib/apiAuth";
 
@@ -97,6 +97,10 @@ export async function POST(req: NextRequest) {
     // Only surface intentional business messages; never echo raw exception/DB text.
     const msg = e?.message || "";
     const m = msg.toLowerCase();
+    // Custom-field validation failures are user errors, not server faults.
+    if (e instanceof FieldValidationError || e?.code === "VALIDATION") {
+      return NextResponse.json({ error: msg }, { status: 422 });
+    }
     if (m.includes("limit") || m.includes("plan")) {
       return NextResponse.json({ error: msg }, { status: 402 });
     }

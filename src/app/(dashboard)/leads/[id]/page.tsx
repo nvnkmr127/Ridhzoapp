@@ -9,7 +9,8 @@ import { ShareContentCard } from "@/components/leads/ShareContentCard";
 import { ReengagementPlanCard } from "@/components/leads/ReengagementPlanCard";
 import { ContentSharingService } from "@/domains/leads/contentSharingService";
 import { OrgService } from "@/domains/organizations/service";
-import { requireOrg } from "@/lib/rbac";
+import { requireOrg, hasPermission } from "@/lib/rbac";
+import { CustomFieldService } from "@/domains/customFields/service";
 import { ActivityService } from "@/domains/activities/service";
 import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
@@ -52,6 +53,15 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   const lead = await LeadService.getLead(id, organizationId);
   if (!lead) {
     notFound();
+  }
+
+  // Non-admins never see admin-only custom values: strip them from the lead's customData before
+  // it reaches any client component (detail fields, insights card, RSC payload).
+  if (!(await hasPermission("settings.manage")) && lead.customData && typeof lead.customData === "object") {
+    const defs = await CustomFieldService.list(organizationId);
+    const cd = { ...(lead.customData as Record<string, unknown>) };
+    for (const f of defs) if (f.adminOnly) delete cd[f.key];
+    (lead as { customData: unknown }).customData = cd;
   }
 
   const cleanEmail = lead.email?.trim() || undefined;

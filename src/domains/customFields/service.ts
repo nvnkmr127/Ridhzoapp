@@ -1,12 +1,22 @@
 import { db } from "@/db";
 import { customFieldDefs } from "@/db/schema";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, max } from "drizzle-orm";
 
 export type CustomFieldType =
   | "text" | "textarea" | "number" | "currency" | "date" | "datetime"
   | "select" | "multiselect" | "checkbox" | "url";
 
 const OPTION_TYPES: CustomFieldType[] = ["select", "multiselect"];
+
+// Thrown by validate() for a user-caused bad value. Callers map this to 422 / a VALIDATION
+// result instead of a 500, and its message is safe to show the user.
+export class FieldValidationError extends Error {
+  readonly code = "VALIDATION";
+  constructor(message: string) {
+    super(message);
+    this.name = "FieldValidationError";
+  }
+}
 
 function slugify(label: string) {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 50) || "field";
@@ -21,6 +31,23 @@ export class CustomFieldService {
       .orderBy(asc(customFieldDefs.orderIndex), asc(customFieldDefs.createdAt));
   }
 
+  // A key unique within the org. Falls back to base_2, base_3… on collision so two fields never
+  // share a key (which would make a lead's custom_data value for that key ambiguous).
+  private static async uniqueKey(organizationId: string, base: string) {
+    const existing = new Set(
+      (await db
+        .select({ key: customFieldDefs.key })
+        .from(customFieldDefs)
+        .where(eq(customFieldDefs.organizationId, organizationId))
+      ).map((r) => r.key),
+    );
+    if (!existing.has(base)) return base;
+    for (let i = 2; ; i++) {
+      const candidate = `${base.slice(0, 47)}_${i}`;
+      if (!existing.has(candidate)) return candidate;
+    }
+  }
+
   static async create(
     organizationId: string,
     input: {
@@ -29,11 +56,18 @@ export class CustomFieldService {
       section?: string | null; subsection?: string | null;
     },
   ) {
+    const key = await this.uniqueKey(organizationId, slugify(input.label));
+    // Append to the end of the current order rather than colliding at index 0.
+    const [{ maxIndex } = { maxIndex: null }] = await db
+      .select({ maxIndex: max(customFieldDefs.orderIndex) })
+      .from(customFieldDefs)
+      .where(eq(customFieldDefs.organizationId, organizationId));
     const [row] = await db
       .insert(customFieldDefs)
       .values({
         organizationId,
-        key: slugify(input.label),
+        key,
+        orderIndex: (maxIndex ?? -1) + 1,
         label: input.label,
         type: input.type,
         options: OPTION_TYPES.includes(input.type) ? (input.options ?? []) : [],
@@ -94,54 +128,80 @@ export class CustomFieldService {
   }
 
   // Validates a custom_data payload against this org's field defs. Returns cleaned values.
-  static async validate(organizationId: string, data: Record<string, unknown> = {}) {
+  // `isAdmin` (default true, e.g. API keys) gates admin-only fields: a non-admin caller cannot
+  // set them (any admin-only key they send is ignored) and isn't required to fill them.
+  static async validate(
+    organizationId: string,
+    data: Record<string, unknown> = {},
+    opts: { isAdmin?: boolean } = {},
+  ) {
+    const isAdmin = opts.isAdmin ?? true;
     const defs = await this.list(organizationId);
     const clean: Record<string, unknown> = {};
     for (const def of defs) {
       if (def.disabled) continue; // disabled fields aren't captured
+      if (def.adminOnly && !isAdmin) continue; // non-admins can't see or set admin-only fields
       const raw = data[def.key];
-      const opts = def.options ?? [];
+      const options = def.options ?? [];
 
       // Emptiness depends on type: [] for multiselect, unchecked for checkbox.
       const isEmpty =
         raw === undefined || raw === null || raw === "" ||
         (def.type === "multiselect" && Array.isArray(raw) && raw.length === 0);
       if (isEmpty) {
-        if (def.required) throw new Error(`Missing required field: ${def.label}`);
+        if (def.required) throw new FieldValidationError(`Missing required field: ${def.label}`);
         continue;
       }
 
       switch (def.type) {
-        case "number": {
-          const trimmed = typeof raw === "string" ? raw.trim().replace(/^[$,€£₹]/, "").replace(/,/g, "") : raw;
+        case "number":
+        case "currency": {
+          // Currency shares number's coercion (strip currency symbols + thousands separators) so
+          // amounts are stored numerically, not as free text — sortable and aggregatable.
+          const trimmed = typeof raw === "string" ? raw.trim().replace(/[$€£₹,\s]/g, "") : raw;
           const num = Number(trimmed);
-          if (trimmed === "" || isNaN(num)) throw new Error(`${def.label} must be a number`);
+          if (trimmed === "" || isNaN(num)) throw new FieldValidationError(`${def.label} must be a number`);
           clean[def.key] = num;
           break;
         }
         case "checkbox":
           clean[def.key] = raw === true || raw === "true" || raw === "on" || raw === "1";
           break;
+        case "date": {
+          const s = String(raw);
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || isNaN(Date.parse(s))) throw new FieldValidationError(`${def.label} must be a valid date`);
+          clean[def.key] = s;
+          break;
+        }
+        case "datetime": {
+          const s = String(raw);
+          // datetime-local shape: YYYY-MM-DDTHH:mm (seconds optional).
+          if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(s) || isNaN(Date.parse(s))) throw new FieldValidationError(`${def.label} must be a valid date and time`);
+          clean[def.key] = s;
+          break;
+        }
         case "url": {
           const s = String(raw);
-          try { new URL(s.startsWith("http") ? s : `https://${s}`); } catch { throw new Error(`${def.label} must be a valid URL`); }
+          let parsed: URL;
+          try { parsed = new URL(/^https?:\/\//i.test(s) ? s : `https://${s}`); } catch { throw new FieldValidationError(`${def.label} must be a valid URL`); }
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new FieldValidationError(`${def.label} must be an http(s) URL`);
           clean[def.key] = s;
           break;
         }
         case "select":
-          if (opts.length && !opts.includes(String(raw))) throw new Error(`${def.label} must be one of: ${opts.join(", ")}`);
+          if (options.length && !options.includes(String(raw))) throw new FieldValidationError(`${def.label} must be one of: ${options.join(", ")}`);
           clean[def.key] = raw;
           break;
         case "multiselect": {
           const arr = Array.isArray(raw) ? raw.map(String) : String(raw).split(",").map((s) => s.trim()).filter(Boolean);
-          if (opts.length) {
-            const bad = arr.find((v) => !opts.includes(v));
-            if (bad) throw new Error(`${def.label} has an invalid option: ${bad}`);
+          if (options.length) {
+            const bad = arr.find((v) => !options.includes(v));
+            if (bad) throw new FieldValidationError(`${def.label} has an invalid option: ${bad}`);
           }
           clean[def.key] = arr;
           break;
         }
-        default: // text, textarea, date, datetime
+        default: // text, textarea
           clean[def.key] = raw;
       }
     }

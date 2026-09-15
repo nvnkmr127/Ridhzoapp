@@ -6,7 +6,7 @@ import { Users, Plus, Upload, FilterX, Kanban, Flame, Trash2 } from "lucide-reac
 import Link from "next/link";
 import { LeadService } from "@/domains/leads/service";
 import { SavedViewService } from "@/domains/savedViews/service";
-import { requireOrg } from "@/lib/rbac";
+import { requireOrg, hasPermission } from "@/lib/rbac";
 import { QuickAddLeadDrawer } from "@/components/leads/QuickAddLeadDrawer";
 import { LeadImportWizard } from "@/components/leads/LeadImportWizard";
 import { LeadsFilterBar } from "@/components/leads/LeadsFilterBar";
@@ -23,6 +23,7 @@ export default async function LeadsPage({
 }) {
   const params = await searchParams;
   const { userId, organizationId } = await requireOrg();
+  const isAdmin = await hasPermission("settings.manage");
 
   const search = typeof params.search === "string" ? params.search : undefined;
   const status = typeof params.status === "string" ? params.status : undefined;
@@ -64,6 +65,18 @@ export default async function LeadsPage({
   ]);
 
   const { data: leads, total, totalPages } = leadResult;
+
+  // Never send admin-only custom values to a non-admin's client (they'd otherwise sit in the RSC
+  // payload even with the column hidden).
+  const adminOnlyKeys = isAdmin ? [] : (customFieldDefs as any[]).filter((f) => f.adminOnly).map((f) => f.key);
+  const visibleLeads = adminOnlyKeys.length === 0
+    ? leads
+    : leads.map((l: any) => {
+        if (!l.customData || typeof l.customData !== "object") return l;
+        const cd = { ...(l.customData as Record<string, unknown>) };
+        for (const k of adminOnlyKeys) delete cd[k];
+        return { ...l, customData: cd };
+      });
 
   const hasActiveFilters = Boolean(search || status || ownerId || filters);
 
@@ -147,13 +160,13 @@ export default async function LeadsPage({
         )
       ) : (
         <LeadsTable
-          leads={leads}
+          leads={visibleLeads}
           page={page}
           pageSize={limit}
           total={total}
           totalPages={totalPages}
           customColumns={(customFieldDefs as any[])
-            .filter((f) => f.showOnTable && !f.disabled)
+            .filter((f) => f.showOnTable && !f.disabled && (isAdmin || !f.adminOnly))
             .map((f) => ({ key: f.key, label: f.label }))}
         />
       )}

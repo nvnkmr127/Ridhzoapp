@@ -69,10 +69,9 @@ export async function createLeadAction(
 
     await PlanService.assertCanAddLead(organizationId);
 
-    // Validate + clean org-defined custom fields.
-    console.log(`[createLeadAction:Server] org=${organizationId} validating customData:`, parsed.data.customData);
-    const customData = await CustomFieldService.validate(organizationId, parsed.data.customData ?? {});
-    console.log(`[createLeadAction:Server] validated customData:`, customData);
+    // Validate + clean org-defined custom fields. Admin-only fields are gated by role.
+    const isAdmin = await hasPermission("settings.manage");
+    const customData = await CustomFieldService.validate(organizationId, parsed.data.customData ?? {}, { isAdmin });
 
     const lead = await LeadService.createLead({ ...data, customData }, userId, organizationId);
 
@@ -129,7 +128,22 @@ export async function updateLeadAction(input: z.infer<typeof updateLeadSchema>) 
 export async function updateCustomDataAction(leadId: string, data: Record<string, unknown>) {
   const { organizationId } = await requirePermission("leads.edit");
   try {
-    const updated = await LeadService.updateCustomData(leadId, data, organizationId);
+    // Same server-side validation as create: enforce required/options/types and coerce values.
+    const isAdmin = await hasPermission("settings.manage");
+    const current = await LeadService.getLead(leadId, organizationId);
+    if (!current) return fail("NOT_FOUND", "This lead no longer exists or was moved.");
+    const validated = await CustomFieldService.validate(organizationId, data, { isAdmin });
+    // Keys the caller is allowed to edit; for these, `validated` is authoritative (a value the user
+    // cleared is absent → dropped). Every other stored key (internal scoring/attribution, extra
+    // webhook payload, and admin-only fields a non-admin can't see) is preserved untouched.
+    const defs = await CustomFieldService.list(organizationId);
+    const editableKeys = new Set(defs.filter((d) => !d.disabled && (isAdmin || !d.adminOnly)).map((d) => d.key));
+    const result: Record<string, unknown> = { ...validated };
+    for (const [k, v] of Object.entries((current.customData as Record<string, unknown>) ?? {})) {
+      if (k in result || editableKeys.has(k)) continue;
+      result[k] = v;
+    }
+    const updated = await LeadService.updateCustomData(leadId, result, organizationId);
     if (!updated) return fail("NOT_FOUND", "This lead no longer exists or was moved.");
     revalidatePath(`/leads/${leadId}`);
     return ok(updated);

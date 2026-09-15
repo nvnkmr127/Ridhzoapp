@@ -103,7 +103,10 @@ export function CustomFieldInputs({
         ) : (
           <Input
             id={id}
-            type={f.type === "number" ? "number" : f.type === "date" ? "date" : f.type === "datetime" ? "datetime-local" : f.type === "url" ? "url" : "text"}
+            // URL uses type=text (not type=url): the server accepts bare domains like "example.com"
+            // and adds the scheme, so the browser must not hard-reject them on submit.
+            type={f.type === "number" ? "number" : f.type === "date" ? "date" : f.type === "datetime" ? "datetime-local" : "text"}
+            inputMode={f.type === "url" ? "url" : undefined}
             value={val}
             onChange={(e) => onChange(f.key, e.target.value)}
             className={req && !val.trim() ? "border-destructive/60" : ""}

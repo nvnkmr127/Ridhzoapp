@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, timestamp, boolean, jsonb, integer, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, timestamp, boolean, jsonb, integer, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { organizations } from './organizations';
 import { users, roles } from './users';
 
@@ -51,7 +51,9 @@ export const customFieldDefs = pgTable('custom_field_defs', {
   orderIndex: integer('order_index').notNull().default(0),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (t) => ({
-  orgKeyIdx: index('custom_field_org_key_idx').on(t.organizationId, t.key),
+  // Unique so two field defs in one org can never share a key (which would make a lead's
+  // custom_data value for that key ambiguous). create() also dedupes keys at the app layer.
+  orgKeyIdx: uniqueIndex('custom_field_org_key_idx').on(t.organizationId, t.key),
 }));
 
 // Google Calendar OAuth tokens, one row per connected user. Booking events land on their calendar.

@@ -90,6 +90,7 @@ export function CustomFieldsManager({ initial }: { initial: Field[] }) {
   const [editLabel, setEditLabel] = React.useState("");
   const [editRequired, setEditRequired] = React.useState(false);
   const [editOptions, setEditOptions] = React.useState("");
+  const [editDefaultValue, setEditDefaultValue] = React.useState("");
   const [editShowOnTable, setEditShowOnTable] = React.useState(false);
   const [editAdminOnly, setEditAdminOnly] = React.useState(false);
   const [editDisabled, setEditDisabled] = React.useState(false);
@@ -99,12 +100,13 @@ export function CustomFieldsManager({ initial }: { initial: Field[] }) {
   function startEdit(f: Field) {
     setEditId(f.id); setEditLabel(f.label); setEditRequired(f.required); setEditOptions((f.options ?? []).join(", "));
     setEditShowOnTable(!!f.showOnTable); setEditAdminOnly(!!f.adminOnly); setEditDisabled(!!f.disabled);
-    setEditSection(f.section ?? ""); setEditSubsection(f.subsection ?? "");
+    setEditSection(f.section ?? ""); setEditSubsection(f.subsection ?? ""); setEditDefaultValue(f.defaultValue ?? "");
   }
 
   async function saveEdit(f: Field) {
     const options = HAS_OPTIONS(f.type) ? editOptions.split(",").map((o) => o.trim()).filter(Boolean) : undefined;
-    const patch = { label: editLabel.trim(), required: editRequired, showOnTable: editShowOnTable, adminOnly: editAdminOnly, disabled: editDisabled, section: editSection.trim() || null, subsection: editSubsection.trim() || null };
+    const hasDefault = f.type !== "checkbox" && f.type !== "multiselect";
+    const patch = { label: editLabel.trim(), required: editRequired, showOnTable: editShowOnTable, adminOnly: editAdminOnly, disabled: editDisabled, section: editSection.trim() || null, subsection: editSubsection.trim() || null, ...(hasDefault ? { defaultValue: editDefaultValue.trim() || null } : {}) };
     const prev = fields;
     setFields((p) => p.map((x) => (x.id === f.id ? { ...x, ...patch, label: patch.label || x.label, options: options ?? x.options } : x)));
     setEditId(null);
@@ -190,6 +192,9 @@ export function CustomFieldsManager({ initial }: { initial: Field[] }) {
                 <Input value={editLabel} onChange={(e) => setEditLabel(e.target.value)} className="h-8 w-44" />
                 {HAS_OPTIONS(f.type) && (
                   <Input value={editOptions} onChange={(e) => setEditOptions(e.target.value)} placeholder="Options, comma-separated" className="h-8 flex-1 min-w-[12rem]" />
+                )}
+                {f.type !== "checkbox" && f.type !== "multiselect" && (
+                  <Input value={editDefaultValue} onChange={(e) => setEditDefaultValue(e.target.value)} placeholder="Default value" className="h-8 w-32" />
                 )}
                 <Input list="cf-sections" value={editSection} onChange={(e) => setEditSection(e.target.value)} placeholder="Tab" className="h-8 w-32" />
                 <Input list="cf-subsections" value={editSubsection} onChange={(e) => setEditSubsection(e.target.value)} placeholder="Sub-tab" className="h-8 w-32" />

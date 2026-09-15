@@ -283,7 +283,10 @@ export class LeadService {
 
     if (rule.field.startsWith("customData.")) {
       const key = rule.field.replace("customData.", "");
-      const jsonPath = sql`${leads.customData}->>${key}`;
+      // Some legacy rows stored custom_data as a JSON *string* scalar instead of an object; unwrap
+      // those (#>>'{}' then re-cast) so ->> extracts the key for both shapes.
+      const cd = sql`(CASE WHEN jsonb_typeof(${leads.customData}) = 'string' THEN (${leads.customData} #>> '{}')::jsonb ELSE ${leads.customData} END)`;
+      const jsonPath = sql`${cd}->>${key}`;
       const strVal = String(rawVal ?? "");
 
       switch (op) {
