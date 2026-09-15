@@ -33,7 +33,7 @@ export function LeadsFilterBar({
   const [term, setTerm] = React.useState(currentSearch);
   const [filterModalOpen, setFilterModalOpen] = React.useState(false);
   const [saveModalOpen, setSaveModalOpen] = React.useState(false);
-  const timer = React.useRef<ReturnType<typeof setTimeout>>();
+  const timer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Sync search term from props
   React.useEffect(() => {

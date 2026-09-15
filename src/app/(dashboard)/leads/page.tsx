@@ -11,6 +11,7 @@ import { QuickAddLeadDrawer } from "@/components/leads/QuickAddLeadDrawer";
 import { LeadImportWizard } from "@/components/leads/LeadImportWizard";
 import { LeadsFilterBar } from "@/components/leads/LeadsFilterBar";
 import { LeadsTable } from "@/components/leads/LeadsTable";
+import { LeadsAutoRefresh } from "@/components/leads/LeadsAutoRefresh";
 import { listUsersAction } from "@/lib/actions/users";
 import { LeadSourceService } from "@/domains/leads/sourceService";
 import { TagService } from "@/domains/tags/service";
@@ -82,6 +83,7 @@ export default async function LeadsPage({
 
   return (
     <div className="flex-1 space-y-4 p-4 pt-4 sm:p-8 sm:pt-6">
+      <LeadsAutoRefresh />
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Leads</h2>

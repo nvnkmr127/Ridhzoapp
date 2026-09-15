@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { getServerSession } from "next-auth/next";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
@@ -7,8 +8,13 @@ import { eq } from "drizzle-orm";
 import type { PermissionKey } from "@/lib/permissions";
 import { SYSTEM_ROLE_PERMISSIONS } from "@/lib/permissions";
 
+// A single dashboard render calls into rbac many times (layout + page each do requireOrg/isSuperAdmin/
+// hasPermission). Memoize per request so the session decode and each DB round-trip (role, suspension)
+// happen once, not 3-7x — every saved round-trip matters against a remote self-hosted droplet DB.
+const getSession = cache(async () => getServerSession(authOptions));
+
 export async function requireAuth() {
-  const session = await getServerSession(authOptions);
+  const session = await getSession();
   if (!session?.user) {
     redirect("/login");
   }
@@ -20,7 +26,7 @@ export async function requireAuth() {
 //
 // Super-admin impersonation: when a platform super-admin has an active "impersonate_org" cookie,
 // requireOrg returns THAT org, so the super-admin operates inside the tenant through the normal UI.
-export async function requireOrg() {
+export const requireOrg = cache(async function requireOrg() {
   const session = await requireAuth();
   let organizationId = session.user.organizationId;
 
@@ -41,13 +47,13 @@ export async function requireOrg() {
   }
 
   return { userId: session.user.id, organizationId, roleId: session.user.roleId };
-}
+});
 
 const IMPERSONATE_COOKIE = "impersonate_org";
 
 // The org a super-admin is currently impersonating (null if none / not a super-admin).
 export async function getImpersonatedOrgId(): Promise<string | null> {
-  const session = await getServerSession(authOptions);
+  const session = await getSession();
   if (!session?.user?.isSuperAdmin) return null;
   const { cookies } = await import("next/headers");
   return (await cookies()).get(IMPERSONATE_COOKIE)?.value ?? null;
@@ -61,13 +67,14 @@ export async function requireSuperAdmin() {
 }
 
 export async function isSuperAdmin(): Promise<boolean> {
-  const session = await getServerSession(authOptions);
+  const session = await getSession();
   return Boolean(session?.user?.isSuperAdmin);
 }
 
 // Resolve the current user's role (name + permissions + tenant) from the roleId carried in the JWT.
-async function currentRole(): Promise<{ name: string; permissions: string[]; organizationId: string | null } | null> {
-  const session = await getServerSession(authOptions);
+// Cached per request: hasPermission/currentRoleName/isAdmin can each ask, but the role row is fetched once.
+const currentRole = cache(async function currentRole(): Promise<{ name: string; permissions: string[]; organizationId: string | null } | null> {
+  const session = await getSession();
   const roleId = session?.user?.roleId;
   if (!roleId) return null;
   const [role] = await db
@@ -76,7 +83,7 @@ async function currentRole(): Promise<{ name: string; permissions: string[]; org
     .where(eq(roles.id, roleId))
     .limit(1);
   return role ? { name: role.name, permissions: role.permissions ?? [], organizationId: role.organizationId } : null;
-}
+});
 
 export async function currentRoleName(): Promise<string | null> {
   return (await currentRole())?.name ?? null;
@@ -85,7 +92,7 @@ export async function currentRoleName(): Promise<string | null> {
 // admin implicitly has every permission; other roles must list the key explicitly.
 export async function hasPermission(key: PermissionKey): Promise<boolean> {
   // Platform super-admins hold every permission (incl. inside an impersonated tenant).
-  const session = await getServerSession(authOptions);
+  const session = await getSession();
   if (session?.user?.isSuperAdmin) return true;
   const role = await currentRole();
   if (!role) return false;
