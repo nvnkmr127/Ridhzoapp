@@ -19,11 +19,15 @@ export const auditLogs = pgTable('audit_logs', {
 // Bearer keys for the public REST API. Only the hash is stored; the raw key is shown once.
 export const apiKeys = pgTable('api_keys', {
   id: uuid('id').defaultRandom().primaryKey(),
-  organizationId: uuid('organization_id').references(() => organizations.id).notNull(),
+  // Cascade: a deleted org takes its keys with it (no orphaned/FK-blocking rows).
+  organizationId: uuid('organization_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   keyHash: varchar('key_hash', { length: 64 }).notNull().unique(), // sha256 hex
   prefix: varchar('prefix', { length: 16 }).notNull(), // display only, e.g. "pk_live_ab12"
-  createdById: uuid('created_by_id').references(() => users.id),
+  // 'full' = read+write (default, legacy behavior); 'read_only' = GET-only (enforced in apiAuth).
+  scope: varchar('scope', { length: 16 }).notNull().default('full'),
+  // Keys are workspace-owned; null the creator when that user is deleted rather than block it.
+  createdById: uuid('created_by_id').references(() => users.id, { onDelete: 'set null' }),
   lastUsedAt: timestamp('last_used_at'),
   revokedAt: timestamp('revoked_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),

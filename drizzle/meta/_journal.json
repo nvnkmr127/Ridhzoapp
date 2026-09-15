@@ -330,6 +330,13 @@
       "when": 1789439670309,
       "tag": "0046_icy_sinister_six",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1789491254080,
+      "tag": "0047_api_key_scope_and_fk",
+      "breakpoints": true
     }
   ]
 }

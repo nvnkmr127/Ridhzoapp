@@ -8,12 +8,13 @@ import { useToast } from "@/hooks/use-toast";
 import { createApiKeyAction, revokeApiKeyAction, deleteApiKeyAction } from "@/lib/actions/apiKeys";
 import { Key, Plus, Copy, Trash2 } from "lucide-react";
 
-type ApiKey = { id: string; name: string; prefix: string; lastUsedAt: Date | null; revokedAt: Date | null; createdAt: Date | string };
+type ApiKey = { id: string; name: string; prefix: string; scope?: string; lastUsedAt: Date | null; revokedAt: Date | null; createdAt: Date | string };
 
 export function ApiKeysManager({ initial }: { initial: ApiKey[] }) {
   const { toast } = useToast();
   const [keys, setKeys] = React.useState<ApiKey[]>(initial);
   const [name, setName] = React.useState("");
+  const [readOnly, setReadOnly] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [newKey, setNewKey] = React.useState<string | null>(null);
 
@@ -21,15 +22,17 @@ export function ApiKeysManager({ initial }: { initial: ApiKey[] }) {
     if (!name.trim()) return;
     setSaving(true);
     try {
-      const res = await createApiKeyAction(name.trim());
+      const scope: "full" | "read_only" = readOnly ? "read_only" : "full";
+      const res = await createApiKeyAction(name.trim(), scope);
       if (!res.ok) {
         toast({ variant: "destructive", title: "Could not create key", description: res.message });
         return;
       }
       const created = res.data;
       setNewKey(created.key);
-      setKeys((prev) => [{ id: created.id, name: created.name, prefix: created.prefix, lastUsedAt: null, revokedAt: null, createdAt: new Date() }, ...prev]);
+      setKeys((prev) => [{ id: created.id, name: created.name, prefix: created.prefix, scope: created.scope ?? scope, lastUsedAt: null, revokedAt: null, createdAt: new Date() }, ...prev]);
       setName("");
+      setReadOnly(false);
     } catch {
       toast({ variant: "destructive", title: "Could not create key", description: "We couldn't reach the server. Please try again." });
     } finally {
@@ -82,6 +85,10 @@ export function ApiKeysManager({ initial }: { initial: ApiKey[] }) {
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); create(); } }} />
           <Button variant="outline" onClick={create} disabled={saving || !name.trim()} className="gap-1"><Plus className="h-4 w-4" /> Create</Button>
         </div>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground select-none">
+          <input type="checkbox" checked={readOnly} onChange={(e) => setReadOnly(e.target.checked)} className="h-4 w-4" />
+          Read-only (GET requests only — can’t create, edit, or delete)
+        </label>
 
         {newKey && (
           <div className="rounded-lg border border-border bg-muted p-3 space-y-2">
@@ -104,6 +111,7 @@ export function ApiKeysManager({ initial }: { initial: ApiKey[] }) {
             <div className="flex items-center gap-3 text-sm">
               <span className="font-medium">{k.name}</span>
               <code className="text-xs text-muted-foreground">{k.prefix}…</code>
+              {k.scope === "read_only" && <Badge variant="outline">Read-only</Badge>}
               {k.revokedAt ? <Badge variant="secondary">Revoked</Badge> : <Badge>Active</Badge>}
               {k.lastUsedAt && <span className="text-xs text-muted-foreground">last used {new Date(k.lastUsedAt).toLocaleDateString()}</span>}
             </div>

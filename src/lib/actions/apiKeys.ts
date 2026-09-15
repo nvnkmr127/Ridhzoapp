@@ -12,13 +12,15 @@ export async function listApiKeysAction() {
   return ApiKeyService.list(organizationId);
 }
 
-export async function createApiKeyAction(name: string) {
+export async function createApiKeyAction(name: string, scope: "full" | "read_only" = "full") {
   const { organizationId, userId } = await requirePermission("api.manage");
   const parsed = z.string().trim().min(1).max(255).safeParse(name);
   if (!parsed.success) return fail("VALIDATION", "Please enter a name for this API key.");
+  const scopeParsed = z.enum(["full", "read_only"]).safeParse(scope);
+  if (!scopeParsed.success) return fail("VALIDATION", "Invalid key scope.");
   try {
-    const created = await ApiKeyService.create(organizationId, parsed.data, userId);
-    await AuditService.log({ organizationId, userId, action: "api_key.create", entityType: "api_key", entityId: created.id, metadata: { name: parsed.data } });
+    const created = await ApiKeyService.create(organizationId, parsed.data, userId, scopeParsed.data);
+    await AuditService.log({ organizationId, userId, action: "api_key.create", entityType: "api_key", entityId: created.id, metadata: { name: parsed.data, scope: scopeParsed.data } });
     revalidatePath("/settings/api");
     return ok(created); // includes the raw key — shown once
   } catch (e) {
