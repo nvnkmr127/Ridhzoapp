@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { updateLeadStageAndValueAction } from "@/lib/actions/leads";
 import { useToast } from "@/hooks/use-toast";
+import { formatCurrency } from "@/lib/format";
 
 interface PipelineStage {
   id: string;
@@ -17,6 +18,8 @@ interface LeadStageAndValueControlProps {
   stageId?: string | null;
   expectedValue?: string | number | null;
   stages?: PipelineStage[];
+  currency?: string;
+  locale?: string;
 }
 
 export function LeadStageAndValueControl({
@@ -24,6 +27,8 @@ export function LeadStageAndValueControl({
   stageId,
   expectedValue,
   stages = [],
+  currency,
+  locale,
 }: LeadStageAndValueControlProps) {
   const [currentStage, setCurrentStage] = useState<string>(stageId || "none");
   const [val, setVal] = useState<string>(expectedValue ? String(expectedValue) : "");
@@ -127,7 +132,7 @@ export function LeadStageAndValueControl({
             <div className="flex items-center gap-2">
               <DollarSign className="h-4 w-4 text-muted-foreground shrink-0" />
               <span className={val ? "font-semibold text-foreground" : "text-muted-foreground"}>
-                {val ? `$${Number(val).toLocaleString()}` : "Click to enter opportunity size..."}
+                {val ? formatCurrency(Number(val), { currency, locale }) : "Click to enter opportunity size..."}
               </span>
             </div>
             <Edit2 className="h-3.5 w-3.5 text-muted-foreground opacity-70" />

@@ -52,4 +52,7 @@ export const organizations = pgTable('organizations', {
   currentPeriodEnd: timestamp('current_period_end'),
 
   createdAt: timestamp('created_at').defaultNow().notNull(),
+  // Bumped on every settings write; used for optimistic concurrency so two admins saving at once
+  // don't silently clobber each other (the stale save is rejected with a conflict).
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

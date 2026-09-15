@@ -329,6 +329,8 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                   stageId={lead.stageId}
                   expectedValue={lead.expectedValue}
                   stages={stagesList}
+                  currency={org?.currency ?? undefined}
+                  locale={org?.locale ?? undefined}
                 />
               </div>
             </div>

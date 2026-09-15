@@ -1,10 +1,12 @@
 import { db } from "@/db";
-import { leads, leadIngestionLogs } from "@/db/schema";
+import { leads, leadIngestionLogs, leadStatusHistory } from "@/db/schema";
 import { NormalizedLeadPayload } from "../integrations/types";
 import { eq, or, and, isNull, sql } from "drizzle-orm";
 import { eventBus } from "@/lib/events/emitter";
 import { LeadSourceService } from "@/domains/leads/sourceService";
 import { normalizeEmail, normalizePhone } from "@/lib/leads/normalize";
+import { findMissingRequiredFields } from "@/lib/leads/requiredFields";
+import { organizations } from "@/db/schema";
 
 // Attribution keys are FIRST-TOUCH: once a lead is created with the ad/campaign/leadgen that
 // originated it, a later re-submission must not overwrite them with a newer ad's values, or the
@@ -80,6 +82,26 @@ export class IngestionService {
       return this.applyDedup(existingLead, payload, organizationId);
     }
 
+    // Enforce the org's required-field configuration on genuinely NEW inbound leads (dedup hits
+    // above merge into an already-valid lead, so they're exempt). A miss is logged as "failed" —
+    // the same visible, auditable outcome ingestion already uses for "email or phone required" —
+    // rather than silently creating a lead that violates the tenant's capture rules.
+    const [orgRow] = await db
+      .select({ requiredLeadFields: organizations.requiredLeadFields })
+      .from(organizations)
+      .where(eq(organizations.id, organizationId))
+      .limit(1);
+    const missing = findMissingRequiredFields(orgRow?.requiredLeadFields, {
+      email,
+      phone,
+      company: payload.company,
+    });
+    if (missing.length) {
+      const reason = `Missing required field(s): ${missing.join(", ")}`;
+      await this.logIngestion(null, payload.sourceId, payload, "failed", reason);
+      throw new Error(reason);
+    }
+
     // 3. Creation with organizationId. The insert can still lose a race to a concurrent ingestion
     // of the same contact (the per-org email/phone unique index rejects the duplicate) — catch that
     // and fall back to the dedup path so the second lead merges instead of surfacing a DB error.
@@ -104,7 +126,11 @@ export class IngestionService {
     }
 
     await this.logIngestion(newLead.id, payload.sourceId, payload, "success", null);
-    
+
+    // Seed the status timeline with the opening state (system-created → no user), so inbound leads
+    // are measured in stage-duration analytics the same as manually-created ones.
+    await db.insert(leadStatusHistory).values({ leadId: newLead.id, oldStatus: null, newStatus: newLead.status, changedById: null });
+
     eventBus.emit('lead.created', {
       leadId: newLead.id,
       sourceId: payload.sourceId

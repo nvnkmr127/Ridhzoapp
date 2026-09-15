@@ -8,6 +8,7 @@ import { CustomFieldService } from "@/domains/customFields/service";
 vi.mock("@/lib/rbac", () => ({
   requireOrg: vi.fn().mockResolvedValue({ organizationId: "org-1", userId: "user-1" }),
   requirePermission: vi.fn().mockResolvedValue({ organizationId: "org-1", userId: "user-1" }),
+  hasPermission: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock("next/cache", () => ({
@@ -127,21 +128,21 @@ describe("createLeadAction", () => {
     }
   });
 
-  it("returns validation error when org required field is missing", async () => {
-    (OrgService.getOrganization as any).mockResolvedValue({
-      id: "org-1",
-      requiredLeadFields: ["name", "company"],
-    });
+  it("surfaces the required-field validation error thrown by LeadService.createLead", async () => {
+    // Required-field enforcement now lives in LeadService.createLead (shared by every create path);
+    // the action's job is to map that VALIDATION error into a result. See lib/leads/requiredFields.
+    const err = new Error("Missing required field(s): company");
+    (err as { code?: string }).code = "VALIDATION";
+    (err as { fieldErrors?: Record<string, string> }).fieldErrors = { company: "This field is required." };
+    (LeadService.createLead as any).mockRejectedValueOnce(err);
 
-    const res = await createLeadAction({
-      name: "Jane Doe",
-      email: "jane@example.com",
-    });
+    const res = await createLeadAction({ name: "Jane Doe", email: "jane@example.com" });
 
     expect(res.ok).toBe(false);
     if (!res.ok) {
       expect(res.code).toBe("VALIDATION");
       expect(res.message).toContain("company");
+      expect(res.fieldErrors?.company).toBeDefined();
     }
   });
 

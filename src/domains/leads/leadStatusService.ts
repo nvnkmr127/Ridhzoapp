@@ -25,7 +25,7 @@ export interface StatusHistoryEntry {
 }
 
 export interface StatusDurationMetric {
-  status: LeadStatus;
+  status: string; // any status key in the tenant schema, not just the 5 base ones
   leadCount: number;
   averageDurationHours: number;
   medianDurationHours: number;
@@ -161,85 +161,71 @@ export class LeadStatusService {
    * Calculates organization-wide average duration leads spend in each status state.
    */
   static async getStatusDurationAnalytics(organizationId: string): Promise<StatusDurationMetric[]> {
+    // Report on every status in the TENANT's schema, not just the 5 base keys — custom statuses used
+    // to be dropped entirely from analytics. Order follows the schema so the modal reads naturally.
+    const { CustomStatusSchemaService } = await import("./customStatusSchemaService");
+    const schema = await CustomStatusSchemaService.getTenantStatusSchema(organizationId);
+    const statusKeys = schema.map((s) => s.key);
+
     const orgLeads = await db
       .select({ id: leads.id })
       .from(leads)
       .where(eq(leads.organizationId, organizationId));
 
-    if (orgLeads.length === 0) {
-      return [
-        { status: "new", leadCount: 0, averageDurationHours: 0, medianDurationHours: 0 },
-        { status: "active", leadCount: 0, averageDurationHours: 0, medianDurationHours: 0 },
-        { status: "won", leadCount: 0, averageDurationHours: 0, medianDurationHours: 0 },
-        { status: "lost", leadCount: 0, averageDurationHours: 0, medianDurationHours: 0 },
-        { status: "unqualified", leadCount: 0, averageDurationHours: 0, medianDurationHours: 0 },
-      ];
-    }
+    const durationsByStatus: Record<string, number[]> = {};
+    for (const k of statusKeys) durationsByStatus[k] = [];
 
-    const leadIds = orgLeads.map((l) => l.id);
+    if (orgLeads.length > 0) {
+      const leadIds = orgLeads.map((l) => l.id);
 
-    const histories = await db
-      .select({
-        leadId: leadStatusHistory.leadId,
-        oldStatus: leadStatusHistory.oldStatus,
-        newStatus: leadStatusHistory.newStatus,
-        createdAt: leadStatusHistory.createdAt,
-      })
-      .from(leadStatusHistory)
-      .where(inArray(leadStatusHistory.leadId, leadIds))
-      .orderBy(leadStatusHistory.createdAt);
+      const histories = await db
+        .select({
+          leadId: leadStatusHistory.leadId,
+          oldStatus: leadStatusHistory.oldStatus,
+          newStatus: leadStatusHistory.newStatus,
+          createdAt: leadStatusHistory.createdAt,
+        })
+        .from(leadStatusHistory)
+        .where(inArray(leadStatusHistory.leadId, leadIds))
+        .orderBy(leadStatusHistory.createdAt);
 
-    const durationsByStatus: Record<string, number[]> = {
-      new: [],
-      active: [],
-      won: [],
-      lost: [],
-      unqualified: [],
-    };
+      const leadHistories: Record<string, typeof histories> = {};
+      for (const h of histories) {
+        if (!leadHistories[h.leadId]) leadHistories[h.leadId] = [];
+        leadHistories[h.leadId].push(h);
+      }
 
-    const leadHistories: Record<string, typeof histories> = {};
-    for (const h of histories) {
-      if (!leadHistories[h.leadId]) leadHistories[h.leadId] = [];
-      leadHistories[h.leadId].push(h);
-    }
-
-    for (const leadId of Object.keys(leadHistories)) {
-      const items = leadHistories[leadId];
-      for (let i = 0; i < items.length - 1; i++) {
-        const current = items[i];
-        const next = items[i + 1];
-        const status = current.newStatus;
-
-        if (durationsByStatus[status]) {
+      for (const leadId of Object.keys(leadHistories)) {
+        const items = leadHistories[leadId];
+        for (let i = 0; i < items.length - 1; i++) {
+          const current = items[i];
+          const next = items[i + 1];
+          const status = current.newStatus;
+          // A custom key not (or no longer) in the schema still gets a bucket so its time isn't lost.
+          if (!durationsByStatus[status]) durationsByStatus[status] = [];
           const diffHours = (new Date(next.createdAt).getTime() - new Date(current.createdAt).getTime()) / (1000 * 60 * 60);
           durationsByStatus[status].push(diffHours);
         }
       }
     }
 
-    const metrics: StatusDurationMetric[] = [];
-    const statuses: LeadStatus[] = ["new", "active", "won", "lost", "unqualified"];
+    // Union of the schema order and any historical keys that no longer exist in the schema.
+    const allKeys = [...statusKeys, ...Object.keys(durationsByStatus).filter((k) => !statusKeys.includes(k))];
 
-    for (const status of statuses) {
+    return allKeys.map((status) => {
       const arr = durationsByStatus[status] || [];
-      if (arr.length === 0) {
-        metrics.push({ status, leadCount: 0, averageDurationHours: 0, medianDurationHours: 0 });
-      } else {
-        const sum = arr.reduce((acc, v) => acc + v, 0);
-        const avg = Math.round((sum / arr.length) * 10) / 10;
-        const sorted = [...arr].sort((a, b) => a - b);
-        const mid = Math.floor(sorted.length / 2);
-        const median = sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-
-        metrics.push({
-          status,
-          leadCount: arr.length,
-          averageDurationHours: avg,
-          medianDurationHours: Math.round(median * 10) / 10,
-        });
-      }
-    }
-
-    return metrics;
+      if (arr.length === 0) return { status, leadCount: 0, averageDurationHours: 0, medianDurationHours: 0 };
+      const sum = arr.reduce((acc, v) => acc + v, 0);
+      const avg = Math.round((sum / arr.length) * 10) / 10;
+      const sorted = [...arr].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      const median = sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+      return {
+        status,
+        leadCount: arr.length,
+        averageDurationHours: avg,
+        medianDurationHours: Math.round(median * 10) / 10,
+      };
+    });
   }
 }

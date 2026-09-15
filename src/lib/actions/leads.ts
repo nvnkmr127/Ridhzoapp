@@ -4,7 +4,6 @@ import { requireOrg, requirePermission, hasPermission } from "@/lib/rbac";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { LeadService } from "@/domains/leads/service";
-import { OrgService } from "@/domains/organizations/service";
 import { assertLeadInOrg } from "@/domains/leads/ownership";
 import { CustomFieldService } from "@/domains/customFields/service";
 import { AuditService } from "@/domains/audit/service";
@@ -55,18 +54,8 @@ export async function createLeadAction(
   };
 
   try {
-    // Enforce this org's required-field configuration (name is always required by schema).
-    const org = await OrgService.getOrganization(organizationId);
-    const required = (org?.requiredLeadFields ?? ["name"]) as Array<keyof typeof data>;
-    const missing = required.filter((f) => !data[f]);
-    if (missing.length) {
-      return fail(
-        "VALIDATION",
-        `Missing required field(s): ${missing.join(", ")}`,
-        Object.fromEntries(missing.map((f) => [f, "This field is required."])),
-      );
-    }
-
+    // Required-field enforcement now lives in LeadService.createLead so every create path (API,
+    // import, ingestion, booking) shares it — see lib/leads/requiredFields.ts.
     await PlanService.assertCanAddLead(organizationId);
 
     // Validate + clean org-defined custom fields. Admin-only fields are gated by role.

@@ -34,6 +34,7 @@ type Org = {
   whatsappMode?: string | null;
   sequenceWindowStart?: number | null;
   sequenceWindowEnd?: number | null;
+  updatedAt?: string | Date | null;
 };
 
 const LEAD_FIELDS: { key: string; label: string }[] = [
@@ -105,6 +106,10 @@ export function GeneralSettingsForm({ organization }: { organization?: Org | nul
   const [statusModalOpen, setStatusModalOpen] = React.useState(false);
   const [requiredFields, setRequiredFields] = React.useState<string[]>(
     organization?.requiredLeadFields ?? ["name"],
+  );
+  // Version the form loaded with — sent back on save so a concurrent edit is caught, not clobbered.
+  const [expectedUpdatedAt, setExpectedUpdatedAt] = React.useState<string | null>(
+    organization?.updatedAt ? new Date(organization.updatedAt).toISOString() : null,
   );
   const [f, setF] = React.useState({
     name: organization?.name ?? "",
@@ -201,11 +206,19 @@ export function GeneralSettingsForm({ organization }: { organization?: Org | nul
         sequenceWindowStart: f.sequenceWindowStart === "" ? null : Number(f.sequenceWindowStart),
         sequenceWindowEnd: f.sequenceWindowEnd === "" ? null : Number(f.sequenceWindowEnd),
         requiredLeadFields: requiredFields as ("name" | "email" | "phone" | "company")[],
+        expectedUpdatedAt: expectedUpdatedAt ?? "",
       });
       if (!res.ok) {
-        toast({ variant: "destructive", title: "Failed to save settings", description: res.message });
+        toast({
+          variant: "destructive",
+          title: res.code === "CONFLICT" ? "Settings changed elsewhere" : "Failed to save settings",
+          description: res.message,
+        });
         return;
       }
+      // Advance our version to what was just written so the next save isn't a false conflict.
+      const savedAt = (res.data as { updatedAt?: string | Date } | undefined)?.updatedAt;
+      if (savedAt) setExpectedUpdatedAt(new Date(savedAt).toISOString());
       setDirty(false);
       toast({ title: "Settings saved", description: "Organization settings updated successfully." });
     } catch {

@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { leads, whatsappMessages } from "@/db/schema";
+import { leads, whatsappMessages, organizations } from "@/db/schema";
 import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { WatxioClient } from "./client";
 import { renderTemplate, type LeadLike } from "../deeplink";
@@ -58,6 +58,21 @@ export const WhatsAppService = {
     const [lead] = await db.select().from(leads).where(eq(leads.id, input.leadId)).limit(1);
     if (!lead) throw new Error(`Lead ${input.leadId} not found`);
     if (!lead.phone) throw new Error(`Lead ${input.leadId} has no phone number`);
+
+    // Respect the org's WhatsApp mode: only "bsp" tenants send through the Business API here. In
+    // "personal" mode reps send via one-tap wa.me links from the UI, so an automated/API BSP send
+    // must NOT go out — surfacing "not configured" makes the sequence worker log a manual-send note
+    // rather than silently dispatching from the shared BSP number against the tenant's choice.
+    if (lead.organizationId) {
+      const [org] = await db
+        .select({ mode: organizations.whatsappMode })
+        .from(organizations)
+        .where(eq(organizations.id, lead.organizationId))
+        .limit(1);
+      if (org && org.mode !== "bsp") {
+        throw new Error("WhatsApp Business API not configured (personal mode)");
+      }
+    }
 
     const leadLike: LeadLike = lead;
     const canFreeform = await insideWindow(input.leadId);

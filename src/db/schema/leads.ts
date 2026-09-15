@@ -143,5 +143,9 @@ export const customStatusConfigs = pgTable('custom_status_configs', {
   orderIndex: integer('order_index').default(0).notNull(),
   isSystemDefault: integer('is_system_default').default(0).notNull(), // 1=system, 0=custom
   createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+}, (table) => ({
+  // A status key is unique per tenant. Turns the racy seed/upsert (two first-loads double-seeding,
+  // or concurrent adds of the same key) into a DB-enforced no-op / 23505 the callers handle.
+  orgKeyUnique: uniqueIndex('custom_status_configs_org_key_unique').on(table.organizationId, table.key),
+}));
 

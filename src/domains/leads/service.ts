@@ -23,6 +23,7 @@ import { eventBus } from "@/lib/events/emitter";
 import { ActivityService } from "@/domains/activities/service";
 import { FilterGroup, FilterRule } from "@/domains/savedViews/service";
 import { normalizeEmail, normalizePhone } from "@/lib/leads/normalize";
+import { assertRequiredLeadFields } from "@/lib/leads/requiredFields";
 
 export type ListLeadsOptions = {
   organizationId: string;
@@ -46,6 +47,9 @@ export class LeadService {
     createdById: string | null,
     organizationId: string,
   ): Promise<typeof leads.$inferSelect> {
+    // Enforce the org's required-field configuration at the ONE spot every synchronous create path
+    // (manual UI, REST API, booking) funnels through — so the setting can't be UI-only.
+    await assertRequiredLeadFields(organizationId, data);
     // Dedup within THIS org only — same email/phone in another tenant is a different lead.
     // Canonicalize first so "+1 555-0101" and "+15550101" are stored and compared identically;
     // otherwise formatting differences slip past both the app check and the DB unique index.
@@ -163,6 +167,15 @@ export class LeadService {
       }
       throw e;
     }
+
+    // Seed the status timeline with the opening state so "time in first status" is measured (stage
+    // duration analytics diff consecutive history rows; without this the initial dwell was invisible).
+    await db.insert(leadStatusHistory).values({
+      leadId: newLead.id,
+      oldStatus: null,
+      newStatus: newLead.status,
+      changedById: createdById && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(createdById) ? createdById : null,
+    });
 
     eventBus.emit('lead.created', { leadId: newLead.id, userId: createdById ?? undefined });
     if (newLead.ownerId && newLead.ownerId !== createdById) {

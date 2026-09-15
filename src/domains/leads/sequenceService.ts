@@ -17,8 +17,13 @@ export function nextSendableAt(now: Date, win: SendWindow): Date | null {
   } catch {
     return null; // bad timezone → don't block sends
   }
-  if (h >= start && h < end) return null;
-  const deferHours = h < start ? start - h : 24 - h + start;
+  // Two window shapes: a normal same-day window (start < end, e.g. 9→18) and an overnight one that
+  // wraps past midnight (start > end, e.g. 20→6). Supporting the wrap means "don't message at night"
+  // can be expressed, instead of an end<=start range being silently treated as "send any time".
+  const inWindow = start < end ? h >= start && h < end : h >= start || h < end;
+  if (inWindow) return null;
+  // Outside → hours until `start` comes around again (mod 24, so an overnight window works too).
+  const deferHours = (start - h + 24) % 24 || 24;
   return new Date(now.getTime() + deferHours * 3_600_000);
 }
 
@@ -278,8 +283,10 @@ export class SequenceService {
         .select({ tz: organizations.timezone, start: organizations.sequenceWindowStart, end: organizations.sequenceWindowEnd })
         .from(organizations)
         .where(eq(organizations.id, orgId));
+      // A window needs both bounds and a non-empty range. start<end is same-day, start>end wraps
+      // overnight (handled in nextSendableAt); start==end is empty → treat as no window (send anytime).
       const win: SendWindow =
-        org && org.start != null && org.end != null && org.end > org.start
+        org && org.start != null && org.end != null && org.end !== org.start
           ? { tz: org.tz || "UTC", start: org.start, end: org.end }
           : null;
       windowCache.set(orgId, win);

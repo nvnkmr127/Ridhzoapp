@@ -22,9 +22,8 @@ import { Clock, Filter, Gauge, Hourglass, Award, Layers3, Crown, MapPin, Radio, 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-
-const money = (n: number) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n || 0);
+import { formatCurrency } from "@/lib/format";
+import { getOrgFormat } from "@/lib/format.server";
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
@@ -38,6 +37,9 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 
 export default async function InsightsPage() {
   const { organizationId } = await requireOrg();
+  const fmt = await getOrgFormat(organizationId);
+  // Money in the workspace's configured currency/locale (was hardcoded USD).
+  const money = (n: number) => formatCurrency(n, fmt);
   const [forecast, winLoss, sourceRoi, health, bestTime, qualification, velocity, aging] = await Promise.all([
     RevenueForecastService.getRevenueForecast(organizationId),
     WinLossAnalyticsService.getWinLossAnalytics(organizationId),

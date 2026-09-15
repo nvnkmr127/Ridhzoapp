@@ -108,12 +108,24 @@ export class OrgService {
       sequenceWindowStart: number | null;
       sequenceWindowEnd: number | null;
     }>,
+    expectedUpdatedAt?: Date,
   ) {
+    // Optimistic concurrency: when the caller passes the updatedAt it loaded, only write if the row
+    // hasn't changed since — so a second admin's stale form save is rejected, not silently applied
+    // over a fresh change. Always bump updatedAt so the next reader sees a new version.
+    const where = expectedUpdatedAt
+      ? and(eq(organizations.id, organizationId), eq(organizations.updatedAt, expectedUpdatedAt))
+      : eq(organizations.id, organizationId);
     const [updated] = await db
       .update(organizations)
-      .set(data)
-      .where(eq(organizations.id, organizationId))
+      .set({ ...data, updatedAt: new Date() })
+      .where(where)
       .returning();
+    if (!updated && expectedUpdatedAt) {
+      const err = new Error("These settings were changed by someone else. Reload and try again.");
+      (err as { code?: string }).code = "CONFLICT";
+      throw err;
+    }
     return updated;
   }
 }

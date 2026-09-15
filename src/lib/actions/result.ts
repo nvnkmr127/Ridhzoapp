@@ -64,6 +64,7 @@ export function actionFail(e: unknown): ActionError {
   const m = raw.toLowerCase();
   // Errors that self-declare as validation (e.g. custom-field FieldValidationError).
   if ((e as { code?: unknown })?.code === "VALIDATION") return fail("VALIDATION", raw, fieldErrors);
+  if ((e as { code?: unknown })?.code === "CONFLICT") return fail("CONFLICT", raw, fieldErrors);
   if (m.includes("forbidden")) return fail("FORBIDDEN", "You don't have permission to do this. Contact an admin.", fieldErrors);
   // Intentional guard messages that should reach the user verbatim as validation errors.
   if (m.includes("last active administrator") || m.includes("reserved role name")) return fail("VALIDATION", raw, fieldErrors);

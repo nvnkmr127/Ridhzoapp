@@ -1,6 +1,6 @@
 import { db } from "@/db";
-import { customStatusConfigs, leads } from "@/db/schema";
-import { and, eq, asc, count, isNull } from "drizzle-orm";
+import { customStatusConfigs, leads, automations, automationActions } from "@/db/schema";
+import { and, eq, asc, count, isNull, sql } from "drizzle-orm";
 
 export type StatusCategory = "open" | "in_progress" | "won" | "lost" | "unqualified";
 
@@ -82,7 +82,9 @@ export class CustomStatusSchemaService {
       }));
     }
 
-    // Seed defaults
+    // Seed defaults. onConflictDoNothing + the (org, key) unique index makes this safe under the
+    // race where two first-loads seed at once — the loser inserts nothing instead of duplicating
+    // all five rows. Re-read so we always return exactly what's persisted.
     const seedValues = DEFAULT_SYSTEM_STATUSES.map((s) => ({
       organizationId,
       key: s.key,
@@ -93,9 +95,34 @@ export class CustomStatusSchemaService {
       isSystemDefault: 1,
     }));
 
-    await db.insert(customStatusConfigs).values(seedValues);
+    await db
+      .insert(customStatusConfigs)
+      .values(seedValues)
+      .onConflictDoNothing({ target: [customStatusConfigs.organizationId, customStatusConfigs.key] });
 
-    return DEFAULT_SYSTEM_STATUSES;
+    const seeded = await db
+      .select({
+        id: customStatusConfigs.id,
+        key: customStatusConfigs.key,
+        label: customStatusConfigs.label,
+        color: customStatusConfigs.color,
+        category: customStatusConfigs.category,
+        orderIndex: customStatusConfigs.orderIndex,
+        isSystemDefault: customStatusConfigs.isSystemDefault,
+      })
+      .from(customStatusConfigs)
+      .where(eq(customStatusConfigs.organizationId, organizationId))
+      .orderBy(asc(customStatusConfigs.orderIndex));
+
+    return seeded.map((s) => ({
+      id: s.id,
+      key: s.key,
+      label: s.label,
+      color: s.color,
+      category: s.category as StatusCategory,
+      orderIndex: s.orderIndex,
+      isSystemDefault: s.isSystemDefault === 1,
+    }));
   }
 
   /**
@@ -119,12 +146,16 @@ export class CustomStatusSchemaService {
       .limit(1);
 
     if (existing) {
+      // A system default's CATEGORY drives won/lost bookkeeping and analytics — relabel/recolor is
+      // fine, but silently re-categorising e.g. "won" → "open" would corrupt that. Keep the base
+      // category fixed for system rows; only custom statuses may change category on update.
+      const category = existing.isSystemDefault === 1 ? (existing.category as StatusCategory) : statusItem.category;
       const [updated] = await db
         .update(customStatusConfigs)
         .set({
           label: statusItem.label,
           color: statusItem.color,
-          category: statusItem.category,
+          category,
           orderIndex: statusItem.orderIndex ?? existing.orderIndex,
         })
         .where(eq(customStatusConfigs.id, existing.id))
@@ -193,6 +224,22 @@ export class CustomStatusSchemaService {
       .where(and(eq(leads.organizationId, organizationId), eq(leads.status, statusKey), isNull(leads.deletedAt)));
     if (Number(inUse) > 0) {
       throw new Error(`${inUse} lead(s) still use this status. Move them to another status before deleting it.`);
+    }
+
+    // Also block if an automation would move leads INTO this status — deleting it would leave the
+    // automation writing a status key that no longer exists. (Trigger/condition references are
+    // lower-impact — they just stop matching — so only change_status actions are guarded here.)
+    const [{ refs }] = await db
+      .select({ refs: count() })
+      .from(automationActions)
+      .innerJoin(automations, eq(automationActions.automationId, automations.id))
+      .where(and(
+        eq(automations.organizationId, organizationId),
+        eq(automationActions.type, "change_status"),
+        sql`${automationActions.config}->>'status' = ${statusKey}`,
+      ));
+    if (Number(refs) > 0) {
+      throw new Error(`${refs} automation(s) set leads to this status. Update those automations before deleting it.`);
     }
 
     await db

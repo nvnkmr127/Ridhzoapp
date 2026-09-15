@@ -1,9 +1,12 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AnalyticsService, AnalyticsFilters } from "@/lib/analytics/service";
+import { formatCurrency } from "@/lib/format";
+import { getOrgFormat } from "@/lib/format.server";
 
 export async function MetricsCards({ filters }: { filters: AnalyticsFilters }) {
   const metrics = await AnalyticsService.getLeadMetrics(filters);
   const followUpMetrics = await AnalyticsService.getFollowUpMetrics(filters);
+  const fmt = await getOrgFormat(filters.organizationId);
 
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -34,7 +37,7 @@ export async function MetricsCards({ filters }: { filters: AnalyticsFilters }) {
           <CardTitle className="text-sm font-medium">Pipeline Value</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">${metrics.pipelineValue.toLocaleString()}</div>
+          <div className="text-2xl font-bold">{formatCurrency(metrics.pipelineValue, fmt)}</div>
           <p className="text-xs text-muted-foreground">From active leads</p>
         </CardContent>
       </Card>

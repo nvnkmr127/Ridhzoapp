@@ -88,4 +88,15 @@ describe("nextSendableAt (quiet hours)", () => {
   it("does not block on a bad timezone", () => {
     expect(nextSendableAt(new Date("2026-01-01T20:00:00Z"), { tz: "Not/AZone", start: 9, end: 17 })).toBeNull();
   });
+
+  it("supports an overnight window that wraps past midnight (20→6)", () => {
+    const overnight = { tz: "UTC", start: 20, end: 6 };
+    // 22:00 is inside 20→6 → send now.
+    expect(nextSendableAt(new Date("2026-01-01T22:00:00Z"), overnight)).toBeNull();
+    // 03:00 is still inside (past midnight) → send now.
+    expect(nextSendableAt(new Date("2026-01-01T03:00:00Z"), overnight)).toBeNull();
+    // 12:00 is outside → defer to 20:00 the same day (+8h).
+    const d = nextSendableAt(new Date("2026-01-01T12:00:00Z"), overnight)!;
+    expect(d.toISOString()).toBe("2026-01-01T20:00:00.000Z");
+  });
 });

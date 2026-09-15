@@ -1,6 +1,6 @@
 "use server";
 
-import { requireOrg } from "@/lib/rbac";
+import { requireOrg, requirePermission } from "@/lib/rbac";
 import { revalidatePath } from "next/cache";
 import { CustomStatusSchemaService, StatusCategory } from "@/domains/leads/customStatusSchemaService";
 import { LeadStatusService } from "@/domains/leads/leadStatusService";
@@ -28,7 +28,9 @@ export async function addOrUpdateStatusAction(input: {
   category: StatusCategory;
   orderIndex?: number;
 }) {
-  const { organizationId } = await requireOrg();
+  // Editing the org's status taxonomy reshapes every user's pipeline, analytics and won/lost
+  // bookkeeping — same trust level as general settings, not a plain member action.
+  const { organizationId } = await requirePermission("settings.manage");
   const parsed = addStatusSchema.safeParse(input);
   if (!parsed.success) {
     return fail("VALIDATION", "Please provide a key, label, color, and category for the status.", zodFieldErrors(parsed.error));
@@ -44,7 +46,7 @@ export async function addOrUpdateStatusAction(input: {
 }
 
 export async function deleteCustomStatusAction(statusKey: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requirePermission("settings.manage");
   if (!statusKey) return fail("VALIDATION", "No status was specified.");
 
   try {
@@ -57,7 +59,9 @@ export async function deleteCustomStatusAction(statusKey: string) {
 }
 
 export async function bulkUpdateLeadStatusAction(leadIds: string[], newStatus: string) {
-  const { userId, organizationId } = await requireOrg();
+  // Bulk-mutating lead statuses is a lead edit — gate it like every other status change
+  // (the sibling bulkChangeLeadStatusAction did; this path had slipped through with requireOrg).
+  const { userId, organizationId } = await requirePermission("leads.edit");
   if (!leadIds || leadIds.length === 0) throw new Error("No lead IDs provided");
 
   // Route through the single canonical status engine so won/lost bookkeeping (won_at, loss reason,

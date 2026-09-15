@@ -17,20 +17,30 @@ describe("CustomStatusSchemaService", () => {
   });
 
   it("should return default system statuses and seed when none exist", async () => {
-    const mockFromSelect = vi.fn().mockReturnValue({
-      where: vi.fn().mockReturnValue({
-        orderBy: vi.fn().mockResolvedValue([]),
-      }),
+    // First read finds nothing → seed; the post-seed re-read returns the persisted rows.
+    const seededRows = DEFAULT_SYSTEM_STATUSES.map((s, i) => ({
+      id: `seed-${i}`,
+      key: s.key,
+      label: s.label,
+      color: s.color,
+      category: s.category,
+      orderIndex: s.orderIndex,
+      isSystemDefault: 1,
+    }));
+    const orderBy = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce(seededRows);
+    (db.select as any).mockReturnValue({
+      from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({ orderBy }) }),
     });
-    (db.select as any).mockReturnValue({ from: mockFromSelect });
 
-    const mockValuesInsert = vi.fn().mockResolvedValue(undefined);
-    (db.insert as any).mockReturnValue({ values: mockValuesInsert });
+    const onConflictDoNothing = vi.fn().mockResolvedValue(undefined);
+    (db.insert as any).mockReturnValue({ values: vi.fn().mockReturnValue({ onConflictDoNothing }) });
 
     const result = await CustomStatusSchemaService.getTenantStatusSchema("org-seed");
 
-    expect(result).toEqual(DEFAULT_SYSTEM_STATUSES);
+    expect(result.map((r) => r.key)).toEqual(DEFAULT_SYSTEM_STATUSES.map((s) => s.key));
+    expect(result.every((r) => r.isSystemDefault === true)).toBe(true);
     expect(db.insert).toHaveBeenCalled();
+    expect(onConflictDoNothing).toHaveBeenCalled();
   });
 
   it("should add a new custom status for a tenant", async () => {

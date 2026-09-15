@@ -1,8 +1,9 @@
 import { db } from "@/db";
 import { leads, organizations } from "@/db/schema";
-import { and, eq, isNull, isNotNull, lt } from "drizzle-orm";
+import { and, eq, isNull, isNotNull, lt, inArray } from "drizzle-orm";
 import { NotificationService } from "@/domains/notifications/service";
 import { AuditService } from "@/domains/audit/service";
+import { CustomStatusSchemaService } from "@/domains/leads/customStatusSchemaService";
 
 // Escalates leads that have sat in "new" past the org's SLA window. Idempotent per lead via
 // leads.escalatedAt, so re-running the scan never double-alerts.
@@ -12,14 +13,21 @@ export class EscalationService {
     const hours = org?.slaHours;
     if (!hours || hours <= 0) return 0;
 
+    // Escalate any unactioned lead still in an OPEN-category status — not just the literal "new".
+    // A tenant that renamed its intake stage or uses a custom open status must still get SLA alerts.
+    const categoryMap = await CustomStatusSchemaService.getStatusCategoryMap(organizationId);
+    const openStatuses = [...categoryMap.entries()].filter(([, c]) => c === "open").map(([k]) => k);
+    if (openStatuses.length === 0) return 0;
+
     const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
     const stale = await db
       .select({ id: leads.id, name: leads.name, ownerId: leads.ownerId })
       .from(leads)
       .where(and(
         eq(leads.organizationId, organizationId),
-        eq(leads.status, "new"),
+        inArray(leads.status, openStatuses),
         isNull(leads.escalatedAt),
+        isNull(leads.deletedAt),
         lt(leads.createdAt, cutoff),
       ));
 
@@ -31,6 +39,15 @@ export class EscalationService {
           type: "sla_escalation",
           title: "Lead needs attention",
           body: `${lead.name} has been waiting longer than your ${hours}h SLA.`,
+          leadId: lead.id,
+        });
+      } else {
+        // Unassigned overdue leads are exactly the ones most at risk of being dropped — alert the
+        // account's admins to triage, instead of silently stamping escalatedAt and moving on.
+        await NotificationService.notifyOrgAdmins(organizationId, {
+          type: "sla_escalation",
+          title: "Unassigned lead past SLA",
+          body: `${lead.name} has been waiting longer than the ${hours}h SLA and has no owner.`,
           leadId: lead.id,
         });
       }

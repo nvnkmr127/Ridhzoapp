@@ -2,6 +2,8 @@ import Link from "next/link";
 import { Flame, ArrowLeft, MessageCircle, Phone, Eye, EyeOff } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { requireOrg } from "@/lib/rbac";
+import { formatCurrency } from "@/lib/format";
+import { getOrgFormat } from "@/lib/format.server";
 import { ContentSharingService } from "@/domains/leads/contentSharingService";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +36,7 @@ function waLink(phone: string | null) {
 
 export default async function HotLeadsPage() {
   const { organizationId } = await requireOrg();
+  const fmt = await getOrgFormat(organizationId);
   const [report, engaged, ignored] = await Promise.all([
     LeadConversionPredictorService.getConversionPredictions(organizationId),
     ContentSharingService.recentlyEngagedLeadIds(organizationId),
@@ -83,7 +86,7 @@ export default async function HotLeadsPage() {
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Pipeline at stake</CardTitle></CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${report.totalHighProbabilityValue.toLocaleString()}</div>
+            <div className="text-2xl font-bold">{formatCurrency(report.totalHighProbabilityValue, fmt)}</div>
             <p className="text-xs text-muted-foreground">Expected value of high-probability leads</p>
           </CardContent>
         </Card>
@@ -137,7 +140,7 @@ export default async function HotLeadsPage() {
                       <Badge variant={TIER_VARIANT[lead.likelihoodTier]}>{TIER_LABEL[lead.likelihoodTier]}</Badge>
                     </TableCell>
                     <TableCell className="tabular-nums">
-                      {lead.expectedValue > 0 ? `$${lead.expectedValue.toLocaleString()}` : "-"}
+                      {lead.expectedValue > 0 ? formatCurrency(lead.expectedValue, fmt) : "-"}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
