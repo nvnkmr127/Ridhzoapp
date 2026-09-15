@@ -105,11 +105,30 @@ export async function POST(
 
     // 1. Store the webhook event immediately. Fold the resolved sourceId and organizationId into the payload so
     // the ingestion worker finds it even when it arrived via the query string, not the body.
-    const [event] = await db.insert(webhookEvents).values({
+    // Insert-or-nothing on (provider, idempotency_key) so a concurrent duplicate delivery no-ops
+    // instead of throwing a unique violation; we then re-read and treat it as the duplicate.
+    let [event] = await db.insert(webhookEvents).values({
       provider,
       payload: { ...body, sourceId, organizationId: source.organizationId },
       idempotencyKey,
-    }).returning();
+    })
+      .onConflictDoNothing({ target: [webhookEvents.provider, webhookEvents.idempotencyKey] })
+      .returning();
+
+    if (!event && idempotencyKey) {
+      const { eq, and } = await import("drizzle-orm");
+      const [existing] = await db
+        .select()
+        .from(webhookEvents)
+        .where(and(eq(webhookEvents.provider, provider), eq(webhookEvents.idempotencyKey, idempotencyKey)))
+        .limit(1);
+      if (existing) {
+        return NextResponse.json({ success: true, eventId: existing.id, duplicate: true }, { status: 200 });
+      }
+    }
+    if (!event) {
+      return NextResponse.json({ success: false, error: "Failed to store webhook event" }, { status: 500 });
+    }
 
     // 2. Offload to BullMQ for asynchronous processing
     await ingestionQueue.add(`ingest-${event.id}`, {

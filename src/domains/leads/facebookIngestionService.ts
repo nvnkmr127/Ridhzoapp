@@ -26,18 +26,33 @@ export class FacebookIngestionService {
     const allFbSources = await db.select().from(leadSources).where(eq(leadSources.type, "facebook_lead_ads"));
     const pageMatches = allFbSources.filter((s) => (s.config as any)?.pageId === pageId);
 
-    // Tenant safety: a Page must belong to exactly one org, or routing is ambiguous.
+    // Tenant safety: a Page must belong to exactly one org, or routing is ambiguous. This is
+    // TERMINAL (not thrown) so Meta doesn't retry it forever and block both tenants — the conflict
+    // needs a human to delete one source, retrying can't resolve it.
     if (new Set(pageMatches.map((s) => s.organizationId)).size > 1) {
-      throw new Error(`Page ID ${pageId} is connected by multiple organizations — refusing to route ambiguously`);
+      const orgs = [...new Set(pageMatches.map((s) => s.organizationId))].join(", ");
+      console.error(`[FB_INGEST] event=${event.id} page=${pageId} connected by multiple orgs (${orgs}) — refusing to route`);
+      await this.markEvent(event.id, "failed", { reason: "page_multi_org_conflict", message: `Page ${pageId} connected by orgs: ${orgs}` });
+      return { status: "failed", reason: "page_multi_org_conflict" };
     }
     const matchedSource = pageMatches.find((s) => s.isActive === 1) || pageMatches[0];
     if (!matchedSource || !matchedSource.organizationId) {
       throw new Error(`No Facebook Lead Ads source configured for Page ID: ${pageId || "unknown"}`);
     }
 
+    // A source the user intentionally paused (inactive, and NOT flagged for reconnect) must stop
+    // ingesting. A needs-reconnect source is also inactive but we keep processing it — the Graph
+    // call fails auth and the event is recorded for replay after reconnect (don't drop those).
+    const matchedConfig = (matchedSource.config as any) || {};
+    if (matchedSource.isActive !== 1 && !matchedConfig.needsReconnect) {
+      console.log(`[FB_INGEST] event=${event.id} source=${matchedSource.id} is inactive (paused) — skipping`);
+      await this.markEvent(event.id, "processed", { reason: "source_inactive" });
+      return { status: "skipped", reason: "source_inactive" };
+    }
+
     const organizationId = matchedSource.organizationId;
     const sourceId = matchedSource.id;
-    const sourceConfig = (matchedSource.config as any) || {};
+    const sourceConfig = matchedConfig;
     const pageAccessToken = sourceConfig.pageAccessToken;
 
     // Form filter (empty = all forms). form_id is in the webhook payload, so we can drop unselected

@@ -7,12 +7,16 @@ export const leadSources = pgTable('lead_sources', {
   id: uuid('id').defaultRandom().primaryKey(),
   organizationId: uuid('organization_id').references(() => organizations.id),
   name: varchar('name', { length: 255 }).notNull(),
-  type: varchar('type', { length: 255 }), 
+  type: varchar('type', { length: 255 }),
   isActive: integer('is_active').default(1).notNull(), // 1=active, 0=inactive
   config: jsonb('config').default({}),
   webhookSecret: varchar('webhook_secret', { length: 255 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+}, (table) => ({
+  // Every inbound Facebook webhook matches sources by config.pageId; index the expression so that
+  // lookup isn't a full scan of all facebook_lead_ads sources on each delivery.
+  pageIdIdx: index('lead_sources_page_id_idx').on(sql`(${table.config}->>'pageId')`),
+}));
 
 export const leadPipelines = pgTable('lead_pipelines', {
   id: uuid('id').defaultRandom().primaryKey(),

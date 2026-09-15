@@ -6,6 +6,36 @@ import { eventBus } from "@/lib/events/emitter";
 import { LeadSourceService } from "@/domains/leads/sourceService";
 import { normalizeEmail, normalizePhone } from "@/lib/leads/normalize";
 
+// Attribution keys are FIRST-TOUCH: once a lead is created with the ad/campaign/leadgen that
+// originated it, a later re-submission must not overwrite them with a newer ad's values, or the
+// originating attribution (and the leadgen id Meta's Conversion Leads postback keys on) is lost.
+export const FIRST_TOUCH_KEYS = [
+  "leadSource",
+  "facebook_lead_id",
+  "facebook_form_id",
+  "facebook_page_id",
+  "meta_ad_id",
+  "meta_ad_name",
+  "meta_adset_id",
+  "meta_adset_name",
+  "meta_campaign_id",
+  "meta_campaign_name",
+];
+
+/** Merge an incoming lead's customData onto an existing lead's: new values win for normal fields,
+ *  but first-touch attribution the existing lead already carries is preserved. Pure — unit tested. */
+export function mergeCustomData(
+  existingData: Record<string, any>,
+  incomingData: Record<string, any> | undefined,
+  sourceId: string,
+): Record<string, any> {
+  const merged: Record<string, any> = { ...existingData, ...(incomingData ?? {}), _lastIngestionSource: sourceId };
+  for (const k of FIRST_TOUCH_KEYS) {
+    if (existingData[k] !== undefined) merged[k] = existingData[k];
+  }
+  return merged;
+}
+
 export class IngestionService {
   /**
    * Processes a normalized lead payload.
@@ -42,52 +72,36 @@ export class IngestionService {
     const searchConditions = [];
     if (email) searchConditions.push(eq(leads.email, email));
     if (phoneDigits) searchConditions.push(sql`regexp_replace(${leads.phone}, '\\D', '', 'g') = ${phoneDigits}`);
+    const dedupWhere = and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt), or(...searchConditions));
 
     // 2. Organization-Scoped Deduplication (active leads only)
-    const [existingLead] = await db
-      .select()
-      .from(leads)
-      .where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt), or(...searchConditions)))
-      .limit(1);
-
+    const [existingLead] = await db.select().from(leads).where(dedupWhere).limit(1);
     if (existingLead) {
-      // Basic Deduplication: We update the existing lead's custom data and updated_at
-      // Only fill Opportunity Size if it isn't already set — never overwrite a value a rep entered.
-      const setExpectedValue =
-        existingLead.expectedValue == null && payload.expectedValue != null
-          ? { expectedValue: String(payload.expectedValue) }
-          : {};
-      const [updatedLead] = await db.update(leads)
-        .set({
-          customData: { ...(existingLead.customData as Record<string, any>), ...payload.customData, _lastIngestionSource: payload.sourceId },
-          ...setExpectedValue,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(leads.id, existingLead.id), eq(leads.organizationId, organizationId)))
-        .returning();
-
-      await this.logIngestion(updatedLead.id, payload.sourceId, payload, "deduplicated", null);
-      
-      eventBus.emit('lead.updated', { 
-        leadId: updatedLead.id, 
-        sourceId: payload.sourceId,
-        changes: payload.customData 
-      });
-
-      return { status: "deduplicated", leadId: updatedLead.id };
+      return this.applyDedup(existingLead, payload, organizationId);
     }
 
-    // 3. Creation with organizationId
-    const [newLead] = await db.insert(leads).values({
-      organizationId,
-      name: payload.name,
-      email,
-      phone,
-      company: payload.company,
-      sourceId: payload.sourceId,
-      expectedValue: payload.expectedValue != null ? String(payload.expectedValue) : undefined,
-      customData: payload.customData,
-    }).returning();
+    // 3. Creation with organizationId. The insert can still lose a race to a concurrent ingestion
+    // of the same contact (the per-org email/phone unique index rejects the duplicate) — catch that
+    // and fall back to the dedup path so the second lead merges instead of surfacing a DB error.
+    let newLead;
+    try {
+      [newLead] = await db.insert(leads).values({
+        organizationId,
+        name: payload.name,
+        email,
+        phone,
+        company: payload.company,
+        sourceId: payload.sourceId,
+        expectedValue: payload.expectedValue != null ? String(payload.expectedValue) : undefined,
+        customData: payload.customData,
+      }).returning();
+    } catch (e: any) {
+      if (e?.code === "23505") {
+        const [raced] = await db.select().from(leads).where(dedupWhere).limit(1);
+        if (raced) return this.applyDedup(raced, payload, organizationId);
+      }
+      throw e;
+    }
 
     await this.logIngestion(newLead.id, payload.sourceId, payload, "success", null);
     
@@ -129,6 +143,38 @@ export class IngestionService {
     }
 
     return { status: "success", leadId: newLead.id };
+  }
+
+  /** Merges an incoming payload into an already-existing lead (dedup): updates custom data and
+   *  timestamp, fills Opportunity Size only if unset, preserves existing owner and first-touch
+   *  attribution. Shared by the normal dedup hit and the concurrent-insert (23505) fallback. */
+  private static async applyDedup(
+    existingLead: typeof leads.$inferSelect,
+    payload: NormalizedLeadPayload,
+    organizationId: string,
+  ): Promise<{ status: string; leadId: string }> {
+    const existingData = (existingLead.customData as Record<string, any>) ?? {};
+    const mergedData = mergeCustomData(existingData, payload.customData, payload.sourceId);
+
+    // Only fill Opportunity Size if it isn't already set — never overwrite a value a rep entered.
+    const setExpectedValue =
+      existingLead.expectedValue == null && payload.expectedValue != null
+        ? { expectedValue: String(payload.expectedValue) }
+        : {};
+    const [updatedLead] = await db.update(leads)
+      .set({ customData: mergedData, ...setExpectedValue, updatedAt: new Date() })
+      .where(and(eq(leads.id, existingLead.id), eq(leads.organizationId, organizationId)))
+      .returning();
+
+    await this.logIngestion(updatedLead.id, payload.sourceId, payload, "deduplicated", null);
+
+    eventBus.emit('lead.updated', {
+      leadId: updatedLead.id,
+      sourceId: payload.sourceId,
+      changes: payload.customData,
+    });
+
+    return { status: "deduplicated", leadId: updatedLead.id };
   }
 
   static async logIngestion(leadId: string | null, sourceId: string, payload: any, status: string, error: string | null) {

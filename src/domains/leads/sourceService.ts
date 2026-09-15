@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { leadSources, leads, assignmentRules } from "@/db/schema/leads";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import crypto from "crypto";
 
 export class LeadSourceService {
@@ -68,6 +68,23 @@ export class LeadSourceService {
     organizationId: string,
     page: { pageId: string; pageAccessToken: string; expiresAt?: Date | null; name?: string },
   ) {
+    // A Facebook Page belongs to exactly one org. If another org already connected it, refuse —
+    // otherwise ingestion for that Page becomes ambiguous and gets blocked for both tenants.
+    const conflict = await db
+      .select({ id: leadSources.id })
+      .from(leadSources)
+      .where(
+        and(
+          eq(leadSources.type, "facebook_lead_ads"),
+          ne(leadSources.organizationId, organizationId),
+          sql`${leadSources.config}->>'pageId' = ${page.pageId}`,
+        ),
+      )
+      .limit(1);
+    if (conflict.length > 0) {
+      throw new Error("This Facebook Page is already connected by another organization.");
+    }
+
     const rows = await db
       .select()
       .from(leadSources)

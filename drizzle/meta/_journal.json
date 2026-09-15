@@ -309,6 +309,13 @@
       "when": 1789436261880,
       "tag": "0043_custom_field_jsonb_and_unique_key",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1789436261881,
+      "tag": "0044_facebook_hardening",
+      "breakpoints": true
     }
   ]
 }

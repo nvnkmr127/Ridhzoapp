@@ -44,15 +44,19 @@ export async function POST(req: NextRequest) {
   try {
     const rawText = await req.text();
 
-    // Verify Meta's payload signature when an app secret is configured. Rejects spoofed
-    // lead injection. Unset secret = verification skipped (dev), same pattern as other integrations.
+    // Verify Meta's payload signature. Rejects spoofed lead injection. In production the app secret
+    // is MANDATORY — without it any unauthenticated POST could inject leads for any connected Page,
+    // so we refuse rather than silently skip. Only local/dev (non-production) may run without it.
     const appSecret = process.env.FACEBOOK_APP_SECRET;
     if (appSecret) {
       if (!verifyMetaSignature(rawText, req.headers.get("x-hub-signature-256"), appSecret)) {
         return NextResponse.json({ success: false, error: "Invalid signature" }, { status: 401 });
       }
+    } else if (process.env.NODE_ENV === "production") {
+      console.error("[FACEBOOK_WEBHOOK] FACEBOOK_APP_SECRET unset in production — refusing unverified webhook");
+      return NextResponse.json({ success: false, error: "Webhook verification not configured" }, { status: 500 });
     } else {
-      console.warn("[FACEBOOK_WEBHOOK] FACEBOOK_APP_SECRET unset — signature verification skipped");
+      console.warn("[FACEBOOK_WEBHOOK] FACEBOOK_APP_SECRET unset — signature verification skipped (non-production)");
     }
 
     let body: any;
@@ -105,6 +109,9 @@ export async function POST(req: NextRequest) {
           continue;
         }
         if (!event) {
+          // Insert-or-nothing on the (provider, idempotency_key) unique index closes the race where
+          // Meta delivers the same leadgen twice concurrently: only one row is created, the other
+          // insert no-ops and we re-read the winner instead of creating a duplicate event.
           const [created] = await db
             .insert(webhookEvents)
             .values({
@@ -118,8 +125,21 @@ export async function POST(req: NextRequest) {
               },
               idempotencyKey,
             })
+            .onConflictDoNothing({ target: [webhookEvents.provider, webhookEvents.idempotencyKey] })
             .returning();
           event = created;
+          if (!event) {
+            const [again] = await db
+              .select()
+              .from(webhookEvents)
+              .where(eq(webhookEvents.idempotencyKey, idempotencyKey))
+              .limit(1);
+            event = again;
+            if (event?.status === "processed") {
+              processedEvents.push(event.id);
+              continue;
+            }
+          }
         }
         if (!event) continue;
 

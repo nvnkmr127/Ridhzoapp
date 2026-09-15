@@ -52,14 +52,31 @@ describe("FacebookIngestionService.processEvent", () => {
     ).rejects.toThrow(/No Facebook Lead Ads source/i);
   });
 
-  it("refuses to route a Page connected by two organizations", async () => {
+  it("refuses to route a Page connected by two organizations — terminally, not by throwing (so Meta stops retrying)", async () => {
     h.sources = [
       { ...source({ pageId: "p1", pageAccessToken: "t" }), organizationId: "org-1" },
       { ...source({ pageId: "p1", pageAccessToken: "t" }), organizationId: "org-2" },
     ];
-    await expect(
-      FacebookIngestionService.processEvent(event({ page_id: "p1", form_id: "f1", leadgen_id: "lg1" })),
-    ).rejects.toThrow(/multiple organizations/i);
+    const res = await FacebookIngestionService.processEvent(event({ page_id: "p1", form_id: "f1", leadgen_id: "lg1" }));
+    expect(res).toEqual({ status: "failed", reason: "page_multi_org_conflict" });
+    expect(h.processLead).not.toHaveBeenCalled();
+    expect(h.updates.at(-1).status).toBe("failed");
+  });
+
+  it("skips ingestion for a source the user paused (inactive, not needs-reconnect)", async () => {
+    h.sources = [{ ...source({ pageId: "p1", pageAccessToken: "t", formFilter: [] }), isActive: 0 }];
+    const res = await FacebookIngestionService.processEvent(event({ page_id: "p1", form_id: "f1", leadgen_id: "lg1" }));
+    expect(res).toEqual({ status: "skipped", reason: "source_inactive" });
+    expect(h.fetchLeadgenData).not.toHaveBeenCalled();
+    expect(h.processLead).not.toHaveBeenCalled();
+    expect(h.updates.at(-1).status).toBe("processed");
+  });
+
+  it("still processes an inactive source flagged needs-reconnect (so outage leads can be replayed)", async () => {
+    h.sources = [{ ...source({ pageId: "p1", pageAccessToken: "t", formFilter: [], needsReconnect: true }), isActive: 0 }];
+    const res = await FacebookIngestionService.processEvent(event({ page_id: "p1", form_id: "f1", leadgen_id: "lg1" }));
+    expect(h.fetchLeadgenData).toHaveBeenCalled();
+    expect(res).toMatchObject({ status: "success" });
   });
 
   it("skips a lead whose form isn't in the form filter (no Graph call, no ingest)", async () => {

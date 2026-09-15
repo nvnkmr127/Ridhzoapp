@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, timestamp, jsonb, integer, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, timestamp, jsonb, integer, index, uniqueIndex } from 'drizzle-orm/pg-core';
 import { organizations } from './organizations';
 import { leadSources } from './leads';
 
@@ -85,7 +85,12 @@ export const webhookEvents = pgTable('webhook_events', {
   errorLog: jsonb('error_log'),
   processedAt: timestamp('processed_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+}, (t) => ({
+  // Enforce webhook idempotency at the DB layer: one event per (provider, idempotency_key), so
+  // concurrent duplicate deliveries can't create two events. Postgres treats NULL keys as distinct,
+  // so events without a key (some providers) are unaffected.
+  providerIdemUnique: uniqueIndex('webhook_events_provider_idem_key_unique').on(t.provider, t.idempotencyKey),
+}));
 
 export const leadIngestionLogs = pgTable('lead_ingestion_logs', {
   id: uuid('id').defaultRandom().primaryKey(),
