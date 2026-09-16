@@ -1,9 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
+import { UnrecoverableError } from "bullmq";
 import { calculateBackoffDelayMs, processWebhookDeliveryJob, WebhookRetryJobData } from "./webhookRetryWorker";
 import { LeadWebhookEventService } from "@/domains/leads/leadWebhookEventService";
 
 vi.mock("@/domains/leads/leadWebhookEventService", () => ({
   LeadWebhookEventService: { dispatchWebhook: vi.fn() },
+}));
+
+// Delivery-row updates are a no-op in these tests (job carries no deliveryId), but the worker imports
+// the DB-backed DLQ service — stub it so nothing touches Postgres.
+vi.mock("@/domains/leads/webhookDlqService", () => ({
+  WebhookDlqService: { markResult: vi.fn().mockResolvedValue(undefined) },
 }));
 
 function job(overrides: Partial<WebhookRetryJobData> = {}): any {
@@ -42,9 +49,16 @@ describe("Webhook Retry Worker & Exponential Backoff Architecture", () => {
     expect(result.statusCode).toBe(200);
   });
 
-  it("throws on a non-2xx response so BullMQ retries", async () => {
-    (LeadWebhookEventService.dispatchWebhook as any).mockResolvedValueOnce({ success: true, statusCode: 500 });
-    await expect(processWebhookDeliveryJob(job())).rejects.toThrow(/status 500/);
+  it("throws a retryable error on a transient (5xx) failure", async () => {
+    (LeadWebhookEventService.dispatchWebhook as any).mockResolvedValueOnce({ success: false, statusCode: 500, permanent: false, errorReason: "Endpoint returned status 500" });
+    const p = processWebhookDeliveryJob(job());
+    await expect(p).rejects.toThrow(/status 500/);
+    await expect(p).rejects.not.toBeInstanceOf(UnrecoverableError);
+  });
+
+  it("throws UnrecoverableError on a permanent (4xx) failure so BullMQ stops", async () => {
+    (LeadWebhookEventService.dispatchWebhook as any).mockResolvedValueOnce({ success: false, statusCode: 400, permanent: true, errorReason: "Endpoint returned status 400" });
+    await expect(processWebhookDeliveryJob(job())).rejects.toBeInstanceOf(UnrecoverableError);
   });
 
   it("propagates a transport error so BullMQ retries", async () => {

@@ -10,9 +10,9 @@ import { WebhooksManager } from "@/components/settings/WebhooksManager";
 export default async function WebhooksPage() {
   if (!(await hasPermission("api.manage"))) redirect("/leads");
   const { organizationId } = await requireOrg();
-  const [endpoints, dlq] = await Promise.all([
+  const [endpoints, stats] = await Promise.all([
     WebhookEndpointService.list(organizationId),
-    WebhookDlqService.getFailedDlqJobs(organizationId),
+    WebhookDlqService.getDeliveryStats(organizationId),
   ]);
 
   return (
@@ -26,7 +26,7 @@ export default async function WebhooksPage() {
           </p>
         </div>
       </div>
-      <WebhooksManager initial={endpoints} dlqCount={dlq.length} />
+      <WebhooksManager initial={endpoints} dlqCount={stats.failed} stats={stats} />
     </div>
   );
 }

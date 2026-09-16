@@ -2,21 +2,42 @@ import { db } from "@/db";
 import { webhookEndpoints } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { LeadWebhookEventService, WebhookEventPayload } from "@/domains/leads/leadWebhookEventService";
+import { WebhookDlqService } from "@/domains/leads/webhookDlqService";
 // No static `crypto` import — reachable from instrumentation's edge-compiled graph. Lazy-load it.
 
-// The lead events an outbound webhook can subscribe to.
+// The lead events an outbound webhook can subscribe to. Only events with a real producer belong
+// here — `lead.hot_threshold` / `lead.stagnant_alert` are NOT emitted anywhere yet, so offering them
+// would let customers subscribe to something that never fires. Re-add each when its producer lands.
 export const WEBHOOK_EVENT_TYPES = [
   "lead.created",
   "lead.status_changed",
-  "lead.hot_threshold",
-  "lead.stagnant_alert",
 ] as const;
 
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
 
 export class WebhookEndpointService {
+  // Never ship the signing secret in the listing — it would sit in the client props/DOM on every
+  // page load. The UI fetches it on demand via `revealSecret` (Copy button) instead.
   static list(organizationId: string) {
-    return db.select().from(webhookEndpoints).where(eq(webhookEndpoints.organizationId, organizationId));
+    return db
+      .select({
+        id: webhookEndpoints.id,
+        url: webhookEndpoints.url,
+        events: webhookEndpoints.events,
+        isActive: webhookEndpoints.isActive,
+        createdAt: webhookEndpoints.createdAt,
+      })
+      .from(webhookEndpoints)
+      .where(eq(webhookEndpoints.organizationId, organizationId));
+  }
+
+  // On-demand secret reveal for the Copy button. Org-scoped so one tenant can't read another's secret.
+  static async revealSecret(organizationId: string, id: string): Promise<string | null> {
+    const [row] = await db
+      .select({ secret: webhookEndpoints.secret })
+      .from(webhookEndpoints)
+      .where(and(eq(webhookEndpoints.id, id), eq(webhookEndpoints.organizationId, organizationId)));
+    return row?.secret ?? null;
   }
 
   static async create(organizationId: string, url: string, events: string[]) {
@@ -74,14 +95,19 @@ export class WebhookEndpointService {
       statusCode: result.statusCode,
       error: result.success
         ? undefined
-        : result.statusCode === 0
+        : result.permanent && result.statusCode === 0
+          ? result.errorReason ?? "Webhook URL was rejected."
+          : result.statusCode === 0
           ? "Could not reach webhook URL (network error or timeout)."
           : `Endpoint responded with HTTP ${result.statusCode}.`,
     };
   }
 
   // Producer: enqueue a signed delivery to every active endpoint in this org that subscribed to
-  // `event`. Best-effort — never throws into the caller (an event handler); logs and moves on.
+  // `event`. Never throws into the caller (an event handler). Durability: we write a `pending`
+  // delivery row to Postgres BEFORE enqueue, so if the queue (Redis) is unreachable the event
+  // surfaces as a `failed` row the customer can see — it is no longer silently dropped.
+  // ponytail: per-target insert+enqueue is O(n) round-trips; batch-insert if org fan-out ever grows large.
   static async dispatch(organizationId: string, event: WebhookEventType, data: Record<string, any>): Promise<void> {
     try {
       const rows = await db
@@ -93,16 +119,40 @@ export class WebhookEndpointService {
 
       const payload: WebhookEventPayload = LeadWebhookEventService.constructPayload(organizationId, event, data);
       const { webhookDeliveryQueue } = await import("@/lib/jobs/workers/webhookRetryWorker");
-      await Promise.all(
-        targets.map((t) =>
-          webhookDeliveryQueue.add(`wh-${t.id}-${payload.eventId}`, {
+
+      for (const t of targets) {
+        let deliveryId: string | undefined;
+        try {
+          deliveryId = await WebhookDlqService.recordPending({
+            organizationId,
+            endpointId: t.id,
+            eventId: payload.eventId,
+            event,
+            url: t.url,
+            payload,
+          });
+        } catch (e) {
+          console.error("[webhook-dispatch] could not record delivery row", e);
+        }
+        try {
+          const job = await webhookDeliveryQueue.add(`wh-${t.id}-${payload.eventId}`, {
+            deliveryId,
             endpointId: t.id,
             endpointUrl: t.url,
             webhookSecret: t.secret,
             payload,
-          }),
-        ),
-      );
+          });
+          if (deliveryId) await WebhookDlqService.markResult(deliveryId, { status: "pending", jobId: String(job.id) });
+        } catch (e) {
+          console.error("[webhook-dispatch] enqueue failed — recording as failed delivery", e);
+          if (deliveryId) {
+            await WebhookDlqService.markResult(deliveryId, {
+              status: "failed",
+              errorReason: "Could not enqueue delivery (queue unavailable).",
+            }).catch(() => {});
+          }
+        }
+      }
     } catch (e) {
       console.error("[webhook-dispatch] failed to enqueue deliveries", e);
     }

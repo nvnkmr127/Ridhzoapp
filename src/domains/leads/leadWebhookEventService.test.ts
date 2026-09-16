@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { LeadWebhookEventService } from "./leadWebhookEventService";
 
+// The SSRF guard does real DNS; stub it so unit tests don't touch the network.
+vi.mock("@/lib/webhooks/ssrf", () => ({ assertPublicHttpUrl: vi.fn().mockResolvedValue(undefined) }));
+
 describe("LeadWebhookEventService", () => {
   it("should construct valid Webhook event payload with UUID eventId and ISO timestamp", () => {
     const payload = LeadWebhookEventService.constructPayload("org-100", "lead.created", {
@@ -58,5 +61,25 @@ describe("LeadWebhookEventService", () => {
     expect(result.success).toBe(false);
     expect(result.statusCode).toBe(0);
     vi.unstubAllGlobals();
+  });
+
+  it("classifies 4xx (except 408/429) and 3xx as permanent, 5xx/408/429 as retryable", async () => {
+    const payload = LeadWebhookEventService.constructPayload("org", "lead.created", {});
+    const cases: [number, boolean][] = [
+      [400, true], [404, true], [410, true], [422, true], [301, true], [302, true],
+      [408, false], [429, false], [500, false], [502, false], [503, false],
+    ];
+    for (const [status, permanent] of cases) {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ status }));
+      const r = await LeadWebhookEventService.dispatchWebhook("https://x/y", "s", payload);
+      expect(r.success).toBe(false);
+      expect(r.permanent, `status ${status}`).toBe(permanent);
+    }
+    vi.unstubAllGlobals();
+  });
+
+  it("stamps a payload version", () => {
+    const p = LeadWebhookEventService.constructPayload("org", "lead.created", {});
+    expect(p.version).toBe("1");
   });
 });

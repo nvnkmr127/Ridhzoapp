@@ -16,6 +16,29 @@ export const webhookEndpoints = pgTable('webhook_endpoints', {
   orgIdx: index('webhook_endpoints_org_idx').on(t.organizationId),
 }));
 
+// Durable delivery log for outbound webhooks. Written by the web tier at enqueue time (so a Redis
+// outage surfaces as a `failed` row instead of a silently-dropped event) and updated by the droplet
+// worker as attempts run. Both tiers share Neon, so this is the ONLY place their state can meet —
+// the DLQ (status='failed') and delivery stats are queries over this table, org-scoped.
+export const webhookDeliveries = pgTable('webhook_deliveries', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').references(() => organizations.id).notNull(),
+  endpointId: uuid('endpoint_id'), // nullable: endpoint may be deleted while a delivery is in flight
+  jobId: varchar('job_id', { length: 128 }), // BullMQ job id, once enqueued
+  eventId: varchar('event_id', { length: 64 }).notNull(),
+  event: varchar('event', { length: 64 }).notNull(),
+  url: varchar('url', { length: 2048 }).notNull(),
+  status: varchar('status', { length: 16 }).default('pending').notNull(), // pending | delivered | failed | skipped
+  attempts: integer('attempts').default(0).notNull(),
+  lastStatusCode: integer('last_status_code'),
+  errorReason: text('error_reason'),
+  payload: jsonb('payload').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => ({
+  orgStatusIdx: index('webhook_deliveries_org_status_idx').on(t.organizationId, t.status, t.updatedAt),
+}));
+
 // Lead distribution rules: when a new lead matches a rule's criteria, forward a copy to the rule's
 // recipients. On lead.created we evaluate every active rule of the org and email the matching ones.
 export type DistributionRecipient = {

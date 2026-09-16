@@ -10,25 +10,27 @@ import {
   deleteWebhookEndpointAction,
   toggleWebhookEndpointAction,
   testWebhookEndpointAction,
+  revealWebhookSecretAction,
 } from "@/lib/actions/webhooks";
 
 // Client-safe copy — the server service pulls in `db`, so we can't import its const here.
+// Keep in sync with WEBHOOK_EVENT_TYPES (server). Only events with a real producer are offered.
 const EVENT_TYPES: { key: string; label: string }[] = [
   { key: "lead.created", label: "Lead created" },
   { key: "lead.status_changed", label: "Status changed" },
-  { key: "lead.hot_threshold", label: "Lead went hot" },
-  { key: "lead.stagnant_alert", label: "Lead stagnant" },
 ];
 
 type Endpoint = {
   id: string;
   url: string;
-  secret: string;
+  secret?: string; // only present right after creation (shown once); otherwise fetched on demand
   events: string[];
   isActive: number;
 };
 
-export function WebhooksManager({ initial, dlqCount }: { initial: Endpoint[]; dlqCount: number }) {
+type DeliveryStats = { delivered: number; failed: number; pending: number };
+
+export function WebhooksManager({ initial, dlqCount, stats }: { initial: Endpoint[]; dlqCount: number; stats?: DeliveryStats }) {
   const { toast } = useToast();
   const [endpoints, setEndpoints] = React.useState<Endpoint[]>(initial);
   const [url, setUrl] = React.useState("");
@@ -107,7 +109,16 @@ export function WebhooksManager({ initial, dlqCount }: { initial: Endpoint[]; dl
     }
   }
 
-  function copySecret(secret: string) {
+  async function copySecret(e: Endpoint) {
+    let secret = e.secret;
+    if (!secret) {
+      const res = await revealWebhookSecretAction(e.id);
+      if (!res.ok) {
+        toast({ variant: "destructive", title: "Couldn't get secret", description: res.message });
+        return;
+      }
+      secret = res.data.secret;
+    }
     navigator.clipboard?.writeText(secret).then(
       () => toast({ title: "Signing secret copied" }),
       () => toast({ variant: "destructive", title: "Copy failed" }),
@@ -116,6 +127,14 @@ export function WebhooksManager({ initial, dlqCount }: { initial: Endpoint[]; dl
 
   return (
     <div className="space-y-6">
+      {stats && (stats.delivered > 0 || stats.failed > 0 || stats.pending > 0) && (
+        <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+          <span><span className="font-medium text-foreground">{stats.delivered}</span> delivered</span>
+          <span><span className="font-medium text-foreground">{stats.pending}</span> in flight</span>
+          <span><span className="font-medium text-foreground">{stats.failed}</span> failed</span>
+        </div>
+      )}
+
       {dlqCount > 0 && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
           <AlertTriangle className="h-4 w-4 text-amber-500" />
@@ -168,7 +187,7 @@ export function WebhooksManager({ initial, dlqCount }: { initial: Endpoint[]; dl
                   <Send className="h-3.5 w-3.5" />
                   {testingId === e.id ? "Testing…" : "Test"}
                 </Button>
-                <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => copySecret(e.secret)}>
+                <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => copySecret(e)}>
                   <Copy className="h-3.5 w-3.5" /> Secret
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => toggle(e)}>

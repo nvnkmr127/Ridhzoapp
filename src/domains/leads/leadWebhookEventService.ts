@@ -2,7 +2,11 @@
 // also compiled for the edge runtime where the node `crypto` builtin can't be bundled. We use the
 // global Web Crypto for the UUID and lazy-load node crypto for HMAC (same pattern as the webhook routes).
 
+// Payload schema version. Bump when the envelope/data shape changes so receivers can branch.
+export const WEBHOOK_PAYLOAD_VERSION = "1";
+
 export interface WebhookEventPayload {
+  version: string;
   eventId: string;
   event: "lead.created" | "lead.status_changed" | "lead.hot_threshold" | "lead.stagnant_alert";
   timestamp: string;
@@ -20,6 +24,7 @@ export class LeadWebhookEventService {
     data: Record<string, any>
   ): WebhookEventPayload {
     return {
+      version: WEBHOOK_PAYLOAD_VERSION,
       eventId: `evt_${globalThis.crypto.randomUUID().replace(/-/g, "")}`,
       event,
       timestamp: new Date().toISOString(),
@@ -44,9 +49,18 @@ export class LeadWebhookEventService {
     endpointUrl: string,
     webhookSecret: string,
     payload: WebhookEventPayload
-  ): Promise<{ success: boolean; statusCode: number; payload: WebhookEventPayload; signature: string }> {
+  ): Promise<{ success: boolean; statusCode: number; payload: WebhookEventPayload; signature: string; errorReason?: string; permanent?: boolean }> {
     const body = JSON.stringify(payload);
     const signature = await this.generateSignature(body, webhookSecret);
+
+    // SSRF guard: refuse private/loopback/link-local/metadata targets before connecting. A blocked
+    // URL is a permanent failure (retrying can't fix a bad URL) — don't burn attempts on it.
+    try {
+      const { assertPublicHttpUrl } = await import("@/lib/webhooks/ssrf");
+      await assertPublicHttpUrl(endpointUrl);
+    } catch (e) {
+      return { success: false, statusCode: 0, payload, signature, permanent: true, errorReason: (e as Error).message };
+    }
 
     try {
       const controller = new AbortController();
@@ -60,17 +74,23 @@ export class LeadWebhookEventService {
         },
         body,
         signal: controller.signal,
+        redirect: "manual", // never follow a 3xx into the internal network; a redirect = misconfig
       });
       clearTimeout(timeout);
+      const ok = res.status >= 200 && res.status < 300;
+      // Permanent (don't retry): 3xx (we don't follow) and 4xx except 408/429. Retry 408/429/5xx/0.
+      const permanent = (res.status >= 300 && res.status < 400) || (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429);
       return {
-        success: res.status >= 200 && res.status < 300,
+        success: ok,
         statusCode: res.status,
         payload,
         signature,
+        permanent: ok ? false : permanent,
+        errorReason: ok ? undefined : `Endpoint returned status ${res.status}`,
       };
-    } catch {
-      // Network error / timeout / DNS — treat as a delivery failure so it retries.
-      return { success: false, statusCode: 0, payload, signature };
+    } catch (e) {
+      // Network error / timeout / DNS — transient, retry.
+      return { success: false, statusCode: 0, payload, signature, errorReason: (e as Error)?.message || "Network error or timeout" };
     }
   }
 }

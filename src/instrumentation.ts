@@ -27,9 +27,10 @@ export async function register() {
     }
   }
 
-  // Note: webhookRetryWorker (outbound lead webhooks) is intentionally NOT started — it has no
-  // producer or configuration surface yet. It's a speculative feature, not a broken one; wire it
-  // when outbound webhook endpoints become a real, configurable feature.
+  // Note: the outbound-webhook delivery worker (webhookRetryWorker) IS started, but only via
+  // startWorkers() above — i.e. on the droplet worker / a single always-on Node server, never in the
+  // Vercel web process. The web tier only ENQUEUES (WebhookEndpointService.dispatch); the droplet
+  // drains the queue and POSTs the deliveries.
 }
 
 // Next.js 15 Observability hook: centrally captures unhandled server exceptions, Server Action errors,

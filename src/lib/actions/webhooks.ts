@@ -3,6 +3,7 @@
 import { requirePermission } from "@/lib/rbac";
 import { WebhookEndpointService, WEBHOOK_EVENT_TYPES } from "@/domains/integrations/webhookEndpointService";
 import { WebhookDlqService } from "@/domains/leads/webhookDlqService";
+import { RateLimiter } from "@/lib/rate-limit";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { ok, fail, actionFail } from "@/lib/actions/result";
@@ -55,8 +56,22 @@ export async function deleteWebhookEndpointAction(id: string) {
   }
 }
 
+export async function revealWebhookSecretAction(id: string) {
+  const { organizationId } = await requirePermission("api.manage");
+  try {
+    const secret = await WebhookEndpointService.revealSecret(organizationId, id);
+    if (!secret) return fail("NOT_FOUND", "This webhook no longer exists.");
+    return ok({ secret });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
 export async function testWebhookEndpointAction(id: string) {
   const { organizationId } = await requirePermission("api.manage");
+  // Test triggers an outbound request the caller controls — throttle it (SSRF/abuse amplification).
+  const limit = await RateLimiter.checkLimit(`webhook-test:${organizationId}`, 10, 60);
+  if (!limit.success) return fail("RATE_LIMIT", "Too many test deliveries. Please wait a minute and try again.");
   try {
     const res = await WebhookEndpointService.test(organizationId, id);
     if (!res.success) {
@@ -71,4 +86,26 @@ export async function testWebhookEndpointAction(id: string) {
 export async function listWebhookDlqAction() {
   const { organizationId } = await requirePermission("api.manage");
   return WebhookDlqService.getFailedDlqJobs(organizationId);
+}
+
+export async function retryWebhookDlqAction(deliveryId: string) {
+  const { organizationId } = await requirePermission("api.manage");
+  try {
+    const res = await WebhookDlqService.retryDlqJob(deliveryId, organizationId);
+    revalidatePath("/settings/webhooks");
+    return ok(res);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function purgeWebhookDlqAction(deliveryId: string) {
+  const { organizationId } = await requirePermission("api.manage");
+  try {
+    const res = await WebhookDlqService.purgeDlqJob(deliveryId, organizationId);
+    revalidatePath("/settings/webhooks");
+    return ok(res);
+  } catch (e) {
+    return actionFail(e);
+  }
 }
