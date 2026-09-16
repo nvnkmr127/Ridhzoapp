@@ -49,7 +49,7 @@ export class PlatformService {
   static async setPlan(organizationId: string, plan: string) {
     const [row] = await db
       .update(organizations)
-      .set({ plan })
+      .set({ plan, planStatus: "active", updatedAt: new Date() })
       .where(eq(organizations.id, organizationId))
       .returning({ id: organizations.id });
     return row ?? null;
