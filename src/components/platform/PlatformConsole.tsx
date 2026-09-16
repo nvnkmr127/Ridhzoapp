@@ -26,10 +26,10 @@ type Org = {
 
 const PLANS = ["free", "pro", "business"];
 
-export function PlatformConsole({ initial }: { initial: Org[] }) {
+export function PlatformConsole({ initial = [] }: { initial?: Org[] }) {
   const router = useRouter();
   const { toast } = useToast();
-  const [orgs, setOrgs] = React.useState<Org[]>(initial);
+  const [orgs, setOrgs] = React.useState<Org[]>(initial ?? []);
   const [busy, setBusy] = React.useState<string | null>(null);
 
   async function changePlan(org: Org, plan: string) {
@@ -84,7 +84,7 @@ export function PlatformConsole({ initial }: { initial: Org[] }) {
             </tr>
           </thead>
           <tbody>
-            {orgs.map((o) => (
+            {(orgs ?? []).map((o) => (
               <tr key={o.id} className="border-t border-border">
                 <td className="px-4 py-3">
                   <div className="font-medium text-foreground">{o.name}</div>
@@ -93,7 +93,7 @@ export function PlatformConsole({ initial }: { initial: Org[] }) {
                 <td className="px-4 py-3 text-right tabular-nums">{o.userCount}</td>
                 <td className="px-4 py-3 text-right tabular-nums">{o.leadCount}</td>
                 <td className="px-4 py-3">
-                  <Select value={o.plan} onValueChange={(v) => changePlan(o, v)}>
+                  <Select value={PLANS.includes(o.plan) ? o.plan : "free"} onValueChange={(v) => changePlan(o, v)}>
                     <SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {PLANS.map((p) => <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>)}

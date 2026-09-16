@@ -13,7 +13,7 @@ export interface OrgSummary {
   suspended: boolean;
   userCount: number;
   leadCount: number;
-  createdAt: Date;
+  createdAt: string;
 }
 
 export class PlatformService {
@@ -37,12 +37,12 @@ export class PlatformService {
       id: o.id,
       name: o.name,
       slug: o.slug,
-      plan: o.plan,
-      planStatus: o.planStatus,
+      plan: o.plan ?? "free",
+      planStatus: o.planStatus ?? "active",
       suspended: !!o.suspendedAt,
       userCount: u.get(o.id) ?? 0,
       leadCount: l.get(o.id) ?? 0,
-      createdAt: o.createdAt,
+      createdAt: o.createdAt ? new Date(o.createdAt).toISOString() : new Date().toISOString(),
     }));
   }
 
