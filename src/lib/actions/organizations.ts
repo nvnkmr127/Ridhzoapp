@@ -80,6 +80,14 @@ export async function getOrganizationAction() {
   return OrgService.getOrganization(organizationId);
 }
 
+// Fields recorded as {old, new} in the audit entry — low-cardinality/operational, safe to show
+// in full. Everything else that changed is named in `changedFields` with no value (free text like
+// aiContext, or PII like phone/address that doesn't need to be replayed into the audit trail).
+const SETTINGS_VALUE_FIELDS = [
+  "timezone", "locale", "currency", "dateFormat", "slaHours", "whatsappMode",
+  "requiredLeadFields", "sequenceWindowStart", "sequenceWindowEnd",
+] as const;
+
 export async function updateOrganizationAction(input: z.input<typeof updateOrgSchema>) {
   const { organizationId, userId } = await requirePermission("settings.manage");
   const parsed = updateOrgSchema.safeParse(input);
@@ -90,8 +98,23 @@ export async function updateOrganizationAction(input: z.input<typeof updateOrgSc
   try {
     const { expectedUpdatedAt, ...data } = parsed.data;
     const expected = expectedUpdatedAt ? new Date(expectedUpdatedAt) : undefined;
+    const before = await OrgService.getOrganization(organizationId);
     const updated = await OrgService.updateOrganization(organizationId, data, expected);
-    await AuditService.log({ organizationId, userId, action: "org.settings_update", entityType: "organization", entityId: organizationId });
+
+    const changedFields: string[] = [];
+    const values: Record<string, { old: unknown; new: unknown }> = {};
+    for (const key of Object.keys(data) as (keyof typeof data)[]) {
+      const oldVal = (before as Record<string, unknown> | null)?.[key as string];
+      const newVal = (data as Record<string, unknown>)[key as string];
+      if (JSON.stringify(oldVal) === JSON.stringify(newVal)) continue;
+      changedFields.push(key as string);
+      if ((SETTINGS_VALUE_FIELDS as readonly string[]).includes(key as string)) {
+        values[key as string] = { old: oldVal, new: newVal };
+      }
+    }
+    if (changedFields.length > 0) {
+      await AuditService.log({ organizationId, userId, action: "org.settings_update", entityType: "organization", entityId: organizationId, metadata: { changedFields, values } });
+    }
     revalidatePath("/settings");
     return ok(updated);
   } catch (e) {

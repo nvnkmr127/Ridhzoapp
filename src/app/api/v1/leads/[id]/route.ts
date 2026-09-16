@@ -6,6 +6,8 @@ import { followUps } from "@/db/schema";
 import { authorizeApiRequest } from "@/lib/apiAuth";
 import { LeadService } from "@/domains/leads/service";
 import { ActivityService } from "@/domains/activities/service";
+import { AuditService } from "@/domains/audit/service";
+import { hasPermissionForRoleId } from "@/lib/rbac";
 
 const idSchema = z.string().uuid();
 
@@ -141,9 +143,16 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return NextResponse.json({ error: "Invalid lead ID format. Expected a valid UUID." }, { status: 400 });
   }
 
+  // Mobile-token requests carry a role — hold it to the same leads.delete gate the web UI enforces.
+  // A plain API key has no role/permission concept; its own read_only/full scope already gates it.
+  if (auth.userId && !(await hasPermissionForRoleId(auth.roleId ?? null, "leads.delete"))) {
+    return NextResponse.json({ error: "You don't have permission to delete leads." }, { status: 403 });
+  }
+
   try {
     const deleted = await LeadService.deleteLead(id, auth.userId ?? "", auth.organizationId);
     if (!deleted) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+    await AuditService.log({ organizationId: auth.organizationId, userId: auth.userId ?? null, action: "lead.delete", entityType: "lead", entityId: id, metadata: { via: "api" } });
     return NextResponse.json({ data: { deleted: true } });
   } catch (e) {
     const { logError } = await import("@/lib/log");

@@ -1,0 +1,69 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+const limitSpy = vi.fn();
+vi.mock("@/db", () => ({
+  db: {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn(() => ({
+          limit: limitSpy,
+        })),
+      })),
+    })),
+  },
+}));
+
+import { authOptions } from "./auth";
+
+const jwtCallback = authOptions.callbacks!.jwt!;
+
+describe("jwt callback — session liveness refresh", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("does not hit the database again within the refresh interval", async () => {
+    const token = { id: "u1", roleId: "role-1", organizationId: "org-1", isSuperAdmin: false, refreshedAt: Date.now() };
+    const result = await jwtCallback({ token } as any);
+    expect(limitSpy).not.toHaveBeenCalled();
+    expect(result.roleId).toBe("role-1");
+  });
+
+  it("re-reads role/org/active status once the interval has elapsed", async () => {
+    limitSpy.mockResolvedValue([{ roleId: "role-2", organizationId: "org-1", isSuperAdmin: false, isActive: true, deletedAt: null }]);
+    const token = { id: "u1", roleId: "role-1", organizationId: "org-1", isSuperAdmin: false, refreshedAt: Date.now() - 120_000 };
+
+    const result = await jwtCallback({ token } as any);
+
+    expect(limitSpy).toHaveBeenCalled();
+    expect(result.roleId).toBe("role-2"); // picked up the role change
+  });
+
+  // The concrete scenario A5 named: a user reassigned/demoted after sign-in should not keep
+  // acting under their old role for the life of the token.
+  it("clears roleId and organizationId once the user has been soft-deleted", async () => {
+    limitSpy.mockResolvedValue([{ roleId: "role-1", organizationId: "org-1", isSuperAdmin: false, isActive: false, deletedAt: new Date() }]);
+    const token = { id: "u1", roleId: "role-1", organizationId: "org-1", isSuperAdmin: false, refreshedAt: Date.now() - 120_000 };
+
+    const result = await jwtCallback({ token } as any);
+
+    expect(result.roleId).toBeNull();
+    expect(result.organizationId).toBeNull();
+  });
+
+  it("clears the token when the user row is gone entirely", async () => {
+    limitSpy.mockResolvedValue([]);
+    const token = { id: "u1", roleId: "role-1", organizationId: "org-1", isSuperAdmin: false, refreshedAt: Date.now() - 120_000 };
+
+    const result = await jwtCallback({ token } as any);
+
+    expect(result.roleId).toBeNull();
+    expect(result.organizationId).toBeNull();
+  });
+
+  it("stamps refreshedAt on initial sign-in without querying the database", async () => {
+    const user = { id: "u1", roleId: "role-1", organizationId: "org-1", isSuperAdmin: false };
+    const result = await jwtCallback({ token: {}, user } as any);
+    expect(limitSpy).not.toHaveBeenCalled();
+    expect(result.roleId).toBe("role-1");
+    expect(typeof result.refreshedAt).toBe("number");
+  });
+});

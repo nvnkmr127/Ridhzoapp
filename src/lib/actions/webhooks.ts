@@ -3,6 +3,7 @@
 import { requirePermission } from "@/lib/rbac";
 import { WebhookEndpointService, WEBHOOK_EVENT_TYPES } from "@/domains/integrations/webhookEndpointService";
 import { WebhookDlqService } from "@/domains/leads/webhookDlqService";
+import { AuditService } from "@/domains/audit/service";
 import { RateLimiter } from "@/lib/rate-limit";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -57,10 +58,12 @@ export async function deleteWebhookEndpointAction(id: string) {
 }
 
 export async function revealWebhookSecretAction(id: string) {
-  const { organizationId } = await requirePermission("api.manage");
+  const { organizationId, userId } = await requirePermission("api.manage");
   try {
     const secret = await WebhookEndpointService.revealSecret(organizationId, id);
     if (!secret) return fail("NOT_FOUND", "This webhook no longer exists.");
+    // A deliberate secret disclosure — record that it happened, never the secret itself.
+    await AuditService.log({ organizationId, userId, action: "webhook.secret_reveal", entityType: "webhook_endpoint", entityId: id });
     return ok({ secret });
   } catch (e) {
     return actionFail(e);

@@ -2,11 +2,20 @@ import { pgTable, uuid, varchar, text, timestamp, boolean, jsonb, integer, index
 import { organizations } from './organizations';
 import { users, roles } from './users';
 
-// Immutable trail of who did what. Written by AuditService; never updated.
+// Append-only trail of who did what. Written by AuditService; the application never updates or
+// deletes rows here (no cleanup/retention job exists), and every read is org-scoped. This is
+// application-level immutability, not tamper-evident storage — the DB role the app connects as
+// still holds UPDATE/DELETE on this table, so it doesn't resist a compromised connection string.
 export const auditLogs = pgTable('audit_logs', {
   id: uuid('id').defaultRandom().primaryKey(),
   organizationId: uuid('organization_id').references(() => organizations.id).notNull(),
   userId: uuid('user_id').references(() => users.id), // null = system/automation
+  // Actor identity AS OF the event, snapshotted at write time. The live join to `users` (via
+  // userId, for rows written before this existed) shows current identity — a renamed or
+  // reactivated-under-a-new-name user would otherwise rewrite their own history. Null for
+  // system/automation rows (userId is also null there) and for pre-migration rows.
+  actorName: varchar('actor_name', { length: 255 }),
+  actorEmail: varchar('actor_email', { length: 255 }),
   action: varchar('action', { length: 100 }).notNull(), // e.g. "lead.delete", "user.role_change"
   entityType: varchar('entity_type', { length: 50 }),
   entityId: uuid('entity_id'),

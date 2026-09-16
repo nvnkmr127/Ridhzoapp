@@ -3,6 +3,7 @@ import { organizations } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { PLAN_LIMITS } from "./planService";
 import * as razorpay from "@/lib/billing/razorpay";
+import { AuditService } from "@/domains/audit/service";
 
 // Which plan a Razorpay subscription status maps the org to. Paid tiers only apply while active.
 const PAID_PLANS = Object.keys(PLAN_LIMITS).filter((p) => p !== "free");
@@ -62,31 +63,51 @@ export class BillingService {
   }
 
   // Reconcile from a verified webhook. Razorpay is the source of truth for the subscription state.
+  // System-attributed (userId: null): this is the only path that can change billing state with no
+  // user in the loop, and previously left no trace at all when it did.
   static async handleWebhook(event: string, subscriptionEntity: { id?: string; current_end?: number } | undefined) {
     const subId = subscriptionEntity?.id;
     if (!subId) return;
-    const [org] = await db.select({ id: organizations.id, plan: organizations.plan }).from(organizations).where(eq(organizations.razorpaySubscriptionId, subId)).limit(1);
+    const [org] = await db.select({ id: organizations.id, plan: organizations.plan, planStatus: organizations.planStatus }).from(organizations).where(eq(organizations.razorpaySubscriptionId, subId)).limit(1);
     if (!org) return;
 
     const periodEnd = subscriptionEntity.current_end ? new Date(subscriptionEntity.current_end * 1000) : undefined;
+    const oldPlan = org.plan;
+    const oldStatus = org.planStatus;
+    let newStatus = oldStatus;
+    let newPlan = oldPlan;
 
     switch (event) {
       case "subscription.activated":
       case "subscription.charged":
       case "subscription.resumed":
+        newStatus = "active";
         await db.update(organizations)
           .set({ planStatus: "active", ...(periodEnd ? { currentPeriodEnd: periodEnd } : {}) })
           .where(eq(organizations.id, org.id));
         break;
       case "subscription.halted":
       case "subscription.paused":
+        newStatus = "halted";
         await db.update(organizations).set({ planStatus: "halted" }).where(eq(organizations.id, org.id));
         break;
       case "subscription.cancelled":
       case "subscription.completed":
         // Lost the paid subscription → drop entitlements back to free.
+        newPlan = "free";
+        newStatus = "cancelled";
         await db.update(organizations).set({ plan: "free", planStatus: "cancelled" }).where(eq(organizations.id, org.id));
         break;
+      default:
+        return; // unhandled event type — nothing changed, nothing to log
     }
+
+    await AuditService.log({
+      organizationId: org.id,
+      action: "billing.plan_changed",
+      entityType: "organization",
+      entityId: org.id,
+      metadata: { event, subscriptionId: subId, oldPlan, newPlan, oldStatus, newStatus },
+    });
   }
 }

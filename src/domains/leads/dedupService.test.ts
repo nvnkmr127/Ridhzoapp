@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { DedupService } from "./dedupService";
 import { db } from "@/db";
+import { AuditService } from "@/domains/audit/service";
 
 vi.mock("@/db", () => ({ db: { select: vi.fn(), update: vi.fn() } }));
 vi.mock("@/domains/activities/service", () => ({ ActivityService: { addActivity: vi.fn().mockResolvedValue(undefined) } }));
+vi.mock("@/domains/audit/service", () => ({ AuditService: { log: vi.fn() } }));
 
 function mockLeads(rows: any[]) {
   (db.select as any).mockReturnValue({ from: () => ({ where: () => Promise.resolve(rows) }) });
@@ -63,6 +65,27 @@ describe("DedupService.autoMergeOnCreate", () => {
     expect(result).toBe(true);
     expect(mergeSpy).toHaveBeenCalledWith("org", "old", "new"); // older kept as primary
     expect((db.update as any)).toHaveBeenCalled(); // backfilled primary's blank phone/company
+  });
+
+  // A6/A13: this hard-deletes the arrival with no user action in the loop — it needs its own
+  // audit trail, and the merged lead's identity has to be captured before merge() deletes it.
+  it("logs a System-attributed lead.auto_merge with the merged lead's identity snapshotted", async () => {
+    const primary = { id: "old", organizationId: "org", email: "a@x.com", phone: null, company: null, name: "A", customData: { plan: "pro" }, createdAt: new Date(0), deletedAt: null };
+    mockAutoMerge(incoming, 1, [primary]);
+    vi.spyOn(DedupService, "merge").mockResolvedValue(undefined as any);
+
+    await DedupService.autoMergeOnCreate("new");
+
+    expect(AuditService.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: "org",
+        action: "lead.auto_merge",
+        entityType: "lead",
+        entityId: "old",
+        metadata: expect.objectContaining({ mergedLead: { name: "Ada", email: "a@x.com", phone: "555" }, matchedOn: "email" }),
+      }),
+    );
+    expect(AuditService.log).not.toHaveBeenCalledWith(expect.objectContaining({ userId: expect.anything() }));
   });
 
   it("does nothing when auto-merge is off for the org", async () => {

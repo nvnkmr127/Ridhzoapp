@@ -91,7 +91,7 @@ describe("authorizeApiRequest — mobile token", () => {
   it("accepts a valid token for an active, same-org user", async () => {
     mobile.mockReturnValue({ sub: "u1", org: "org-1", role: null, email: "a@b.c" });
     const auth = await authorizeApiRequest(req("GET", "Bearer jwt"));
-    expect(auth).toEqual({ organizationId: "org-1", userId: "u1" });
+    expect(auth).toEqual({ organizationId: "org-1", userId: "u1", roleId: null });
     // Mobile tokens carry full write access regardless of HTTP method.
     expect(verify).not.toHaveBeenCalled();
   });

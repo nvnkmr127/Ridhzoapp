@@ -78,6 +78,7 @@ export async function setUserActiveAction(id: string, isActive: boolean) {
   try {
     const u = await UserService.setActive(organizationId, id, isActive);
     if (!u) return fail("NOT_FOUND", "That user no longer exists. Refresh the page.");
+    await AuditService.log({ organizationId, userId, action: isActive ? "user.activate" : "user.deactivate", entityType: "user", entityId: id });
     revalidateTag("active-users");
     revalidatePath("/settings/users");
     return ok({ id, isActive });

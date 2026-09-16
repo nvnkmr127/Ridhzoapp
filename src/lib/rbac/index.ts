@@ -89,13 +89,10 @@ export async function currentRoleName(): Promise<string | null> {
   return (await currentRole())?.name ?? null;
 }
 
-// admin implicitly has every permission; other roles must list the key explicitly.
-export async function hasPermission(key: PermissionKey): Promise<boolean> {
-  // Platform super-admins hold every permission (incl. inside an impersonated tenant).
-  const session = await getSession();
-  if (session?.user?.isSuperAdmin) return true;
-  const role = await currentRole();
-  if (!role) return false;
+// Shared grant logic: does this role (by name/permissions/org) hold `key`? Factored out so both
+// the session-based hasPermission() below and the token-based checkRolePermission() (used by the
+// /api/v1 bearer-token routes, which have no next-auth session to read) apply the same rules.
+function roleGrants(role: { name: string; permissions: string[]; organizationId: string | null }, key: PermissionKey): boolean {
   // The "*" wildcard grants every permission. The "admin" NAME only grants everything for the
   // shared SYSTEM admin role (organizationId === null) — a tenant-owned role named "admin" gets
   // only what its permissions array lists, so `roles.manage` can't be used to mint a full-power
@@ -109,6 +106,31 @@ export async function hasPermission(key: PermissionKey): Promise<boolean> {
   // a data migration. Custom roles are unaffected (their name isn't in the map).
   const systemDefaults = SYSTEM_ROLE_PERMISSIONS[role.name.toLowerCase()];
   return systemDefaults ? systemDefaults.includes(key) : false;
+}
+
+// admin implicitly has every permission; other roles must list the key explicitly.
+export async function hasPermission(key: PermissionKey): Promise<boolean> {
+  // Platform super-admins hold every permission (incl. inside an impersonated tenant).
+  const session = await getSession();
+  if (session?.user?.isSuperAdmin) return true;
+  const role = await currentRole();
+  if (!role) return false;
+  return roleGrants(role, key);
+}
+
+// Session-free variant for the /api/v1 bearer-token surface: a mobile JWT carries a roleId
+// directly (no next-auth session exists to read). A plain API key has no roleId at all — pass
+// null and it is refused for every permission key, since a bare API key is not tied to any role's
+// permission set.
+export async function hasPermissionForRoleId(roleId: string | null, key: PermissionKey): Promise<boolean> {
+  if (!roleId) return false;
+  const [role] = await db
+    .select({ name: roles.name, permissions: roles.permissions, organizationId: roles.organizationId })
+    .from(roles)
+    .where(eq(roles.id, roleId))
+    .limit(1);
+  if (!role) return false;
+  return roleGrants({ name: role.name, permissions: role.permissions ?? [], organizationId: role.organizationId }, key);
 }
 
 // Throws "Forbidden" unless the caller holds the permission; returns the tenant scope on success.

@@ -6,6 +6,7 @@ import { RateLimiter } from "@/lib/rate-limit";
 export interface ApiAuth {
   organizationId: string;
   userId?: string; // present for mobile-token requests, absent for API-key requests
+  roleId?: string | null; // present for mobile-token requests; use hasPermissionForRoleId(roleId, key) to gate a route
 }
 
 // Per-principal request budget for /api/v1. Generous enough for real integrations (Zapier, custom
@@ -30,7 +31,7 @@ export async function authorizeApiRequest(req: NextRequest): Promise<ApiAuth | {
     if (await suspended(mobile.org)) return { error: suspendedResponse() };
     const limited = await rateLimited(`mobile:${mobile.sub}`);
     if (limited) return { error: limited };
-    return { organizationId: mobile.org, userId: mobile.sub };
+    return { organizationId: mobile.org, userId: mobile.sub, roleId: mobile.role };
   }
 
   const key = await ApiKeyService.verify(raw);

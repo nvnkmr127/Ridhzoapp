@@ -51,7 +51,18 @@ export class EscalationService {
           leadId: lead.id,
         });
       }
-      await AuditService.log({ organizationId, action: "lead.sla_escalated", entityType: "lead", entityId: lead.id, metadata: { hours } });
+    }
+    // One row per org per scan, not per lead — a busy org with a short SLA can otherwise write
+    // one audit row per stale lead every 15 minutes and flood the org's own audit page (each lead
+    // still gets its own notification and its `escalatedAt` stamp; only the audit fan-out changes).
+    if (stale.length > 0) {
+      await AuditService.log({
+        organizationId,
+        action: "lead.sla_escalated",
+        entityType: "organization",
+        entityId: organizationId,
+        metadata: { hours, count: stale.length, sampleLeadIds: stale.slice(0, 50).map((l) => l.id) },
+      });
     }
     return stale.length;
   }
