@@ -10,6 +10,7 @@ import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
 // those fields are neither rendered nor submittable through the normal UI.
 export async function listCustomFieldsAction() {
   const { organizationId } = await requireOrg();
+  if (!organizationId) return [];
   const isAdmin = await hasPermission("settings.manage");
   const fields = await CustomFieldService.list(organizationId);
   return isAdmin ? fields : fields.filter((f) => !f.adminOnly);

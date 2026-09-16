@@ -27,6 +27,7 @@ const getActiveUsersCached = unstable_cache(
 
 export async function listUsersAction() {
   const { organizationId } = await requireOrg();
+  if (!organizationId) return [];
   const rows = await getActiveUsersCached(organizationId);
   return rows.map((u) => ({
     id: u.id,

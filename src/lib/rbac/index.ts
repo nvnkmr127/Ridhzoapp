@@ -36,6 +36,9 @@ export const requireOrg = cache(async function requireOrg() {
   }
 
   if (!organizationId) {
+    if (session.user.isSuperAdmin) {
+      return { userId: session.user.id, organizationId: "", roleId: session.user.roleId };
+    }
     redirect("/login");
   }
 
