@@ -623,12 +623,21 @@ export class LeadService {
     return { purgedCount };
   }
 
-  // Auto-purge: permanently remove anything soft-deleted more than `days` ago (default 30).
+  // Auto-purge: permanently remove anything soft-deleted more than `days` ago (default 30), across
+  // every organization. Logs one System-attributed audit entry per organization touched — not per
+  // lead — so a busy scan doesn't flood any single org's trail.
   static async purgeExpired(days = 30) {
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-    const rows = await db.select({ id: leads.id }).from(leads)
+    const rows = await db.select({ id: leads.id, organizationId: leads.organizationId }).from(leads)
       .where(and(isNotNull(leads.deletedAt), lt(leads.deletedAt, cutoff)));
     const purgedCount = await this.hardDeleteLeads(rows.map((r) => r.id));
+
+    const byOrg = new Map<string, number>();
+    for (const r of rows) byOrg.set(r.organizationId, (byOrg.get(r.organizationId) ?? 0) + 1);
+    const { AuditService } = await import("@/domains/audit/service");
+    for (const [organizationId, purgedForOrg] of byOrg) {
+      await AuditService.log({ organizationId, action: "lead.auto_purge", entityType: "organization", entityId: organizationId, metadata: { purgedCount: purgedForOrg, olderThanDays: days } });
+    }
     return { purgedCount };
   }
 

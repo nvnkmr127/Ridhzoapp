@@ -104,12 +104,16 @@ export class InvitationService {
     }
 
     await db.update(invitations).set({ acceptedAt: new Date() }).where(eq(invitations.id, inv.id));
-    return user;
+    return { ...user, organizationId: inv.organizationId, roleId: inv.roleId };
   }
 
+  // Returns the deleted row (undefined if no such pending invitation existed in this org) so the
+  // caller can distinguish a real revoke from a no-op before writing an audit entry.
   static async revoke(organizationId: string, id: string) {
-    await db
+    const [row] = await db
       .delete(invitations)
-      .where(and(eq(invitations.id, id), eq(invitations.organizationId, organizationId), isNull(invitations.acceptedAt)));
+      .where(and(eq(invitations.id, id), eq(invitations.organizationId, organizationId), isNull(invitations.acceptedAt)))
+      .returning({ id: invitations.id, email: invitations.email });
+    return row;
   }
 }

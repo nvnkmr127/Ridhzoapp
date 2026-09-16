@@ -32,9 +32,22 @@ export async function createRoleAction(input: z.infer<typeof roleSchema>) {
 }
 
 export async function updateRoleAction(id: string, input: Partial<z.infer<typeof roleSchema>>) {
-  const { organizationId } = await requirePermission("roles.manage");
+  const { organizationId, userId } = await requirePermission("roles.manage");
   try {
+    const before = await RoleService.getById(organizationId, id);
     const role = await RoleService.update(organizationId, id, input);
+    if (!role) return fail("NOT_FOUND", "That role no longer exists.");
+    if (input.permissions !== undefined) {
+      const beforePerms = new Set(before?.permissions ?? []);
+      const afterPerms = new Set(role.permissions ?? []);
+      const added = [...afterPerms].filter((p) => !beforePerms.has(p));
+      const removed = [...beforePerms].filter((p) => !afterPerms.has(p));
+      // Only log when the permission set actually moved — a name-only rename shouldn't
+      // manufacture an empty added/removed pair.
+      if (added.length || removed.length) {
+        await AuditService.log({ organizationId, userId, action: "role.update", entityType: "role", entityId: id, metadata: { name: role.name, added, removed } });
+      }
+    }
     revalidatePath("/settings/users");
     return ok(role);
   } catch (e) {
@@ -45,8 +58,9 @@ export async function updateRoleAction(id: string, input: Partial<z.infer<typeof
 export async function deleteRoleAction(id: string) {
   const { organizationId, userId } = await requirePermission("roles.manage");
   try {
-    await RoleService.remove(organizationId, id);
-    await AuditService.log({ organizationId, userId, action: "role.delete", entityType: "role", entityId: id });
+    const removed = await RoleService.remove(organizationId, id);
+    if (!removed) return fail("NOT_FOUND", "That role no longer exists.");
+    await AuditService.log({ organizationId, userId, action: "role.delete", entityType: "role", entityId: id, metadata: { name: removed.name } });
     revalidatePath("/settings/users");
     return ok({ deleted: true });
   } catch (e) {

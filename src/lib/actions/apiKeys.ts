@@ -31,7 +31,8 @@ export async function createApiKeyAction(name: string, scope: "full" | "read_onl
 export async function revokeApiKeyAction(id: string) {
   const { organizationId, userId } = await requirePermission("api.manage");
   try {
-    await ApiKeyService.revoke(organizationId, id);
+    const revoked = await ApiKeyService.revoke(organizationId, id);
+    if (!revoked) return fail("NOT_FOUND", "That API key no longer exists.");
     await AuditService.log({ organizationId, userId, action: "api_key.revoke", entityType: "api_key", entityId: id });
     revalidatePath("/settings/api");
     return ok({ revoked: true });
@@ -43,7 +44,8 @@ export async function revokeApiKeyAction(id: string) {
 export async function deleteApiKeyAction(id: string) {
   const { organizationId, userId } = await requirePermission("api.manage");
   try {
-    await ApiKeyService.remove(organizationId, id);
+    const removed = await ApiKeyService.remove(organizationId, id);
+    if (!removed) return fail("NOT_FOUND", "That API key no longer exists.");
     await AuditService.log({ organizationId, userId, action: "api_key.delete", entityType: "api_key", entityId: id });
     revalidatePath("/settings/api");
     return ok({ deleted: true });

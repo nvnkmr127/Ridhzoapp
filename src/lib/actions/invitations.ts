@@ -62,8 +62,9 @@ export async function inviteUserAction(input: z.infer<typeof inviteSchema>) {
 export async function revokeInvitationAction(id: string) {
   const { organizationId, userId } = await requirePermission("users.manage");
   try {
-    await InvitationService.revoke(organizationId, id);
-    await AuditService.log({ organizationId, userId, action: "invitation.revoke", entityType: "invitation", entityId: id });
+    const revoked = await InvitationService.revoke(organizationId, id);
+    if (!revoked) return fail("NOT_FOUND", "That invitation no longer exists.");
+    await AuditService.log({ organizationId, userId, action: "invitation.revoke", entityType: "invitation", entityId: id, metadata: { email: revoked.email } });
     revalidatePath("/settings/users");
     return ok({ id });
   } catch (e) {
@@ -85,7 +86,16 @@ export async function acceptInvitationAction(input: z.infer<typeof acceptSchema>
     return fail("VALIDATION", "Please choose a password of at least 6 characters.", zodFieldErrors(parsed.error));
   }
   try {
-    await InvitationService.accept(parsed.data.token, parsed.data);
+    const user = await InvitationService.accept(parsed.data.token, parsed.data);
+    // System-attributed (no signed-in actor yet): this is the other path an account is created
+    // through, and it should be as visible in the trail as createUserAction's user.create.
+    await AuditService.log({
+      organizationId: user.organizationId,
+      action: "user.invite_accepted",
+      entityType: "user",
+      entityId: user.id,
+      metadata: { email: user.email, roleId: user.roleId },
+    });
     return ok({ accepted: true });
   } catch (e) {
     // Invalid/expired/already-used token surfaces here.

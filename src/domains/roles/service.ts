@@ -30,6 +30,15 @@ export class RoleService {
       .orderBy(roles.name);
   }
 
+  static async getById(organizationId: string, id: string) {
+    const [r] = await db
+      .select(cols)
+      .from(roles)
+      .where(and(eq(roles.id, id), eq(roles.organizationId, organizationId)))
+      .limit(1);
+    return r;
+  }
+
   static async create(organizationId: string, name: string, permissions: string[]) {
     assertNameAllowed(name);
     const [r] = await db
@@ -52,12 +61,18 @@ export class RoleService {
     return r;
   }
 
+  // Returns the deleted row (undefined if no such role existed in this org) so the caller can
+  // tell a real deletion from a no-op — e.g. before writing an audit entry.
   static async remove(organizationId: string, id: string) {
     // Unassign the role from users first so no one is left pointing at a deleted role.
     await db
       .update(users)
       .set({ roleId: null, updatedAt: new Date() })
       .where(and(eq(users.roleId, id), eq(users.organizationId, organizationId)));
-    await db.delete(roles).where(and(eq(roles.id, id), eq(roles.organizationId, organizationId)));
+    const [r] = await db
+      .delete(roles)
+      .where(and(eq(roles.id, id), eq(roles.organizationId, organizationId)))
+      .returning(cols);
+    return r;
   }
 }

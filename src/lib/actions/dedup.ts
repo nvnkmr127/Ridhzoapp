@@ -17,7 +17,9 @@ export async function setAutoMergeAction(enabled: boolean) {
   try {
     const { OrgService } = await import("@/domains/organizations/service");
     await OrgService.updateOrganization(organizationId, { autoMergeDuplicates: enabled ? 1 : 0 });
-    await AuditService.log({ organizationId, userId, action: "org.settings_update", entityType: "organization", entityId: organizationId, metadata: { autoMergeDuplicates: enabled } });
+    // Distinct action name from the general settings form save — sharing "org.settings_update"
+    // would make the two indistinguishable in the trail despite carrying unrelated metadata shapes.
+    await AuditService.log({ organizationId, userId, action: "org.auto_merge_toggle", entityType: "organization", entityId: organizationId, metadata: { autoMergeDuplicates: enabled } });
     revalidatePath("/leads/duplicates");
     return ok({ enabled });
   } catch (e) {

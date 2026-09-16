@@ -32,17 +32,26 @@ export class ApiKeyService {
     return { ...row, key: raw };
   }
 
+  // Returns the updated row (undefined if no such key existed in this org) so the caller can
+  // distinguish a real revoke from a no-op before writing an audit entry.
   static async revoke(organizationId: string, id: string) {
-    await db
+    const [row] = await db
       .update(apiKeys)
       .set({ revokedAt: new Date() })
-      .where(and(eq(apiKeys.id, id), eq(apiKeys.organizationId, organizationId)));
+      .where(and(eq(apiKeys.id, id), eq(apiKeys.organizationId, organizationId)))
+      .returning({ id: apiKeys.id });
+    return row;
   }
 
   // Hard delete — removes the row entirely (revoke keeps it for the audit trail; delete is for
   // clearing keys the tenant no longer wants listed). The key can't authenticate afterwards either.
+  // Returns the deleted row (undefined if no such key existed in this org).
   static async remove(organizationId: string, id: string) {
-    await db.delete(apiKeys).where(and(eq(apiKeys.id, id), eq(apiKeys.organizationId, organizationId)));
+    const [row] = await db
+      .delete(apiKeys)
+      .where(and(eq(apiKeys.id, id), eq(apiKeys.organizationId, organizationId)))
+      .returning({ id: apiKeys.id });
+    return row;
   }
 
   // Resolve a raw bearer key to its org + scope. Returns null if unknown or revoked.

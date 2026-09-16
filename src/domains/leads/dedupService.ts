@@ -96,7 +96,19 @@ export class DedupService {
       await db.update(leads).set(backfill).where(eq(leads.id, primary.id));
     }
 
+    // Snapshot the arrival's identifying fields before merge() hard-deletes it — this is the last
+    // point the merged lead's own identity is readable anywhere.
+    const mergedSnapshot = { name: incoming.name, email: incoming.email, phone: incoming.phone };
     await this.merge(incoming.organizationId, primary.id, incoming.id);
+
+    const { AuditService } = await import("@/domains/audit/service");
+    await AuditService.log({
+      organizationId: incoming.organizationId,
+      action: "lead.auto_merge",
+      entityType: "lead",
+      entityId: primary.id,
+      metadata: { mergedLead: mergedSnapshot, matchedOn: email ? "email" : "phone", changed },
+    });
 
     const { ActivityService } = await import("@/domains/activities/service");
     const note = changed.length

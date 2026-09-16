@@ -175,16 +175,28 @@ export async function bulkDeleteLeadsAction(input: z.infer<typeof bulkDeleteSche
   const { leadIds } = parsed.data;
   let deleted = 0;
   let failed = 0;
+  const deletedIds: string[] = [];
   for (const id of leadIds) {
     try {
       const row = await LeadService.deleteLead(id, userId, organizationId);
-      if (row) deleted++;
+      if (row) { deleted++; deletedIds.push(id); }
       else failed++;
     } catch {
       failed++;
     }
   }
-  await AuditService.log({ organizationId, userId, action: "lead.bulk_delete", entityType: "organization", entityId: organizationId });
+  // Only record the operation if it actually deleted something — a batch that matched nothing
+  // (every id already gone, or all foreign to this org) shouldn't leave an entry behind.
+  if (deleted > 0) {
+    await AuditService.log({
+      organizationId,
+      userId,
+      action: "lead.bulk_delete",
+      entityType: "organization",
+      entityId: organizationId,
+      metadata: { requested: leadIds.length, deleted, failed, sampleIds: deletedIds.slice(0, 50), truncated: deletedIds.length > 50 },
+    });
+  }
   revalidatePath('/');
   revalidatePath('/my-dashboard');
   revalidatePath("/leads");
@@ -232,7 +244,7 @@ export async function emptyRecycleBinAction() {
   const { userId, organizationId } = await requirePermission("leads.purge");
   try {
     const res = await LeadService.emptyRecycleBin(organizationId);
-    await AuditService.log({ organizationId, userId, action: "lead.recycle_bin.empty", entityType: "organization", entityId: organizationId });
+    await AuditService.log({ organizationId, userId, action: "lead.recycle_bin.empty", entityType: "organization", entityId: organizationId, metadata: { purgedCount: res.purgedCount } });
     revalidatePath('/leads/recycle-bin');
     return ok(res);
   } catch (e) {
