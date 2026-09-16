@@ -23,6 +23,7 @@ import { eventBus } from "@/lib/events/emitter";
 import { ActivityService } from "@/domains/activities/service";
 import { FilterGroup, FilterRule } from "@/domains/savedViews/service";
 import { normalizeEmail, normalizePhone } from "@/lib/leads/normalize";
+import { PlanService } from "@/domains/billing/planService";
 import { assertRequiredLeadFields } from "@/lib/leads/requiredFields";
 
 export type ListLeadsOptions = {
@@ -47,6 +48,7 @@ export class LeadService {
     createdById: string | null,
     organizationId: string,
   ): Promise<typeof leads.$inferSelect> {
+    await PlanService.assertCanAddLead(organizationId);
     // Enforce the org's required-field configuration at the ONE spot every synchronous create path
     // (manual UI, REST API, booking) funnels through — so the setting can't be UI-only.
     await assertRequiredLeadFields(organizationId, data);
@@ -581,6 +583,7 @@ export class LeadService {
   }
 
   static async restoreLead(leadId: string, organizationId: string) {
+    await PlanService.assertCanAddLead(organizationId);
     const [restored] = await db.update(leads)
       .set({ deletedAt: null, deletedBy: null })
       .where(and(eq(leads.id, leadId), eq(leads.organizationId, organizationId), isNotNull(leads.deletedAt)))

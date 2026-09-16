@@ -41,6 +41,8 @@ export class WebhookEndpointService {
   }
 
   static async create(organizationId: string, url: string, events: string[]) {
+    const { assertPublicHttpUrl } = await import("@/lib/webhooks/ssrf");
+    await assertPublicHttpUrl(url);
     const { randomBytes } = await import("crypto");
     const secret = randomBytes(24).toString("hex");
     const [row] = await db

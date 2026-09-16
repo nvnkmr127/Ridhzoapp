@@ -10,7 +10,7 @@ import { z } from "zod";
 import { ok, fail, actionFail } from "@/lib/actions/result";
 
 export async function getBillingAction() {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await requirePermission("billing.manage");
   const billing = await BillingService.get(organizationId);
   return { ...billing, configured: isConfigured(), limits: PLAN_LIMITS };
 }
@@ -39,6 +39,11 @@ export async function verifySubscriptionAction(input: z.infer<typeof verifySchem
   const parsed = verifySchema.safeParse(input);
   if (!parsed.success) return fail("VALIDATION", "The payment confirmation was incomplete. Please try again.");
   const data = parsed.data;
+
+  const currentBilling = await BillingService.get(organizationId);
+  if (!currentBilling?.subscriptionId || currentBilling.subscriptionId !== data.subscriptionId) {
+    return fail("FORBIDDEN", "This subscription payment does not match your pending subscription.");
+  }
 
   const valid = verifyPaymentSignature({ paymentId: data.paymentId, subscriptionId: data.subscriptionId, signature: data.signature });
   if (!valid) return fail("VALIDATION", "We couldn't verify this payment. If you were charged, contact support — you won't be charged twice.");

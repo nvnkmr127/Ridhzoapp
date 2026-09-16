@@ -3,6 +3,7 @@ import { invitations, users } from "@/db/schema";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
+import { PlanService } from "@/domains/billing/planService";
 
 function hash(raw: string) {
   return crypto.createHash("sha256").update(raw).digest("hex");
@@ -55,6 +56,8 @@ export class InvitationService {
       .where(and(eq(invitations.tokenHash, hash(rawToken)), isNull(invitations.acceptedAt), gt(invitations.expiresAt, new Date())))
       .limit(1);
     if (!inv) throw new Error("This invitation is invalid or has expired");
+
+    await PlanService.assertCanAddSeat(inv.organizationId);
 
     const passwordHash = await bcrypt.hash(input.password, 10);
 

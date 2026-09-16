@@ -7,6 +7,7 @@ import { LeadSourceService } from "@/domains/leads/sourceService";
 import { normalizeEmail, normalizePhone } from "@/lib/leads/normalize";
 import { findMissingRequiredFields } from "@/lib/leads/requiredFields";
 import { organizations } from "@/db/schema";
+import { PlanService } from "@/domains/billing/planService";
 
 // Attribution keys are FIRST-TOUCH: once a lead is created with the ad/campaign/leadgen that
 // originated it, a later re-submission must not overwrite them with a newer ad's values, or the
@@ -102,9 +103,15 @@ export class IngestionService {
       throw new Error(reason);
     }
 
-    // 3. Creation with organizationId. The insert can still lose a race to a concurrent ingestion
-    // of the same contact (the per-org email/phone unique index rejects the duplicate) — catch that
-    // and fall back to the dedup path so the second lead merges instead of surfacing a DB error.
+    // 3. Check plan lead limit and insert with organizationId.
+    try {
+      await PlanService.assertCanAddLead(organizationId);
+    } catch (e: any) {
+      const reason = e?.message || "Lead capacity limit reached for your plan.";
+      await this.logIngestion(null, payload.sourceId, payload, "failed", reason);
+      throw e;
+    }
+
     let newLead;
     try {
       [newLead] = await db.insert(leads).values({

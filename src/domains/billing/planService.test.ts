@@ -31,7 +31,12 @@ describe("PlanService.assertCanAddSeat", () => {
   });
 
   it("never blocks an unlimited plan", async () => {
-    queueResults([[{ plan: "business" }]]); // Infinity seats — returns before counting
+    queueResults([[{ plan: "business", planStatus: "active" }]]); // Infinity seats — returns before counting
     await expect(PlanService.assertCanAddSeat("org")).resolves.toBeUndefined();
+  });
+
+  it("reverts to free limits when planStatus is halted", async () => {
+    queueResults([[{ plan: "pro", planStatus: "halted" }], [{ n: 3 }], [{ n: 0 }]]); // pro halted -> falls back to free (3 seats), 3 users = full
+    await expect(PlanService.assertCanAddSeat("org")).rejects.toThrow(/3 seats/);
   });
 });
