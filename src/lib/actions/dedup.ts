@@ -2,6 +2,7 @@
 
 import { requireOrg, requirePermission } from "@/lib/rbac";
 import { DedupService } from "@/domains/leads/dedupService";
+import { LeadService } from "@/domains/leads/service";
 import { AuditService } from "@/domains/audit/service";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -35,9 +36,17 @@ export async function mergeLeadsAction(input: z.infer<typeof mergeSchema>) {
   if (!parsed.success) return fail("VALIDATION", "Select a primary and a duplicate lead to merge.");
   const { primaryId, duplicateId } = parsed.data;
   try {
+    // Snapshot the duplicate's identity before merge() hard-deletes it — otherwise the audit
+    // entry's only reference to the merged lead is an id that resolves to nothing afterwards.
+    const duplicate = await LeadService.getLead(duplicateId, organizationId);
     await DedupService.merge(organizationId, primaryId, duplicateId);
     await AuditService.log({
-      organizationId, userId, action: "lead.merge", entityType: "lead", entityId: primaryId, metadata: { duplicateId },
+      organizationId,
+      userId,
+      action: "lead.merge",
+      entityType: "lead",
+      entityId: primaryId,
+      metadata: { mergedLead: duplicate ? { id: duplicate.id, name: duplicate.name, email: duplicate.email, phone: duplicate.phone } : { id: duplicateId } },
     });
     revalidatePath("/leads");
     revalidatePath("/leads/duplicates");
