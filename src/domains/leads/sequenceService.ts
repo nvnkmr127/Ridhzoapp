@@ -67,17 +67,25 @@ export class SequenceService {
   }
 
   static async list(organizationId: string) {
-    const rows = await db.select().from(sequences).where(eq(sequences.organizationId, organizationId)).orderBy(asc(sequences.createdAt));
-    return Promise.all(
-      rows.map(async (s) => {
-        const [{ steps }] = await db.select({ steps: sql<number>`count(*)::int` }).from(sequenceSteps).where(eq(sequenceSteps.sequenceId, s.id));
-        const [{ active }] = await db
-          .select({ active: sql<number>`count(*)::int` })
-          .from(sequenceEnrollments)
-          .where(and(eq(sequenceEnrollments.sequenceId, s.id), eq(sequenceEnrollments.status, "active")));
-        return { ...s, stepCount: steps, activeEnrollments: active };
+    const rows = await db
+      .select({
+        id: sequences.id,
+        organizationId: sequences.organizationId,
+        name: sequences.name,
+        description: sequences.description,
+        isActive: sequences.isActive,
+        createdAt: sequences.createdAt,
+        stepCount: sql<number>`count(distinct ${sequenceSteps.id})::int`,
+        activeEnrollments: sql<number>`count(distinct case when ${sequenceEnrollments.status} = 'active' then ${sequenceEnrollments.id} else null end)::int`,
       })
-    );
+      .from(sequences)
+      .leftJoin(sequenceSteps, eq(sequenceSteps.sequenceId, sequences.id))
+      .leftJoin(sequenceEnrollments, eq(sequenceEnrollments.sequenceId, sequences.id))
+      .where(eq(sequences.organizationId, organizationId))
+      .groupBy(sequences.id)
+      .orderBy(asc(sequences.createdAt));
+
+    return rows;
   }
 
   static async getWithSteps(sequenceId: string, organizationId: string) {

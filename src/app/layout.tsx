@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 import { ServiceWorkerRegister } from "@/components/layout/ServiceWorkerRegister";
 import { Toaster } from "@/components/ui/toaster";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -46,6 +47,7 @@ export default function RootLayout({
         {children}
         <Toaster />
         <ServiceWorkerRegister />
+        <SpeedInsights />
       </body>
     </html>
   );
