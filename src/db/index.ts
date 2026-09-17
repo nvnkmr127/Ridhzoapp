@@ -19,6 +19,11 @@ function getClient(): postgres.Sql {
       idle_timeout: 10, // Release idle TCP sockets automatically after 10s
       connect_timeout: 5, // Fail fast (5s max) so queries never block for 30s TCP timeouts
       max_lifetime: 60 * 30, // 30m max connection lifetime
+      debug: (connection, query, params) => {
+        const time = new Date().toISOString().slice(11, 23);
+        const snippet = query.trim().replace(/\s+/g, ' ');
+        console.log(`[DB DEBUG ${time} socket#${connection}] ${snippet.slice(0, 160)}${snippet.length > 160 ? '...' : ''}`, params?.length ? params : '');
+      },
       connection: {
         timezone: "UTC",
       },
