@@ -12,7 +12,7 @@ export default async function SettingsPage() {
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-foreground dark:text-foreground">Settings</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Manage your Ridhzo v2 lead management platform configuration, status schemas, and team preferences.
+            Manage your Ridhzo lead management platform configuration, status schemas, and team preferences.
           </p>
         </div>
       </div>

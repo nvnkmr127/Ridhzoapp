@@ -114,6 +114,8 @@ eventBus.on('lead.created', async (p) => {
 eventBus.on('lead.updated', async (p) => {
   dispatchTrigger('lead.updated', p);
   await ActivityService.addActivity({ leadId: p.leadId, userId: isUuid(p.userId) ? p.userId : undefined, type: 'note', content: 'Lead details were updated.' });
+  const { ScoringService } = await import("@/domains/leads/scoringService");
+  void ScoringService.updateLeadScore(p.leadId).catch(() => {});
 });
 
 eventBus.on('lead.assigned', async (p) => {
@@ -148,6 +150,8 @@ eventBus.on('lead.assigned', async (p) => {
 eventBus.on('lead.status_changed', async (p) => {
   dispatchTrigger('lead.status_changed', p);
   await ActivityService.addActivity({ leadId: p.leadId, userId: p.userId, type: 'note', content: `Status changed from ${p.oldStatus} to ${p.newStatus}.` });
+  const { ScoringService } = await import("@/domains/leads/scoringService");
+  void ScoringService.updateLeadScore(p.leadId).catch(() => {});
   // Stop any running drip once the lead is resolved — no more sequence messages after a decision.
   if (p.newStatus && ['won', 'lost', 'unqualified'].includes(p.newStatus)) {
     const { SequenceService } = await import("@/domains/leads/sequenceService");

@@ -296,7 +296,20 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           </SectionCard>
 
           {/* Why this score + enrichment evidence — only renders when there's something to show */}
-          <LeadInsightsCard score={lead.score} customData={lead.customData} />
+          <LeadInsightsCard
+            score={lead.score}
+            customData={lead.customData}
+            leadInfo={{
+              status: lead.status,
+              phone: lead.phone,
+              email: lead.email,
+              company: lead.company,
+              lastContactedAt: lead.lastContactedAt,
+              nextFollowUpAt: lead.nextFollowUpAt,
+              activitiesCount: activities.length,
+              hasInboundMsg: waMessages.some((m) => m.direction === "inbound"),
+            }}
+          />
 
           {/* Follow Up Reminder Widget */}
           <LeadFollowUpControl leadId={lead.id} nextFollowUpAt={lead.nextFollowUpAt} />
