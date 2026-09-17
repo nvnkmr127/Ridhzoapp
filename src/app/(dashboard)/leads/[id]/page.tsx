@@ -38,7 +38,7 @@ import { LeadRemindersTab } from "@/components/leads/LeadRemindersTab";
 import { LeadAttachmentsTab } from "@/components/leads/LeadAttachmentsTab";
 import { LocalTime } from "@/components/LocalTime";
 import { db } from "@/db";
-import { leads, leadAttachments, followUps, leadPipelineStages, automations } from "@/db/schema";
+import { leads, leadAttachments, followUps, leadPipelineStages, automations, users } from "@/db/schema";
 import { eq, and, ne, isNull, or, desc } from "drizzle-orm";
 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -128,7 +128,12 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           .catch(() => [])
       : Promise.resolve([]),
     lead.sourceId ? LeadSourceService.getSource(lead.sourceId).catch(() => null) : Promise.resolve(null),
-    listUsersAction().catch(() => []),
+    db
+      .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email })
+      .from(users)
+      .where(and(eq(users.organizationId, organizationId), eq(users.isActive, true), isNull(users.deletedAt)))
+      .then((rows) => rows.map((u) => ({ id: u.id, name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email })))
+      .catch(() => []),
   ]);
 
   const dupCount = duplicateRows.length;

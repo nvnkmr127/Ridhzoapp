@@ -34,13 +34,14 @@ export class ActivityService {
       .where(eq(activities.leadId, leadId))
       .orderBy(desc(activities.createdAt));
 
-    const uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+    const assignRegex = /Lead was assigned to user ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi;
     const mentionedUuids = new Set<string>();
     for (const r of rows) {
       if (r.content) {
-        const matches = r.content.match(uuidRegex);
-        if (matches) {
-          for (const m of matches) mentionedUuids.add(m);
+        let match: RegExpExecArray | null;
+        assignRegex.lastIndex = 0;
+        while ((match = assignRegex.exec(r.content)) !== null) {
+          if (match[1]) mentionedUuids.add(match[1]);
         }
       }
     }
