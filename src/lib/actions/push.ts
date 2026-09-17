@@ -25,5 +25,6 @@ export async function unsubscribePushAction(endpoint: string) {
 }
 
 export async function getVapidPublicKeyAction(): Promise<string> {
-  return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY || "";
+  const keys = PushService.getVapidKeys();
+  return keys.publicKey;
 }

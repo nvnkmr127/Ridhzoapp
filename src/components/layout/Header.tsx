@@ -20,9 +20,15 @@ import { MobileSidebar } from "@/components/layout/MobileSidebar";
 
 export function Header() {
   const [searchOpen, setSearchOpen] = React.useState(false);
+  const [shortcutLabel, setShortcutLabel] = React.useState("⌘K");
 
-  // Cmd/Ctrl+K toggles the global command palette.
+  // Cmd/Ctrl+K toggles the global command palette & detect operating system for shortcut badge.
   React.useEffect(() => {
+    const isMac =
+      typeof navigator !== "undefined" &&
+      /(Mac|iPhone|iPod|iPad)/i.test(navigator.userAgent || navigator.platform || "");
+    setShortcutLabel(isMac ? "⌘K" : "Ctrl+K");
+
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
@@ -46,7 +52,7 @@ export function Header() {
         >
           <Search className="mr-2 h-4 w-4" />
           Search leads, team members, or jump to…
-          <kbd className="ml-auto text-xs bg-muted text-muted-foreground rounded px-1.5 py-0.5 font-mono">⌘K</kbd>
+          <kbd className="ml-auto text-xs bg-muted text-muted-foreground rounded px-1.5 py-0.5 font-mono">{shortcutLabel}</kbd>
         </button>
       </div>
       <div className="flex items-center gap-4">

@@ -4,14 +4,26 @@ import { pushSubscriptions } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 
 let configured = false;
+let autoVapidKeys: { publicKey: string; privateKey: string } | null = null;
+
+function getVapidKeys(): { publicKey: string; privateKey: string } {
+  const pub = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY;
+  const priv = process.env.VAPID_PRIVATE_KEY;
+  if (pub && priv) {
+    return { publicKey: pub, privateKey: priv };
+  }
+  if (!autoVapidKeys) {
+    autoVapidKeys = webpush.generateVAPIDKeys();
+  }
+  return autoVapidKeys;
+}
+
 // Configure VAPID lazily so the app still boots when push isn't set up.
 function ensureConfigured(): boolean {
   if (configured) return true;
-  const pub = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-  const priv = process.env.VAPID_PRIVATE_KEY;
+  const keys = getVapidKeys();
   const subject = process.env.VAPID_SUBJECT || "mailto:admin@example.com";
-  if (!pub || !priv) return false;
-  webpush.setVapidDetails(subject, pub, priv);
+  webpush.setVapidDetails(subject, keys.publicKey, keys.privateKey);
   configured = true;
   return true;
 }
@@ -23,6 +35,7 @@ export interface PushPayload {
 }
 
 export const PushService = {
+  getVapidKeys,
   async saveSubscription(userId: string, sub: { endpoint: string; keys: { p256dh: string; auth: string } }) {
     // endpoint is unique; upsert so re-subscribing on the same device doesn't duplicate.
     await db.insert(pushSubscriptions)

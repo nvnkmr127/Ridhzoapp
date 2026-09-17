@@ -8,16 +8,22 @@ import { assignLeadAction } from "@/lib/actions/leads"
 
 type User = { id: string; name: string };
 
-export function LeadAssignControl({ leadId, ownerId }: { leadId: string; ownerId: string | null }) {
+export function LeadAssignControl({ leadId, ownerId, initialUsers }: { leadId: string; ownerId: string | null; initialUsers?: User[] }) {
   const router = useRouter();
   const { toast } = useToast();
-  const [users, setUsers] = React.useState<User[]>([]);
+  const [users, setUsers] = React.useState<User[]>(initialUsers ?? []);
   const [value, setValue] = React.useState(ownerId ?? "");
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
-    listUsersAction().then(setUsers).catch(() => {});
-  }, []);
+    if (!initialUsers || initialUsers.length === 0) {
+      listUsersAction().then(setUsers).catch(() => {});
+    }
+  }, [initialUsers]);
+
+  React.useEffect(() => {
+    setValue(ownerId ?? "");
+  }, [ownerId]);
 
   async function assign(next: string) {
     if (next === value) return;
@@ -42,12 +48,17 @@ export function LeadAssignControl({ leadId, ownerId }: { leadId: string; ownerId
     }
   }
 
+  const hasMatchingUser = value && users.some((u) => u.id === value);
+
   return (
     <Select value={value} onValueChange={assign} disabled={busy}>
       <SelectTrigger className="w-full">
         <SelectValue placeholder="Unassigned" />
       </SelectTrigger>
       <SelectContent>
+        {value && !hasMatchingUser && (
+          <SelectItem value={value}>Assigned Team Member</SelectItem>
+        )}
         {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
       </SelectContent>
     </Select>

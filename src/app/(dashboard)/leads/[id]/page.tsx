@@ -21,6 +21,7 @@ import { WhatsAppThread } from "@/components/leads/WhatsAppThread";
 import { WhatsAppService } from "@/lib/messaging/whatsapp/service";
 import { LeadStatusControl } from "@/components/leads/LeadStatusControl";
 import { LeadAssignControl } from "@/components/leads/LeadAssignControl";
+import { listUsersAction } from "@/lib/actions/users";
 import { LeadTags } from "@/components/leads/LeadTags";
 import { LeadCustomFields } from "@/components/leads/LeadCustomFields";
 import { TagService } from "@/domains/tags/service";
@@ -85,6 +86,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     automationsList,
     duplicateRows,
     source,
+    usersList,
   ] = await Promise.all([
     ActivityService.getLeadActivities(id),
     WhatsAppService.listForLead(id),
@@ -126,6 +128,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           .catch(() => [])
       : Promise.resolve([]),
     lead.sourceId ? LeadSourceService.getSource(lead.sourceId).catch(() => null) : Promise.resolve(null),
+    listUsersAction().catch(() => []),
   ]);
 
   const dupCount = duplicateRows.length;
@@ -314,7 +317,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
 
               <div>
                 <span className="text-xs text-muted-foreground block mb-1.5">Assignee</span>
-                <LeadAssignControl leadId={lead.id} ownerId={lead.ownerId} />
+                <LeadAssignControl leadId={lead.id} ownerId={lead.ownerId} initialUsers={usersList} />
               </div>
 
               <div>
@@ -477,9 +480,16 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                         <div key={activity.id} className="relative group">
                           <div className="absolute -left-[31px] top-1 h-2.5 w-2.5 rounded-full bg-border group-hover:bg-primary transition-colors" />
                           <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                              {activity.type}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                                {activity.type}
+                              </span>
+                              {activity.userName && (
+                                <span className="text-xs text-muted-foreground font-medium">
+                                  by {activity.userName}
+                                </span>
+                              )}
+                            </div>
                             <span className="text-xs text-muted-foreground">
                               <LocalTime iso={activity.createdAt} mode="datetime" />
                             </span>

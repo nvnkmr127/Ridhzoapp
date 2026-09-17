@@ -1,6 +1,6 @@
 import { eventBus, EventPayload } from "./emitter";
 import { db } from "@/db";
-import { automations, automationTriggers, leads } from "@/db/schema";
+import { automations, automationTriggers, leads, users } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { automationQueue } from "@/lib/jobs/workers/automationWorker";
 import { enrichmentQueue } from "@/lib/jobs/workers/enrichmentWorker";
@@ -118,7 +118,19 @@ eventBus.on('lead.updated', async (p) => {
 
 eventBus.on('lead.assigned', async (p) => {
   dispatchTrigger('lead.assigned', p);
-  await ActivityService.addActivity({ leadId: p.leadId, userId: isUuid(p.assignedById) ? p.assignedById : undefined, type: 'note', content: `Lead was assigned to user ${p.ownerId}.` });
+  let ownerName: string | undefined;
+  if (p.ownerId) {
+    const [u] = await db
+      .select({ firstName: users.firstName, lastName: users.lastName, email: users.email })
+      .from(users)
+      .where(eq(users.id, p.ownerId))
+      .limit(1);
+    if (u) {
+      ownerName = [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email;
+    }
+  }
+  const content = p.ownerId ? `Lead was assigned to ${ownerName ?? "team member"}.` : "Lead was unassigned.";
+  await ActivityService.addActivity({ leadId: p.leadId, userId: isUuid(p.assignedById) ? p.assignedById : undefined, type: 'note', content });
 
   // The "New Lead Alert": ping the owner, unless they assigned it to themselves.
   if (p.ownerId && p.ownerId !== p.assignedById) {
