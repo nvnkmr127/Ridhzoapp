@@ -48,6 +48,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     notFound();
   }
 
+  const startMs = Date.now();
   const { organizationId } = await requireOrg();
 
   // 1. Fetch lead first — if missing, 404 immediately and skip all child queries.
@@ -135,6 +136,11 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       .then((rows) => rows.map((u) => ({ id: u.id, name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email })))
       .catch(() => []),
   ]);
+
+  const durationMs = Date.now() - startMs;
+  if (durationMs > 200) {
+    console.warn(`[PERF WARNING] LeadDetailPage /leads/${id} took ${durationMs}ms`);
+  }
 
   const dupCount = duplicateRows.length;
 

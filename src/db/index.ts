@@ -11,12 +11,13 @@ declare global {
 
 function getClient(): postgres.Sql {
   if (!globalThis._dbClient) {
+    const isProd = process.env.NODE_ENV === "production";
     globalThis._dbClient = postgres(connectionString, {
       prepare: false,
       fetch_types: false, // Prevents redundant pg_type queries on connection
-      max: process.env.NODE_ENV === "production" ? 20 : 5,
-      idle_timeout: 15, // Release idle TCP sockets automatically after 15s without breaking pool reference
-      connect_timeout: 10, // Fail fast (10s) if database is unreachable
+      max: isProd ? 10 : 5,
+      idle_timeout: 10, // Release idle TCP sockets automatically after 10s
+      connect_timeout: 5, // Fail fast (5s max) so queries never block for 30s TCP timeouts
       max_lifetime: 60 * 30, // 30m max connection lifetime
       connection: {
         timezone: "UTC",
