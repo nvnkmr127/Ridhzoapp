@@ -10,13 +10,19 @@ export class RateLimiter {
     const resetTime = (currentWindow + 1) * windowSeconds * 1000;
 
     try {
-      // Increment the count for the current window
-      const count = await redis.incr(redisKey);
+      const limitPromise = (async () => {
+        const count = await redis.incr(redisKey);
+        if (count === 1) {
+          await redis.expire(redisKey, windowSeconds).catch(() => {});
+        }
+        return count;
+      })();
 
-      // Set expiration on the key if it's the first increment
-      if (count === 1) {
-        await redis.expire(redisKey, windowSeconds);
-      }
+      const timeoutPromise = new Promise<number>((_, reject) =>
+        setTimeout(() => reject(new Error("Rate limit timeout")), 1000)
+      );
+
+      const count = await Promise.race([limitPromise, timeoutPromise]);
 
       return {
         success: count <= limit,
