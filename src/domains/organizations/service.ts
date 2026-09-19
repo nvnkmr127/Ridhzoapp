@@ -65,14 +65,22 @@ export class OrgService {
     });
   }
 
-  // Cheap suspension check for the request path (single indexed PK lookup).
+  private static suspendedCache = new Map<string, { val: boolean; exp: number }>();
+
+  // Cheap suspension check for the request path (single indexed PK lookup with 60s in-memory cache).
   static async isSuspended(organizationId: string): Promise<boolean> {
+    const now = Date.now();
+    const cached = OrgService.suspendedCache.get(organizationId);
+    if (cached && cached.exp > now) return cached.val;
+
     const [o] = await db
       .select({ s: organizations.suspendedAt })
       .from(organizations)
       .where(eq(organizations.id, organizationId))
       .limit(1);
-    return !!o?.s;
+    const val = !!o?.s;
+    OrgService.suspendedCache.set(organizationId, { val, exp: now + 60_000 });
+    return val;
   }
 
   static async getOrganization(organizationId: string) {

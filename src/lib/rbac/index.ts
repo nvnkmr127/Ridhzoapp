@@ -74,18 +74,27 @@ export async function isSuperAdmin(): Promise<boolean> {
   return Boolean(session?.user?.isSuperAdmin);
 }
 
+const roleCache = new Map<string, { role: { name: string; permissions: string[]; organizationId: string | null } | null; exp: number }>();
+
 // Resolve the current user's role (name + permissions + tenant) from the roleId carried in the JWT.
-// Cached per request: hasPermission/currentRoleName/isAdmin can each ask, but the role row is fetched once.
+// Cached per request and in-memory (60s TTL) so role lookup doesn't block every page navigation.
 const currentRole = cache(async function currentRole(): Promise<{ name: string; permissions: string[]; organizationId: string | null } | null> {
   const session = await getSession();
   const roleId = session?.user?.roleId;
   if (!roleId) return null;
+
+  const now = Date.now();
+  const cached = roleCache.get(roleId);
+  if (cached && cached.exp > now) return cached.role;
+
   const [role] = await db
     .select({ name: roles.name, permissions: roles.permissions, organizationId: roles.organizationId })
     .from(roles)
     .where(eq(roles.id, roleId))
     .limit(1);
-  return role ? { name: role.name, permissions: role.permissions ?? [], organizationId: role.organizationId } : null;
+  const res = role ? { name: role.name, permissions: role.permissions ?? [], organizationId: role.organizationId } : null;
+  roleCache.set(roleId, { role: res, exp: now + 60_000 });
+  return res;
 });
 
 export async function currentRoleName(): Promise<string | null> {

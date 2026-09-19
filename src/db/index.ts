@@ -19,7 +19,7 @@ function getClient(): postgres.Sql {
       idle_timeout: isProd ? 30 : 300, // Keep pool warm so navigation clicks do not wait for new TCP handshakes
       connect_timeout: 10, // Generous handshake timeout for cloud proxy
       max_lifetime: 60 * 30, // 30m max connection lifetime
-      ssl: connectionString.includes("localhost") ? false : "prefer",
+      ssl: connectionString?.includes("localhost") ? false : "prefer",
       debug: (connection, query, params) => {
         const time = new Date().toISOString().slice(11, 23);
         const snippet = query.trim().replace(/\s+/g, ' ');
