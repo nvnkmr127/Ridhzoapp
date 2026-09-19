@@ -479,7 +479,7 @@ export function SourcesManager({
         toast({
           variant: "destructive",
           title: "Facebook connection failed",
-          description: FB_ERROR[event.data.reason as string] ?? "The connection didn't complete. Please try again.",
+          description: (event.data.details as string) || FB_ERROR[event.data.reason as string] || "The connection didn't complete. Please try again.",
         });
         return;
       }
