@@ -16,9 +16,10 @@ function getClient(): postgres.Sql {
       prepare: false,
       fetch_types: false, // Prevents redundant pg_type queries on connection
       max: isProd ? 10 : 5,
-      idle_timeout: 10, // Release idle TCP sockets automatically after 10s
-      connect_timeout: 5, // Fail fast (5s max) so queries never block for 30s TCP timeouts
+      idle_timeout: isProd ? 30 : 300, // Keep pool warm so navigation clicks do not wait for new TCP handshakes
+      connect_timeout: 10, // Generous handshake timeout for cloud proxy
       max_lifetime: 60 * 30, // 30m max connection lifetime
+      ssl: connectionString.includes("localhost") ? false : "prefer",
       debug: (connection, query, params) => {
         const time = new Date().toISOString().slice(11, 23);
         const snippet = query.trim().replace(/\s+/g, ' ');
