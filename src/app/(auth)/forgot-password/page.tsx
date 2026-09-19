@@ -48,12 +48,19 @@ export default function ForgotPasswordPage() {
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          {error && <Alert variant="destructive">{error}</Alert>}
+          {error && (
+            <div className="space-y-2">
+              <Alert variant="destructive">{error}</Alert>
+              <Button asChild variant="outline" size="sm" className="w-full">
+                <Link href="/signup">Create a new account</Link>
+              </Button>
+            </div>
+          )}
 
           {submitted ? (
             <div className="space-y-4 text-center">
               <div className="rounded-lg bg-green-50 dark:bg-green-950/40 p-4 border border-green-200 dark:border-green-800 text-sm text-green-800 dark:text-green-200 leading-relaxed">
-                If an account exists for <span className="font-semibold">{email}</span>, we have sent instructions to reset your password. Please check your inbox.
+                We have sent instructions to reset your password to <span className="font-semibold">{email}</span>. Please check your inbox.
               </div>
               <p className="text-xs text-muted-foreground">
                 Don&apos;t see the email? Check your spam folder or wait a couple of minutes.

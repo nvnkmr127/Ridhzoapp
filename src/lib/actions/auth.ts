@@ -63,54 +63,70 @@ export async function requestPasswordResetAction(input: { email: string }) {
       .where(and(eq(users.email, email), isNull(users.deletedAt)))
       .limit(1);
 
-    // If user exists, create token and send email. Always return success to prevent user enumeration.
-    if (user) {
-      const rawToken = crypto.randomBytes(32).toString("hex");
-      const tokenHash = hashToken(rawToken);
-      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-
-      // Invalidate earlier unused reset tokens for this email
-      await db
-        .delete(passwordResets)
-        .where(and(eq(passwordResets.email, email), isNull(passwordResets.usedAt)));
-
-      await db.insert(passwordResets).values({
-        email,
-        tokenHash,
-        expiresAt,
-      });
-
-      const resetLink = appUrl(`/reset-password/${rawToken}`);
-      const greeting = user.firstName ? `Hi ${user.firstName},` : "Hello,";
-
-      await sendEmail({
-        to: email,
-        subject: "Reset your Ridhzo password",
-        html: `
-          <div style="font-family: sans-serif; max-width: 540px; margin: 0 auto; padding: 24px; color: #111;">
-            <h2 style="font-size: 20px; font-weight: 700; margin-bottom: 16px;">Reset your password</h2>
-            <p style="font-size: 15px; line-height: 1.5;">${greeting}</p>
-            <p style="font-size: 15px; line-height: 1.5;">
-              We received a request to reset the password for your Ridhzo account. Click the button below to choose a new password:
-            </p>
-            <div style="margin: 28px 0;">
-              <a href="${resetLink}" style="background-color: #0f172a; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;">
-                Reset Password
-              </a>
-            </div>
-            <p style="font-size: 13px; color: #64748b; line-height: 1.5;">
-              This link is valid for 1 hour. If you didn't request a password reset, you can safely ignore this email.
-            </p>
-          </div>
-        `,
-      });
+    if (!user) {
+      return fail(
+        "NOT_FOUND",
+        "We don't have an account with this email address. Please check for typos or sign up."
+      );
     }
+
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const tokenHash = hashToken(rawToken);
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    // Invalidate earlier unused reset tokens for this email
+    await db
+      .delete(passwordResets)
+      .where(and(eq(passwordResets.email, email), isNull(passwordResets.usedAt)));
+
+    await db.insert(passwordResets).values({
+      email,
+      tokenHash,
+      expiresAt,
+    });
+
+    const resetLink = appUrl(`/reset-password/${rawToken}`);
+    const greeting = user.firstName ? `Hi ${user.firstName},` : "Hello,";
+
+    await sendEmail({
+      to: email,
+      subject: "Reset your Ridhzo password",
+      html: `
+        <div style="font-family: sans-serif; max-width: 540px; margin: 0 auto; padding: 24px; color: #111;">
+          <h2 style="font-size: 20px; font-weight: 700; margin-bottom: 16px;">Reset your password</h2>
+          <p style="font-size: 15px; line-height: 1.5;">${greeting}</p>
+          <p style="font-size: 15px; line-height: 1.5;">
+            We received a request to reset the password for your Ridhzo account. Click the button below to choose a new password:
+          </p>
+          <div style="margin: 28px 0;">
+            <a href="${resetLink}" style="background-color: #0f172a; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;">
+              Reset Password
+            </a>
+          </div>
+          <p style="font-size: 13px; color: #64748b; line-height: 1.5;">
+            This link is valid for 1 hour. If you didn't request a password reset, you can safely ignore this email.
+          </p>
+        </div>
+      `,
+    });
 
     return ok({ sent: true });
   } catch (err: any) {
     console.error("[password-reset] error requesting reset:", err);
     return actionFail(err);
   }
+}
+
+// Checks if an account exists with the given phone number
+export async function checkPhoneExistsAction(phone: string) {
+  const clean = phone.trim();
+  const formatted = clean.startsWith("+") ? clean : `+91${clean.replace(/^0+/, "")}`;
+  const [existing] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.phone, formatted), isNull(users.deletedAt)))
+    .limit(1);
+  return { exists: Boolean(existing) };
 }
 
 // Verifies whether a reset token is valid and not expired

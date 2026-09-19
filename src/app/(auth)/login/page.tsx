@@ -14,6 +14,7 @@ import { Alert } from "@/components/ui/alert";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useEffect, useState } from "react";
 import { sendFirebasePhoneOtp, confirmFirebasePhoneOtp } from "@/lib/firebase/client";
+import { checkPhoneExistsAction } from "@/lib/actions/auth";
 import type { ConfirmationResult } from "firebase/auth";
 
 const DEV = process.env.NODE_ENV === "development";
@@ -52,7 +53,7 @@ export default function LoginPage() {
     });
 
     if (result?.error) {
-      setError("Invalid email or password");
+      setError("Invalid email or password. If you don't have an account, please click 'Create workspace' below.");
     } else {
       router.push("/");
     }
@@ -84,6 +85,13 @@ export default function LoginPage() {
 
     setPhoneLoading(true);
     try {
+      const check = await checkPhoneExistsAction(formatted);
+      if (!check.exists) {
+        setError("We don't have an account with this mobile number. Please click 'Create workspace' below to sign up.");
+        setPhoneLoading(false);
+        return;
+      }
+
       const res = await sendFirebasePhoneOtp(formatted, "recaptcha-container");
       setConfirmationResult(res);
     } catch (err: any) {
