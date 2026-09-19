@@ -39,6 +39,7 @@
     "csv-parse": "^7.0.2",
     "date-fns": "^4.4.0",
     "drizzle-orm": "^0.45.2",
+    "firebase": "^12.19.0",
     "ioredis": "^6.0.0",
     "lucide-react": "^1.33.0",
     "mammoth": "^1.12.2",

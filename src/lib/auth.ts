@@ -7,6 +7,7 @@ declare module "next-auth" {
       roleId: string | null;
       organizationId: string | null;
       isSuperAdmin: boolean;
+      phone?: string | null;
     } & DefaultSession["user"];
   }
 
@@ -15,14 +16,17 @@ declare module "next-auth" {
     roleId: string | null;
     organizationId: string | null;
     isSuperAdmin: boolean;
+    phone?: string | null;
   }
 }
 
 import CredentialsProvider from "next-auth/providers/credentials";
+import GoogleProvider from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import { db } from "@/db";
 import { users, organizations } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 // How long a session stays valid without re-authenticating (NextAuth's own JWT default — made
@@ -40,6 +44,100 @@ const SESSION_REFRESH_INTERVAL_MS = 60_000;
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt", maxAge: SESSION_MAX_AGE_SEC },
   providers: [
+    ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+      ? [
+          GoogleProvider({
+            clientId: process.env.GOOGLE_CLIENT_ID,
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+            allowDangerousEmailAccountLinking: true,
+          }),
+        ]
+      : []),
+    CredentialsProvider({
+      id: "phone-otp",
+      name: "Phone OTP",
+      credentials: {
+        idToken: { label: "Firebase ID Token", type: "text" },
+        phoneNumber: { label: "Phone Number", type: "text" },
+        name: { label: "Full Name", type: "text" },
+        orgName: { label: "Workspace Name", type: "text" },
+      },
+      async authorize(credentials) {
+        if (!credentials?.idToken) return null;
+
+        const { verifyFirebaseIdToken } = await import("@/lib/auth/firebaseTokenVerifier");
+        let verified;
+        try {
+          verified = await verifyFirebaseIdToken(credentials.idToken);
+        } catch (err) {
+          console.error("[phone-auth] verification failed:", err);
+          return null;
+        }
+
+        const phone = (verified.phoneNumber || credentials.phoneNumber || "").trim();
+        if (!phone) return null;
+
+        let [existingUser] = await db
+          .select()
+          .from(users)
+          .where(and(eq(users.phone, phone), isNull(users.deletedAt)))
+          .limit(1);
+
+        if (!existingUser) {
+          const { OrgService, slugify } = await import("@/domains/organizations/service");
+          const adminRole = await OrgService.ensureSystemRoles();
+          const cleanDigits = phone.replace(/[^0-9]/g, "");
+          const baseName = credentials.name?.trim() || `User ${cleanDigits.slice(-4)}`;
+          const workspaceName = credentials.orgName?.trim() || `${baseName}'s Workspace`;
+          const slug = `${slugify(workspaceName)}-${Math.random().toString(36).slice(2, 7)}`;
+          const randomPasswordHash = await bcrypt.hash(crypto.randomUUID(), 10);
+          const syntheticEmail = `${cleanDigits}@phone.ridhzo.com`;
+
+          const [newOrg] = await db
+            .insert(organizations)
+            .values({ name: workspaceName, slug })
+            .returning();
+
+          const nameParts = baseName.split(/\s+/);
+          const firstName = nameParts[0] || baseName;
+          const lastName = nameParts.slice(1).join(" ") || undefined;
+
+          const [created] = await db
+            .insert(users)
+            .values({
+              organizationId: newOrg.id,
+              email: syntheticEmail,
+              phone,
+              firstName,
+              lastName,
+              passwordHash: randomPasswordHash,
+              roleId: adminRole?.id ?? null,
+              isActive: true,
+            })
+            .returning();
+
+          existingUser = created;
+        }
+
+        if (!existingUser || !existingUser.isActive) return null;
+
+        if (existingUser.organizationId && !existingUser.isSuperAdmin) {
+          const { OrgService } = await import("@/domains/organizations/service");
+          const isSuspended = await OrgService.isSuspended(existingUser.organizationId);
+          if (isSuspended) return null;
+        }
+
+        return {
+          id: existingUser.id,
+          email: existingUser.email,
+          name: `${existingUser.firstName ?? ""} ${existingUser.lastName ?? ""}`.trim() || phone,
+          roleId: existingUser.roleId,
+          organizationId: existingUser.organizationId,
+          isSuperAdmin: existingUser.isSuperAdmin,
+          phone: existingUser.phone,
+        };
+      },
+    }),
     CredentialsProvider({
       name: "Credentials",
       credentials: {
@@ -86,11 +184,73 @@ export const authOptions: NextAuthOptions = {
           roleId: user.roleId,
           organizationId: user.organizationId,
           isSuperAdmin: user.isSuperAdmin,
+          phone: user.phone,
         };
       },
     }),
   ],
   callbacks: {
+    async signIn({ user, account }) {
+      if (account?.provider === "google") {
+        const email = user.email?.toLowerCase();
+        if (!email) return false;
+
+        let [existingUser] = await db
+          .select()
+          .from(users)
+          .where(and(eq(users.email, email), isNull(users.deletedAt)))
+          .limit(1);
+
+        if (!existingUser) {
+          const { OrgService, slugify } = await import("@/domains/organizations/service");
+          const adminRole = await OrgService.ensureSystemRoles();
+          const baseName = user.name || email.split("@")[0] || "My";
+          const orgName = `${baseName}'s Workspace`;
+          const slug = `${slugify(baseName)}-${Math.random().toString(36).slice(2, 7)}`;
+          const randomPasswordHash = await bcrypt.hash(crypto.randomUUID(), 10);
+
+          const [newOrg] = await db
+            .insert(organizations)
+            .values({ name: orgName, slug })
+            .returning();
+
+          const nameParts = (user.name || "").trim().split(/\s+/);
+          const firstName = nameParts[0] || baseName;
+          const lastName = nameParts.slice(1).join(" ") || undefined;
+
+          const [created] = await db
+            .insert(users)
+            .values({
+              organizationId: newOrg.id,
+              email,
+              firstName,
+              lastName,
+              passwordHash: randomPasswordHash,
+              roleId: adminRole?.id ?? null,
+              isActive: true,
+            })
+            .returning();
+
+          existingUser = created;
+        }
+
+        if (!existingUser.isActive) return false;
+
+        if (existingUser.organizationId && !existingUser.isSuperAdmin) {
+          const { OrgService } = await import("@/domains/organizations/service");
+          const isSuspended = await OrgService.isSuspended(existingUser.organizationId);
+          if (isSuspended) return false;
+        }
+
+        user.id = existingUser.id;
+        user.roleId = existingUser.roleId;
+        user.organizationId = existingUser.organizationId;
+        user.isSuperAdmin = existingUser.isSuperAdmin;
+        user.phone = existingUser.phone;
+        return true;
+      }
+      return true;
+    },
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;

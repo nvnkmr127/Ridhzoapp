@@ -4,7 +4,7 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { SYSTEM_ROLE_PERMISSIONS } from "@/lib/permissions";
 
-function slugify(name: string) {
+export function slugify(name: string) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "org";
 }
 
