@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { organizations, users, roles } from "@/db/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { SYSTEM_ROLE_PERMISSIONS } from "@/lib/permissions";
 
@@ -122,7 +122,10 @@ export class OrgService {
     // hasn't changed since — so a second admin's stale form save is rejected, not silently applied
     // over a fresh change. Always bump updatedAt so the next reader sees a new version.
     const where = expectedUpdatedAt
-      ? and(eq(organizations.id, organizationId), eq(organizations.updatedAt, expectedUpdatedAt))
+      ? and(
+          eq(organizations.id, organizationId),
+          sql`date_trunc('second', ${organizations.updatedAt}) <= date_trunc('second', ${expectedUpdatedAt.toISOString()}::timestamp)`,
+        )
       : eq(organizations.id, organizationId);
     const [updated] = await db
       .update(organizations)
