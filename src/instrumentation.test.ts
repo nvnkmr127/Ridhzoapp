@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@/lib/events/handlers", () => ({}));
 vi.mock("@/lib/jobs/workers/reminderWorker", () => ({ reminderWorker: {} }));
 vi.mock("@/lib/jobs/workers/automationWorker", () => ({ automationWorker: {} }));
+vi.mock("@/lib/jobs/workers/ingestionWorker", () => ({ ingestionWorker: {} }));
 vi.mock("@/lib/jobs/workers/escalationWorker", () => ({
   createEscalationWorker: vi.fn(),
   scheduleEscalationScan: vi.fn().mockResolvedValue(undefined),
@@ -10,6 +11,24 @@ vi.mock("@/lib/jobs/workers/escalationWorker", () => ({
 vi.mock("@/lib/jobs/workers/scoreDecayWorker", () => ({
   createScoreDecayWorker: vi.fn(),
   scheduleScoreDecayScan: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@/lib/jobs/workers/followUpReminderWorker", () => ({
+  createFollowUpReminderWorker: vi.fn(),
+  scheduleFollowUpReminderScan: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@/lib/jobs/workers/sequenceWorker", () => ({
+  createSequenceWorker: vi.fn(),
+  scheduleSequenceScan: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@/lib/jobs/workers/recycleBinWorker", () => ({
+  createRecycleBinWorker: vi.fn(),
+  scheduleRecycleBinScan: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@/lib/jobs/workers/webhookRetryWorker", () => ({
+  createWebhookRetryWorker: vi.fn(),
+}));
+vi.mock("@/lib/jobs/workers/enrichmentWorker", () => ({
+  createEnrichmentWorker: vi.fn(),
 }));
 
 describe("Instrumentation worker registration", () => {

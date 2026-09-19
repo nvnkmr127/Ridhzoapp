@@ -110,7 +110,7 @@ export function QuickAddLeadDrawer({ children }: { children?: React.ReactNode })
         customData: customValues,
       });
       if (!res.ok) {
-        let displayError = res.message;
+        const displayError = res.message;
         // Map server field errors back onto the matching inputs for inline display.
         if (res.fieldErrors && Object.keys(res.fieldErrors).length > 0) {
           for (const [key, message] of Object.entries(res.fieldErrors)) {

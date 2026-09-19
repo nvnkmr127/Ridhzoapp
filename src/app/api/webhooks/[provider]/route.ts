@@ -107,7 +107,7 @@ export async function POST(
     // the ingestion worker finds it even when it arrived via the query string, not the body.
     // Insert-or-nothing on (provider, idempotency_key) so a concurrent duplicate delivery no-ops
     // instead of throwing a unique violation; we then re-read and treat it as the duplicate.
-    let [event] = await db.insert(webhookEvents).values({
+    const [event] = await db.insert(webhookEvents).values({
       provider,
       payload: { ...body, sourceId, organizationId: source.organizationId },
       idempotencyKey,
