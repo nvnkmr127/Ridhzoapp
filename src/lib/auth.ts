@@ -251,12 +251,38 @@ export const authOptions: NextAuthOptions = {
       }
       return true;
     },
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
+      if (account?.provider === "google" && (user?.email || token.email)) {
+        const email = ((user?.email || token.email) as string).toLowerCase();
+        const [dbUser] = await db
+          .select({
+            id: users.id,
+            roleId: users.roleId,
+            organizationId: users.organizationId,
+            isSuperAdmin: users.isSuperAdmin,
+            phone: users.phone,
+          })
+          .from(users)
+          .where(and(eq(users.email, email), isNull(users.deletedAt)))
+          .limit(1);
+
+        if (dbUser) {
+          token.id = dbUser.id;
+          token.roleId = dbUser.roleId;
+          token.organizationId = dbUser.organizationId;
+          token.isSuperAdmin = dbUser.isSuperAdmin;
+          token.phone = dbUser.phone;
+          token.refreshedAt = Date.now();
+          return token;
+        }
+      }
+
       if (user) {
         token.id = user.id;
         token.roleId = user.roleId;
         token.organizationId = user.organizationId;
         token.isSuperAdmin = user.isSuperAdmin;
+        token.phone = user.phone;
         token.refreshedAt = Date.now();
         return token;
       }
@@ -267,7 +293,14 @@ export const authOptions: NextAuthOptions = {
       const refreshedAt = (token.refreshedAt as number | undefined) ?? 0;
       if (token.id && Date.now() - refreshedAt > SESSION_REFRESH_INTERVAL_MS) {
         const [u] = await db
-          .select({ roleId: users.roleId, organizationId: users.organizationId, isSuperAdmin: users.isSuperAdmin, isActive: users.isActive, deletedAt: users.deletedAt })
+          .select({
+            roleId: users.roleId,
+            organizationId: users.organizationId,
+            isSuperAdmin: users.isSuperAdmin,
+            isActive: users.isActive,
+            deletedAt: users.deletedAt,
+            phone: users.phone,
+          })
           .from(users)
           .where(eq(users.id, token.id as string))
           .limit(1);
@@ -278,10 +311,12 @@ export const authOptions: NextAuthOptions = {
           token.roleId = null;
           token.organizationId = null;
           token.isSuperAdmin = false;
+          token.phone = null;
         } else {
           token.roleId = u.roleId;
           token.organizationId = u.organizationId;
           token.isSuperAdmin = u.isSuperAdmin;
+          token.phone = u.phone;
         }
         token.refreshedAt = Date.now();
       }
@@ -295,6 +330,7 @@ export const authOptions: NextAuthOptions = {
           roleId: token.roleId as string,
           organizationId: (token.organizationId as string) ?? null,
           isSuperAdmin: Boolean(token.isSuperAdmin),
+          phone: (token.phone as string) ?? null,
         };
       }
       return session;
