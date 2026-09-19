@@ -4,13 +4,15 @@ import { and, count, eq, gt, isNull } from "drizzle-orm";
 
 // Per-plan ceilings. Infinity = unlimited. Enforcement lives here; charging (Stripe) is separate
 // and needs external keys — the plan column is set by that flow, which isn't wired yet.
-export const PLAN_LIMITS: Record<string, { seats: number; leads: number }> = {
-  free: { seats: 3, leads: 500 },
-  pro: { seats: 15, leads: 25_000 },
-  business: { seats: Infinity, leads: Infinity },
+export const PLAN_LIMITS: Record<string, { seats: number; leads: number; price: string; description: string }> = {
+  free: { seats: 1, leads: 100, price: "₹0", description: "For individuals evaluating Ridhzo" },
+  starter: { seats: 3, leads: 5_000, price: "₹249 / mo", description: "For solo agents & growing teams" },
+  unlimited: { seats: Infinity, leads: Infinity, price: "₹449 / mo", description: "Unlimited leads, seats & full access" },
 };
 
 function limitsFor(plan: string) {
+  if (plan === "pro") return PLAN_LIMITS.starter;
+  if (plan === "business") return PLAN_LIMITS.unlimited;
   return PLAN_LIMITS[plan] ?? PLAN_LIMITS.free;
 }
 

@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { startSubscriptionAction, verifySubscriptionAction, cancelSubscriptionAction, setPlanManuallyAction } from "@/lib/actions/billing";
 import { Check } from "lucide-react";
 
-type Limits = Record<string, { seats: number; leads: number }>;
+type Limits = Record<string, { seats: number; leads: number; price?: string; description?: string }>;
 
 declare global {
   interface Window { Razorpay?: any }
@@ -146,7 +146,13 @@ export function BillingManager({
           const paid = name !== "free";
           return (
             <div key={name} className={`rounded-2xl border p-5 space-y-3 ${isCurrent ? "border-border ring-1 ring-ring" : "bg-card"}`}>
-              <div className="font-semibold capitalize text-lg">{name}</div>
+              <div className="space-y-1">
+                <div className="flex items-baseline justify-between">
+                  <div className="font-semibold capitalize text-lg">{name}</div>
+                  {l.price && <div className="text-base font-bold text-foreground">{l.price}</div>}
+                </div>
+                {l.description && <p className="text-xs text-muted-foreground">{l.description}</p>}
+              </div>
               <ul className="text-sm text-muted-foreground space-y-1">
                 <li className="flex items-center gap-2"><Check className="h-4 w-4 text-muted-foreground" /> {fmt(l.seats)} seats</li>
                 <li className="flex items-center gap-2"><Check className="h-4 w-4 text-muted-foreground" /> {fmt(l.leads)} leads</li>

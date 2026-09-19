@@ -21,22 +21,22 @@ describe("PlanService.assertCanAddSeat", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("throws when active users + open invites reach the plan's seat limit", async () => {
-    queueResults([[{ plan: "free" }], [{ n: 2 }], [{ n: 1 }]]); // free=3 seats, 2 users + 1 invite = 3
-    await expect(PlanService.assertCanAddSeat("org")).rejects.toThrow(/3 seats/);
+    queueResults([[{ plan: "free" }], [{ n: 1 }], [{ n: 0 }]]); // free=1 seat, 1 user = full
+    await expect(PlanService.assertCanAddSeat("org")).rejects.toThrow(/1 seats/);
   });
 
   it("allows a seat when under the limit", async () => {
-    queueResults([[{ plan: "free" }], [{ n: 1 }], [{ n: 0 }]]);
+    queueResults([[{ plan: "free" }], [{ n: 0 }], [{ n: 0 }]]);
     await expect(PlanService.assertCanAddSeat("org")).resolves.toBeUndefined();
   });
 
   it("never blocks an unlimited plan", async () => {
-    queueResults([[{ plan: "business", planStatus: "active" }]]); // Infinity seats — returns before counting
+    queueResults([[{ plan: "unlimited", planStatus: "active" }]]); // Infinity seats — returns before counting
     await expect(PlanService.assertCanAddSeat("org")).resolves.toBeUndefined();
   });
 
   it("reverts to free limits when planStatus is halted", async () => {
-    queueResults([[{ plan: "pro", planStatus: "halted" }], [{ n: 3 }], [{ n: 0 }]]); // pro halted -> falls back to free (3 seats), 3 users = full
-    await expect(PlanService.assertCanAddSeat("org")).rejects.toThrow(/3 seats/);
+    queueResults([[{ plan: "starter", planStatus: "halted" }], [{ n: 1 }], [{ n: 0 }]]); // starter halted -> falls back to free (1 seat), 1 user = full
+    await expect(PlanService.assertCanAddSeat("org")).rejects.toThrow(/1 seats/);
   });
 });

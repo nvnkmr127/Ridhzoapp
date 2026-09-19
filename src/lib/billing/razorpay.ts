@@ -10,8 +10,10 @@ const WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET;
 const API = "https://api.razorpay.com/v1";
 
 export const RAZORPAY_PLAN_IDS: Record<string, string | undefined> = {
-  pro: process.env.RAZORPAY_PLAN_PRO,
-  business: process.env.RAZORPAY_PLAN_BUSINESS,
+  starter: process.env.RAZORPAY_PLAN_STARTER || process.env.RAZORPAY_PLAN_PRO,
+  unlimited: process.env.RAZORPAY_PLAN_UNLIMITED || process.env.RAZORPAY_PLAN_BUSINESS,
+  pro: process.env.RAZORPAY_PLAN_STARTER || process.env.RAZORPAY_PLAN_PRO,
+  business: process.env.RAZORPAY_PLAN_UNLIMITED || process.env.RAZORPAY_PLAN_BUSINESS,
 };
 
 export function isConfigured() {
