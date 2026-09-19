@@ -18,28 +18,33 @@ const redisKey = (userId: string) => `fb_pending_pages:${userId}`;
 const mem = new Map<string, { data: PendingPages; expiresAtMs: number }>();
 
 export async function setPendingPages(userId: string, data: PendingPages): Promise<void> {
+  mem.set(userId, { data, expiresAtMs: Date.now() + TTL_SECONDS * 1000 });
   if (redisConfigured()) {
-    const r = createRedis();
+    const r = createRedis({ enableOfflineQueue: true });
     try {
       await r.set(redisKey(userId), JSON.stringify(data), "EX", TTL_SECONDS);
+    } catch (err) {
+      console.warn("[fbPendingStore] Redis set failed, kept in memory fallback:", err);
     } finally {
-      r.quit();
+      try { r.disconnect(); } catch {}
     }
-    return;
   }
-  mem.set(userId, { data, expiresAtMs: Date.now() + TTL_SECONDS * 1000 });
 }
 
 /** Reads and deletes the stash (single-use) so tokens don't linger after connection. */
 export async function takePendingPages(userId: string): Promise<PendingPages | null> {
   if (redisConfigured()) {
-    const r = createRedis();
+    const r = createRedis({ enableOfflineQueue: true });
     try {
       const raw = await r.get(redisKey(userId));
-      if (raw) await r.del(redisKey(userId));
-      return raw ? (JSON.parse(raw) as PendingPages) : null;
+      if (raw) {
+        await r.del(redisKey(userId)).catch(() => {});
+        return JSON.parse(raw) as PendingPages;
+      }
+    } catch (err) {
+      console.warn("[fbPendingStore] Redis get failed, falling back to memory:", err);
     } finally {
-      r.quit();
+      try { r.disconnect(); } catch {}
     }
   }
   const hit = mem.get(userId);

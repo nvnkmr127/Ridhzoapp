@@ -29,10 +29,10 @@ export function createRedis(opts: RedisOptions = {}, url?: string): Redis {
   const target = url || process.env.REDIS_URL;
   const isServerless = Boolean(process.env.VERCEL);
   const client = new Redis(target || "redis://localhost:6379", {
-    connectTimeout: 2000,
-    commandTimeout: 3000,
+    connectTimeout: 5000,
+    commandTimeout: 5000,
     maxRetriesPerRequest: opts.maxRetriesPerRequest !== undefined ? opts.maxRetriesPerRequest : 1,
-    enableOfflineQueue: opts.maxRetriesPerRequest === null ? true : false,
+    enableOfflineQueue: opts.enableOfflineQueue ?? true,
     retryStrategy: (times) => {
       if (!target || (isServerless && times > 2)) return null;
       return Math.min(times * 500, 2000);
