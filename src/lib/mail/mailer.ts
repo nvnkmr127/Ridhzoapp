@@ -66,7 +66,7 @@ export function appUrl(path: string) {
     } else if (process.env.VERCEL_URL) {
       base = `https://${process.env.VERCEL_URL}`;
     } else {
-      base = "https://ridhzo.com";
+      base = "https://app.ridhzo.com";
     }
   }
   return `${base.replace(/\/$/, "")}${path}`;
