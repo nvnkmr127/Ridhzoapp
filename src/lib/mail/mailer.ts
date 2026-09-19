@@ -59,6 +59,15 @@ export async function sendEmail(mail: Mail, organizationId?: string): Promise<vo
 }
 
 export function appUrl(path: string) {
-  const base = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  let base = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL;
+  if (!base || (process.env.NODE_ENV === "production" && base.includes("localhost"))) {
+    if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+      base = `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+    } else if (process.env.VERCEL_URL) {
+      base = `https://${process.env.VERCEL_URL}`;
+    } else {
+      base = "https://ridhzo.vercel.app";
+    }
+  }
   return `${base.replace(/\/$/, "")}${path}`;
 }
