@@ -22,7 +22,7 @@ function getVapidKeys(): { publicKey: string; privateKey: string } {
 function ensureConfigured(): boolean {
   if (configured) return true;
   const keys = getVapidKeys();
-  const subject = process.env.VAPID_SUBJECT || "mailto:admin@example.com";
+  const subject = process.env.VAPID_SUBJECT || "mailto:admin@ridhzo.com";
   webpush.setVapidDetails(subject, keys.publicKey, keys.privateKey);
   configured = true;
   return true;
