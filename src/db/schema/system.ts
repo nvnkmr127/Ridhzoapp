@@ -95,3 +95,16 @@ export const invitations = pgTable('invitations', {
 }, (t) => ({
   orgIdx: index('invitations_org_idx').on(t.organizationId),
 }));
+
+// Password resets. Tokens are sha256-hashed with a 1-hour expiry.
+export const passwordResets = pgTable('password_resets', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  email: varchar('email', { length: 255 }).notNull(),
+  tokenHash: varchar('token_hash', { length: 64 }).notNull().unique(),
+  expiresAt: timestamp('expires_at').notNull(),
+  usedAt: timestamp('used_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => ({
+  emailIdx: index('password_resets_email_idx').on(t.email),
+}));
+
