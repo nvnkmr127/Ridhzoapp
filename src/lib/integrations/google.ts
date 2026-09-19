@@ -5,7 +5,7 @@ import crypto from "crypto";
 
 const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI;
+const REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || (process.env.NEXT_PUBLIC_APP_URL ? `${process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "")}/api/integrations/google/callback` : undefined);
 const STATE_SECRET = process.env.NEXTAUTH_SECRET || "dev-google-state-secret";
 const SCOPE = "https://www.googleapis.com/auth/calendar.events";
 
