@@ -6,8 +6,8 @@ WORKDIR /app
 
 # Install deps first for layer caching. tsx is a devDependency, so we need the full install
 # (not --omit=dev).
-COPY package*.json ./
-RUN npm ci
+COPY package*.json .npmrc* ./
+RUN npm ci --legacy-peer-deps
 
 COPY . .
 
