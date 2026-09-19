@@ -145,7 +145,7 @@ export function WebhooksManager({ initial, dlqCount, stats }: { initial: Endpoin
       {/* Add form */}
       <div className="rounded-2xl border p-4 space-y-3">
         <p className="text-sm font-medium flex items-center gap-2"><Webhook className="h-4 w-4" /> Add an endpoint</p>
-        <Input placeholder="https://your-app.com/webhooks/privyr" value={url} onChange={(e) => setUrl(e.target.value)} />
+        <Input placeholder="https://your-app.com/webhooks/ridhzo" value={url} onChange={(e) => setUrl(e.target.value)} />
         <div className="flex flex-wrap gap-2">
           {EVENT_TYPES.map((et) => (
             <button
@@ -203,7 +203,7 @@ export function WebhooksManager({ initial, dlqCount, stats }: { initial: Endpoin
       )}
 
       <p className="text-xs text-muted-foreground">
-        Each request is signed with HMAC-SHA256 over the raw body in the <code>X-Privyr-Signature</code> header —
+        Each request is signed with HMAC-SHA256 over the raw body in the <code>X-Ridhzo-Signature</code> header —
         verify it with the endpoint&apos;s signing secret.
       </p>
     </div>

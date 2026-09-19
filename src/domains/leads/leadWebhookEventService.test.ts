@@ -42,6 +42,7 @@ describe("LeadWebhookEventService", () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("https://example.com/webhook");
     expect(init.method).toBe("POST");
+    expect(init.headers["X-Ridhzo-Signature"]).toHaveLength(64);
     expect(init.headers["X-Privyr-Signature"]).toHaveLength(64);
     expect(result.success).toBe(true);
     expect(result.statusCode).toBe(202);

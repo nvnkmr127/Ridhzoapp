@@ -55,7 +55,7 @@ export class FacebookLeadMappingService {
   }
 
   /**
-   * Maps raw Facebook Graph API `field_data` array to standard Privyr v2 lead structure.
+   * Maps raw Facebook Graph API `field_data` array to standard Ridhzo lead structure.
    */
   static mapFacebookLeadToStandardLead(
     facebookLead: FacebookLeadDetails,

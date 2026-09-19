@@ -1,7 +1,7 @@
 import { pgTable, uuid, varchar, text, timestamp } from 'drizzle-orm/pg-core';
 import { organizations } from './organizations';
 
-// Canned responses / message templates (Privyr-style one-tap messaging).
+// Canned responses / message templates (Ridhzo-style one-tap messaging).
 export const messageTemplates = pgTable('message_templates', {
   id: uuid('id').defaultRandom().primaryKey(),
   organizationId: uuid('organization_id').references(() => organizations.id), // tenant scope; backfilled

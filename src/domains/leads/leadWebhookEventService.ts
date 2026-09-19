@@ -69,6 +69,8 @@ export class LeadWebhookEventService {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-Ridhzo-Signature": signature,
+          "X-Ridhzo-Event": payload.event,
           "X-Privyr-Signature": signature,
           "X-Privyr-Event": payload.event,
         },

@@ -2,7 +2,7 @@ import { pgTable, uuid, varchar, text, timestamp, index } from 'drizzle-orm/pg-c
 import { users } from './users';
 import { leads } from './leads';
 
-// In-app notifications — the "New Lead Alert" that is Privyr's core hook.
+// In-app notifications — the "New Lead Alert" that is Ridhzo's core hook.
 // A bell/unread-count UI polls these; web-push (closed-tab delivery) is a later layer on top.
 export const notifications = pgTable('notifications', {
   id: uuid('id').defaultRandom().primaryKey(),

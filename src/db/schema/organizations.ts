@@ -41,7 +41,7 @@ export const organizations = pgTable('organizations', {
   sequenceWindowStart: integer('sequence_window_start'), // 0-23
   sequenceWindowEnd: integer('sequence_window_end'), // 1-24, exclusive
 
-  // WhatsApp send mode: 'personal' = one-tap wa.me from the rep's own number (Privyr-style,
+  // WhatsApp send mode: 'personal' = one-tap wa.me from the rep's own number (Ridhzo-style,
   // no BSP setup); 'bsp' = send through the WhatsApp Business API. Solos default to personal.
   whatsappMode: varchar('whatsapp_mode', { length: 10 }).default('personal').notNull(),
 

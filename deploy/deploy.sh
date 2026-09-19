@@ -14,7 +14,7 @@ npm ci                             # worker runs via tsx (a devDependency) — k
 # was created with `push`), so migrate would replay from 0000 and fail on existing tables. Apply
 # schema changes by hand (e.g. ALTER TABLE ... ADD COLUMN) — see the deploy runbook.
 
-sudo systemctl restart privyr-worker
+sudo systemctl restart ridhzo-worker || sudo systemctl restart privyr-worker
 sleep 2
-sudo systemctl --no-pager --lines=8 status privyr-worker || true
+sudo systemctl --no-pager --lines=8 status ridhzo-worker || sudo systemctl --no-pager --lines=8 status privyr-worker || true
 echo "✓ deployed $(git rev-parse --short HEAD)"

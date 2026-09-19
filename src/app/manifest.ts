@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 
 // PWA manifest — makes the web app installable on phones (Add to Home Screen),
-// so it launches standalone like Privyr's native app. Served at /manifest.webmanifest.
+// so it launches standalone like Ridhzo's native app. Served at /manifest.webmanifest.
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Ridhzo CRM",

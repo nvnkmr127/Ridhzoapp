@@ -22,7 +22,7 @@ describe("FacebookLeadMappingService", () => {
     expect(failedRes.verified).toBe(false);
   });
 
-  it("should map raw Facebook field_data to standard Privyr v2 lead structure", () => {
+  it("should map raw Facebook field_data to standard Ridhzo lead structure", () => {
     const rawFbLead: FacebookLeadDetails = {
       id: "leadgen_12345",
       created_time: "2026-08-28T10:00:00Z",

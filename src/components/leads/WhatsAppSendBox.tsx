@@ -52,7 +52,7 @@ export function WhatsAppSendBox({
 
   async function send() {
     // Personal mode: open WhatsApp with the message prefilled to send from the rep's own
-    // number (Privyr-style). No BSP, no 24h-window limits — the rep taps send in WhatsApp.
+    // number (Ridhzo-style). No BSP, no 24h-window limits — the rep taps send in WhatsApp.
     if (mode === "personal") {
       const digits = (phone ?? "").replace(/[^0-9]/g, "");
       const href = digits.length >= 6 ? `https://wa.me/${digits}?text=${encodeURIComponent(body)}` : `https://wa.me/?text=${encodeURIComponent(body)}`;

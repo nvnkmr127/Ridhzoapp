@@ -2,7 +2,7 @@ import { Page, expect } from '@playwright/test';
 
 export async function loginAsUser(
   page: Page,
-  email: string = 'admin@privyr.local',
+  email: string = 'admin@ridhzo.com',
   password: string = 'password123'
 ) {
   await page.goto('/login');

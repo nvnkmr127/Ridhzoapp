@@ -171,8 +171,8 @@ describe('AnalyticsService Calculations', () => {
 
   it('should aggregate leads by owner correctly', async () => {
     const mockRows = [
-      { ownerId: 'u1', firstName: 'John', lastName: 'Doe', email: 'john@privyr.local' },
-      { ownerId: 'u1', firstName: 'John', lastName: 'Doe', email: 'john@privyr.local' },
+      { ownerId: 'u1', firstName: 'John', lastName: 'Doe', email: 'john@ridhzo.com' },
+      { ownerId: 'u1', firstName: 'John', lastName: 'Doe', email: 'john@ridhzo.com' },
       { ownerId: null, firstName: null, lastName: null, email: null },
     ];
 

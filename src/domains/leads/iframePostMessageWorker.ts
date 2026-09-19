@@ -49,7 +49,7 @@ export class IframePostMessageWorker {
       return { success: false, error: "Cross-origin domain not allowed", allowedOrigin: false };
     }
 
-    if (payload.type !== "PRIVYR_LEAD_SUBMISSION" || !payload.data) {
+    if ((payload.type !== "PRIVYR_LEAD_SUBMISSION" && payload.type !== "RIDHZO_LEAD_SUBMISSION") || !payload.data) {
       return { success: false, error: "Invalid postMessage event type or payload structure", allowedOrigin: true };
     }
 
@@ -98,9 +98,9 @@ export class IframePostMessageWorker {
   /**
    * Generates postMessage acknowledgment payload to post back to the parent iframe window.
    */
-  static createAckMessage(result: IframeProcessingResult): { type: string; status: string; eventId?: string; error?: string } {
+  static createAckMessage(result: IframeProcessingResult, incomingType?: string): { type: string; status: string; eventId?: string; error?: string } {
     return {
-      type: "PRIVYR_LEAD_ACK",
+      type: incomingType === "PRIVYR_LEAD_SUBMISSION" ? "PRIVYR_LEAD_ACK" : "RIDHZO_LEAD_ACK",
       status: result.success ? "success" : "error",
       eventId: result.eventId,
       error: result.error,

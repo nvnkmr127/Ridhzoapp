@@ -26,7 +26,7 @@ describe("End-to-End Facebook Integration Pipeline", () => {
     await expect(MetaTokenRefreshService.exchangeShortLivedToken("short_oauth_code_123")).rejects.toThrow(/not configured/i);
   });
 
-  it("2. Maps Facebook leadgen payload to standard Privyr v2 lead structure", () => {
+  it("2. Maps Facebook leadgen payload to standard Ridhzo lead structure", () => {
     const fbPayload = {
       id: "leadgen_999111",
       created_time: "2026-08-28T10:00:00Z",

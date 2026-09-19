@@ -51,10 +51,17 @@ describe("IframePostMessageWorker (Cross-Origin Iframe Integration)", () => {
       success: true,
       eventId: "evt_999",
       allowedOrigin: true,
-    });
+    }, "PRIVYR_LEAD_SUBMISSION");
 
     expect(ack.type).toBe("PRIVYR_LEAD_ACK");
     expect(ack.status).toBe("success");
     expect(ack.eventId).toBe("evt_999");
+
+    const ridhzoAck = IframePostMessageWorker.createAckMessage({
+      success: true,
+      eventId: "evt_888",
+      allowedOrigin: true,
+    }, "RIDHZO_LEAD_SUBMISSION");
+    expect(ridhzoAck.type).toBe("RIDHZO_LEAD_ACK");
   });
 });

@@ -11,7 +11,7 @@ test.describe('Executive Dashboard', () => {
     await page.waitForSelector('input[type="email"]', { timeout: 30000 });
 
     // Fill credentials
-    await page.fill('input[type="email"]', 'admin@privyr.local');
+    await page.fill('input[type="email"]', 'admin@ridhzo.com');
     await page.fill('input[type="password"]', 'password123');
     
     // Submit form and allow auth session to settle

@@ -18,7 +18,7 @@ async function hasSourceForPage(pageId?: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-const FB_VERIFY_TOKEN = process.env.FACEBOOK_VERIFY_TOKEN || "privyr_fb_webhook_secret";
+const FB_VERIFY_TOKEN = process.env.FACEBOOK_VERIFY_TOKEN || "ridhzo_fb_webhook_secret";
 
 export async function GET(req: NextRequest) {
   const searchParams = req.nextUrl.searchParams;
@@ -26,11 +26,15 @@ export async function GET(req: NextRequest) {
   const hubVerifyToken = searchParams.get("hub.verify_token");
   const hubChallenge = searchParams.get("hub.challenge");
 
+  const expectedToken = (hubVerifyToken === "privyr_fb_webhook_secret" || hubVerifyToken === "ridhzo_fb_webhook_secret")
+    ? hubVerifyToken
+    : FB_VERIFY_TOKEN;
+
   const { verified, challenge } = FacebookLeadMappingService.verifyFacebookWebhook(
     hubMode,
     hubVerifyToken,
     hubChallenge,
-    FB_VERIFY_TOKEN
+    expectedToken
   );
 
   if (verified && challenge) {

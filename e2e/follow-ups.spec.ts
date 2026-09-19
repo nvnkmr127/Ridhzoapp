@@ -8,7 +8,7 @@ test.describe('Follow-Ups & Reminder System', () => {
     await page.goto('/login');
     await page.waitForSelector('input[type="email"]', { timeout: 30000 });
 
-    await page.fill('input[type="email"]', 'admin@privyr.local');
+    await page.fill('input[type="email"]', 'admin@ridhzo.com');
     await page.fill('input[type="password"]', 'password123');
 
     await page.click('button[type="submit"]');
