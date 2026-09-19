@@ -20,6 +20,7 @@ export const metadata: Metadata = {
   title: "Ridhzo CRM",
   description: "Lead capture, instant alerts, and one-tap messaging.",
   applicationName: "Ridhzo",
+  manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Ridhzo" },
   icons: {
     icon: [{ url: "/icon.svg", type: "image/svg+xml" }, { url: "/icon-192.png", sizes: "192x192", type: "image/png" }],

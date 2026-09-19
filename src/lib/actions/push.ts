@@ -28,3 +28,17 @@ export async function getVapidPublicKeyAction(): Promise<string> {
   const keys = PushService.getVapidKeys();
   return keys.publicKey;
 }
+
+export async function sendTestPushAction() {
+  const session = await requireAuth();
+  try {
+    await PushService.sendToUser(session.user.id, {
+      title: "⚡ Test Lead Alert: Jane Doe",
+      body: "Interested in Starter Plan • +91 98765 43210",
+      url: "/leads",
+    });
+    return ok({ sent: true });
+  } catch (e) {
+    return actionFail(e);
+  }
+}

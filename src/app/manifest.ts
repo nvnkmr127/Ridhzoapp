@@ -8,10 +8,13 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: "Ridhzo",
     description: "Lead capture, instant alerts, and one-tap messaging.",
     start_url: "/",
+    scope: "/",
+    id: "/",
     display: "standalone",
     background_color: "#0a0a0a",
     theme_color: "#0a0a0a",
     orientation: "portrait",
+    categories: ["business", "productivity"],
     icons: [
       { src: "/icon.svg", sizes: "any", type: "image/svg+xml" },
       { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },

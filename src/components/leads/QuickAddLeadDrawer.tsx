@@ -17,6 +17,7 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { createLeadAction } from "@/lib/actions/leads"
+import { enqueueOfflineLead } from "@/lib/offline/outbox"
 import { listCustomFieldsAction } from "@/lib/actions/customFields"
 import { listUsersAction } from "@/lib/actions/users"
 import { CustomFieldInputs, defaultCustomValues, type CustomFieldDef } from "@/components/leads/CustomFieldInputs"
@@ -100,15 +101,30 @@ export function QuickAddLeadDrawer({ children }: { children?: React.ReactNode })
       });
       return;
     }
-    try {
-      const res = await createLeadAction({
-        name: values.name,
-        email: values.email || undefined,
-        phone: values.phone || undefined,
-        company: values.company || undefined,
-        ownerId: values.ownerId || undefined,
-        customData: customValues,
+    const leadPayload = {
+      name: values.name,
+      email: values.email || undefined,
+      phone: values.phone || undefined,
+      company: values.company || undefined,
+      ownerId: values.ownerId || undefined,
+      customData: customValues,
+    };
+
+    if (typeof window !== "undefined" && !navigator.onLine) {
+      enqueueOfflineLead(leadPayload);
+      toast({
+        title: "Saved offline ⚡",
+        description: "You're offline. Lead was saved locally and will auto-sync once reconnected.",
       });
+      setOpen(false);
+      form.reset();
+      setCustomValues({});
+      setServerError(null);
+      return;
+    }
+
+    try {
+      const res = await createLeadAction(leadPayload);
       if (!res.ok) {
         const displayError = res.message;
         // Map server field errors back onto the matching inputs for inline display.
@@ -149,15 +165,17 @@ export function QuickAddLeadDrawer({ children }: { children?: React.ReactNode })
       setCustomValues({});
       setServerError(null);
       router.refresh();
-    } catch (err: any) {
-      // Transport-level failure (network offline, action unreachable).
-      const msg = err?.message || "We couldn't reach the server. Check your connection and try again.";
-      setServerError(msg);
+    } catch (_err: any) {
+      // Transport-level failure (offline or network dropped mid-request)
+      enqueueOfflineLead(leadPayload);
       toast({
-        variant: "destructive",
-        title: "Connection problem",
-        description: msg,
+        title: "Connection dropped — Saved offline ⚡",
+        description: "Could not reach server. Lead was safely saved locally and will auto-sync when online.",
       });
+      setOpen(false);
+      form.reset();
+      setCustomValues({});
+      setServerError(null);
     }
   }
 

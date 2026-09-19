@@ -1,5 +1,6 @@
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
+import { InstallPwaBanner } from "@/components/layout/InstallPwaBanner";
 import { ImpersonationBanner } from "@/components/platform/ImpersonationBanner";
 import { FloatingAssistant } from "@/components/assistant/FloatingAssistant";
 import { isSuperAdmin, requireOrg } from "@/lib/rbac";
@@ -19,6 +20,7 @@ export default async function DashboardLayout({
       <Sidebar isSuperAdmin={superAdmin} />
       <div className="flex flex-col flex-1 overflow-hidden">
         <ImpersonationBanner />
+        <InstallPwaBanner />
         <Header />
         <main className="flex-1 overflow-y-auto">
           {children}

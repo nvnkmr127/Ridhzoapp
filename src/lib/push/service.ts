@@ -7,8 +7,10 @@ let configured = false;
 let autoVapidKeys: { publicKey: string; privateKey: string } | null = null;
 
 function getVapidKeys(): { publicKey: string; privateKey: string } {
-  const pub = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY;
-  const priv = process.env.VAPID_PRIVATE_KEY;
+  const rawPub = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || process.env.VAPID_PUBLIC_KEY;
+  const rawPriv = process.env.VAPID_PRIVATE_KEY;
+  const pub = rawPub?.replace(/^["']|["']$/g, "").trim();
+  const priv = rawPriv?.replace(/^["']|["']$/g, "").trim();
   if (pub && priv) {
     return { publicKey: pub, privateKey: priv };
   }

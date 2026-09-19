@@ -3,7 +3,13 @@ import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
 import { Bell, BellOff } from "lucide-react"
-import { subscribePushAction, unsubscribePushAction, getVapidPublicKeyAction } from "@/lib/actions/push"
+import {
+  subscribePushAction,
+  unsubscribePushAction,
+  getVapidPublicKeyAction,
+  sendTestPushAction,
+} from "@/lib/actions/push";
+import { Send, CheckCircle2 } from "lucide-react";
 
 // VAPID public key is base64url; PushManager wants a Uint8Array.
 function urlBase64ToUint8Array(base64: string) {
@@ -13,11 +19,17 @@ function urlBase64ToUint8Array(base64: string) {
   return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 }
 
-export function EnablePushButton() {
+interface EnablePushButtonProps {
+  mode?: "icon" | "button";
+  allowTest?: boolean;
+}
+
+export function EnablePushButton({ mode = "icon", allowTest = false }: EnablePushButtonProps) {
   const { toast } = useToast();
   const [supported, setSupported] = React.useState(false);
   const [enabled, setEnabled] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
+  const [testing, setTesting] = React.useState(false);
 
   React.useEffect(() => {
     const ok = typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window;
@@ -96,18 +108,87 @@ export function EnablePushButton() {
       setEnabled(false);
       toast({ title: "Push notifications turned off" });
     } catch (e: any) {
-      // Client-side/browser errors keep their (safe) message here.
       toast({ variant: "destructive", title: "Could not turn off push", description: e?.message });
     } finally {
       setBusy(false);
     }
   }
 
+  async function sendTest() {
+    setTesting(true);
+    try {
+      const res = await sendTestPushAction();
+      if (res.ok) {
+        toast({
+          title: "Test lead alert sent! ⚡",
+          description: "Check your device screen for the Jane Doe alert notification.",
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "Could not send test push",
+          description: res.message || "Failed to trigger test push.",
+        });
+      }
+    } catch (e: any) {
+      toast({
+        variant: "destructive",
+        title: "Test push error",
+        description: e?.message || "Failed to trigger test push.",
+      });
+    } finally {
+      setTesting(false);
+    }
+  }
+
   if (!supported) return null;
 
+  if (mode === "button") {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          variant={enabled ? "outline" : "default"}
+          size="sm"
+          onClick={enabled ? disable : enable}
+          disabled={busy}
+          className="gap-1.5"
+        >
+          {enabled ? (
+            <>
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              Notifications Active (Click to Turn Off)
+            </>
+          ) : (
+            <>
+              <Bell className="h-4 w-4" />
+              Enable Notifications
+            </>
+          )}
+        </Button>
+        {enabled && allowTest && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={sendTest}
+            disabled={testing}
+            className="gap-1.5"
+          >
+            <Send className="h-3.5 w-3.5" />
+            {testing ? "Sending..." : "Send Test Alert"}
+          </Button>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <Button variant="ghost" size="icon" onClick={enabled ? disable : enable} disabled={busy}
-      title={enabled ? "Push on — click to turn off" : "Enable push notifications"}>
+    <Button
+      variant="ghost"
+      size="icon"
+      onClick={enabled ? disable : enable}
+      disabled={busy}
+      title={enabled ? "Push on — click to turn off" : "Enable push notifications"}
+    >
       {enabled ? <Bell className="h-5 w-5 text-emerald-500" /> : <BellOff className="h-5 w-5" />}
       <span className="sr-only">{enabled ? "Disable push" : "Enable push"}</span>
     </Button>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, Calendar, MessageCircle, Megaphone, CreditCard, Bell, Webhook, Sparkles } from "lucide-react";
+import { ArrowLeft, Calendar, MessageCircle, Megaphone, CreditCard, Bell, Webhook, Sparkles, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { requireOrg } from "@/lib/rbac";
 import { getServerSession } from "next-auth/next";
@@ -97,8 +97,16 @@ export default async function IntegrationsPage() {
           description="Get instant browser alerts on this device when new leads arrive or follow-ups are due."
           icon={<Bell className="h-5 w-5 text-amber-500" />}
           status={pushConfigured ? "configured" : "unconfigured"}
-          action={pushConfigured ? <EnablePushButton /> : undefined}
+          action={pushConfigured ? <EnablePushButton mode="button" allowTest /> : undefined}
           docsHint="Set NEXT_PUBLIC_VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY"
+        />
+
+        <IntegrationCard
+          name="PWA Mobile App"
+          description="Install Ridhzo directly onto iPhone or Android for a standalone mobile app experience with home-screen launch."
+          icon={<Smartphone className="h-5 w-5 text-emerald-500" />}
+          status="configured"
+          action={<ManageLink href="/" label="Open PWA" />}
         />
 
         <IntegrationCard

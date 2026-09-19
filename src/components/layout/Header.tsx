@@ -15,6 +15,7 @@ import Link from "next/link";
 import { QuickAddLeadDrawer } from "@/components/leads/QuickAddLeadDrawer";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 import { EnablePushButton } from "@/components/layout/EnablePushButton";
+import { OfflineStatusIndicator } from "@/components/layout/OfflineStatusIndicator";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { MobileSidebar } from "@/components/layout/MobileSidebar";
 
@@ -56,6 +57,7 @@ export function Header() {
         </button>
       </div>
       <div className="flex items-center gap-4">
+        <OfflineStatusIndicator />
         <div className="hidden md:flex">
           <QuickAddLeadDrawer>
             <Button size="sm" className="gap-1">

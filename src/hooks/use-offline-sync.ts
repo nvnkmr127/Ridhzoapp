@@ -1,0 +1,81 @@
+"use client";
+
+import * as React from "react";
+import {
+  getOfflineOutbox,
+  flushOfflineOutbox,
+  OFFLINE_OUTBOX_EVENT,
+  OfflineLeadItem,
+} from "@/lib/offline/outbox";
+import { useToast } from "@/hooks/use-toast";
+
+export function useOfflineSync() {
+  const { toast } = useToast();
+  const [isOnline, setIsOnline] = React.useState(true);
+  const [pendingCount, setPendingCount] = React.useState(0);
+  const [isSyncing, setIsSyncing] = React.useState(false);
+
+  const refreshCount = React.useCallback(() => {
+    const items = getOfflineOutbox();
+    setPendingCount(items.length);
+  }, []);
+
+  const runSync = React.useCallback(async () => {
+    if (typeof window === "undefined" || !navigator.onLine) return;
+    setIsSyncing(true);
+    try {
+      const result = await flushOfflineOutbox((lead: OfflineLeadItem) => {
+        toast({
+          title: "Offline lead synced ⚡",
+          description: `${lead.payload.name} was successfully uploaded to your CRM.`,
+        });
+      });
+      if (result.synced > 0) {
+        toast({
+          title: `All caught up!`,
+          description: `Synced ${result.synced} offline lead${result.synced === 1 ? "" : "s"}.`,
+        });
+      }
+    } finally {
+      setIsSyncing(false);
+      refreshCount();
+    }
+  }, [toast, refreshCount]);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    setIsOnline(navigator.onLine);
+    refreshCount();
+
+    const handleOnline = () => {
+      setIsOnline(true);
+      void runSync();
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+    };
+
+    const handleOutboxChange = () => {
+      refreshCount();
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener(OFFLINE_OUTBOX_EVENT, handleOutboxChange);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener(OFFLINE_OUTBOX_EVENT, handleOutboxChange);
+    };
+  }, [runSync, refreshCount]);
+
+  return {
+    isOnline,
+    pendingCount,
+    isSyncing,
+    syncNow: runSync,
+  };
+}
