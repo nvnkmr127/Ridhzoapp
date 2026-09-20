@@ -57,6 +57,7 @@ import {
   updateSupportTicketStatusAction,
   exportTenantDossierAction,
   hardDeleteTenantAction,
+  replayAuthFailedLeadsAction,
 } from "@/lib/actions/platform";
 
 interface Tenant360ViewProps {
@@ -84,13 +85,24 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
   const [confirmSlug, setConfirmSlug] = React.useState("");
   const [deletingTenant, setDeletingTenant] = React.useState(false);
 
-  const { org, health, billing, invoices, tickets, users, leadsStats, auditLogs, failedDeliveries, apiKeys, anomalies } = data;
+  // Meta Ingestion Diagnostics & Replay
+  const [replayingPageId, setReplayingPageId] = React.useState<string | null>(null);
+
+  const { org, health, billing, invoices, tickets, users, leadsStats, auditLogs, failedDeliveries, apiKeys, anomalies, integrations } = data;
 
   const isSuspended = !!org.suspendedAt;
   const healthStatus = health?.health ?? "healthy";
   const daysInactive = health?.daysInactive ?? 0;
   const openTickets = tickets.filter((t) => t.status !== "resolved");
   const urgentTickets = openTickets.filter((t) => t.priority === "urgent" || t.priority === "high");
+
+  // Determine Meta Token Health
+  const deadMetaSources = (integrations?.sources ?? []).filter(
+    (s) => s.tokenStatus === "dead" || s.tokenStatus === "expired" || s.needsReconnect
+  );
+  const expiringMetaSources = (integrations?.sources ?? []).filter(
+    (s) => s.tokenStatus === "expiring_soon"
+  );
 
   // Determine churn diagnosis drivers
   const churnDrivers: string[] = [];
@@ -112,8 +124,48 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
     churnDrivers.push(`${anomalies.length} active security anomal${anomalies.length > 1 ? "ies" : "y"} flagged on this tenant.`);
   }
 
+  // Determine double-charge warnings
+  const doubleChargeWarnings: string[] = [];
+  const paidInvoices = (invoices ?? []).filter((i) => i.status === "paid");
+  for (let i = 0; i < paidInvoices.length; i++) {
+    for (let j = i + 1; j < paidInvoices.length; j++) {
+      const t1 = new Date(paidInvoices[i].issuedAt).getTime();
+      const t2 = new Date(paidInvoices[j].issuedAt).getTime();
+      const dayDiff = Math.abs(t1 - t2) / (1000 * 60 * 60 * 24);
+      if (dayDiff <= 28) {
+        doubleChargeWarnings.push(
+          `Overlapping payments within ${Math.round(dayDiff)} days: ${paidInvoices[i].invoiceNumber} (₹${paidInvoices[i].totalAmount}) and ${paidInvoices[j].invoiceNumber} (₹${paidInvoices[j].totalAmount})`
+        );
+      }
+    }
+  }
+
+  // Determine leads ingestion stalled warnings
+  const leadsStalledWarnings: string[] = [];
+  const sourceCount = integrations?.sources?.length ?? 0;
+  if (deadMetaSources.length > 0) {
+    deadMetaSources.forEach((s) => {
+      leadsStalledWarnings.push(
+        `🚨 Meta Lead Ads token dead on "${s.name}" (Page ID: ${s.pageId || "N/A"}): OAuth Code 190 / token revoked. ${s.authFailedEventsCount ?? 0} lead event(s) failed.`
+      );
+    });
+  }
+  if (daysInactive >= 3 && (leadsStats.total > 0 || sourceCount > 0)) {
+    leadsStalledWarnings.push(
+      `Inbound leads stopped: 0 leads captured in the last ${daysInactive} days (last active: ${health?.lastActiveAt ? new Date(health.lastActiveAt).toLocaleDateString() : "Never"}).`
+    );
+  }
+  if (sourceCount === 0 && leadsStats.total === 0) {
+    leadsStalledWarnings.push("No inbound lead integrations (Meta Lead Ads/Webhook) configured for this tenant.");
+  }
+  if ((failedDeliveries ?? []).length > 0) {
+    leadsStalledWarnings.push(
+      `${failedDeliveries.length} failed webhook deliveries in DLQ: downstream webhook destinations rejecting data.`
+    );
+  }
+
   // Quick Actions Handlers
-  const handleImpersonate = async (readOnly = false) => {
+  const handleImpersonate = async (readOnly = false, redirectPath = "/leads") => {
     setBusyAction("impersonate");
     try {
       const res = await impersonateOrgAction(org.id, readOnly);
@@ -122,12 +174,43 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
           title: "Session Started",
           description: `Now operating inside ${org.name}${readOnly ? " (read-only)" : ""}.`,
         });
-        router.push("/leads");
+        router.push(redirectPath);
       } else {
         toast({ title: "Failed to impersonate", description: res.message, variant: "destructive" });
       }
     } finally {
       setBusyAction(null);
+    }
+  };
+
+  const handleReplayAuthEvents = async (pageId: string) => {
+    setReplayingPageId(pageId);
+    try {
+      const res = await replayAuthFailedLeadsAction(org.id, pageId);
+      if (res.ok) {
+        toast({
+          title: "Leads Requeued for Ingestion",
+          description: res.data?.message || `Successfully requeued ${res.data?.replayedCount ?? 0} leads.`,
+        });
+        setData((prev) => ({
+          ...prev,
+          integrations: prev.integrations
+            ? {
+                ...prev.integrations,
+                sources: prev.integrations.sources.map((s) =>
+                  s.pageId === pageId ? { ...s, authFailedEventsCount: 0 } : s
+                ),
+                metaTokenDeadCount: Math.max(0, (prev.integrations.metaTokenDeadCount ?? 1) - 1),
+              }
+            : prev.integrations,
+        }));
+      } else {
+        toast({ title: "Failed to replay leads", description: res.message, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Replay Error", description: "Failed to requeue lead events.", variant: "destructive" });
+    } finally {
+      setReplayingPageId(null);
     }
   };
 
@@ -541,6 +624,153 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
         </Alert>
       )}
 
+      {/* Double Charge Diagnostic Alert */}
+      {doubleChargeWarnings.length > 0 && (
+        <Alert variant="destructive" className="border-destructive/40 bg-destructive/10 text-destructive">
+          <CreditCard className="h-5 w-5" />
+          <AlertTitle className="text-sm font-semibold flex items-center justify-between">
+            <span>Potential Double Charge Flagged ({doubleChargeWarnings.length})</span>
+            <Badge variant="destructive" className="text-[10px]">Action Required</Badge>
+          </AlertTitle>
+          <AlertDescription className="mt-2 text-xs space-y-1.5">
+            <p className="font-medium">Detected duplicate invoice / overlapping charge cycles:</p>
+            <ul className="list-disc pl-5 space-y-1">
+              {doubleChargeWarnings.map((w, i) => (
+                <li key={i}>{w}</li>
+              ))}
+            </ul>
+            <p className="pt-1 text-[11px] opacity-80">
+              Check Gateway Sub ID ({billing?.razorpaySubscriptionId || "None"}) or issue a refund / credit note in the Billing tab.
+            </p>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Meta Ingestion Dead Token Diagnostic Banner (OAuth Code 190 / Revoked / Expired) */}
+      {deadMetaSources.length > 0 && (
+        <Alert variant="destructive" className="border-destructive/50 bg-destructive/10 text-destructive">
+          <AlertCircle className="h-5 w-5" />
+          <AlertTitle className="text-sm font-semibold flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <span>🚨 Critical Ingestion Failure: Facebook Page Token Dead / Revoked ({deadMetaSources.length})</span>
+            </span>
+            <Badge variant="destructive" className="text-[10px] font-mono">
+              Root Cause: OAuth Code 190
+            </Badge>
+          </AlertTitle>
+          <AlertDescription className="mt-2 text-xs space-y-2">
+            <p className="font-medium text-foreground">
+              Inbound lead generation has halted because Meta invalidated the Page Access Token (password change, user uninstalled app, or token expired). Webhooks are rejected.
+            </p>
+            <div className="space-y-2 pt-1">
+              {deadMetaSources.map((src) => (
+                <div
+                  key={src.id}
+                  className="rounded-lg border border-destructive/30 bg-background/90 p-3 text-foreground space-y-2"
+                >
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="font-semibold text-xs flex items-center gap-2 flex-wrap">
+                      <span>{src.name}</span>
+                      {src.pageId && (
+                        <span className="font-mono text-[11px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                          Page ID: {src.pageId}
+                        </span>
+                      )}
+                      <Badge variant="destructive" className="text-[10px]">
+                        {src.tokenStatus === "expired" ? "Expired Token" : "Dead (OAuth Code 190)"}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="default"
+                        className="h-7 text-xs gap-1.5 shadow-sm"
+                        disabled={busyAction === "impersonate"}
+                        onClick={() => handleImpersonate(false, "/settings/integrations")}
+                        title="Impersonate tenant and open Facebook connection page"
+                      >
+                        <UserCheck className="h-3.5 w-3.5" /> Impersonate &amp; Reconnect
+                      </Button>
+                      {src.pageId && (src.authFailedEventsCount ?? 0) > 0 && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10"
+                          disabled={replayingPageId === src.pageId}
+                          onClick={() => handleReplayAuthEvents(src.pageId!)}
+                          title="Replay dropped lead payloads into ingestion worker"
+                        >
+                          <RefreshCw className={`h-3.5 w-3.5 ${replayingPageId === src.pageId ? "animate-spin" : ""}`} />
+                          Replay {src.authFailedEventsCount} Dropped Lead{src.authFailedEventsCount === 1 ? "" : "s"}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                  {src.authErrorMessage && (
+                    <div className="text-[11px] text-destructive font-mono bg-destructive/5 p-2 rounded border border-destructive/20 break-words">
+                      {src.authErrorMessage}
+                    </div>
+                  )}
+                  <p className="text-[11px] text-muted-foreground">
+                    Dropped events in DLQ: <span className="font-semibold text-destructive">{src.authFailedEventsCount ?? 0}</span>.
+                    Once reconnected via OAuth, click &ldquo;Replay Dropped Leads&rdquo; to ingest missed customer leads without data loss.
+                  </p>
+                </div>
+              ))}
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Meta Token Expiring Soon Warning */}
+      {deadMetaSources.length === 0 && expiringMetaSources.length > 0 && (
+        <Alert className="border-amber-500/30 bg-amber-500/5 text-amber-900 dark:text-amber-200">
+          <Clock className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+          <AlertTitle className="text-sm font-semibold flex items-center justify-between">
+            <span>Facebook Page Token Expiring Soon ({expiringMetaSources.length})</span>
+            <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-[10px]">
+              Expiring in {expiringMetaSources[0].tokenDaysRemaining}d
+            </Badge>
+          </AlertTitle>
+          <AlertDescription className="mt-2 text-xs space-y-1.5">
+            <p>
+              Page access token on &ldquo;{expiringMetaSources[0].name}&rdquo; (Page ID: {expiringMetaSources[0].pageId || "N/A"}) will expire in {expiringMetaSources[0].tokenDaysRemaining} days. Reconnect required before ingestion halts.
+            </p>
+            <div className="pt-1">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs gap-1.5 bg-background"
+                disabled={busyAction === "impersonate"}
+                onClick={() => handleImpersonate(false, "/settings/integrations")}
+              >
+                <UserCheck className="h-3.5 w-3.5" /> Impersonate &amp; Refresh Token
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Leads Stalled Diagnostic Alert */}
+      {leadsStalledWarnings.length > 0 && (
+        <Alert className="border-blue-500/30 bg-blue-500/5 text-blue-900 dark:text-blue-200">
+          <Radio className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+          <AlertTitle className="text-sm font-semibold flex items-center justify-between">
+            <span>Inbound Lead Ingestion & Integration Status</span>
+            <span className="text-xs font-normal opacity-80">
+              {sourceCount} configured source{sourceCount === 1 ? "" : "s"}
+            </span>
+          </AlertTitle>
+          <AlertDescription className="mt-2 text-xs space-y-1.5">
+            <ul className="list-disc pl-5 space-y-1">
+              {leadsStalledWarnings.map((w, i) => (
+                <li key={i}>{w}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* KPI Metric Cards Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {/* Health & Recency */}
@@ -620,10 +850,10 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
             Overview
           </TabsTrigger>
           <TabsTrigger value="usage" className="text-xs">
-            Leads & Activity ({leadsStats.total})
+            Leads &amp; Integrations ({leadsStats.total})
           </TabsTrigger>
           <TabsTrigger value="billing" className="text-xs">
-            Billing & Invoices ({invoices.length})
+            Billing &amp; Invoices ({invoices.length})
           </TabsTrigger>
           <TabsTrigger value="tickets" className="text-xs">
             Support ({openTickets.length > 0 ? `${openTickets.length} open` : tickets.length})
@@ -734,8 +964,204 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
           </div>
         </TabsContent>
 
-        {/* TAB 2: LEADS & USAGE */}
+        {/* TAB 2: LEADS & INTEGRATIONS */}
         <TabsContent value="usage" className="space-y-4">
+          {/* Top row: Inbound Lead Sources & Connected Services */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Inbound Lead Sources */}
+            <Card className="md:col-span-2">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Radio className="h-4 w-4 text-primary" /> Inbound Lead Sources &amp; Ingestion
+                  </span>
+                  <Badge variant="outline" className="font-mono text-xs">
+                    {integrations?.sources?.length ?? 0} configured
+                  </Badge>
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Active channels capturing leads (Facebook Lead Ads, Webhooks, API). Answers why leads may have stopped.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b bg-muted/40 text-left font-medium text-muted-foreground">
+                        <th className="p-2.5 pl-4">Source Name</th>
+                        <th className="p-2.5">Type</th>
+                        <th className="p-2.5">Ingestion Status</th>
+                        <th className="p-2.5">Token / Auth Health</th>
+                        <th className="p-2.5 pr-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {!integrations?.sources || integrations.sources.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="p-6 text-center text-muted-foreground">
+                            No inbound lead sources found. Leads are only captured via manual entry.
+                          </td>
+                        </tr>
+                      ) : (
+                        integrations.sources.map((src) => (
+                          <tr key={src.id} className="hover:bg-muted/20">
+                            <td className="p-2.5 pl-4">
+                              <div className="font-medium text-foreground">{src.name}</div>
+                              {src.pageId && (
+                                <div className="text-[10px] font-mono text-muted-foreground">
+                                  Page ID: {src.pageId}
+                                </div>
+                              )}
+                            </td>
+                            <td className="p-2.5 font-mono text-[11px] capitalize">{src.type?.replace(/_/g, " ") || "webhook"}</td>
+                            <td className="p-2.5">
+                              {src.isActive ? (
+                                <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]">
+                                  Active Ingestion
+                                </Badge>
+                              ) : (
+                                <Badge variant="destructive" className="text-[10px]">
+                                  Inactive / Stopped
+                                </Badge>
+                              )}
+                            </td>
+                            <td className="p-2.5">
+                              {src.tokenStatus === "dead" ? (
+                                <div className="space-y-1">
+                                  <Badge variant="destructive" className="text-[10px] gap-1">
+                                    <AlertTriangle className="h-3 w-3" /> Dead (Code 190)
+                                  </Badge>
+                                  {src.authErrorMessage && (
+                                    <div className="text-[10px] text-destructive max-w-[200px] truncate" title={src.authErrorMessage}>
+                                      {src.authErrorMessage}
+                                    </div>
+                                  )}
+                                  {(src.authFailedEventsCount ?? 0) > 0 && (
+                                    <div className="text-[10px] font-semibold text-destructive">
+                                      {src.authFailedEventsCount} dropped lead{src.authFailedEventsCount === 1 ? "" : "s"}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : src.tokenStatus === "expired" ? (
+                                <div className="space-y-1">
+                                  <Badge variant="destructive" className="text-[10px] gap-1">
+                                    <Clock className="h-3 w-3" /> Token Expired
+                                  </Badge>
+                                  {src.tokenExpiresAt && (
+                                    <div className="text-[10px] text-muted-foreground">
+                                      Expired {new Date(src.tokenExpiresAt).toLocaleDateString()}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : src.tokenStatus === "expiring_soon" ? (
+                                <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20 text-[10px] gap-1">
+                                  <Clock className="h-3 w-3" /> Expiring in {src.tokenDaysRemaining}d
+                                </Badge>
+                              ) : src.tokenStatus === "healthy" ? (
+                                <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px] gap-1">
+                                  <CheckCircle2 className="h-3 w-3" /> Healthy {src.tokenDaysRemaining !== null && src.tokenDaysRemaining !== undefined ? `(${src.tokenDaysRemaining}d)` : ""}
+                                </Badge>
+                              ) : (
+                                <span className="text-muted-foreground text-[11px]">—</span>
+                              )}
+                            </td>
+                            <td className="p-2.5 pr-4 text-right space-x-1 whitespace-nowrap">
+                              {src.pageId && (src.authFailedEventsCount ?? 0) > 0 && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-6 px-2 text-[10px] gap-1 border-destructive/30 text-destructive hover:bg-destructive/10"
+                                  disabled={replayingPageId === src.pageId}
+                                  onClick={() => handleReplayAuthEvents(src.pageId!)}
+                                  title="Replay dropped lead events into ingestion worker"
+                                >
+                                  <RefreshCw className={`h-3 w-3 ${replayingPageId === src.pageId ? "animate-spin" : ""}`} />
+                                  Replay ({src.authFailedEventsCount})
+                                </Button>
+                              )}
+                              {(src.type === "facebook_lead_ads" || src.pageId) && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 px-2 text-[10px] gap-1 text-primary hover:text-primary"
+                                  disabled={busyAction === "impersonate"}
+                                  onClick={() => handleImpersonate(false, "/settings/integrations")}
+                                  title="Impersonate tenant and open Facebook reconnection page"
+                                >
+                                  <UserCheck className="h-3 w-3" /> Reconnect
+                                </Button>
+                              )}
+                              {!src.pageId && (
+                                <span className="font-mono text-[11px] text-muted-foreground">
+                                  {new Date(src.createdAt).toLocaleDateString()}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Connected Intelligence & Marketing Services */}
+            <Card className="md:col-span-1">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-amber-500" /> Connected Integrations
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Native tenant-level data integrations
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-xs">
+                <div className="flex items-center justify-between border-b pb-2">
+                  <span className="text-muted-foreground">Meta CAPI:</span>
+                  {integrations?.settings?.capiEnabled ? (
+                    <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]">
+                      Active ({integrations.settings.capiPixelId?.slice(0, 8)}...)
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                      Disabled
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center justify-between border-b pb-2">
+                  <span className="text-muted-foreground">Lead Enrichment:</span>
+                  {integrations?.settings?.enrichmentEnabled ? (
+                    <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]">
+                      Enabled
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                      Disabled
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center justify-between border-b pb-2">
+                  <span className="text-muted-foreground">Inbound Email Sync:</span>
+                  {integrations?.settings?.inboundEmailEnabled ? (
+                    <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]">
+                      Connected
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                      Disabled
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Outbound Endpoints:</span>
+                  <span className="font-mono">{integrations?.endpoints?.length ?? 0} active</span>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Bottom row: Lead Funnel & DLQ Webhook Failures */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Card className="md:col-span-1">
               <CardHeader className="pb-3">
@@ -822,6 +1248,32 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
 
         {/* TAB 3: BILLING & INVOICES */}
         <TabsContent value="billing" className="space-y-4">
+          {/* Double Charge Audit Alert Box */}
+          {doubleChargeWarnings.length > 0 ? (
+            <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-xs text-destructive space-y-2">
+              <div className="font-semibold flex items-center gap-2 text-sm">
+                <AlertTriangle className="h-4 w-4" /> Double Charge Detected for this Tenant
+              </div>
+              <p>The following overlapping paid invoices were generated within the same billing cycle:</p>
+              <ul className="list-disc pl-5 space-y-1">
+                {doubleChargeWarnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+              <p className="opacity-90 pt-1">
+                Review Gateway Subscription ID ({billing?.razorpaySubscriptionId || "None"}) or issue a refund / void receipt below.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-xs text-emerald-700 dark:text-emerald-300 flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                Double Charge Audit: Clean — No overlapping charges or duplicate payments detected.
+              </span>
+              <span className="font-mono text-[11px] opacity-80">{invoices.length} total invoice(s)</span>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Subscription & Lifecycle Summary */}
             <Card className="md:col-span-1">

@@ -1841,7 +1841,17 @@ export function PlatformConsole({
                             <div className="text-xs text-muted-foreground font-mono">{u.email}</div>
                           </td>
                           <td className="px-4 py-3">
-                            {u.organizationName ? (
+                            {u.organizationName && u.organizationId ? (
+                              <Link
+                                href={`/admin/tenant/${u.organizationId}`}
+                                className="inline-flex items-center gap-1 group"
+                                title="Open Tenant 360 view"
+                              >
+                                <Badge variant="outline" className="font-normal text-xs group-hover:bg-primary/10 group-hover:border-primary/30 transition-colors cursor-pointer">
+                                  {u.organizationName}
+                                </Badge>
+                              </Link>
+                            ) : u.organizationName ? (
                               <Badge variant="outline" className="font-normal text-xs">
                                 {u.organizationName}
                               </Badge>
@@ -1871,15 +1881,27 @@ export function PlatformConsole({
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-end gap-1.5">
                               {u.organizationId && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-8 text-xs gap-1"
-                                  disabled={busy === u.id}
-                                  onClick={() => impersonate(u.organizationId!, "/leads")}
-                                >
-                                  <LogIn className="h-3 w-3" /> Org
-                                </Button>
+                                <>
+                                  <Link href={`/admin/tenant/${u.organizationId}`}>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-8 text-xs gap-1"
+                                      title="Open Tenant 360 view"
+                                    >
+                                      <Building2 className="h-3 w-3" /> 360
+                                    </Button>
+                                  </Link>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8 text-xs gap-1"
+                                    disabled={busy === u.id}
+                                    onClick={() => impersonate(u.organizationId!, "/leads")}
+                                  >
+                                    <LogIn className="h-3 w-3" /> Org
+                                  </Button>
+                                </>
                               )}
                               <Button
                                 variant="ghost"

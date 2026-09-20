@@ -971,6 +971,52 @@ export async function triggerTrialDowngradeScanAction() {
   }
 }
 
+export async function replayAuthFailedLeadsAction(organizationId: string, pageId: string) {
+  const session = await requireSuperAdmin();
+  if (!pageId) return fail("VALIDATION", "Page ID is required.");
+  try {
+    const { db } = await import("@/db");
+    const { webhookEvents } = await import("@/db/schema");
+    const { and, eq, sql } = await import("drizzle-orm");
+
+    const rows = await db
+      .select({ id: webhookEvents.id })
+      .from(webhookEvents)
+      .where(
+        and(
+          eq(webhookEvents.provider, "facebook"),
+          eq(webhookEvents.status, "failed"),
+          sql`${webhookEvents.payload}->>'page_id' = ${pageId}`,
+          sql`${webhookEvents.errorLog}->>'reason' = 'auth_error_needs_reconnect'`,
+        ),
+      );
+
+    if (rows.length === 0) {
+      return ok({ replayedCount: 0, message: "No failed auth events found for this page." });
+    }
+
+    const { ingestionQueue } = await import("@/lib/jobs/workers/ingestionWorker");
+    for (const r of rows) {
+      await db.update(webhookEvents).set({ status: "pending", errorLog: null }).where(eq(webhookEvents.id, r.id));
+      await ingestionQueue.add(`ingest-fb-replay-${r.id}`, { webhookEventId: r.id, provider: "facebook" });
+    }
+
+    await AuditService.log({
+      organizationId,
+      userId: session.user.id,
+      action: "platform.fb_leads_replay",
+      entityType: "organization",
+      entityId: organizationId,
+      metadata: { pageId, replayedCount: rows.length, by: "super_admin" },
+    });
+
+    revalidatePath(`/admin/tenant/${organizationId}`);
+    return ok({ replayedCount: rows.length, message: `Requeued ${rows.length} failed Facebook lead events for processing.` });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
 
 
 

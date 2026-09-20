@@ -24,6 +24,9 @@ import {
   emailSettings,
   googleCredentials,
   teams,
+  webhookEndpoints,
+  tenantIntegrationSettings,
+  webhookEvents,
 } from "@/db/schema";
 import { count, desc, eq, isNull, isNotNull, and, or, ilike, like, sql, gte, inArray } from "drizzle-orm";
 import { redisConfigured } from "@/lib/jobs/redis";
@@ -159,6 +162,39 @@ export interface TenantUserSummary {
   createdAt: string;
 }
 
+export interface TenantLeadSourceSummary {
+  id: string;
+  name: string;
+  type: string | null;
+  isActive: boolean;
+  pageId?: string | null;
+  needsReconnect?: boolean;
+  tokenExpiresAt?: string | null;
+  tokenStatus: "healthy" | "expiring_soon" | "expired" | "dead" | "not_applicable";
+  tokenDaysRemaining?: number | null;
+  authErrorMessage?: string | null;
+  authFailedEventsCount?: number;
+  createdAt: string;
+}
+
+export interface TenantIntegrationSummary {
+  sources: TenantLeadSourceSummary[];
+  endpoints: {
+    id: string;
+    url: string;
+    events: string[];
+    isActive: boolean;
+    createdAt: string;
+  }[];
+  settings: {
+    enrichmentEnabled: boolean;
+    inboundEmailEnabled: boolean;
+    capiEnabled: boolean;
+    capiPixelId?: string | null;
+  } | null;
+  metaTokenDeadCount: number;
+}
+
 export interface Tenant360Data {
   org: typeof organizations.$inferSelect;
   health: import("./revops").TenantHealthSummary | null;
@@ -172,6 +208,7 @@ export interface Tenant360Data {
     createdLast30d: number;
     lastLeadActivityAt: string | null;
   };
+  integrations: TenantIntegrationSummary;
   auditLogs: TenantAuditSummary[];
   failedDeliveries: FailedDeliverySummary[];
   apiKeys: FleetApiKeySummary[];
@@ -707,6 +744,10 @@ export class PlatformService {
       orgApiKeys,
       allAnomalies,
       seatOverrides,
+      rawSources,
+      rawEndpoints,
+      rawSettings,
+      rawFailedEvents,
     ] = await Promise.all([
       import("./revops").then((m) => m.RevOpsService.listTenantHealth(500)).catch(() => []),
       import("@/domains/billing/lifecycleService").then((m) => m.BillingLifecycleService.getTenantBillingStatus(organizationId)).catch(() => null),
@@ -782,6 +823,56 @@ export class PlatformService {
         .catch(() => []),
       import("./anomalyDetectionService").then((m) => m.AnomalyDetectionService.getCachedAnomalies()).catch(() => []),
       PlatformConfigService.get<Record<string, number>>("seat_overrides", {}),
+      db
+        .select({
+          id: leadSources.id,
+          name: leadSources.name,
+          type: leadSources.type,
+          isActive: leadSources.isActive,
+          config: leadSources.config,
+          createdAt: leadSources.createdAt,
+        })
+        .from(leadSources)
+        .where(eq(leadSources.organizationId, organizationId))
+        .catch(() => []),
+      db
+        .select({
+          id: webhookEndpoints.id,
+          url: webhookEndpoints.url,
+          events: webhookEndpoints.events,
+          isActive: webhookEndpoints.isActive,
+          createdAt: webhookEndpoints.createdAt,
+        })
+        .from(webhookEndpoints)
+        .where(eq(webhookEndpoints.organizationId, organizationId))
+        .catch(() => []),
+      db
+        .select({
+          enrichmentEnabled: tenantIntegrationSettings.enrichmentEnabled,
+          inboundEmailEnabled: tenantIntegrationSettings.inboundEmailEnabled,
+          capiEnabled: tenantIntegrationSettings.capiEnabled,
+          capiPixelId: tenantIntegrationSettings.capiPixelId,
+        })
+        .from(tenantIntegrationSettings)
+        .where(eq(tenantIntegrationSettings.organizationId, organizationId))
+        .limit(1)
+        .catch(() => []),
+      db
+        .select({
+          pageId: sql<string>`${webhookEvents.payload}->>'page_id'`,
+          c: count(),
+          lastMessage: sql<string>`${webhookEvents.errorLog}->>'message'`,
+        })
+        .from(webhookEvents)
+        .where(
+          and(
+            eq(webhookEvents.provider, "facebook"),
+            eq(webhookEvents.status, "failed"),
+            sql`${webhookEvents.errorLog}->>'reason' = 'auth_error_needs_reconnect'`,
+          )
+        )
+        .groupBy(sql`${webhookEvents.payload}->>'page_id'`, sql`${webhookEvents.errorLog}->>'message'`)
+        .catch(() => []),
     ]);
 
     const health = tenantHealthList.find((h) => h.id === organizationId) ?? null;
@@ -796,6 +887,68 @@ export class PlatformService {
       byStatus[row.status] = c;
       totalLeads += c;
     }
+
+    const authFailedMap = new Map(
+      (rawFailedEvents ?? []).map((r) => [String(r.pageId), { count: Number(r.c), message: r.lastMessage }])
+    );
+
+    let metaTokenDeadCount = 0;
+    const sourcesSummary: TenantLeadSourceSummary[] = (rawSources ?? []).map((s) => {
+      const cfg = (s.config as Record<string, any>) ?? {};
+      const pageId = cfg.pageId ? String(cfg.pageId) : null;
+      const isFb = s.type === "facebook_lead_ads" || !!pageId;
+      const failedAuth = pageId ? authFailedMap.get(pageId) : undefined;
+      const failedEventsCount = failedAuth?.count ?? 0;
+      const needsReconnect = Boolean(cfg.needsReconnect) || failedEventsCount > 0;
+      const expiresAt = cfg.expiresAt ? new Date(cfg.expiresAt) : null;
+
+      let tokenStatus: "healthy" | "expiring_soon" | "expired" | "dead" | "not_applicable" = "not_applicable";
+      let tokenDaysRemaining: number | null = null;
+      let authErrorMessage: string | null = null;
+
+      if (isFb) {
+        if (needsReconnect) {
+          tokenStatus = "dead";
+          authErrorMessage =
+            failedAuth?.message ||
+            "OAuthException (Code 190): Access token is expired, revoked, or invalidated. Reconnect required.";
+          metaTokenDeadCount++;
+        } else if (expiresAt) {
+          const diffMs = expiresAt.getTime() - Date.now();
+          tokenDaysRemaining = Math.round(diffMs / (1000 * 60 * 60 * 24));
+          if (diffMs <= 0) {
+            tokenStatus = "expired";
+            authErrorMessage = `Page token expired on ${expiresAt.toLocaleDateString()}.`;
+            metaTokenDeadCount++;
+          } else if (diffMs <= 7 * 24 * 60 * 60 * 1000) {
+            tokenStatus = "expiring_soon";
+          } else {
+            tokenStatus = "healthy";
+          }
+        } else if (!cfg.pageAccessToken) {
+          tokenStatus = "dead";
+          authErrorMessage = "Missing Facebook Page Access Token.";
+          metaTokenDeadCount++;
+        } else {
+          tokenStatus = "healthy";
+        }
+      }
+
+      return {
+        id: s.id,
+        name: s.name,
+        type: s.type,
+        isActive: s.isActive === 1,
+        pageId,
+        needsReconnect,
+        tokenExpiresAt: expiresAt ? expiresAt.toISOString() : null,
+        tokenStatus,
+        tokenDaysRemaining,
+        authErrorMessage,
+        authFailedEventsCount: failedEventsCount,
+        createdAt: s.createdAt ? new Date(s.createdAt).toISOString() : new Date().toISOString(),
+      };
+    });
 
     return {
       org,
@@ -818,6 +971,25 @@ export class PlatformService {
         byStatus,
         createdLast30d: Number(recentLeads[0]?.c ?? 0),
         lastLeadActivityAt: health?.lastActiveAt ?? null,
+      },
+      integrations: {
+        sources: sourcesSummary,
+        endpoints: (rawEndpoints ?? []).map((e) => ({
+          id: e.id,
+          url: e.url,
+          events: (e.events as string[]) ?? [],
+          isActive: e.isActive === 1,
+          createdAt: e.createdAt ? new Date(e.createdAt).toISOString() : new Date().toISOString(),
+        })),
+        settings: rawSettings?.[0]
+          ? {
+              enrichmentEnabled: rawSettings[0].enrichmentEnabled === 1,
+              inboundEmailEnabled: rawSettings[0].inboundEmailEnabled === 1,
+              capiEnabled: rawSettings[0].capiEnabled === 1,
+              capiPixelId: rawSettings[0].capiPixelId ?? null,
+            }
+          : null,
+        metaTokenDeadCount,
       },
       auditLogs: auditLogsList,
       failedDeliveries: failedDlqList.map((d) => ({

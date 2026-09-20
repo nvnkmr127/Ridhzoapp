@@ -202,5 +202,82 @@ describe("PlatformService.getTenant360", () => {
     expect(res?.tickets[0].subject).toBe("Card charge failed");
     expect(res?.anomalies).toHaveLength(1);
     expect(res?.customSeats).toBe(10);
+    expect(res?.integrations).toBeDefined();
+    expect(Array.isArray(res?.integrations.sources)).toBe(true);
+    expect(Array.isArray(res?.integrations.endpoints)).toBe(true);
+  });
+
+  it("diagnoses dead Facebook Page token (OAuth Code 190) and surfaces dropped events", async () => {
+    const mockOrg = {
+      id: "org_fb",
+      name: "Sharma Textiles",
+      slug: "sharma-textiles",
+      plan: "pro",
+      planStatus: "active",
+      suspendedAt: null,
+      timezone: "Asia/Kolkata",
+      currency: "INR",
+      dateFormat: "DD/MM/YYYY",
+      industry: "Manufacturing",
+      phone: "+919876543210",
+      website: "https://sharmatextiles.example.com",
+      createdAt: new Date("2026-01-01"),
+      updatedAt: new Date("2026-09-08"),
+    };
+
+    const mockLeadSource = {
+      id: "src_1",
+      name: "Main FB Page",
+      type: "facebook_lead_ads",
+      isActive: 1,
+      config: {
+        pageId: "page_12345",
+        pageAccessToken: "invalid_token",
+        needsReconnect: true,
+      },
+      createdAt: new Date("2026-02-01"),
+    };
+
+    const mockFailedEvent = {
+      pageId: "page_12345",
+      c: 14,
+      lastMessage: "Error validating access token: Session has expired (code 190)",
+    };
+
+    vi.mocked(db.select).mockImplementation(((fields: any) => {
+      const keys = fields ? Object.keys(fields).join(",") : "none";
+      const chain: any = {};
+      chain.from = vi.fn().mockReturnValue(chain);
+      chain.leftJoin = vi.fn().mockReturnValue(chain);
+      chain.where = vi.fn().mockReturnValue(chain);
+      chain.groupBy = vi.fn().mockReturnValue(chain);
+      chain.orderBy = vi.fn().mockReturnValue(chain);
+      chain.limit = vi.fn().mockImplementation((n?: number) => {
+        if (n === 1) return Promise.resolve([mockOrg]);
+        return Promise.resolve([]);
+      });
+      chain.then = (fn: any) => {
+        let res: any[] = [];
+        if (keys.includes("config") && keys.includes("type")) {
+          res = [mockLeadSource];
+        } else if (keys.includes("lastMessage")) {
+          res = [mockFailedEvent];
+        }
+        return Promise.resolve(res).then(fn);
+      };
+      chain.catch = (fn: any) => chain.then(null, fn);
+      return chain;
+    }) as any);
+
+    const res = await PlatformService.getTenant360("org_fb");
+    expect(res).not.toBeNull();
+    expect(res?.integrations.metaTokenDeadCount).toBe(1);
+    expect(res?.integrations.sources).toHaveLength(1);
+    const src = res?.integrations.sources[0];
+    expect(src?.tokenStatus).toBe("dead");
+    expect(src?.needsReconnect).toBe(true);
+    expect(src?.authFailedEventsCount).toBe(14);
+    expect(src?.authErrorMessage).toContain("code 190");
   });
 });
+
