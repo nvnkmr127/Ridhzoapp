@@ -179,7 +179,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
       const res = await replayAuthFailedLeadsAction(org.id, pageId);
       if (res.ok) {
         toast({
-          title: "Leads Requeued for Ingestion",
+          title: "Leads Requeued for Processing",
           description: res.data?.message || `Successfully requeued ${res.data?.replayedCount ?? 0} leads.`,
         });
         setData((prev) => ({
@@ -280,7 +280,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
     try {
       const res = await sendDunningNoticeAction(org.id);
       if (res.ok) {
-        toast({ title: "Dunning Notice Sent", description: "Email and in-app notice dispatched to tenant admins." });
+        toast({ title: "Payment Reminder Sent", description: "Email and in-app notice dispatched to tenant admins." });
       } else {
         toast({ title: "Failed to send notice", description: res.message, variant: "destructive" });
       }
@@ -365,7 +365,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
       document.body.appendChild(downloadAnchor);
       downloadAnchor.click();
       downloadAnchor.remove();
-      toast({ title: "Dossier Exported", description: `Exported complete dossier for ${org.name}.` });
+      toast({ title: "Report exported", description: `Exported complete dossier for ${org.name}.` });
     } catch {
       toast({ title: "Export Failed", description: "Could not export tenant dossier.", variant: "destructive" });
     } finally {
@@ -444,7 +444,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
                   <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20">At Risk</Badge>
                 )}
                 {healthStatus === "critical" && (
-                  <Badge className="bg-destructive/10 text-destructive border-destructive/20">Critical Churn Risk</Badge>
+                  <Badge className="bg-destructive/10 text-destructive border-destructive/20">Critical Cancellation Risk</Badge>
                 )}
                 {isSuspended ? (
                   <Badge variant="destructive">Suspended</Badge>
@@ -550,7 +550,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
         </CardContent>
       </Card>
 
-      {/* Churn Risk Diagnostic Banner: Answers the "WHY" */}
+      {/* Cancellation Risk Diagnostic Banner: Answers the "WHY" */}
       {(healthStatus === "at_risk" || healthStatus === "critical" || churnDrivers.length > 0) && (
         <Alert
           variant={healthStatus === "critical" ? "destructive" : "default"}
@@ -563,7 +563,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
           <AlertTriangle className="h-5 w-5" />
           <AlertTitle className="text-sm font-semibold flex items-center justify-between">
             <span>
-              Churn Diagnostic Analysis: {healthStatus === "critical" ? "Critical Churn Risk" : "High Risk Indicators"}
+              Cancellation Diagnostic Analysis: {healthStatus === "critical" ? "Critical Cancellation Risk" : "High Risk Indicators"}
             </span>
             <span className="text-xs font-normal opacity-80">
               {daysInactive > 0 ? `${daysInactive} days inactive` : "Active today"}
@@ -642,7 +642,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
           <AlertCircle className="h-5 w-5" />
           <AlertTitle className="text-sm font-semibold flex items-center justify-between">
             <span className="flex items-center gap-2">
-              <span>Critical Ingestion Failure: Facebook Page Token Dead / Revoked ({deadMetaSources.length})</span>
+              <span>Critical Lead-Capture Failure: Facebook Page Token Dead / Revoked ({deadMetaSources.length})</span>
             </span>
             <Badge variant="destructive" className="text-[10px] font-mono">
               Root Cause: OAuth Code 190
@@ -746,7 +746,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
         <Alert className="border-blue-500/30 bg-blue-500/5 text-blue-900 dark:text-blue-200">
           <Radio className="h-5 w-5 text-blue-600 dark:text-blue-400" />
           <AlertTitle className="text-sm font-semibold flex items-center justify-between">
-            <span>Inbound Lead Ingestion & Integration Status</span>
+            <span>Inbound Lead Capture & Integration Status</span>
             <span className="text-xs font-normal opacity-80">
               {sourceCount} configured source{sourceCount === 1 ? "" : "s"}
             </span>
@@ -911,11 +911,11 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
               </CardContent>
             </Card>
 
-            {/* Engagement & Churn Summary */}
+            {/* Engagement & Cancellation Summary */}
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <AlertCircle className="h-4 w-4 text-muted-foreground" /> Churn Risk Assessment
+                  <AlertCircle className="h-4 w-4 text-muted-foreground" /> Cancellation Risk Assessment
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 text-xs">
@@ -980,7 +980,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
                       <tr className="border-b bg-muted/40 text-left font-medium text-muted-foreground">
                         <th className="p-2.5 pl-4">Source Name</th>
                         <th className="p-2.5">Type</th>
-                        <th className="p-2.5">Ingestion Status</th>
+                        <th className="p-2.5">Lead Capture Status</th>
                         <th className="p-2.5">Token / Auth Health</th>
                         <th className="p-2.5 pr-4 text-right">Actions</th>
                       </tr>
@@ -1108,7 +1108,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
               </CardHeader>
               <CardContent className="space-y-3 text-xs">
                 <div className="flex items-center justify-between border-b pb-2">
-                  <span className="text-muted-foreground">Meta CAPI:</span>
+                  <span className="text-muted-foreground">Ad Conversions:</span>
                   {integrations?.settings?.capiEnabled ? (
                     <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]">
                       Active ({integrations.settings.capiPixelId?.slice(0, 8)}...)
@@ -1120,7 +1120,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
                   )}
                 </div>
                 <div className="flex items-center justify-between border-b pb-2">
-                  <span className="text-muted-foreground">Lead Enrichment:</span>
+                  <span className="text-muted-foreground">Lead Details:</span>
                   {integrations?.settings?.enrichmentEnabled ? (
                     <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-[10px]">
                       Enabled
@@ -1185,7 +1185,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
             <Card className="md:col-span-2">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center justify-between">
-                  <span>DLQ Webhook Failures</span>
+                  <span>Failed Webhook Deliveries</span>
                   <Badge variant="outline" className="font-mono text-xs">
                     {failedDeliveries.length} failed
                   </Badge>
@@ -1327,7 +1327,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
                     onClick={handleSendDunning}
                     disabled={busyAction === "dunning"}
                   >
-                    <Mail className="h-3.5 w-3.5 text-blue-500" /> Dispatch Dunning Notice
+                    <Mail className="h-3.5 w-3.5 text-blue-500" /> Send Payment Reminder
                   </Button>
                 </div>
               </CardContent>
@@ -1414,7 +1414,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
                       <th className="p-2.5">Category</th>
                       <th className="p-2.5">Priority</th>
                       <th className="p-2.5">Status</th>
-                      <th className="p-2.5">SLA Deadline</th>
+                      <th className="p-2.5">Response Deadline</th>
                       <th className="p-2.5 pr-4 text-right">Quick Action</th>
                     </tr>
                   </thead>
@@ -1623,7 +1623,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
                       onClick={handleExportDossier}
                     >
                       <Download className="h-3.5 w-3.5" />
-                      {exportingDossier ? "Exporting..." : "Export Tenant Dossier"}
+                      {exportingDossier ? "Exporting..." : "Export Tenant Report"}
                     </Button>
                     <Button
                       variant="destructive"

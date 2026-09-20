@@ -90,7 +90,7 @@ export default async function ExecutiveDashboardPage({
             </p>
           </div>
           <div className="sm:text-right">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">SLA compliance</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">On-time response</p>
             <p className={`text-3xl font-bold tabular-nums ${slaOnTrack ? "text-emerald-600" : "text-orange-600"}`}>
               {sla.complianceRatePercentage.toFixed(0)}%
             </p>

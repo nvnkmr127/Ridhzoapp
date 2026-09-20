@@ -93,9 +93,9 @@ export default async function InsightsPage() {
               </div>
             </div>
             <div className="grid flex-1 grid-cols-2 gap-4 sm:grid-cols-4">
-              <Stat label="SLA" value={`${scorecard.slaScore}`} />
+              <Stat label="On-time" value={`${scorecard.slaScore}`} />
               <Stat label="Health" value={`${scorecard.healthScore}`} />
-              <Stat label="Stagnation" value={`${scorecard.stagnationScore}`} />
+              <Stat label="Stalled" value={`${scorecard.stagnationScore}`} />
               <Stat label="Velocity" value={`${scorecard.velocityScore}`} />
             </div>
           </div>
@@ -419,7 +419,7 @@ export default async function InsightsPage() {
                   <TableHead className="text-right">Leads</TableHead>
                   <TableHead className="text-right">Won</TableHead>
                   <TableHead className="text-right">Conversion</TableHead>
-                  <TableHead className="text-right">Churn</TableHead>
+                  <TableHead className="text-right">Cancellation</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

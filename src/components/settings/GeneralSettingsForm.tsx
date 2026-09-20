@@ -192,7 +192,7 @@ export function GeneralSettingsForm({ organization }: { organization?: Org | nul
     }
 
     if (f.slaHours && (isNaN(Number(f.slaHours)) || Number(f.slaHours) < 0)) {
-      toast({ variant: "destructive", title: "Invalid SLA Hours", description: "SLA escalation hours must be a positive number." });
+      toast({ variant: "destructive", title: "Invalid response deadline", description: "Response deadline (hours) must be a positive number." });
       return;
     }
 
@@ -375,11 +375,11 @@ export function GeneralSettingsForm({ organization }: { organization?: Org | nul
             <Sliders className="h-5 w-5 text-muted-foreground" />
             <div>
               <h3 className="text-lg font-semibold text-foreground dark:text-foreground">Lead Capture &amp; Workflow</h3>
-              <p className="text-xs text-muted-foreground">Which fields are required on new leads, plus SLA and messaging defaults.</p>
+              <p className="text-xs text-muted-foreground">Which fields are required on new leads, plus response deadline and messaging defaults.</p>
             </div>
           </div>
           <div className="space-y-2 max-w-xs">
-            <Label htmlFor="slaHours">SLA escalation (hours)</Label>
+            <Label htmlFor="slaHours">Response deadline (hours)</Label>
             <Input id="slaHours" type="number" min={0} value={f.slaHours}
               onChange={(e) => set("slaHours", e.target.value)} placeholder="e.g. 24 — blank to disable" />
             <p className="text-xs text-muted-foreground">A new lead unactioned this long alerts its owner. Blank = off.</p>

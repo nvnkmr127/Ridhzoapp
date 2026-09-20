@@ -211,7 +211,7 @@ export function PlatformConsole({
   const [selectedOrgIds, setSelectedOrgIds] = React.useState<string[]>([]);
   const [bulkBusy, setBulkBusy] = React.useState(false);
 
-  // Meta CAPI & Campaign Attribution State
+  // Meta Conversions & Ad Source Tracking State
   const [capiConfig, setCapiConfig] = React.useState<MetaCapiConfig>(
     initialCapiConfig ?? { pixelId: "", accessToken: "", testEventCode: "", enabled: false }
   );
@@ -225,7 +225,7 @@ export function PlatformConsole({
     try {
       const res = await saveCapiConfigAction(capiConfig);
       if (res.ok) {
-        toast({ title: "Meta CAPI Settings Saved", description: res.data.enabled ? "Active." : "Disabled." });
+        toast({ title: "Meta Conversions Settings Saved", description: res.data.enabled ? "Active." : "Disabled." });
         setCapiConfig(res.data);
       } else {
         toast({ title: "Save failed", description: res.message, variant: "destructive" });
@@ -240,12 +240,12 @@ export function PlatformConsole({
     try {
       const res = await sendTestCapiPingAction();
       if (res.ok) {
-        toast({ title: "Test Event Sent", description: "Dispatched CompleteRegistration to Meta CAPI." });
+        toast({ title: "Test Event Sent", description: "Dispatched CompleteRegistration to Meta Conversions." });
         const { listCapiLogsAction } = await import("@/lib/actions/platform");
         const fresh = await listCapiLogsAction(25);
         if (fresh.ok) setCapiLogs(fresh.data);
       } else {
-        toast({ title: "CAPI Test Failed", description: res.message, variant: "destructive" });
+        toast({ title: "Conversions Test Failed", description: res.message, variant: "destructive" });
       }
     } finally {
       setTestingCapi(false);
@@ -347,7 +347,7 @@ export function PlatformConsole({
     try {
       const res = await sendDunningNoticeAction(orgId);
       if (res.ok) {
-        toast({ title: "Dunning Notice Dispatched", description: "Email & in-app warning sent to tenant admins." });
+        toast({ title: "Payment Reminder Sent", description: "Email & in-app warning sent to tenant admins." });
         await refreshBillingFleet();
       } else {
         toast({ title: "Failed to send dunning", description: res.message, variant: "destructive" });
@@ -804,7 +804,7 @@ export function PlatformConsole({
   const [whatsappGrantAmount, setWhatsappGrantAmount] = React.useState("250");
   const [grantingCredits, setGrantingCredits] = React.useState(false);
 
-  // Compliance & GDPR DSR state
+  // Compliance & GDPR Data Request state
   const [dsrQuery, setDsrQuery] = React.useState("");
   const [dsrResults, setDsrResults] = React.useState<SubjectMatch[]>([]);
   const [dsrSearching, setDsrSearching] = React.useState(false);
@@ -1185,13 +1185,13 @@ export function PlatformConsole({
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
-    toast({ title: "DSR Dossier downloaded" });
+    toast({ title: "Data request report downloaded" });
   }
 
   async function handleExecuteRightToBeForgotten(leadId: string, name: string) {
     if (
       !confirm(
-        `PERMANENT PRIVACY ACTION:\nAre you sure you want to execute GDPR Article 17 / DPDP Right to be Forgotten on "${name}"?\n\nThis will permanently anonymize their phone, email, notes, and activity history across the tenant database while preserving historical aggregate pipeline counts.`
+        `PERMANENT ACTION:\nAre you sure you want to permanently delete all personal data for "${name}"?\n\nThis will permanently erase their phone, email, notes, and activity history, while keeping overall pipeline totals for reporting. This cannot be undone.`
       )
     ) {
       return;
@@ -1202,7 +1202,7 @@ export function PlatformConsole({
     if (!res.ok) {
       toast({ variant: "destructive", title: "Action failed", description: res.message });
     } else {
-      toast({ title: "Right to be Forgotten executed", description: `Subject ${name} anonymized.` });
+      toast({ title: "Personal data deleted", description: `Subject ${name} anonymized.` });
       setDsrResults((prev) =>
         prev.map((r) =>
           r.id === leadId
@@ -1232,7 +1232,7 @@ export function PlatformConsole({
       document.body.appendChild(downloadAnchor);
       downloadAnchor.click();
       downloadAnchor.remove();
-      toast({ title: "Dossier Exported", description: `Full tenant data exported for ${targetOrg?.name ?? orgId}.` });
+      toast({ title: "Report exported", description: `Full tenant data exported for ${targetOrg?.name ?? orgId}.` });
     } catch {
       toast({ title: "Export Failed", description: "Could not export tenant dossier.", variant: "destructive" });
     } finally {
@@ -1409,7 +1409,7 @@ export function PlatformConsole({
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Tenants &amp; RevOps</span>
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Tenants &amp; Revenue</span>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </div>
           <div className="mt-2 text-2xl font-bold tracking-tight flex items-baseline justify-between">
@@ -1428,7 +1428,7 @@ export function PlatformConsole({
           </p>
         </button>
 
-        {/* Active SLA Escalations */}
+        {/* Active Overdue Leads */}
         <button
           onClick={() => setTab("escalations")}
           className={`text-left rounded-xl border p-4 shadow-sm transition-colors ${
@@ -1436,7 +1436,7 @@ export function PlatformConsole({
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Breached SLAs</span>
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Missed deadlines</span>
             <AlertTriangle className={`h-4 w-4 ${(metrics?.activeEscalations ?? 0) > 0 ? "text-amber-500" : "text-muted-foreground"}`} />
           </div>
           <div className="mt-2 text-2xl font-bold tracking-tight">
@@ -1447,7 +1447,7 @@ export function PlatformConsole({
               </span>
             )}
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">Unattended leads past SLA deadline</p>
+          <p className="mt-1 text-xs text-muted-foreground">Unattended leads past response deadline</p>
         </button>
 
         {/* DLQ Failures */}
@@ -1458,7 +1458,7 @@ export function PlatformConsole({
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Webhook DLQ</span>
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Failed Deliveries</span>
             <Radio className={`h-4 w-4 ${(metrics?.failedDeliveries ?? 0) > 0 ? "text-destructive" : "text-muted-foreground"}`} />
           </div>
           <div className="mt-2 text-2xl font-bold tracking-tight">
@@ -1488,7 +1488,7 @@ export function PlatformConsole({
           onClick={() => setTab("revops")}
           className="gap-1.5"
         >
-          <TrendingUp className="h-3.5 w-3.5" /> RevOps &amp; Invoicing
+          <TrendingUp className="h-3.5 w-3.5" /> Revenue &amp; Billing
           {revops && revops.churnRiskCount > 0 && (
             <span className="rounded-full bg-destructive/20 px-1.5 py-0.5 text-xs font-medium text-destructive">
               {revops.churnRiskCount}
@@ -1514,7 +1514,7 @@ export function PlatformConsole({
           onClick={() => setTab("flags")}
           className="gap-1.5"
         >
-          <Sliders className="h-3.5 w-3.5" /> Feature Flags &amp; Canary
+          <Sliders className="h-3.5 w-3.5" /> Feature Flags
           {maintenance.enabled && (
             <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-xs font-medium text-amber-600">
               Maint
@@ -1527,7 +1527,7 @@ export function PlatformConsole({
           onClick={() => setTab("compliance")}
           className="gap-1.5"
         >
-          <Shield className="h-3.5 w-3.5" /> GDPR &amp; Compliance
+          <Shield className="h-3.5 w-3.5" /> Privacy &amp; Data
         </Button>
         <Button
           variant={tab === "users" ? "default" : "ghost"} aria-current={tab === "users" ? "page" : undefined}
@@ -1543,7 +1543,7 @@ export function PlatformConsole({
           onClick={() => setTab("escalations")}
           className="gap-1.5"
         >
-          SLA Escalations
+          Overdue Leads
           {escalations.length > 0 && (
             <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
               {escalations.length}
@@ -1556,7 +1556,7 @@ export function PlatformConsole({
           onClick={() => setTab("dlq")}
           className="gap-1.5"
         >
-          Webhook DLQ
+          Failed Deliveries
           {dlq.length > 0 && (
             <span className="rounded-full bg-destructive/20 px-1.5 py-0.5 text-xs font-medium text-destructive">
               {dlq.length}
@@ -1569,7 +1569,7 @@ export function PlatformConsole({
           onClick={() => setTab("system")}
           className="gap-1.5"
         >
-          <Database className="h-3.5 w-3.5" /> System &amp; Ops Security
+          <Database className="h-3.5 w-3.5" /> System &amp; Security
           {anomalies.filter((a) => a.status === "active").length > 0 && (
             <span className="rounded-full bg-destructive/20 px-1.5 py-0.5 text-[10px] font-bold text-destructive animate-pulse">
               {anomalies.filter((a) => a.status === "active").length} Threat{anomalies.filter((a) => a.status === "active").length > 1 ? "s" : ""}
@@ -1935,12 +1935,12 @@ export function PlatformConsole({
         </div>
       )}
 
-      {/* Tab: SLA Escalations */}
+      {/* Tab: Overdue Leads */}
       {tab === "escalations" && (
         <div className="rounded-2xl border overflow-hidden">
           <div className="p-4 bg-muted/20 border-b">
-            <h3 className="text-sm font-semibold">Active Escalations Across All Tenants</h3>
-            <p className="text-xs text-muted-foreground">Leads that breached their organization SLA hours without salesperson engagement.</p>
+            <h3 className="text-sm font-semibold">Overdue Leads Across All Tenants</h3>
+            <p className="text-xs text-muted-foreground">Leads that went past your response deadline with no salesperson contact.</p>
           </div>
           {escalations.length === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground">
@@ -1991,7 +1991,7 @@ export function PlatformConsole({
         </div>
       )}
 
-      {/* Tab: Webhook DLQ Failures */}
+      {/* Tab: Failed Deliveries Failures */}
       {tab === "dlq" && (
         <div className="rounded-2xl border overflow-hidden">
           <div className="p-4 bg-muted/20 border-b flex items-center justify-between">
@@ -2383,7 +2383,7 @@ export function PlatformConsole({
                 <div>
                   <h3 className="text-sm font-semibold">Platform Ops Webhook Alerts (Slack / Discord)</h3>
                   <p className="text-xs text-muted-foreground">
-                    Stream critical platform events (SLA breaches, webhook DLQ spikes, plan changes, GDPR requests) to your tech team channel.
+                    Stream critical platform events (missed deadlines, failed-delivery spikes, plan changes, data requests) to your tech team channel.
                   </p>
                 </div>
               </div>
@@ -2411,7 +2411,7 @@ export function PlatformConsole({
                     onChange={(e) => setOpsAlert((prev) => ({ ...prev, notifyOnSladeadline: e.target.checked }))}
                     className="rounded border-border"
                   />
-                  <span>SLA Breaches</span>
+                  <span>Missed deadlines</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer border rounded-lg p-2.5 bg-muted/20">
                   <input
@@ -2420,7 +2420,7 @@ export function PlatformConsole({
                     onChange={(e) => setOpsAlert((prev) => ({ ...prev, notifyOnDlq: e.target.checked }))}
                     className="rounded border-border"
                   />
-                  <span>DLQ Failures</span>
+                  <span>Failed Deliveries</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer border rounded-lg p-2.5 bg-muted/20">
                   <input
@@ -2438,7 +2438,7 @@ export function PlatformConsole({
                     onChange={(e) => setOpsAlert((prev) => ({ ...prev, notifyOnGdpr: e.target.checked }))}
                     className="rounded border-border"
                   />
-                  <span>GDPR Requests</span>
+                  <span>Data Requests</span>
                 </label>
               </div>
 
@@ -2592,7 +2592,7 @@ export function PlatformConsole({
                 className="h-8 text-xs gap-1.5"
                 onClick={() => handleExportCsv("churn")}
               >
-                <Download className="h-3.5 w-3.5" /> Churn Risk &amp; Usage Telemetry (.csv)
+                <Download className="h-3.5 w-3.5" /> Cancellation Risk &amp; Usage Data (.csv)
               </Button>
             </div>
           </div>
@@ -2906,20 +2906,20 @@ export function PlatformConsole({
         </div>
       )}
 
-      {/* Tab: GDPR & DPDP Compliance DSR */}
+      {/* Tab: GDPR & DPDP Compliance Data Request */}
       {tab === "compliance" && (
         <div className="space-y-6">
           <div className="rounded-2xl border bg-card p-5 shadow-sm space-y-4">
             <div className="border-b pb-3">
               <h3 className="text-base font-semibold flex items-center gap-2">
-                <Shield className="h-4 w-4 text-primary" /> GDPR Article 17 / DPDP Right to be Forgotten &amp; DSR
+                <Shield className="h-4 w-4 text-primary" /> Delete Personal Data &amp; Data Requests (GDPR / DPDP)
               </h3>
               <p className="text-xs text-muted-foreground">
                 Search, export data dossiers, and permanently anonymize personal contact data across all tenant databases to fulfill legal compliance requests.
               </p>
             </div>
 
-            {/* DSR Search Bar */}
+            {/* Data Request Search Bar */}
             <div className="flex flex-col sm:flex-row gap-2 max-w-xl">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -2941,7 +2941,7 @@ export function PlatformConsole({
               <ShieldCheck className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
               <div>
                 <span className="font-semibold text-foreground">Compliance Preservation Guarantee:</span> Executing
-                a Right to be Forgotten replaces personal identifiers (name, phone, email, notes, custom fields) with
+                a Delete Personal Data replaces personal identifiers (name, phone, email, notes, custom fields) with
                 anonymized tokens while retaining CRM deal counts and revenue metrics.
               </div>
             </div>
@@ -3009,7 +3009,7 @@ export function PlatformConsole({
                               disabled={dsrBusyId === subject.id || subject.name === "[REDACTED_GDPR]"}
                               onClick={() => handleExecuteRightToBeForgotten(subject.id, subject.name)}
                             >
-                              <Trash2 className="h-3 w-3" /> Right to be Forgotten
+                              <Trash2 className="h-3 w-3" /> Delete Personal Data
                             </Button>
                           </div>
                         </td>
@@ -3025,7 +3025,7 @@ export function PlatformConsole({
           <div className="rounded-2xl border bg-card p-5 shadow-sm space-y-4 border-destructive/20">
             <div className="border-b pb-3">
               <h3 className="text-base font-semibold flex items-center gap-2 text-destructive">
-                <Trash2 className="h-4 w-4" /> Whole-Tenant Offboarding &amp; Data Erasure (GDPR Art. 17 / DPDP)
+                <Trash2 className="h-4 w-4" /> Full Tenant Removal &amp; Data Erasure (GDPR Art. 17 / DPDP)
               </h3>
               <p className="text-xs text-muted-foreground">
                 When a tenant cancels and requests full data portability or hard erasure, export a complete structured JSON dossier or permanently erase all tenant records across the database.
@@ -3060,7 +3060,7 @@ export function PlatformConsole({
                   onClick={() => handleExportTenantDossier(offboardOrgId)}
                 >
                   <Download className="h-3.5 w-3.5" />
-                  {exportingTenantDossier ? "Exporting Dossier..." : "Export Full Dossier (JSON)"}
+                  {exportingTenantDossier ? "Exporting report..." : "Export Full Report (JSON)"}
                 </Button>
                 <Button
                   variant="destructive"
@@ -3120,16 +3120,16 @@ export function PlatformConsole({
                 <p className="text-[10px] text-muted-foreground mt-0.5">Email notification sent to owner</p>
               </div>
               <div className="rounded-xl border bg-muted/30 p-3">
-                <span className="text-muted-foreground block text-[11px]">Purge Worker</span>
-                <span className="text-sm font-semibold text-foreground">Daily Schedule (BullMQ)</span>
-                <p className="text-[10px] text-muted-foreground mt-0.5">Reuses RTBF GDPR redaction engine</p>
+                <span className="text-muted-foreground block text-[11px]">Cleanup job</span>
+                <span className="text-sm font-semibold text-foreground">Runs daily</span>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Reuses the personal-data deletion engine</p>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Tab: RevOps & Churn Health */}
+      {/* Tab: RevOps & Cancellation Health */}
       {tab === "revops" && (
         <div className="space-y-6">
           {/* Executive RevOps KPI Bar */}
@@ -3141,7 +3141,7 @@ export function PlatformConsole({
               <div className="mt-2 text-2xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400">
                 ₹{revops?.mrr ? revops.mrr.toLocaleString() : 0}
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">Active MRR run rate</p>
+              <p className="mt-1 text-xs text-muted-foreground">Active Monthly Revenue run rate</p>
             </div>
 
             <div className="rounded-xl border bg-card p-4 shadow-sm">
@@ -3151,7 +3151,7 @@ export function PlatformConsole({
               <div className="mt-2 text-2xl font-bold tracking-tight">
                 ₹{revops?.arr ? revops.arr.toLocaleString() : 0}
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">12x annualized MRR</p>
+              <p className="mt-1 text-xs text-muted-foreground">12x annualized Monthly Revenue</p>
             </div>
 
             <div className="rounded-xl border bg-card p-4 shadow-sm">
@@ -3179,7 +3179,7 @@ export function PlatformConsole({
 
             <div className="rounded-xl border bg-card p-4 shadow-sm">
               <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Churn Danger Index
+                Cancellation Danger Index
               </div>
               <div className="mt-2 text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400">
                 {revops?.churnRiskCount ?? 0}
@@ -3188,26 +3188,26 @@ export function PlatformConsole({
             </div>
           </div>
 
-          {/* MRR Waterfall & Revenue Dynamics Card */}
+          {/* Monthly Revenue Waterfall & Revenue Dynamics Card */}
           {revops?.waterfall && (
             <div className="rounded-2xl border bg-card p-5 shadow-sm space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b pb-3 gap-2">
                 <div>
                   <h3 className="text-sm font-semibold flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4 text-primary" /> MRR Waterfall &amp; Revenue Expansion Dynamics
+                    <TrendingUp className="h-4 w-4 text-primary" /> Monthly Revenue Waterfall &amp; Revenue Expansion Dynamics
                   </h3>
                   <p className="text-xs text-muted-foreground">
                     Breakdown of monthly recurring revenue flow: baseline retention, new acquisition, tier upgrades, and churn exposure.
                   </p>
                 </div>
                 <Badge variant="outline" className="font-mono text-xs">
-                  Net MRR: ₹{revops.waterfall.netMrr.toLocaleString()}
+                  Net Monthly Revenue: ₹{revops.waterfall.netMrr.toLocaleString()}
                 </Badge>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-1">
                 <div className="rounded-lg bg-muted/40 p-3">
-                  <div className="text-[11px] font-medium text-muted-foreground uppercase">Starting MRR</div>
+                  <div className="text-[11px] font-medium text-muted-foreground uppercase">Starting Monthly Revenue</div>
                   <div className="text-lg font-bold mt-1 text-foreground">
                     ₹{revops.waterfall.startingMrr.toLocaleString()}
                   </div>
@@ -3216,7 +3216,7 @@ export function PlatformConsole({
 
                 <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3">
                   <div className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 uppercase">
-                    (+) New MRR
+                    (+) New Monthly Revenue
                   </div>
                   <div className="text-lg font-bold mt-1 text-emerald-600 dark:text-emerald-400">
                     +₹{revops.waterfall.newMrr.toLocaleString()}
@@ -3235,7 +3235,7 @@ export function PlatformConsole({
                 </div>
 
                 <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3">
-                  <div className="text-[11px] font-medium text-destructive uppercase">(-) Churn Risk</div>
+                  <div className="text-[11px] font-medium text-destructive uppercase">(-) Cancellation Risk</div>
                   <div className="text-lg font-bold mt-1 text-destructive">
                     -₹{revops.waterfall.churnRiskMrr.toLocaleString()}
                   </div>
@@ -3247,7 +3247,7 @@ export function PlatformConsole({
                   <div className="text-lg font-bold mt-1 text-foreground">
                     ₹{revops.waterfall.netMrr.toLocaleString()}
                   </div>
-                  <p className="text-[10px] text-muted-foreground">End of period MRR</p>
+                  <p className="text-[10px] text-muted-foreground">End of period Monthly Revenue</p>
                 </div>
               </div>
             </div>
@@ -3390,7 +3390,7 @@ export function PlatformConsole({
                     <th className="p-3 pl-5">Tenant</th>
                     <th className="p-3">Plan &amp; Gateway</th>
                     <th className="p-3">Payment Status</th>
-                    <th className="p-3">Failure &amp; Dunning</th>
+                    <th className="p-3">Failed &amp; Overdue Payments</th>
                     <th className="p-3">Next Renewal / Expiry</th>
                     <th className="p-3 pr-5 text-right">Lifecycle Overrides</th>
                   </tr>
@@ -3472,7 +3472,7 @@ export function PlatformConsole({
                                 </div>
                                 {b.dunningSentAt && (
                                   <div className="text-[10px] text-muted-foreground flex items-center gap-1">
-                                    <Mail className="h-2.5 w-2.5" /> Dunning sent{" "}
+                                    <Mail className="h-2.5 w-2.5" /> reminders sent{" "}
                                     {new Date(b.dunningSentAt).toLocaleDateString()}
                                   </div>
                                 )}
@@ -3551,13 +3551,13 @@ export function PlatformConsole({
             </div>
           </div>
 
-          {/* Tenant Churn Risk & Health Predictor Card */}
+          {/* Tenant Cancellation Risk & Health Predictor Card */}
           <div className="rounded-2xl border bg-card shadow-sm">
             <div className="p-5 border-b space-y-3">
               <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h3 className="text-base font-semibold flex items-center gap-2">
-                    <HeartPulse className="h-4 w-4 text-primary" /> Tenant Churn Risk &amp; Usage Quota Predictor
+                    <HeartPulse className="h-4 w-4 text-primary" /> Tenant Cancellation Risk &amp; Usage Quota Predictor
                   </h3>
                   <p className="text-xs text-muted-foreground">
                     Real-time engagement telemetry detecting slowing and at-risk accounts with instant support impersonation and credit grants.
@@ -3655,7 +3655,7 @@ export function PlatformConsole({
                           )}
                           {tenant.health === "critical" && (
                             <Badge className="bg-destructive/10 text-destructive hover:bg-destructive/20 border-destructive/20">
-                              Critical Churn
+                              Critical Cancellation
                             </Badge>
                           )}
                         </td>
@@ -4085,7 +4085,7 @@ export function PlatformConsole({
               </div>
 
               <div className="rounded-xl border bg-muted/20 p-3.5 space-y-1">
-                <span className="text-[11px] text-muted-foreground font-medium uppercase">Campaign MRR</span>
+                <span className="text-[11px] text-muted-foreground font-medium uppercase">Campaign Monthly Revenue</span>
                 <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
                   ₹{(campaignStats?.attributedMrr ?? 0).toLocaleString()}
                 </div>
@@ -4101,7 +4101,7 @@ export function PlatformConsole({
               </div>
 
               <div className="rounded-xl border bg-muted/20 p-3.5 space-y-1">
-                <span className="text-[11px] text-muted-foreground font-medium uppercase">CAPI Dispatch Status</span>
+                <span className="text-[11px] text-muted-foreground font-medium uppercase">Conversions Dispatch Status</span>
                 <div className="text-xl font-bold flex items-center gap-1.5">
                   <span
                     className={`h-2.5 w-2.5 rounded-full ${
@@ -4128,7 +4128,7 @@ export function PlatformConsole({
                       <th className="p-3 text-right">Signups</th>
                       <th className="p-3 text-right">Paid Tenants</th>
                       <th className="p-3 text-right">Conv. Rate</th>
-                      <th className="p-3 pr-4 text-right">MRR Generated</th>
+                      <th className="p-3 pr-4 text-right">Monthly Revenue Generated</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -4171,12 +4171,12 @@ export function PlatformConsole({
             </div>
           </div>
 
-          {/* Meta Conversions API (CAPI) & Server-Side Ad Engine */}
+          {/* Meta Conversions API (Conversions) & Server-Side Ad Engine */}
           <div className="rounded-2xl border bg-card shadow-sm p-5 space-y-4">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b pb-3">
               <div>
                 <h3 className="text-base font-semibold flex items-center gap-2">
-                  <Radio className="h-4 w-4 text-primary" /> Meta Conversions API (CAPI) Server-Side Tracking
+                  <Radio className="h-4 w-4 text-primary" /> Meta Conversions API (Conversions) Server-Side Tracking
                 </h3>
                 <p className="text-xs text-muted-foreground">
                   Dispatches server-to-server <code className="bg-muted px-1 rounded font-mono">CompleteRegistration</code> and <code className="bg-muted px-1 rounded font-mono">Subscribe</code> events to Meta Graph API, bypassing ad-blockers and iOS 14.5+ ATT restrictions.
@@ -4190,7 +4190,7 @@ export function PlatformConsole({
                   onClick={() => setCapiConfig((prev) => ({ ...prev, enabled: !prev.enabled }))}
                 >
                   <Power className="h-3.5 w-3.5" />
-                  {capiConfig.enabled ? "CAPI Enabled" : "CAPI Disabled"}
+                  {capiConfig.enabled ? "Conversions Enabled" : "Conversions Disabled"}
                 </Button>
                 <Button
                   size="sm"
@@ -4226,7 +4226,7 @@ export function PlatformConsole({
               </div>
 
               <div className="space-y-1">
-                <label className="font-semibold text-foreground">CAPI System User Access Token</label>
+                <label className="font-semibold text-foreground">Conversions System User Access Token</label>
                 <Input
                   type="password"
                   placeholder="EAAG..."
@@ -4249,10 +4249,10 @@ export function PlatformConsole({
               </div>
             </div>
 
-            {/* Live CAPI Dispatch Event Stream */}
+            {/* Live Conversions Dispatch Event Stream */}
             <div className="pt-2">
               <div className="text-xs font-semibold text-foreground mb-2 flex items-center justify-between">
-                <span>Recent Server-Side CAPI Dispatches</span>
+                <span>Recent Server-Side Conversions Dispatches</span>
                 <span className="text-[10px] text-muted-foreground font-normal">Last {capiLogs.length} events logged</span>
               </div>
               <div className="rounded-xl border overflow-hidden">
@@ -4269,7 +4269,7 @@ export function PlatformConsole({
                     {capiLogs.length === 0 ? (
                       <tr>
                         <td colSpan={4} className="p-4 text-center text-muted-foreground">
-                          No CAPI events dispatched yet. Click &quot;Send Test Ping&quot; above to verify connectivity.
+                          No Conversions events dispatched yet. Click &quot;Send Test Ping&quot; above to verify connectivity.
                         </td>
                       </tr>
                     ) : (
@@ -4418,7 +4418,7 @@ export function PlatformConsole({
                                 }`}
                               >
                                 <Clock className="h-2.5 w-2.5 mr-1 inline" />
-                                {isBreached ? "SLA BREACHED" : `${diffHours}h SLA`}
+                                {isBreached ? "Response deadline missed" : `${diffHours}h SLA`}
                               </Badge>
                             );
                           })()}
@@ -4483,7 +4483,7 @@ export function PlatformConsole({
                               <SelectItem value="unassigned">Unassigned</SelectItem>
                               <SelectItem value="Support Tier 1">Support Tier 1</SelectItem>
                               <SelectItem value="Engineering On-Call">Engineering On-Call</SelectItem>
-                              <SelectItem value="RevOps Billing Staff">RevOps Billing Staff</SelectItem>
+                              <SelectItem value="Revenue & Billing Staff">Revenue & Billing Staff</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>

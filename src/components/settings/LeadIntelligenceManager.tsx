@@ -83,7 +83,7 @@ export function LeadIntelligenceManager({ initial }: { initial: View }) {
       }
       setV((s) => ({ ...s, ...res.data }));
       setAuthValue("");
-      toast({ title: "Enrichment settings saved" });
+      toast({ title: "Lead insight settings saved" });
     } catch {
       toast({ variant: "destructive", title: "Couldn't save", description: "We couldn't reach the server." });
     } finally {
@@ -136,7 +136,7 @@ export function LeadIntelligenceManager({ initial }: { initial: View }) {
       }
       setV((s) => ({ ...s, ...res.data }));
       setAccessToken("");
-      toast({ title: "Meta CAPI settings saved" });
+      toast({ title: "Meta Conversions settings saved" });
     } catch {
       toast({ variant: "destructive", title: "Couldn't save", description: "We couldn't reach the server." });
     } finally {
@@ -310,7 +310,7 @@ export function LeadIntelligenceManager({ initial }: { initial: View }) {
                 v.capiEnabled ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300" : "bg-muted text-muted-foreground"
               }`}
             >
-              {v.capiEnabled ? "Active" : "Enable CAPI above to activate"}
+              {v.capiEnabled ? "Active" : "Enable Conversions above to activate"}
             </span>
           </div>
           <p className="text-xs text-muted-foreground">
