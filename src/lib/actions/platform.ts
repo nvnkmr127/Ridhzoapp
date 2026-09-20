@@ -895,4 +895,72 @@ export async function removeCustomDomainAction(id: string) {
   }
 }
 
+// --- Meta Conversions API (CAPI) & Campaign Analytics ---
+export async function getCapiConfigAction() {
+  await requireSuperAdmin();
+  try {
+    const { MetaCapiService } = await import("@/domains/platform/capiService");
+    const config = await MetaCapiService.getConfig();
+    return ok(config);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function saveCapiConfigAction(input: {
+  pixelId?: string;
+  accessToken?: string;
+  testEventCode?: string;
+  enabled?: boolean;
+}) {
+  await requireSuperAdmin();
+  try {
+    const { MetaCapiService } = await import("@/domains/platform/capiService");
+    const updated = await MetaCapiService.saveConfig(input);
+    revalidatePath("/admin");
+    return ok(updated);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function sendTestCapiPingAction() {
+  const session = await requireSuperAdmin();
+  try {
+    const { MetaCapiService } = await import("@/domains/platform/capiService");
+    const res = await MetaCapiService.sendEvent({
+      eventName: "CompleteRegistration",
+      email: session.user.email || "superadmin@ridhzo.com",
+      eventSourceUrl: "https://ridhzo.com/admin?test=capi",
+    });
+    revalidatePath("/admin");
+    return ok(res);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function listCapiLogsAction(limit = 50) {
+  await requireSuperAdmin();
+  try {
+    const { MetaCapiService } = await import("@/domains/platform/capiService");
+    const logs = await MetaCapiService.listLogs(limit);
+    return ok(logs);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function getCampaignAnalyticsAction() {
+  await requireSuperAdmin();
+  try {
+    const { PlatformAttributionService } = await import("@/domains/platform/attributionService");
+    const stats = await PlatformAttributionService.getCampaignAnalytics();
+    return ok(stats);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+
 

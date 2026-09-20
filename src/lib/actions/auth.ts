@@ -15,6 +15,21 @@ const signupSchema = z.object({
   firstName: z.string().max(255).optional(),
   email: z.string().email("Enter a valid email"),
   password: z.string().min(6, "Password must be at least 6 characters"),
+  attribution: z
+    .object({
+      utmSource: z.string().optional(),
+      utmMedium: z.string().optional(),
+      utmCampaign: z.string().optional(),
+      utmContent: z.string().optional(),
+      utmTerm: z.string().optional(),
+      fbclid: z.string().optional(),
+      gclid: z.string().optional(),
+      fbp: z.string().optional(),
+      fbc: z.string().optional(),
+      referrer: z.string().optional(),
+      landingPage: z.string().optional(),
+    })
+    .optional(),
 });
 
 // Public — no auth. Creates a new tenant and its owner.
@@ -25,12 +40,41 @@ export async function signupAction(input: z.infer<typeof signupSchema>) {
   }
   const data = parsed.data;
   try {
-    await OrgService.createWithOwner({
+    const created = await OrgService.createWithOwner({
       orgName: data.orgName,
       email: data.email,
       password: data.password,
       firstName: data.firstName,
     });
+
+    // Record Campaign Attribution & Dispatch Server-Side Meta CAPI Event
+    if (created?.organizationId) {
+      if (data.attribution) {
+        try {
+          const { PlatformAttributionService } = await import("@/domains/platform/attributionService");
+          await PlatformAttributionService.recordAttribution(created.organizationId, data.attribution);
+        } catch (err) {
+          console.warn("[signupAction] failed to record attribution", err);
+        }
+      }
+
+      // Meta Conversions API (CAPI) CompleteRegistration
+      try {
+        const { MetaCapiService } = await import("@/domains/platform/capiService");
+        await MetaCapiService.sendEvent({
+          eventName: "CompleteRegistration",
+          email: data.email,
+          orgId: created.organizationId,
+          orgName: data.orgName,
+          fbp: data.attribution?.fbp,
+          fbc: data.attribution?.fbc,
+          eventSourceUrl: data.attribution?.landingPage,
+        });
+      } catch (err) {
+        console.warn("[signupAction] failed to dispatch Meta CAPI event", err);
+      }
+    }
+
     return ok({ created: true });
   } catch (e: any) {
     if (String(e?.message || e).includes("duplicate") || e?.code === "23505") {

@@ -12,10 +12,11 @@ import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { signupAction } from "@/lib/actions/auth";
 import { sendFirebasePhoneOtp, confirmFirebasePhoneOtp } from "@/lib/firebase/client";
 import type { ConfirmationResult } from "firebase/auth";
+import { captureAttribution, getStoredAttribution } from "@/lib/tracking/utm";
 
 const signupSchema = z.object({
   orgName: z.string().min(1, "Workspace name is required"),
@@ -30,6 +31,10 @@ export default function SignupPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
+
+  useEffect(() => {
+    captureAttribution();
+  }, []);
 
   // Phone OTP state
   const [phoneOrgName, setPhoneOrgName] = useState("");
@@ -47,7 +52,8 @@ export default function SignupPage() {
   const onEmailSubmit = async (data: SignupValues) => {
     setError(null);
     try {
-      const res = await signupAction(data);
+      const attribution = getStoredAttribution() ?? undefined;
+      const res = await signupAction({ ...data, attribution });
       if (!res.ok) {
         setError(res.message);
         return;

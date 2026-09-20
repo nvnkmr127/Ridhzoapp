@@ -18,6 +18,7 @@ export interface OrgSummary {
   userCount: number;
   leadCount: number;
   customSeats?: number | null;
+  attribution?: import("./attributionService").TenantAttribution | null;
   createdAt: string;
 }
 
@@ -115,7 +116,10 @@ export class PlatformService {
       .where(isNull(leads.deletedAt))
       .groupBy(leads.organizationId);
 
-    const overrides = await PlatformConfigService.get<Record<string, number>>("seat_overrides", {});
+    const [overrides, attributions] = await Promise.all([
+      PlatformConfigService.get<Record<string, number>>("seat_overrides", {}),
+      PlatformConfigService.get<Record<string, import("./attributionService").TenantAttribution>>("tenant_attributions", {}),
+    ]);
 
     const u = new Map(userCounts.map((r) => [r.orgId, Number(r.c)]));
     const l = new Map(leadCounts.map((r) => [r.orgId, Number(r.c)]));
@@ -130,6 +134,7 @@ export class PlatformService {
       userCount: u.get(o.id) ?? 0,
       leadCount: l.get(o.id) ?? 0,
       customSeats: overrides[o.id] ?? null,
+      attribution: attributions[o.id] ?? null,
       createdAt: o.createdAt ? new Date(o.createdAt).toISOString() : new Date().toISOString(),
     }));
   }

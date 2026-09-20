@@ -272,6 +272,22 @@ export class BillingLifecycleService {
       } catch {
         // ignore
       }
+
+      // Meta Conversions API (CAPI) Subscribe / Purchase Event
+      try {
+        const { MetaCapiService } = await import("@/domains/platform/capiService");
+        const { PlatformAttributionService } = await import("@/domains/platform/attributionService");
+        const attr = await PlatformAttributionService.getAttribution(orgId);
+        await MetaCapiService.sendEvent({
+          eventName: "Subscribe",
+          orgId,
+          fbp: attr?.fbp,
+          fbc: attr?.fbc,
+          eventSourceUrl: attr?.landingPage || "https://ridhzo.com/billing",
+        });
+      } catch (err) {
+        console.warn("[lifecycleService] Failed to dispatch Meta CAPI subscribe event", err);
+      }
     } catch (err) {
       console.warn("[lifecycleService] handlePaymentSuccess error", err);
     }

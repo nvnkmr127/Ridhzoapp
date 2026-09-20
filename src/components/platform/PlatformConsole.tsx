@@ -47,7 +47,11 @@ import {
   UserCheck,
   Clock,
   StickyNote,
+  Target,
 } from "lucide-react";
+import type { MetaCapiConfig, CapiEventLog } from "@/domains/platform/capiService";
+import type { CampaignAnalytics } from "@/domains/platform/attributionService";
+import { saveCapiConfigAction, sendTestCapiPingAction } from "@/lib/actions/platform";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -162,6 +166,9 @@ export function PlatformConsole({
   initialDigestConfig,
   initialAnomalies = [],
   initialDomains = [],
+  initialCapiConfig,
+  initialCapiLogs = [],
+  initialCampaigns,
 }: {
   initial?: OrgSummary[];
   initialUsers?: GlobalUserSummary[];
@@ -182,6 +189,15 @@ export function PlatformConsole({
   initialDigestConfig?: ExecutiveDigestConfig;
   initialAnomalies?: SecurityAnomaly[];
   initialDomains?: CustomDomainRecord[];
+  initialCapiConfig?: MetaCapiConfig;
+  initialCapiLogs?: CapiEventLog[];
+  initialCampaigns?: {
+    campaigns: CampaignAnalytics[];
+    totalSignups: number;
+    attributedSignups: number;
+    directSignups: number;
+    attributedMrr: number;
+  };
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -189,6 +205,47 @@ export function PlatformConsole({
   const [orgs, setOrgs] = React.useState<OrgSummary[]>(initial ?? []);
   const [users, setUsers] = React.useState<GlobalUserSummary[]>(initialUsers ?? []);
   const [busy, setBusy] = React.useState<string | null>(null);
+
+  // Meta CAPI & Campaign Attribution State
+  const [capiConfig, setCapiConfig] = React.useState<MetaCapiConfig>(
+    initialCapiConfig ?? { pixelId: "", accessToken: "", testEventCode: "", enabled: false }
+  );
+  const [capiLogs, setCapiLogs] = React.useState<CapiEventLog[]>(initialCapiLogs ?? []);
+  const [campaignStats, setCampaignStats] = React.useState(initialCampaigns);
+  const [savingCapi, setSavingCapi] = React.useState(false);
+  const [testingCapi, setTestingCapi] = React.useState(false);
+
+  const handleSaveCapi = async () => {
+    setSavingCapi(true);
+    try {
+      const res = await saveCapiConfigAction(capiConfig);
+      if (res.ok) {
+        toast({ title: "Meta CAPI Settings Saved", description: res.data.enabled ? "Active." : "Disabled." });
+        setCapiConfig(res.data);
+      } else {
+        toast({ title: "Save failed", description: res.message, variant: "destructive" });
+      }
+    } finally {
+      setSavingCapi(false);
+    }
+  };
+
+  const handleTestCapiPing = async () => {
+    setTestingCapi(true);
+    try {
+      const res = await sendTestCapiPingAction();
+      if (res.ok) {
+        toast({ title: "Test Event Sent", description: "Dispatched CompleteRegistration to Meta CAPI." });
+        const { listCapiLogsAction } = await import("@/lib/actions/platform");
+        const fresh = await listCapiLogsAction(25);
+        if (fresh.ok) setCapiLogs(fresh.data);
+      } else {
+        toast({ title: "CAPI Test Failed", description: res.message, variant: "destructive" });
+      }
+    } finally {
+      setTestingCapi(false);
+    }
+  };
 
   const urlTab = searchParams.get("tab");
   const validTabs = React.useMemo(
@@ -1421,7 +1478,14 @@ export function PlatformConsole({
                       <tr key={o.id} className="border-t border-border hover:bg-muted/30 transition-colors">
                         <td className="px-4 py-3">
                           <div className="font-medium text-foreground">{o.name}</div>
-                          <div className="text-xs text-muted-foreground font-mono">{o.slug}</div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs text-muted-foreground font-mono">{o.slug}</span>
+                            {o.attribution?.utmCampaign && (
+                              <Badge variant="outline" className="text-[9px] font-mono bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20 py-0 px-1">
+                                {o.attribution.utmSource || "ad"}: {o.attribution.utmCampaign}
+                              </Badge>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums">{o.userCount}</td>
                         <td className="px-4 py-3 text-right tabular-nums">{o.leadCount}</td>
@@ -3363,6 +3427,261 @@ export function PlatformConsole({
                 >
                   Send Preview
                 </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Growth Campaigns & Attribution Performance */}
+          <div className="rounded-2xl border bg-card shadow-sm p-5 space-y-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b pb-3">
+              <div>
+                <h3 className="text-base font-semibold flex items-center gap-2">
+                  <Target className="h-4 w-4 text-primary" /> Growth Campaigns &amp; Conversion Attribution
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Multi-touch tracking for ad campaigns (Meta, Google, Affiliates) capturing UTM parameters, click IDs, and paid tenant conversions.
+                </p>
+              </div>
+              <Badge variant="outline" className="font-mono text-xs w-fit">
+                {campaignStats?.campaigns?.length ?? 0} Active Channels
+              </Badge>
+            </div>
+
+            {/* Campaign KPI Summary */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div className="rounded-xl border bg-muted/20 p-3.5 space-y-1">
+                <span className="text-[11px] text-muted-foreground font-medium uppercase">Attributed Signups</span>
+                <div className="text-xl font-bold text-primary">
+                  {campaignStats?.attributedSignups ?? 0}
+                  <span className="text-xs text-muted-foreground font-normal ml-1">
+                    / {campaignStats?.totalSignups ?? 0}
+                  </span>
+                </div>
+                <div className="text-[10px] text-muted-foreground">
+                  {Math.round(((campaignStats?.attributedSignups ?? 0) / (campaignStats?.totalSignups || 1)) * 100)}% ad attributed
+                </div>
+              </div>
+
+              <div className="rounded-xl border bg-muted/20 p-3.5 space-y-1">
+                <span className="text-[11px] text-muted-foreground font-medium uppercase">Campaign MRR</span>
+                <div className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                  ₹{(campaignStats?.attributedMrr ?? 0).toLocaleString()}
+                </div>
+                <div className="text-[10px] text-muted-foreground">Generated by ad traffic</div>
+              </div>
+
+              <div className="rounded-xl border bg-muted/20 p-3.5 space-y-1">
+                <span className="text-[11px] text-muted-foreground font-medium uppercase">Direct &amp; Organic</span>
+                <div className="text-xl font-bold text-foreground">
+                  {campaignStats?.directSignups ?? 0}
+                </div>
+                <div className="text-[10px] text-muted-foreground">Word of mouth / referral</div>
+              </div>
+
+              <div className="rounded-xl border bg-muted/20 p-3.5 space-y-1">
+                <span className="text-[11px] text-muted-foreground font-medium uppercase">CAPI Dispatch Status</span>
+                <div className="text-xl font-bold flex items-center gap-1.5">
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full ${
+                      capiConfig.enabled ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground"
+                    }`}
+                  />
+                  <span className="text-sm">
+                    {capiConfig.enabled ? "Live Active" : "Paused"}
+                  </span>
+                </div>
+                <div className="text-[10px] text-muted-foreground">Server-to-server tracking</div>
+              </div>
+            </div>
+
+            {/* Campaign Breakdown Table */}
+            <div className="rounded-xl border overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/40 text-muted-foreground">
+                    <tr className="text-left font-medium border-b">
+                      <th className="p-3 pl-4">Campaign Name</th>
+                      <th className="p-3">Source</th>
+                      <th className="p-3">Medium</th>
+                      <th className="p-3 text-right">Signups</th>
+                      <th className="p-3 text-right">Paid Tenants</th>
+                      <th className="p-3 text-right">Conv. Rate</th>
+                      <th className="p-3 pr-4 text-right">MRR Generated</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {(!campaignStats?.campaigns || campaignStats.campaigns.length === 0) ? (
+                      <tr>
+                        <td colSpan={7} className="p-6 text-center text-muted-foreground">
+                          No ad campaign signups recorded yet. Run ads with URL parameters:{" "}
+                          <code className="bg-muted px-1.5 py-0.5 rounded font-mono text-[11px]">
+                            ?utm_source=meta&amp;utm_campaign=launch2026
+                          </code>
+                        </td>
+                      </tr>
+                    ) : (
+                      campaignStats.campaigns.map((c, i) => (
+                        <tr key={i} className="hover:bg-muted/30 transition-colors">
+                          <td className="p-3 pl-4 font-semibold text-foreground flex items-center gap-1.5">
+                            <Megaphone className="h-3 w-3 text-primary" />
+                            {c.campaign}
+                          </td>
+                          <td className="p-3">
+                            <Badge variant="outline" className="text-[10px] font-mono">
+                              {c.source}
+                            </Badge>
+                          </td>
+                          <td className="p-3 font-mono text-muted-foreground">{c.medium}</td>
+                          <td className="p-3 text-right font-semibold tabular-nums">{c.signups}</td>
+                          <td className="p-3 text-right font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                            {c.paidTenants}
+                          </td>
+                          <td className="p-3 text-right font-mono tabular-nums">{c.conversionRate}%</td>
+                          <td className="p-3 pr-4 text-right font-bold text-foreground tabular-nums">
+                            ₹{c.mrr.toLocaleString()}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* Meta Conversions API (CAPI) & Server-Side Ad Engine */}
+          <div className="rounded-2xl border bg-card shadow-sm p-5 space-y-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b pb-3">
+              <div>
+                <h3 className="text-base font-semibold flex items-center gap-2">
+                  <Radio className="h-4 w-4 text-primary" /> Meta Conversions API (CAPI) Server-Side Tracking
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Dispatches server-to-server <code className="bg-muted px-1 rounded font-mono">CompleteRegistration</code> and <code className="bg-muted px-1 rounded font-mono">Subscribe</code> events to Meta Graph API, bypassing ad-blockers and iOS 14.5+ ATT restrictions.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant={capiConfig.enabled ? "default" : "outline"}
+                  className="h-8 text-xs gap-1.5"
+                  onClick={() => setCapiConfig((prev) => ({ ...prev, enabled: !prev.enabled }))}
+                >
+                  <Power className="h-3.5 w-3.5" />
+                  {capiConfig.enabled ? "CAPI Enabled" : "CAPI Disabled"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs gap-1.5"
+                  disabled={testingCapi || !capiConfig.pixelId || !capiConfig.accessToken}
+                  onClick={handleTestCapiPing}
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  {testingCapi ? "Pinging Meta..." : "Send Test Ping"}
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-8 text-xs gap-1.5"
+                  disabled={savingCapi}
+                  onClick={handleSaveCapi}
+                >
+                  {savingCapi ? "Saving..." : "Save Settings"}
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+              <div className="space-y-1">
+                <label className="font-semibold text-foreground">Meta Pixel / Dataset ID</label>
+                <Input
+                  placeholder="e.g. 123456789012345"
+                  value={capiConfig.pixelId}
+                  onChange={(e) => setCapiConfig((prev) => ({ ...prev, pixelId: e.target.value.trim() }))}
+                  className="h-8 text-xs font-mono"
+                />
+                <p className="text-[10px] text-muted-foreground">Found in Meta Events Manager &gt; Settings.</p>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-foreground">CAPI System User Access Token</label>
+                <Input
+                  type="password"
+                  placeholder="EAAG..."
+                  value={capiConfig.accessToken}
+                  onChange={(e) => setCapiConfig((prev) => ({ ...prev, accessToken: e.target.value.trim() }))}
+                  className="h-8 text-xs font-mono"
+                />
+                <p className="text-[10px] text-muted-foreground">Generate in Meta Events Manager &gt; Conversions API.</p>
+              </div>
+
+              <div className="space-y-1">
+                <label className="font-semibold text-foreground">Test Event Code (Optional)</label>
+                <Input
+                  placeholder="e.g. TEST12345"
+                  value={capiConfig.testEventCode || ""}
+                  onChange={(e) => setCapiConfig((prev) => ({ ...prev, testEventCode: e.target.value.trim() }))}
+                  className="h-8 text-xs font-mono"
+                />
+                <p className="text-[10px] text-muted-foreground">Test Events tab in Meta Events Manager for sandbox validation.</p>
+              </div>
+            </div>
+
+            {/* Live CAPI Dispatch Event Stream */}
+            <div className="pt-2">
+              <div className="text-xs font-semibold text-foreground mb-2 flex items-center justify-between">
+                <span>Recent Server-Side CAPI Dispatches</span>
+                <span className="text-[10px] text-muted-foreground font-normal">Last {capiLogs.length} events logged</span>
+              </div>
+              <div className="rounded-xl border overflow-hidden">
+                <table className="w-full text-[11px]">
+                  <thead className="bg-muted/40 text-muted-foreground">
+                    <tr className="text-left font-medium border-b">
+                      <th className="p-2.5 pl-3">Event Name</th>
+                      <th className="p-2.5">Organization / User</th>
+                      <th className="p-2.5">Meta API Status</th>
+                      <th className="p-2.5 pr-3 text-right">Timestamp</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {capiLogs.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="p-4 text-center text-muted-foreground">
+                          No CAPI events dispatched yet. Click &quot;Send Test Ping&quot; above to verify connectivity.
+                        </td>
+                      </tr>
+                    ) : (
+                      capiLogs.slice(0, 10).map((log) => (
+                        <tr key={log.id} className="hover:bg-muted/20">
+                          <td className="p-2.5 pl-3 font-mono font-semibold text-foreground flex items-center gap-1.5">
+                            <Activity className="h-3 w-3 text-primary" />
+                            {log.eventName}
+                          </td>
+                          <td className="p-2.5 text-muted-foreground">
+                            {log.orgName || log.email || log.orgId || "Anonymous Visitor"}
+                          </td>
+                          <td className="p-2.5">
+                            <Badge
+                              variant="outline"
+                              className={`text-[9px] font-mono ${
+                                log.status === "success"
+                                  ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+                                  : log.status === "skipped"
+                                  ? "text-muted-foreground"
+                                  : "bg-destructive/10 text-destructive border-destructive/30"
+                              }`}
+                            >
+                              {log.status.toUpperCase()} {log.httpCode ? `(${log.httpCode})` : ""}
+                            </Badge>
+                          </td>
+                          <td className="p-2.5 pr-3 text-right font-mono text-muted-foreground">
+                            {new Date(log.timestamp).toLocaleTimeString()}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
