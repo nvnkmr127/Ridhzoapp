@@ -163,6 +163,18 @@ export async function hasPermissionForRoleId(roleId: string | null, key: Permiss
   return roleGrants({ name: role.name, permissions: role.permissions ?? [], organizationId: role.organizationId }, key);
 }
 
+// Write chokepoint for mutations that gate on requireOrg() alone (not through requirePermission,
+// which already refuses non-.view keys under read-only impersonation). Refuses when a super-admin
+// is operating in READ-ONLY impersonation, so no write path can alter tenant data in that mode.
+// A drop-in for requireOrg() in mutating actions: identical return, identical for every normal user.
+export async function assertWritable() {
+  const ctx = await requireOrg();
+  if (ctx.readOnly) {
+    throw new Error("This is a read-only session. Exit read-only impersonation to make changes.");
+  }
+  return ctx;
+}
+
 // Throws "Forbidden" unless the caller holds the permission; returns the tenant scope on success.
 export async function requirePermission(key: PermissionKey) {
   const { organizationId, userId } = await requireOrg();

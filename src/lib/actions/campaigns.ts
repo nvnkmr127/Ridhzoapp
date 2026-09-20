@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { requireOrg } from "@/lib/rbac";
+import { assertWritable } from "@/lib/rbac";
 import { ActivityService } from "@/domains/activities/service";
 import { ok, fail, actionFail } from "@/lib/actions/result";
 
@@ -15,7 +15,7 @@ const schema = z.object({
 // 24h window in BSP mode, or no phone) is counted, never aborts the batch. In personal mode
 // auto-send isn't possible, so failures fall back to a logged nudge on each lead's timeline.
 export async function sendCampaignAction(input: unknown) {
-  const { organizationId, userId } = await requireOrg();
+  const { organizationId, userId } = await assertWritable();
   const parsed = schema.safeParse(input);
   if (!parsed.success) {
     return fail("VALIDATION", "Select up to 500 leads and enter a message (max 2,000 characters).");

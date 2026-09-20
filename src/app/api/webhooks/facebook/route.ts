@@ -26,15 +26,11 @@ export async function GET(req: NextRequest) {
   const hubVerifyToken = searchParams.get("hub.verify_token");
   const hubChallenge = searchParams.get("hub.challenge");
 
-  const expectedToken = (hubVerifyToken === "privyr_fb_webhook_secret" || hubVerifyToken === "ridhzo_fb_webhook_secret")
-    ? hubVerifyToken
-    : FB_VERIFY_TOKEN;
-
   const { verified, challenge } = FacebookLeadMappingService.verifyFacebookWebhook(
     hubMode,
     hubVerifyToken,
     hubChallenge,
-    expectedToken
+    FB_VERIFY_TOKEN
   );
 
   if (verified && challenge) {

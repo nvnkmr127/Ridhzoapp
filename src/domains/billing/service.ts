@@ -70,10 +70,18 @@ export class BillingService {
   static async handleWebhook(event: string, subscriptionEntity: { id?: string; current_end?: number } | undefined) {
     const subId = subscriptionEntity?.id;
     if (!subId) return;
-    const [org] = await db.select({ id: organizations.id, plan: organizations.plan, planStatus: organizations.planStatus }).from(organizations).where(eq(organizations.razorpaySubscriptionId, subId)).limit(1);
+    const [org] = await db.select({ id: organizations.id, plan: organizations.plan, planStatus: organizations.planStatus, currentPeriodEnd: organizations.currentPeriodEnd }).from(organizations).where(eq(organizations.razorpaySubscriptionId, subId)).limit(1);
     if (!org) return;
 
     const periodEnd = subscriptionEntity.current_end ? new Date(subscriptionEntity.current_end * 1000) : undefined;
+
+    // Razorpay does not guarantee delivery order. Drop a stale/duplicate activation whose billing
+    // period is not newer than what we've already stored, so a late "charged" can't resurrect a
+    // plan a later "cancelled" already ended. A genuine renewal/resubscribe carries a newer period.
+    const isActivation = event === "subscription.activated" || event === "subscription.charged" || event === "subscription.resumed";
+    if (isActivation && periodEnd && org.currentPeriodEnd && periodEnd <= org.currentPeriodEnd) {
+      return;
+    }
     const oldPlan = org.plan;
     const oldStatus = org.planStatus;
     let newStatus = oldStatus;

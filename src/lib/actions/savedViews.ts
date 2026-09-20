@@ -1,6 +1,6 @@
 "use server";
 
-import { requireOrg } from "@/lib/rbac";
+import { requireOrg, assertWritable } from "@/lib/rbac";
 import { revalidatePath } from "next/cache";
 import { SavedViewService, FilterGroup, FilterRule } from "@/domains/savedViews/service";
 import { z } from "zod";
@@ -19,7 +19,7 @@ export async function createSavedViewAction(input: {
   sortField?: string;
   sortOrder?: "asc" | "desc";
 }) {
-  const { userId, organizationId } = await requireOrg();
+  const { userId, organizationId } = await assertWritable();
   const parsed = createViewSchema.safeParse(input);
   if (!parsed.success) {
     return fail("VALIDATION", "Please give this view a name.", zodFieldErrors(parsed.error));
@@ -51,7 +51,7 @@ export async function updateSavedViewAction(input: {
   sortField?: string;
   sortOrder?: "asc" | "desc";
 }) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await assertWritable();
   if (!input.id) return fail("VALIDATION", "No view was specified.");
 
   try {
@@ -75,7 +75,7 @@ export async function updateSavedViewAction(input: {
 }
 
 export async function deleteSavedViewAction(id: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await assertWritable();
   if (!id) return fail("VALIDATION", "No view was specified.");
 
   try {

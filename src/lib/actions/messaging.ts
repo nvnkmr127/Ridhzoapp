@@ -1,6 +1,6 @@
 "use server";
 
-import { requireAuth, requireOrg, requirePermission } from "@/lib/rbac";
+import { requireAuth, requireOrg, requirePermission, assertWritable } from "@/lib/rbac";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
@@ -103,7 +103,7 @@ const emailSchema = z.object({
 });
 
 export async function sendEmailAction(input: z.infer<typeof emailSchema>) {
-  const { userId, organizationId } = await requireOrg();
+  const { userId, organizationId } = await assertWritable();
   const parsed = emailSchema.safeParse(input);
   if (!parsed.success) return fail("VALIDATION", "Please provide a subject and message body.");
   const data = parsed.data;

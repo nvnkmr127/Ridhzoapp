@@ -2,7 +2,7 @@
 
 import { db } from "@/db";
 import { leadAttachments } from "@/db/schema/activities";
-import { requireOrg } from "@/lib/rbac";
+import { requireOrg, assertWritable } from "@/lib/rbac";
 import { eq, and, desc } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { ActivityService } from "@/domains/activities/service";
@@ -23,7 +23,7 @@ const addAttachmentSchema = z.object({
 });
 
 export async function uploadAttachmentAction(formData: FormData) {
-  const { userId, organizationId } = await requireOrg();
+  const { userId, organizationId } = await assertWritable();
 
   const file = formData.get("file") as File | null;
   const leadId = formData.get("leadId") as string | null;
@@ -88,7 +88,7 @@ export async function uploadAttachmentAction(formData: FormData) {
 }
 
 export async function addAttachmentAction(input: z.infer<typeof addAttachmentSchema>) {
-  const { userId, organizationId } = await requireOrg();
+  const { userId, organizationId } = await assertWritable();
 
   const parsed = addAttachmentSchema.safeParse(input);
   if (!parsed.success) {
@@ -137,7 +137,7 @@ export async function getAttachmentsAction(leadId: string) {
 }
 
 export async function deleteAttachmentAction(attachmentId: string, leadId: string) {
-  const { userId, organizationId } = await requireOrg();
+  const { userId, organizationId } = await assertWritable();
   try {
     await assertLeadInOrg(leadId, organizationId);
 

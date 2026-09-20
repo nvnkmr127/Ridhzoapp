@@ -20,11 +20,15 @@ function getClient(): postgres.Sql {
       connect_timeout: 10, // Generous handshake timeout for cloud proxy
       max_lifetime: 60 * 30, // 30m max connection lifetime
       ssl: connectionString?.includes("localhost") ? false : "prefer",
-      debug: (connection, query, params) => {
-        const time = new Date().toISOString().slice(11, 23);
-        const snippet = query.trim().replace(/\s+/g, ' ');
-        console.log(`[DB DEBUG ${time} socket#${connection}] ${snippet.slice(0, 160)}${snippet.length > 160 ? '...' : ''}`, params?.length ? params : '');
-      },
+      // Never in production: logging every query WITH bound params leaks lead PII (names, emails,
+      // phones) and reset-token hashes into stdout/persisted logs.
+      debug: isProd
+        ? undefined
+        : (connection, query, params) => {
+            const time = new Date().toISOString().slice(11, 23);
+            const snippet = query.trim().replace(/\s+/g, ' ');
+            console.log(`[DB DEBUG ${time} socket#${connection}] ${snippet.slice(0, 160)}${snippet.length > 160 ? '...' : ''}`, params?.length ? params : '');
+          },
       connection: {
         timezone: "UTC",
       },

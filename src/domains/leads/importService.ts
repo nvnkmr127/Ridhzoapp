@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { leads } from "@/db/schema";
+import { leads, leadSources, users } from "@/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { PlanService } from "@/domains/billing/planService";
 import { normalizeEmail, normalizePhone } from "@/lib/leads/normalize";
@@ -132,6 +132,26 @@ export class LeadImportService {
   ): Promise<{ imported: number; skipped: number }> {
     const analysis = await this.analyze(organizationId, rows);
     const toInsert = analysis.rows.filter((r) => r.valid && !r.duplicate);
+
+    // Never trust the client-supplied owner/source ids: a crafted request could otherwise attach
+    // imported leads to a user or source in ANOTHER tenant (dangling owner → misfired assignment
+    // notifications, corrupted attribution). Verify both belong to this org before inserting.
+    if (config.ownerId) {
+      const [owner] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.id, config.ownerId), eq(users.organizationId, organizationId), isNull(users.deletedAt)))
+        .limit(1);
+      if (!owner) throw new Error("Selected owner is not a member of this organization.");
+    }
+    if (config.sourceId) {
+      const [src] = await db
+        .select({ id: leadSources.id })
+        .from(leadSources)
+        .where(and(eq(leadSources.id, config.sourceId), eq(leadSources.organizationId, organizationId)))
+        .limit(1);
+      if (!src) throw new Error("Selected source does not belong to this organization.");
+    }
 
     if (toInsert.length > 0) {
       await PlanService.assertCanAddLead(organizationId);

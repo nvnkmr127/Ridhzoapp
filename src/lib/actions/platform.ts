@@ -11,6 +11,11 @@ import { ok, fail, actionFail } from "@/lib/actions/result";
 const IMPERSONATE_COOKIE = "impersonate_org";
 const IMPERSONATE_READONLY_COOKIE = "impersonate_readonly";
 
+// Platform-scoped events (broadcast, maintenance, feature flags, DLQ retry, recycle-bin purge)
+// belong to no tenant. Log them under the fixed system org so they're never dropped just because
+// the acting super-admin happens to have no organizationId.
+const PLATFORM_ORG_ID = "00000000-0000-0000-0000-000000000000";
+
 const planSchema = z.object({
   organizationId: z.string().uuid(),
   plan: z.enum(["free", "pro", "business"]),
@@ -209,15 +214,13 @@ export async function setBroadcastAction(broadcast: {
   const session = await requireSuperAdmin();
   try {
     await PlatformService.setBroadcast(broadcast);
-    if (session.user.organizationId) {
-      await AuditService.log({
-        organizationId: session.user.organizationId,
+    await AuditService.log({
+        organizationId: session.user.organizationId ?? PLATFORM_ORG_ID,
         userId: session.user.id,
         action: broadcast.active ? "platform.broadcast_publish" : "platform.broadcast_clear",
         entityType: "system",
         metadata: { ...broadcast, by: "super_admin" },
       });
-    }
     revalidatePath("/", "layout");
     return ok({ success: true });
   } catch (e) {
@@ -229,15 +232,13 @@ export async function retryAllFailedDeliveriesAction() {
   const session = await requireSuperAdmin();
   try {
     const res = await PlatformService.retryAllFailedDeliveries();
-    if (session.user.organizationId) {
-      await AuditService.log({
-        organizationId: session.user.organizationId,
+    await AuditService.log({
+        organizationId: session.user.organizationId ?? PLATFORM_ORG_ID,
         userId: session.user.id,
         action: "platform.bulk_dlq_retry",
         entityType: "webhook_delivery",
         metadata: { retried: res.retried, by: "super_admin" },
       });
-    }
     revalidatePath("/admin");
     return ok(res);
   } catch (e) {
@@ -249,15 +250,13 @@ export async function purgeRecycleBinAction() {
   const session = await requireSuperAdmin();
   try {
     const res = await PlatformService.purgeRecycleBin();
-    if (session.user.organizationId) {
-      await AuditService.log({
-        organizationId: session.user.organizationId,
+    await AuditService.log({
+        organizationId: session.user.organizationId ?? PLATFORM_ORG_ID,
         userId: session.user.id,
         action: "platform.recycle_bin_purge",
         entityType: "lead",
         metadata: { purgedCount: res.purgedCount, by: "super_admin" },
       });
-    }
     revalidatePath("/admin");
     return ok(res);
   } catch (e) {
@@ -271,15 +270,13 @@ export async function toggleFeatureFlagAction(key: string, enabled: boolean) {
     const { FeatureFlagService } = await import("@/domains/platform/featureFlags");
     const flag = await FeatureFlagService.toggle(key, enabled);
     if (!flag) return fail("NOT_FOUND", "Feature flag not found");
-    if (session.user.organizationId) {
-      await AuditService.log({
-        organizationId: session.user.organizationId,
+    await AuditService.log({
+        organizationId: session.user.organizationId ?? PLATFORM_ORG_ID,
         userId: session.user.id,
         action: "platform.toggle_feature_flag",
         entityType: "system",
         metadata: { key, enabled, by: "super_admin" },
       });
-    }
     revalidatePath("/admin");
     return ok(flag);
   } catch (e) {
@@ -316,15 +313,13 @@ export async function toggleMaintenanceModeAction(enabled: boolean, message?: st
       message: message || "System is undergoing scheduled maintenance. Please check back shortly.",
       updatedAt: new Date().toISOString(),
     });
-    if (session.user.organizationId) {
-      await AuditService.log({
-        organizationId: session.user.organizationId,
+    await AuditService.log({
+        organizationId: session.user.organizationId ?? PLATFORM_ORG_ID,
         userId: session.user.id,
         action: enabled ? "platform.maintenance_enable" : "platform.maintenance_disable",
         entityType: "system",
         metadata: { enabled, message, by: "super_admin" },
       });
-    }
     revalidatePath("/", "layout");
     return ok({ enabled });
   } catch (e) {
@@ -373,15 +368,13 @@ export async function saveOpsAlertConfigAction(config: any) {
   try {
     const { OpsAlertService } = await import("@/domains/platform/opsAlertService");
     await OpsAlertService.saveConfig(config);
-    if (session.user.organizationId) {
-      await AuditService.log({
-        organizationId: session.user.organizationId,
+    await AuditService.log({
+        organizationId: session.user.organizationId ?? PLATFORM_ORG_ID,
         userId: session.user.id,
         action: "platform.save_ops_webhook",
         entityType: "system",
         metadata: { enabled: config.enabled, urlSet: !!config.url, by: "super_admin" },
       });
-    }
     revalidatePath("/admin");
     return ok(config);
   } catch (e) {

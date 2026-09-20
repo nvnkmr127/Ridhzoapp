@@ -1119,7 +1119,7 @@ export class PlatformService {
     if (conf !== org.slug.toLowerCase() && conf !== org.name.toLowerCase()) {
       return {
         success: false,
-        message: `Confirmation mismatch. You typed "${confirmation}", but must type "${org.slug}".`,
+        message: `Confirmation mismatch. You typed "${confirmation}", but must type the workspace slug ("${org.slug}") or name ("${org.name}").`,
       };
     }
 

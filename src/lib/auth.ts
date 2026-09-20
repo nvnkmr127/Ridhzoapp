@@ -273,6 +273,10 @@ export const authOptions: NextAuthOptions = {
           token.isSuperAdmin = dbUser.isSuperAdmin;
           token.phone = dbUser.phone;
           token.refreshedAt = Date.now();
+          // Stable sign-in time (never updated on later refreshes) — the baseline a super-admin's
+          // "revoke sessions" is compared against. token.iat can't be used: NextAuth re-stamps it
+          // on every re-encode, which would make an old token look newer than the revocation.
+          token.authAt = (token.authAt as number | undefined) ?? Date.now();
           return token;
         }
       }
@@ -284,6 +288,7 @@ export const authOptions: NextAuthOptions = {
         token.isSuperAdmin = user.isSuperAdmin;
         token.phone = user.phone;
         token.refreshedAt = Date.now();
+        token.authAt = Date.now();
         return token;
       }
 
@@ -304,7 +309,20 @@ export const authOptions: NextAuthOptions = {
           .from(users)
           .where(eq(users.id, token.id as string))
           .limit(1);
-        if (!u || u.isActive === false || u.deletedAt) {
+        // Honor a super-admin "revoke sessions": if the user or their org was revoked AFTER this
+        // session was issued, close it. Checked inside the same throttled window (not every request).
+        let revoked = false;
+        try {
+          const { SessionService } = await import("@/domains/platform/sessionService");
+          revoked = await SessionService.isRevoked(
+            token.id as string,
+            (u?.organizationId ?? token.organizationId) as string | undefined,
+            token.authAt as number | undefined,
+          );
+        } catch {
+          // Revocation store unreachable — don't lock everyone out on a transient config-read error.
+        }
+        if (!u || u.isActive === false || u.deletedAt || revoked) {
           // Fail closed: requireOrg() redirects to /login when organizationId is null, and every
           // permission check refuses without a roleId — this doesn't force a client-side sign-out,
           // but it stops the session from acting as anyone from the next request onward.

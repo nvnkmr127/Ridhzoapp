@@ -1,6 +1,6 @@
 "use server";
 
-import { requireOrg } from "@/lib/rbac";
+import { assertWritable } from "@/lib/rbac";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { FollowUpService } from "@/domains/follow-ups/service";
@@ -16,7 +16,7 @@ const followUpSchema = z.object({
 });
 
 export async function createFollowUp(input: z.infer<typeof followUpSchema>) {
-  const { userId: sessionUserId, organizationId } = await requireOrg();
+  const { userId: sessionUserId, organizationId } = await assertWritable();
 
   const parsed = followUpSchema.safeParse(input);
   if (!parsed.success) {
@@ -45,7 +45,7 @@ export async function createFollowUp(input: z.infer<typeof followUpSchema>) {
 }
 
 export async function completeFollowUp(id: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await assertWritable();
   try {
     const updated = await FollowUpService.completeFollowUp(id, organizationId);
     if (!updated) return fail("NOT_FOUND", "This follow-up no longer exists.");
@@ -58,7 +58,7 @@ export async function completeFollowUp(id: string) {
 }
 
 export async function cancelFollowUp(id: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await assertWritable();
   try {
     const updated = await FollowUpService.cancelFollowUp(id, organizationId);
     if (!updated) return fail("NOT_FOUND", "This follow-up no longer exists.");
@@ -71,7 +71,7 @@ export async function cancelFollowUp(id: string) {
 }
 
 export async function snoozeFollowUp(id: string, snoozedUntil: Date) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await assertWritable();
   try {
     const updated = await FollowUpService.snoozeFollowUp(id, snoozedUntil, organizationId);
     if (!updated) return fail("NOT_FOUND", "This follow-up no longer exists.");
@@ -84,7 +84,7 @@ export async function snoozeFollowUp(id: string, snoozedUntil: Date) {
 }
 
 export async function rescheduleFollowUp(id: string, dueAt: Date) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await assertWritable();
   try {
     const updated = await FollowUpService.rescheduleFollowUp(id, dueAt, organizationId);
     if (!updated) return fail("NOT_FOUND", "This follow-up no longer exists.");
@@ -97,7 +97,7 @@ export async function rescheduleFollowUp(id: string, dueAt: Date) {
 }
 
 export async function assignFollowUp(id: string, userId: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await assertWritable();
   try {
     const updated = await FollowUpService.assignFollowUp(id, userId, organizationId);
     if (!updated) return fail("NOT_FOUND", "This follow-up no longer exists.");

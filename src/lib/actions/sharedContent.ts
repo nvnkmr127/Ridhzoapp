@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { requireOrg } from "@/lib/rbac";
+import { requireOrg, assertWritable } from "@/lib/rbac";
 import { ContentSharingService } from "@/domains/leads/contentSharingService";
 import { ok, fail, actionFail } from "@/lib/actions/result";
 
@@ -15,7 +15,7 @@ const createSchema = z.object({
 });
 
 export async function createShareAction(data: unknown) {
-  const { organizationId, userId } = await requireOrg();
+  const { organizationId, userId } = await assertWritable();
   const parsed = createSchema.safeParse(data);
   if (!parsed.success) {
     return fail("VALIDATION", "Please provide a title for what you're sharing.");

@@ -1,6 +1,6 @@
 "use server";
 
-import { requireOrg, requirePermission, hasPermission } from "@/lib/rbac";
+import { requireOrg, requirePermission, hasPermission, assertWritable } from "@/lib/rbac";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { LeadService } from "@/domains/leads/service";
@@ -142,7 +142,7 @@ export async function updateCustomDataAction(leadId: string, data: Record<string
 }
 
 export async function deleteLeadAction(id: string) {
-  const { userId, organizationId } = await requireOrg();
+  const { userId, organizationId } = await assertWritable();
   const allowed = await hasPermission("leads.delete");
   if (!allowed) {
     const lead = await LeadService.getLead(id, organizationId);
@@ -334,7 +334,7 @@ const deleteNoteSchema = z.object({
 });
 
 export async function deleteNoteAction(noteId: string, leadId: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await assertWritable();
 
   const parsed = deleteNoteSchema.safeParse({ noteId, leadId });
   if (!parsed.success) {
@@ -363,7 +363,7 @@ const updateNoteSchema = z.object({
 });
 
 export async function updateNoteAction(input: z.infer<typeof updateNoteSchema>) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await assertWritable();
 
   const parsed = updateNoteSchema.safeParse(input);
   if (!parsed.success) {
@@ -487,7 +487,7 @@ export async function checkLeadDuplicatesAction(leadId: string) {
 }
 
 export async function updateLeadFollowUpAction(leadId: string, nextFollowUpAt: string | null) {
-  const { userId, organizationId } = await requireOrg();
+  const { userId, organizationId } = await assertWritable();
 
   // Guard against an unparseable date string reaching `new Date(...)` → Invalid Date in the column.
   let followUpDate: Date | null = null;
@@ -556,7 +556,7 @@ export async function updateLeadFollowUpAction(leadId: string, nextFollowUpAt: s
 }
 
 export async function updateLeadStageAndValueAction(leadId: string, input: { stageId?: string | null; expectedValue?: string | null }) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await assertWritable();
 
   // Reject a non-numeric or negative opportunity value before it hits the numeric column.
   if (input.expectedValue) {

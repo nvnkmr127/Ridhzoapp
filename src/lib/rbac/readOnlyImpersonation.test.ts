@@ -87,4 +87,35 @@ describe("Read-only impersonation RBAC", () => {
     expect(await hasPermission("leads.edit")).toBe(true);
     expect(await hasPermission("settings.manage")).toBe(true);
   });
+
+  it("assertWritable refuses writes under read-only impersonation", async () => {
+    const { assertWritable } = await import("./index");
+    mockGetSession.mockResolvedValue({
+      user: { id: "super_1", email: "admin@platform.com", isSuperAdmin: true, organizationId: "admin_org" },
+    });
+    const cookieMap = new Map<string, string>([
+      ["impersonate_org", "tenant_xyz"],
+      ["impersonate_readonly", "true"],
+    ]);
+    mockCookies.mockResolvedValue({
+      get: (name: string) => (cookieMap.has(name) ? { value: cookieMap.get(name) } : undefined),
+    });
+
+    await expect(assertWritable()).rejects.toThrow(/read-only/i);
+  });
+
+  it("assertWritable allows writes when not in read-only impersonation", async () => {
+    const { assertWritable } = await import("./index");
+    mockGetSession.mockResolvedValue({
+      user: { id: "super_1", email: "admin@platform.com", isSuperAdmin: true, organizationId: "admin_org" },
+    });
+    const cookieMap = new Map<string, string>([["impersonate_org", "tenant_xyz"]]);
+    mockCookies.mockResolvedValue({
+      get: (name: string) => (cookieMap.has(name) ? { value: cookieMap.get(name) } : undefined),
+    });
+
+    const ctx = await assertWritable();
+    expect(ctx.organizationId).toBe("tenant_xyz");
+    expect(ctx.readOnly).toBe(false);
+  });
 });

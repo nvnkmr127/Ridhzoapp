@@ -6,6 +6,8 @@ import { SystemBroadcastBanner } from "@/components/platform/SystemBroadcastBann
 import { PaymentGraceBanner } from "@/components/billing/PaymentGraceBanner";
 import { FloatingAssistant } from "@/components/assistant/FloatingAssistant";
 import { isSuperAdmin, requireOrg } from "@/lib/rbac";
+import { PlatformConfigService } from "@/domains/platform/configService";
+import { Wrench } from "lucide-react";
 
 // Every dashboard page is authed and DB-backed — render per request, never prerender at build.
 export const dynamic = "force-dynamic";
@@ -17,6 +19,32 @@ export default async function DashboardLayout({
 }) {
   const superAdmin = await isSuperAdmin();
   const { userId } = await requireOrg();
+
+  // Maintenance mode: lock the app for everyone except super-admins (who need in to turn it off /
+  // finish the work). Enforced here so enabling the toggle actually gates tenants, not just reflects
+  // its own state in the console.
+  if (!superAdmin) {
+    const maintenance = await PlatformConfigService.get<{ enabled: boolean; message: string }>(
+      "maintenance_mode",
+      { enabled: false, message: "" },
+    );
+    if (maintenance.enabled) {
+      return (
+        <div className="flex min-h-dvh flex-col items-center justify-center bg-background p-6 text-center">
+          <div className="mx-auto max-w-md space-y-4 rounded-2xl border border-border bg-card p-8 shadow-sm">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/10 text-amber-600">
+              <Wrench className="h-6 w-6" />
+            </div>
+            <h1 className="text-xl font-semibold tracking-tight">Under maintenance</h1>
+            <p className="text-sm text-muted-foreground">
+              {maintenance.message?.trim() || "System is undergoing scheduled maintenance. Please check back shortly."}
+            </p>
+          </div>
+        </div>
+      );
+    }
+  }
+
   return (
     <div className="flex h-dvh overflow-hidden bg-background text-foreground">
       <Sidebar isSuperAdmin={superAdmin} />

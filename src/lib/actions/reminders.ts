@@ -2,7 +2,7 @@
 
 import { db } from "@/db";
 import { followUps } from "@/db/schema";
-import { requireOrg } from "@/lib/rbac";
+import { requireOrg, assertWritable } from "@/lib/rbac";
 import { eq, and, desc } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { ActivityService } from "@/domains/activities/service";
@@ -20,7 +20,7 @@ const createReminderSchema = z.object({
 });
 
 export async function createReminderAction(input: z.infer<typeof createReminderSchema>) {
-  const { userId, organizationId } = await requireOrg();
+  const { userId, organizationId } = await assertWritable();
 
   const parsed = createReminderSchema.safeParse(input);
   if (!parsed.success) {
@@ -76,7 +76,7 @@ const updateReminderSchema = z.object({
 });
 
 export async function updateReminderAction(input: z.infer<typeof updateReminderSchema>) {
-  const { userId, organizationId } = await requireOrg();
+  const { userId, organizationId } = await assertWritable();
 
   const parsed = updateReminderSchema.safeParse(input);
   if (!parsed.success) {
@@ -134,7 +134,7 @@ export async function getLeadRemindersAction(leadId: string) {
 }
 
 export async function toggleReminderStatusAction(reminderId: string, leadId: string, status: "pending" | "completed") {
-  const { userId, organizationId } = await requireOrg();
+  const { userId, organizationId } = await assertWritable();
   await assertLeadInOrg(leadId, organizationId);
 
   const isCompleted = status === "completed";
@@ -170,7 +170,7 @@ export async function toggleReminderStatusAction(reminderId: string, leadId: str
 }
 
 export async function deleteReminderAction(reminderId: string, leadId: string) {
-  const { userId, organizationId } = await requireOrg();
+  const { userId, organizationId } = await assertWritable();
   try {
     await assertLeadInOrg(leadId, organizationId);
 

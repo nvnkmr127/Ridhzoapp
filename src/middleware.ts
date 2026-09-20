@@ -16,6 +16,7 @@ export const config = {
   matcher: [
     "/",
     "/admin/:path*",
+    "/assistant/:path*",
     "/leads/:path*",
     "/automations/:path*",
     "/sequences/:path*",

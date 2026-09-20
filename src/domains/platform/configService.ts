@@ -43,8 +43,10 @@ export class PlatformConfigService {
         );
       `);
       this.tableEnsured = true;
-    } catch {
-      // DB offline or permission limitation
+    } catch (err) {
+      // DB offline or missing DDL grant. Log it — otherwise get() silently returns defaults and
+      // set() silently no-ops, hiding a real misconfiguration (e.g. broadcasts never persisting).
+      console.error("[PlatformConfigService] ensureTable failed — config reads/writes will be no-ops", err);
     }
   }
 

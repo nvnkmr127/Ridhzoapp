@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { requireOrg } from "@/lib/rbac";
+import { requireOrg, assertWritable } from "@/lib/rbac";
 import { SequenceService } from "@/domains/leads/sequenceService";
 import { ok, fail, actionFail } from "@/lib/actions/result";
 
@@ -21,7 +21,7 @@ const createSchema = z.object({
 });
 
 export async function createSequenceAction(input: unknown) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await assertWritable();
   const parsed = createSchema.safeParse(input);
   if (!parsed.success) {
     return fail("VALIDATION", "Add a name and at least one valid step (each with a message under 2,000 characters).");
@@ -41,7 +41,7 @@ export async function listSequencesAction() {
 }
 
 export async function enrollLeadsAction(sequenceId: string, leadIds: string[]) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await assertWritable();
   if (!sequenceId) return fail("VALIDATION", "Choose a sequence to enroll into.");
   if (!leadIds?.length) return fail("VALIDATION", "Select at least one lead to enroll.");
   try {
@@ -65,7 +65,7 @@ export async function getSequenceDetailAction(sequenceId: string) {
 }
 
 export async function updateSequenceAction(sequenceId: string, input: unknown) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await assertWritable();
   const parsed = createSchema.safeParse(input);
   if (!parsed.success) {
     return fail("VALIDATION", "Add a name and at least one valid step (each with a message under 2,000 characters).");
@@ -80,7 +80,7 @@ export async function updateSequenceAction(sequenceId: string, input: unknown) {
 }
 
 export async function setSequenceActiveAction(sequenceId: string, isActive: boolean) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await assertWritable();
   try {
     const row = await SequenceService.setActive(organizationId, sequenceId, isActive);
     if (!row) return fail("NOT_FOUND", "This sequence no longer exists.");
@@ -93,7 +93,7 @@ export async function setSequenceActiveAction(sequenceId: string, isActive: bool
 }
 
 export async function deleteSequenceAction(sequenceId: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await assertWritable();
   try {
     const res = await SequenceService.delete(organizationId, sequenceId);
     revalidatePath("/sequences");
@@ -104,7 +104,7 @@ export async function deleteSequenceAction(sequenceId: string) {
 }
 
 export async function stopEnrollmentAction(enrollmentId: string, leadId?: string) {
-  const { organizationId } = await requireOrg();
+  const { organizationId } = await assertWritable();
   try {
     const res = await SequenceService.stop(organizationId, enrollmentId);
     if (leadId) revalidatePath(`/leads/${leadId}`);
