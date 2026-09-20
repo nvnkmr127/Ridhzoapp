@@ -1,8 +1,10 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  Eye,
   LogIn,
   Ban,
   RotateCcw,
@@ -82,6 +84,9 @@ import {
   searchDsrSubjectAction,
   exportDsrDossierAction,
   executeRightToBeForgottenAction,
+  exportTenantDossierAction,
+  hardDeleteTenantAction,
+  triggerSuspensionRetentionScanAction,
   saveOpsAlertConfigAction,
   testOpsAlertAction,
   getTenantSecurityPolicyAction,
@@ -93,6 +98,7 @@ import {
   simulatePaymentFailureAction,
   generateInvoiceAction,
   voidInvoiceAction,
+  issueCreditNoteAction,
   createCouponAction,
   toggleCouponAction,
   deleteCouponAction,
@@ -204,6 +210,8 @@ export function PlatformConsole({
   const [orgs, setOrgs] = React.useState<OrgSummary[]>(initial ?? []);
   const [users, setUsers] = React.useState<GlobalUserSummary[]>(initialUsers ?? []);
   const [busy, setBusy] = React.useState<string | null>(null);
+  const [selectedOrgIds, setSelectedOrgIds] = React.useState<string[]>([]);
+  const [bulkBusy, setBulkBusy] = React.useState(false);
 
   // Meta CAPI & Campaign Attribution State
   const [capiConfig, setCapiConfig] = React.useState<MetaCapiConfig>(
@@ -408,6 +416,27 @@ export function PlatformConsole({
       setInvoices((prev) => prev.map((inv) => (inv.id === id ? { ...inv, status: "void" } : inv)));
     } else {
       toast({ title: "Failed to void invoice", description: res.message, variant: "destructive" });
+    }
+  };
+
+  const handleIssueCreditNote = async (inv: TaxInvoice) => {
+    const reason = prompt(
+      `Issue GST Credit Note for ${inv.invoiceNumber} (₹${inv.totalAmount})?\nEnter reason:`,
+      "Double charge refund"
+    );
+    if (reason === null) return;
+    const res = await issueCreditNoteAction(inv.id, reason);
+    if (res.ok) {
+      toast({
+        title: "Credit Note Issued",
+        description: `${res.data.invoiceNumber} issued for ₹${Math.abs(res.data.totalAmount)}.`,
+      });
+      setInvoices((prev) => [
+        res.data,
+        ...prev.map((i) => (i.id === inv.id ? { ...i, status: "refunded" as const } : i)),
+      ]);
+    } else {
+      toast({ title: "Failed to issue credit note", description: res.message, variant: "destructive" });
     }
   };
 
@@ -783,6 +812,14 @@ export function PlatformConsole({
   const [dsrSearching, setDsrSearching] = React.useState(false);
   const [dsrBusyId, setDsrBusyId] = React.useState<string | null>(null);
 
+  // Tenant Offboarding & Erasure state
+  const [offboardOrgId, setOffboardOrgId] = React.useState<string>(initial[0]?.id ?? "");
+  const [exportingTenantDossier, setExportingTenantDossier] = React.useState(false);
+  const [hardDeleteModalOpen, setHardDeleteModalOpen] = React.useState(false);
+  const [hardDeleteConfirmInput, setHardDeleteConfirmInput] = React.useState("");
+  const [hardDeletingTenant, setHardDeletingTenant] = React.useState(false);
+  const [runningRetentionScan, setRunningRetentionScan] = React.useState(false);
+
   // Ops Webhook state
   const [opsAlert, setOpsAlert] = React.useState<OpsWebhookConfig>(
     initialOpsAlert ?? {
@@ -826,6 +863,12 @@ export function PlatformConsole({
   const [broadcastLevel, setBroadcastLevel] = React.useState<"info" | "warning" | "destructive">(
     initialBroadcast?.level ?? "info"
   );
+  const [broadcastTargetPlan, setBroadcastTargetPlan] = React.useState<"all" | "free" | "pro" | "business">(
+    (initialBroadcast?.targetPlan as any) ?? "all"
+  );
+  const [broadcastTargetOrgId, setBroadcastTargetOrgId] = React.useState<string>(
+    initialBroadcast?.targetOrgId ?? "all"
+  );
   const [savingBroadcast, setSavingBroadcast] = React.useState(false);
 
   // Debounced user search
@@ -858,14 +901,19 @@ export function PlatformConsole({
     });
   }, [orgs, orgSearch, planFilter, statusFilter]);
 
-  async function changePlan(org: OrgSummary, plan: string) {
-    setOrgs((s) => s.map((o) => (o.id === org.id ? { ...o, plan } : o)));
-    const res = await setOrgPlanAction({ organizationId: org.id, plan: plan as any });
+  async function changePlan(org: OrgSummary, planValue: string) {
+    const isTrial = planValue.endsWith("_trial");
+    const cleanPlan = isTrial ? planValue.replace("_trial", "") : planValue;
+    const trialDays = isTrial ? 14 : null;
+
+    setOrgs((s) => s.map((o) => (o.id === org.id ? { ...o, plan: cleanPlan } : o)));
+    const res = await setOrgPlanAction({ organizationId: org.id, plan: cleanPlan as any, trialDays });
     if (!res.ok) {
       setOrgs((s) => s.map((o) => (o.id === org.id ? { ...o, plan: org.plan } : o)));
       toast({ variant: "destructive", title: "Couldn't change plan", description: res.message });
     } else {
-      toast({ title: `Plan set to ${plan}` });
+      setOrgs((s) => s.map((o) => (o.id === org.id ? { ...o, plan: cleanPlan, trialEndsAt: res.data.trialEndsAt } : o)));
+      toast({ title: isTrial ? `14-Day ${cleanPlan} trial activated` : `Plan set to ${cleanPlan}` });
     }
   }
 
@@ -882,6 +930,37 @@ export function PlatformConsole({
       toast({ title: next ? "Organization suspended" : "Organization reactivated" });
     }
     setBusy(null);
+  }
+
+  const toggleSelectOrg = (id: string) => {
+    setSelectedOrgIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const toggleSelectAllOrgs = () => {
+    const allSelected = filteredOrgs.length > 0 && filteredOrgs.every((o) => selectedOrgIds.includes(o.id));
+    setSelectedOrgIds(allSelected ? [] : filteredOrgs.map((o) => o.id));
+  };
+
+  async function handleBulkSuspend(suspend: boolean) {
+    const count = selectedOrgIds.length;
+    if (!count) return;
+    if (!confirm(`${suspend ? "Suspend" : "Reactivate"} ${count} selected organization${count > 1 ? "s" : ""}?`)) return;
+
+    setBulkBusy(true);
+    // ponytail: sequential loop over setOrgSuspendedAction; batch endpoint when fleet > 100 orgs
+    let failed = 0;
+    for (const id of selectedOrgIds) {
+      const res = await setOrgSuspendedAction(id, suspend);
+      if (!res.ok) failed++;
+    }
+    setOrgs((s) => s.map((o) => (selectedOrgIds.includes(o.id) ? { ...o, suspended: suspend } : o)));
+    setBulkBusy(false);
+    setSelectedOrgIds([]);
+    if (failed > 0) {
+      toast({ variant: "destructive", title: `Completed with ${failed} failure(s)` });
+    } else {
+      toast({ title: `${count} organization${count > 1 ? "s" : ""} ${suspend ? "suspended" : "reactivated"}` });
+    }
   }
 
   async function handleSetSeatOverride(org: OrgSummary) {
@@ -951,6 +1030,8 @@ export function PlatformConsole({
       message: broadcastMessage,
       active: broadcastActive,
       level: broadcastLevel,
+      targetPlan: broadcastTargetPlan === "all" ? null : broadcastTargetPlan,
+      targetOrgId: broadcastTargetOrgId === "all" ? null : broadcastTargetOrgId,
     });
     setSavingBroadcast(false);
     if (!res.ok) {
@@ -1128,6 +1209,76 @@ export function PlatformConsole({
             : r
         )
       );
+    }
+  }
+
+  async function handleExportTenantDossier(orgId: string) {
+    const targetOrg = initial.find((o) => o.id === orgId);
+    setExportingTenantDossier(true);
+    try {
+      const res = await exportTenantDossierAction(orgId);
+      if (!res.ok) {
+        toast({ title: "Export Failed", description: res.message, variant: "destructive" });
+        return;
+      }
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(res.data, null, 2));
+      const downloadAnchor = document.createElement("a");
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute(
+        "download",
+        `tenant_dossier_${targetOrg?.slug ?? orgId}_${new Date().toISOString().slice(0, 10)}.json`
+      );
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      toast({ title: "Dossier Exported", description: `Full tenant data exported for ${targetOrg?.name ?? orgId}.` });
+    } catch {
+      toast({ title: "Export Failed", description: "Could not export tenant dossier.", variant: "destructive" });
+    } finally {
+      setExportingTenantDossier(false);
+    }
+  }
+
+  async function handleHardDeleteTenant() {
+    const targetOrg = initial.find((o) => o.id === offboardOrgId);
+    if (!targetOrg) return;
+    const conf = hardDeleteConfirmInput.trim().toLowerCase();
+    if (conf !== targetOrg.slug.toLowerCase() && conf !== targetOrg.name.toLowerCase()) {
+      toast({ title: "Confirmation Mismatch", description: `Please type "${targetOrg.slug}" to confirm.`, variant: "destructive" });
+      return;
+    }
+    setHardDeletingTenant(true);
+    try {
+      const res = await hardDeleteTenantAction(offboardOrgId, hardDeleteConfirmInput.trim());
+      if (!res.ok) {
+        toast({ title: "Deletion Failed", description: res.message, variant: "destructive" });
+        return;
+      }
+      toast({ title: "Tenant Erased", description: `Permanently removed ${targetOrg.name} and all data.` });
+      setHardDeleteModalOpen(false);
+      setHardDeleteConfirmInput("");
+      router.refresh();
+    } catch {
+      toast({ title: "Deletion Failed", description: "Failed to erase tenant.", variant: "destructive" });
+    } finally {
+      setHardDeletingTenant(false);
+    }
+  }
+
+  async function handleRunRetentionScan() {
+    setRunningRetentionScan(true);
+    try {
+      const res = await triggerSuspensionRetentionScanAction();
+      if (!res.ok) {
+        toast({ title: "Retention Scan Failed", description: res.message, variant: "destructive" });
+      } else {
+        toast({
+          title: "Retention Scan Complete",
+          description: `Scanned ${res.data.scannedCount} suspended workspaces (warned: ${res.data.warnedCount}, anonymized: ${res.data.anonymizedCount}).`,
+        });
+      }
+    } finally {
+      setRunningRetentionScan(false);
     }
   }
 
@@ -1473,11 +1624,52 @@ export function PlatformConsole({
             </div>
           </div>
 
+          {selectedOrgIds.length > 0 && (
+            <div className="flex items-center gap-2 bg-muted/60 px-3 py-2 rounded-xl border text-xs">
+              <span className="font-medium text-foreground">{selectedOrgIds.length} selected</span>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="h-7 text-xs gap-1"
+                disabled={bulkBusy}
+                onClick={() => handleBulkSuspend(true)}
+              >
+                <Ban className="h-3 w-3" /> Suspend
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs gap-1"
+                disabled={bulkBusy}
+                onClick={() => handleBulkSuspend(false)}
+              >
+                <RotateCcw className="h-3 w-3" /> Reactivate
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-muted-foreground ml-auto"
+                onClick={() => setSelectedOrgIds([])}
+              >
+                Clear
+              </Button>
+            </div>
+          )}
+
           <div className="rounded-2xl border overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-muted/50 text-muted-foreground">
                   <tr className="text-left">
+                    <th className="w-10 px-4 py-3">
+                      <input
+                        type="checkbox"
+                        className="rounded border-gray-300 cursor-pointer"
+                        checked={filteredOrgs.length > 0 && filteredOrgs.every((o) => selectedOrgIds.includes(o.id))}
+                        onChange={toggleSelectAllOrgs}
+                        aria-label="Select all organizations"
+                      />
+                    </th>
                     <th className="px-4 py-3 font-medium">Organization</th>
                     <th className="px-4 py-3 font-medium text-right">Users</th>
                     <th className="px-4 py-3 font-medium text-right">Leads</th>
@@ -1489,15 +1681,29 @@ export function PlatformConsole({
                 <tbody>
                   {filteredOrgs.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                      <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
                         No organizations match the selected search or filters.
                       </td>
                     </tr>
                   ) : (
                     filteredOrgs.map((o) => (
                       <tr key={o.id} className="border-t border-border hover:bg-muted/30 transition-colors">
+                        <td className="w-10 px-4 py-3">
+                          <input
+                            type="checkbox"
+                            className="rounded border-gray-300 cursor-pointer"
+                            checked={selectedOrgIds.includes(o.id)}
+                            onChange={() => toggleSelectOrg(o.id)}
+                            aria-label={`Select ${o.name}`}
+                          />
+                        </td>
                         <td className="px-4 py-3">
-                          <div className="font-medium text-foreground">{o.name}</div>
+                          <Link
+                            href={`/admin/tenant/${o.id}`}
+                            className="font-medium text-foreground hover:underline hover:text-primary transition-colors block"
+                          >
+                            {o.name}
+                          </Link>
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-xs text-muted-foreground font-mono">{o.slug}</span>
                             {o.attribution?.utmCampaign && (
@@ -1515,8 +1721,15 @@ export function PlatformConsole({
                               <SelectTrigger className="h-8 w-24 text-xs"><SelectValue /></SelectTrigger>
                               <SelectContent>
                                 {PLANS.map((p) => <SelectItem key={p} value={p} className="capitalize text-xs">{p}</SelectItem>)}
+                                <SelectItem value="pro_trial" className="text-xs text-amber-600 font-medium">Pro (14d)</SelectItem>
+                                <SelectItem value="business_trial" className="text-xs text-amber-600 font-medium">Biz (14d)</SelectItem>
                               </SelectContent>
                             </Select>
+                            {o.trialEndsAt && new Date(o.trialEndsAt).getTime() > Date.now() && (
+                              <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-500/30 bg-amber-500/10">
+                                Trial
+                              </Badge>
+                            )}
                             <button
                               onClick={() => handleSetSeatOverride(o)}
                               title="Click to override seat limit"
@@ -1541,6 +1754,11 @@ export function PlatformConsole({
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center justify-end gap-2">
+                            <Link href={`/admin/tenant/${o.id}`}>
+                              <Button variant="ghost" size="sm" className="gap-1 text-xs h-8">
+                                <Eye className="h-3.5 w-3.5" /> 360
+                              </Button>
+                            </Link>
                             <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => handleOpenAuditModal(o)} title="View organization audit trail">
                               <History className="h-3.5 w-3.5" /> Audit
                             </Button>
@@ -2010,6 +2228,62 @@ export function PlatformConsole({
                   </Button>
                 </div>
               </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium">Target Plan Audience</label>
+                  <Select
+                    value={broadcastTargetPlan}
+                    onValueChange={(v: any) => setBroadcastTargetPlan(v)}
+                  >
+                    <SelectTrigger className="mt-1 h-9 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Plans (Global)</SelectItem>
+                      <SelectItem value="free">Free Plan Only</SelectItem>
+                      <SelectItem value="pro">Pro Plan Only</SelectItem>
+                      <SelectItem value="business">Business Plan Only</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium">Target Specific Tenant (Optional)</label>
+                  <Select
+                    value={broadcastTargetOrgId}
+                    onValueChange={(v: any) => setBroadcastTargetOrgId(v)}
+                  >
+                    <SelectTrigger className="mt-1 h-9 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Tenants (No Restriction)</SelectItem>
+                      {orgs.map((o) => (
+                        <SelectItem key={o.id} value={o.id}>
+                          {o.name} ({o.slug})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {(broadcastTargetPlan !== "all" || broadcastTargetOrgId !== "all") && (
+                <div className="text-xs text-muted-foreground flex items-center gap-2 bg-muted/50 p-2.5 rounded-lg border border-border">
+                  <span className="font-semibold text-foreground">Target Audience:</span>
+                  {broadcastTargetPlan !== "all" && (
+                    <Badge variant="outline" className="text-[10px] capitalize bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20">
+                      Plan: {broadcastTargetPlan}
+                    </Badge>
+                  )}
+                  {broadcastTargetOrgId !== "all" && (
+                    <Badge variant="outline" className="text-[10px] bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/20">
+                      Tenant: {orgs.find((o) => o.id === broadcastTargetOrgId)?.name || broadcastTargetOrgId}
+                    </Badge>
+                  )}
+                </div>
+              )}
 
               <div className="pt-2">
                 <Button
@@ -2723,6 +2997,112 @@ export function PlatformConsole({
               </table>
             </div>
           </div>
+
+          {/* Whole-Tenant Offboarding & Hard-Delete (DPDP / GDPR) */}
+          <div className="rounded-2xl border bg-card p-5 shadow-sm space-y-4 border-destructive/20">
+            <div className="border-b pb-3">
+              <h3 className="text-base font-semibold flex items-center gap-2 text-destructive">
+                <Trash2 className="h-4 w-4" /> Whole-Tenant Offboarding &amp; Data Erasure (GDPR Art. 17 / DPDP)
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                When a tenant cancels and requests full data portability or hard erasure, export a complete structured JSON dossier or permanently erase all tenant records across the database.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <div className="flex-1">
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                  Select Organization
+                </label>
+                <Select value={offboardOrgId} onValueChange={setOffboardOrgId}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="Select an organization..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {initial.map((o) => (
+                      <SelectItem key={o.id} value={o.id} className="text-xs">
+                        {o.name} ({o.slug}) — {o.plan}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-end gap-2 pt-1 sm:pt-5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 text-xs gap-1.5"
+                  disabled={exportingTenantDossier || !offboardOrgId}
+                  onClick={() => handleExportTenantDossier(offboardOrgId)}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  {exportingTenantDossier ? "Exporting Dossier..." : "Export Full Dossier (JSON)"}
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="h-9 text-xs gap-1.5"
+                  disabled={!offboardOrgId}
+                  onClick={() => {
+                    setHardDeleteConfirmInput("");
+                    setHardDeleteModalOpen(true);
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Hard Delete Tenant
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-3.5 text-xs text-muted-foreground flex gap-2.5">
+              <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+              <div>
+                <span className="font-semibold text-foreground">Irreversible Compliance Guardrail:</span> Hard deletion requires typing the target organization&apos;s exact slug. Deletion will cascade through all users, leads, activities, follow-ups, invoices, integrations, and platform configurations inside a strict transactional boundary.
+              </div>
+            </div>
+          </div>
+
+          {/* Auto-Retention Policy for Long-Suspended Workspaces */}
+          <div className="rounded-2xl border bg-card p-5 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3">
+              <div>
+                <h3 className="text-base font-semibold flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-primary" /> Auto-Retention Policy (Suspended Workspaces)
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Workspaces suspended for &gt;166 days receive an automated email warning; workspaces suspended &gt;180 days have customer PII permanently anonymized via worker cron.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1.5 shrink-0"
+                disabled={runningRetentionScan}
+                onClick={handleRunRetentionScan}
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${runningRetentionScan ? "animate-spin" : ""}`} />
+                {runningRetentionScan ? "Scanning..." : "Run Retention Scan Now"}
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div className="rounded-xl border bg-muted/30 p-3">
+                <span className="text-muted-foreground block text-[11px]">Retention Limit</span>
+                <span className="text-sm font-semibold text-foreground">180 Days</span>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Fixed auto-anonymization ceiling</p>
+              </div>
+              <div className="rounded-xl border bg-muted/30 p-3">
+                <span className="text-muted-foreground block text-[11px]">Warning Trigger</span>
+                <span className="text-sm font-semibold text-foreground">14 Days Prior (Day 166)</span>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Email notification sent to owner</p>
+              </div>
+              <div className="rounded-xl border bg-muted/30 p-3">
+                <span className="text-muted-foreground block text-[11px]">Purge Worker</span>
+                <span className="text-sm font-semibold text-foreground">Daily Schedule (BullMQ)</span>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Reuses RTBF GDPR redaction engine</p>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -2850,6 +3230,70 @@ export function PlatformConsole({
             </div>
           )}
 
+          {/* Signup -> Activation -> Paid Funnel Card */}
+          {revops?.funnel && (
+            <div className="rounded-2xl border bg-card p-5 shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b pb-3 gap-2">
+                <div>
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <Target className="h-4 w-4 text-primary" /> Signup → Activation → Paid Funnel
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Cohort conversion rates for last 30 days of tenant signups: dropoffs between onboarding, lead creation, and paid tiers.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="font-mono text-xs">
+                    Activation: {revops.funnel.activationRate}%
+                  </Badge>
+                  <Badge variant="outline" className="font-mono text-xs text-emerald-600 dark:text-emerald-400">
+                    Paid: {revops.funnel.paidConversionRate}%
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                {revops.funnel.stages.map((stage) => {
+                  const isDropoff = stage.dropoffRate !== undefined && stage.dropoffRate > 0;
+                  return (
+                    <div key={stage.stage} className="rounded-lg border bg-muted/30 p-3 flex flex-col justify-between space-y-2">
+                      <div>
+                        <div className="flex items-center justify-between text-[11px] font-medium text-muted-foreground uppercase">
+                          <span>{stage.label}</span>
+                          <span className="font-mono text-foreground font-semibold">{stage.rate}%</span>
+                        </div>
+                        <div className="text-2xl font-bold mt-1 text-foreground">
+                          {stage.count}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5 pt-1">
+                        <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${
+                              stage.stage === "churned"
+                                ? "bg-destructive"
+                                : stage.stage === "paid"
+                                ? "bg-emerald-500"
+                                : "bg-primary"
+                            }`}
+                            style={{ width: `${Math.min(100, Math.max(stage.rate, stage.count > 0 ? 4 : 0))}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                          <span>{stage.stage === "signed_up" ? "Cohort base" : `${stage.rate}% of signups`}</span>
+                          {isDropoff && (
+                            <span className="text-destructive font-medium">-{stage.dropoffRate}% drop</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Subscription Payment & Dunning Fleet Inspector Card */}
           <div className="rounded-2xl border bg-card shadow-sm">
             <div className="p-5 border-b space-y-3">
@@ -2944,7 +3388,12 @@ export function PlatformConsole({
                       return (
                         <tr key={b.orgId} className="hover:bg-muted/30 transition-colors">
                           <td className="p-3 pl-5">
-                            <div className="font-semibold text-foreground">{b.orgName}</div>
+                            <Link
+                              href={`/admin/tenant/${b.orgId}`}
+                              className="font-semibold text-foreground hover:underline hover:text-primary transition-colors block"
+                            >
+                              {b.orgName}
+                            </Link>
                             <div className="text-[11px] text-muted-foreground font-mono">{b.slug}</div>
                           </td>
                           <td className="p-3">
@@ -3152,7 +3601,12 @@ export function PlatformConsole({
                     filteredHealth.map((tenant) => (
                       <tr key={tenant.id} className="hover:bg-muted/30 transition-colors">
                         <td className="p-3 pl-5">
-                          <div className="font-semibold text-foreground">{tenant.name}</div>
+                          <Link
+                            href={`/admin/tenant/${tenant.id}`}
+                            className="font-semibold text-foreground hover:underline hover:text-primary transition-colors block"
+                          >
+                            {tenant.name}
+                          </Link>
                           <div className="text-[11px] text-muted-foreground font-mono">{tenant.slug}</div>
                         </td>
                         <td className="p-3">
@@ -3203,6 +3657,15 @@ export function PlatformConsole({
                         </td>
                         <td className="p-3 pr-5 text-right">
                           <div className="flex items-center justify-end gap-2">
+                            <Link href={`/admin/tenant/${tenant.id}`}>
+                              <Button
+                                variant="default"
+                                size="sm"
+                                className="h-7 px-2 text-[11px] gap-1 shadow-sm"
+                              >
+                                <Eye className="h-3 w-3" /> 360 View
+                              </Button>
+                            </Link>
                             <Button
                               variant="outline"
                               size="sm"
@@ -3277,7 +3740,12 @@ export function PlatformConsole({
                       <tr key={inv.id} className="hover:bg-muted/30 transition-colors">
                         <td className="p-3 pl-5 font-mono font-semibold text-foreground">{inv.invoiceNumber}</td>
                         <td className="p-3">
-                          <div className="font-medium text-foreground">{inv.orgName}</div>
+                          <Link
+                            href={`/admin/tenant/${inv.orgId}`}
+                            className="font-medium text-foreground hover:underline hover:text-primary transition-colors block"
+                          >
+                            {inv.orgName}
+                          </Link>
                           {inv.gstin && <div className="text-[10px] text-muted-foreground font-mono">GSTIN: {inv.gstin}</div>}
                         </td>
                         <td className="p-3">
@@ -3290,7 +3758,15 @@ export function PlatformConsole({
                         <td className="p-3 font-mono text-muted-foreground">₹{inv.taxAmount.toLocaleString()}</td>
                         <td className="p-3 font-mono font-bold text-foreground">₹{inv.totalAmount.toLocaleString()}</td>
                         <td className="p-3">
-                          {inv.status === "paid" ? (
+                          {inv.type === "credit_note" ? (
+                            <Badge variant="outline" className="bg-purple-500/15 text-purple-700 dark:text-purple-400 border-purple-500/30">
+                              Credit Note
+                            </Badge>
+                          ) : inv.status === "refunded" ? (
+                            <Badge variant="outline" className="bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30">
+                              Refunded
+                            </Badge>
+                          ) : inv.status === "paid" ? (
                             <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30">
                               Paid
                             </Badge>
@@ -3308,16 +3784,29 @@ export function PlatformConsole({
                           {new Date(inv.issuedAt).toLocaleDateString()}
                         </td>
                         <td className="p-3 pr-5 text-right">
-                          {inv.status !== "void" && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 px-2 text-[10px] text-destructive hover:bg-destructive/10"
-                              onClick={() => handleVoidInvoice(inv.id)}
-                            >
-                              Void
-                            </Button>
-                          )}
+                          <div className="flex items-center justify-end gap-1">
+                            {inv.status === "paid" && inv.type !== "credit_note" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2 text-[10px] text-purple-600 hover:bg-purple-500/10"
+                                onClick={() => handleIssueCreditNote(inv)}
+                                title="Issue GST Credit Note / Refund"
+                              >
+                                Credit Note
+                              </Button>
+                            )}
+                            {inv.status !== "void" && inv.status !== "refunded" && inv.type !== "credit_note" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2 text-[10px] text-destructive hover:bg-destructive/10"
+                                onClick={() => handleVoidInvoice(inv.id)}
+                              >
+                                Void
+                              </Button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -3868,7 +4357,14 @@ export function PlatformConsole({
                           </Badge>
                         </div>
                         <div className="text-[11px] text-muted-foreground truncate">
-                          {t.orgName} · {t.userEmail}
+                          <Link
+                            href={`/admin/tenant/${t.orgId}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="font-medium text-foreground hover:underline hover:text-primary"
+                          >
+                            {t.orgName}
+                          </Link>{" "}
+                          · {t.userEmail}
                         </div>
                         <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
                           <Badge variant="outline" className="text-[10px] capitalize">
@@ -3920,11 +4416,26 @@ export function PlatformConsole({
                     <div className="border-b pb-3 mb-3 flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <h4 className="font-semibold text-sm text-foreground">{selectedTicket.subject}</h4>
-                        <div className="text-xs text-muted-foreground">
-                          {selectedTicket.orgName} · Submitted by {selectedTicket.userEmail}
+                        <div className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">
+                          <Link
+                            href={`/admin/tenant/${selectedTicket.orgId}`}
+                            className="font-medium text-foreground hover:underline hover:text-primary"
+                          >
+                            {selectedTicket.orgName}
+                          </Link>
+                          <span>· Submitted by {selectedTicket.userEmail}</span>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
+                        <Link href={`/admin/tenant/${selectedTicket.orgId}`}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-[11px] gap-1"
+                          >
+                            <Eye className="h-3 w-3" /> Tenant 360
+                          </Button>
+                        </Link>
                         <Button
                           variant="outline"
                           size="sm"
@@ -4604,6 +5115,59 @@ export function PlatformConsole({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Whole-Tenant Hard Delete Confirmation Dialog */}
+      {(() => {
+        const targetOrg = initial.find((o) => o.id === offboardOrgId);
+        const slugMatch = targetOrg
+          ? hardDeleteConfirmInput.trim().toLowerCase() === targetOrg.slug.toLowerCase() ||
+            hardDeleteConfirmInput.trim().toLowerCase() === targetOrg.name.toLowerCase()
+          : false;
+
+        return (
+          <Dialog open={hardDeleteModalOpen} onOpenChange={setHardDeleteModalOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-destructive">
+                  <AlertTriangle className="h-5 w-5 text-destructive" />
+                  Permanently Hard-Delete {targetOrg?.name ?? "Tenant"}?
+                </DialogTitle>
+                <DialogDescription>
+                  This action is irreversible under DPDP 2023 and GDPR Article 17. All data will be permanently wiped across the database.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-3 py-2 text-xs">
+                <div className="p-2.5 rounded border border-destructive/30 bg-destructive/5 text-destructive space-y-1.5">
+                  <p className="font-semibold">
+                    To confirm, type the tenant slug <code className="bg-destructive/10 px-1 py-0.5 rounded font-mono">{targetOrg?.slug}</code> below:
+                  </p>
+                  <Input
+                    value={hardDeleteConfirmInput}
+                    onChange={(e) => setHardDeleteConfirmInput(e.target.value)}
+                    placeholder={targetOrg?.slug}
+                    className="h-8 text-xs font-mono border-destructive/40 focus-visible:ring-destructive"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" size="sm" onClick={() => setHardDeleteModalOpen(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={hardDeletingTenant || !slugMatch}
+                  onClick={handleHardDeleteTenant}
+                  className="gap-1.5"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {hardDeletingTenant ? "Purging Tenant..." : "Permanently Erase Tenant"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
     </div>
   );
 }

@@ -28,6 +28,14 @@ vi.mock("@/lib/jobs/workers/anomalyWorker", () => ({
   createAnomalyWorker: vi.fn(),
   scheduleAnomalyScan: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock("@/lib/jobs/workers/suspensionRetentionWorker", () => ({
+  createSuspensionRetentionWorker: vi.fn(),
+  scheduleSuspensionRetentionScan: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@/lib/jobs/workers/trialDowngradeWorker", () => ({
+  createTrialDowngradeWorker: vi.fn(),
+  scheduleTrialDowngradeScan: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("@/lib/jobs/workers/webhookRetryWorker", () => ({
   createWebhookRetryWorker: vi.fn(),
 }));

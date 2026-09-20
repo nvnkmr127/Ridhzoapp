@@ -50,6 +50,7 @@ export const organizations = pgTable('organizations', {
   razorpaySubscriptionId: varchar('razorpay_subscription_id', { length: 255 }),
   planStatus: varchar('plan_status', { length: 30 }).default('active').notNull(), // active, created, halted, cancelled
   currentPeriodEnd: timestamp('current_period_end'),
+  trialEndsAt: timestamp('trial_ends_at'), // auto-reverts to 'free' when expired if not paying
 
   createdAt: timestamp('created_at').defaultNow().notNull(),
   // Bumped on every settings write; used for optimistic concurrency so two admins saving at once

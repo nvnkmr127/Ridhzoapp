@@ -5,7 +5,28 @@ export interface BroadcastConfig {
   message: string;
   active: boolean;
   level: "info" | "warning" | "destructive";
+  targetPlan?: "free" | "pro" | "business" | "all" | null;
+  targetOrgId?: string | null;
   updatedAt?: string;
+}
+
+export function shouldShowBroadcast(
+  broadcast: BroadcastConfig | null | undefined,
+  currentOrg: { id: string; plan: string } | null
+): boolean {
+  if (!broadcast || !broadcast.active || !broadcast.message?.trim()) return false;
+
+  // Single tenant target
+  if (broadcast.targetOrgId) {
+    if (!currentOrg || currentOrg.id !== broadcast.targetOrgId) return false;
+  }
+
+  // Plan target
+  if (broadcast.targetPlan && broadcast.targetPlan !== "all") {
+    if (!currentOrg || currentOrg.plan !== broadcast.targetPlan) return false;
+  }
+
+  return true;
 }
 
 export class PlatformConfigService {

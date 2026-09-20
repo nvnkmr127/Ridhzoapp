@@ -11,14 +11,22 @@ import { ok, fail, actionFail } from "@/lib/actions/result";
 const IMPERSONATE_COOKIE = "impersonate_org";
 const IMPERSONATE_READONLY_COOKIE = "impersonate_readonly";
 
-const planSchema = z.object({ organizationId: z.string().uuid(), plan: z.enum(["free", "pro", "business"]) });
+const planSchema = z.object({
+  organizationId: z.string().uuid(),
+  plan: z.enum(["free", "pro", "business"]),
+  trialDays: z.number().int().positive().nullable().optional(),
+});
 
 export async function setOrgPlanAction(input: z.infer<typeof planSchema>) {
   const session = await requireSuperAdmin();
   const parsed = planSchema.safeParse(input);
   if (!parsed.success) return fail("VALIDATION", "Choose a valid plan.");
   try {
-    const row = await PlatformService.setPlan(parsed.data.organizationId, parsed.data.plan);
+    const row = await PlatformService.setPlan(
+      parsed.data.organizationId,
+      parsed.data.plan,
+      parsed.data.trialDays
+    );
     if (!row) return fail("NOT_FOUND", "That organization no longer exists.");
     await AuditService.log({
       organizationId: parsed.data.organizationId,
@@ -26,10 +34,18 @@ export async function setOrgPlanAction(input: z.infer<typeof planSchema>) {
       action: "platform.set_plan",
       entityType: "organization",
       entityId: parsed.data.organizationId,
-      metadata: { plan: parsed.data.plan, by: "super_admin" },
+      metadata: {
+        plan: parsed.data.plan,
+        trialDays: parsed.data.trialDays ?? null,
+        trialEndsAt: row.trialEndsAt ? new Date(row.trialEndsAt).toISOString() : null,
+        by: "super_admin",
+      },
     });
     revalidatePath("/admin");
-    return ok({ plan: parsed.data.plan });
+    return ok({
+      plan: parsed.data.plan,
+      trialEndsAt: row.trialEndsAt ? new Date(row.trialEndsAt).toISOString() : null,
+    });
   } catch (e) {
     return actionFail(e);
   }
@@ -187,6 +203,8 @@ export async function setBroadcastAction(broadcast: {
   message: string;
   active: boolean;
   level: "info" | "warning" | "destructive";
+  targetPlan?: "free" | "pro" | "business" | "all" | null;
+  targetOrgId?: string | null;
 }) {
   const session = await requireSuperAdmin();
   try {
@@ -547,6 +565,19 @@ export async function voidInvoiceAction(id: string) {
   }
 }
 
+export async function issueCreditNoteAction(invoiceId: string, reason?: string) {
+  await requireSuperAdmin();
+  try {
+    const { InvoiceService } = await import("@/domains/billing/invoiceService");
+    const creditNote = await InvoiceService.issueCreditNote(invoiceId, reason);
+    if (!creditNote) return fail("NOT_FOUND", "Original invoice not found");
+    revalidatePath("/admin");
+    return ok(creditNote);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
 // --- Coupons & Promo Codes ---
 export async function createCouponAction(input: {
   code: string;
@@ -888,6 +919,58 @@ export async function listCapiLogsAction(limit = 50) {
     return actionFail(e);
   }
 }
+
+export async function exportTenantDossierAction(organizationId: string) {
+  await requireSuperAdmin();
+  if (!z.string().uuid().safeParse(organizationId).success) return fail("VALIDATION", "Invalid organization.");
+  try {
+    const dossier = await PlatformService.exportTenantDossier(organizationId);
+    if (!dossier) return fail("NOT_FOUND", "Organization not found.");
+    return ok(dossier);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function hardDeleteTenantAction(organizationId: string, confirmation: string) {
+  const session = await requireSuperAdmin();
+  if (!z.string().uuid().safeParse(organizationId).success) return fail("VALIDATION", "Invalid organization.");
+  try {
+    const res = await PlatformService.hardDeleteTenant(organizationId, confirmation, session.user.id);
+    if (!res.success) {
+      return fail("VALIDATION", res.message ?? "Hard delete rejected.");
+    }
+    revalidatePath("/admin");
+    return ok({ success: true });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function triggerSuspensionRetentionScanAction() {
+  await requireSuperAdmin();
+  try {
+    const { ComplianceService } = await import("@/domains/platform/complianceService");
+    const result = await ComplianceService.processSuspensionRetention();
+    revalidatePath("/admin");
+    return ok(result);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function triggerTrialDowngradeScanAction() {
+  await requireSuperAdmin();
+  try {
+    const { BillingLifecycleService } = await import("@/domains/billing/lifecycleService");
+    const result = await BillingLifecycleService.downgradeExpiredTrials();
+    revalidatePath("/admin");
+    return ok(result);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
 
 
 

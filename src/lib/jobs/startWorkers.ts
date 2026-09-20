@@ -47,6 +47,14 @@ export async function startWorkers(): Promise<void> {
   createAnomalyWorker();
   await scheduleAnomalyScan();
 
+  const { createSuspensionRetentionWorker, scheduleSuspensionRetentionScan } = await import("@/lib/jobs/workers/suspensionRetentionWorker");
+  createSuspensionRetentionWorker();
+  await scheduleSuspensionRetentionScan();
+
+  const { createTrialDowngradeWorker, scheduleTrialDowngradeScan } = await import("@/lib/jobs/workers/trialDowngradeWorker");
+  createTrialDowngradeWorker();
+  await scheduleTrialDowngradeScan();
+
   // Consumers with an external producer (event bus).
   const { createWebhookRetryWorker } = await import("@/lib/jobs/workers/webhookRetryWorker");
   createWebhookRetryWorker();

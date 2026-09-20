@@ -16,7 +16,9 @@ export interface TaxInvoice {
   totalAmount: number; // Total INR
   sacCode: string; // 998313 (Software as a Service)
   gstin?: string | null;
-  status: "paid" | "issued" | "void";
+  status: "paid" | "issued" | "void" | "refunded";
+  type?: "invoice" | "credit_note";
+  originalInvoiceId?: string | null;
   issuedAt: string;
   paidAt?: string | null;
   periodStart: string;
@@ -73,6 +75,7 @@ export class InvoiceService {
       sacCode: "998313", // Cloud computing & SaaS services
       gstin: params.gstin ?? null,
       status: params.status ?? "paid",
+      type: "invoice",
       issuedAt: now.toISOString(),
       paidAt: (params.status ?? "paid") === "paid" ? now.toISOString() : null,
       periodStart: now.toISOString(),
@@ -91,6 +94,57 @@ export class InvoiceService {
     });
 
     return invoice;
+  }
+
+  static async issueCreditNote(invoiceId: string, reason?: string): Promise<TaxInvoice | null> {
+    const list = await PlatformConfigService.get<TaxInvoice[]>(INVOICE_CONFIG_KEY, []);
+    const original = list.find((i) => i.id === invoiceId);
+    if (!original) return null;
+
+    const seq = String(list.length + 1).padStart(4, "0");
+    const year = new Date().getFullYear();
+    const invoiceNumber = `CN-${year}-${seq}`;
+    const now = new Date();
+
+    const creditNote: TaxInvoice = {
+      id: `cn_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      invoiceNumber,
+      orgId: original.orgId,
+      orgName: original.orgName,
+      plan: original.plan,
+      amount: -original.amount,
+      taxRate: original.taxRate,
+      taxAmount: -original.taxAmount,
+      totalAmount: -original.totalAmount,
+      sacCode: original.sacCode,
+      gstin: original.gstin,
+      status: "paid",
+      type: "credit_note",
+      originalInvoiceId: original.id,
+      issuedAt: now.toISOString(),
+      paidAt: now.toISOString(),
+      periodStart: original.periodStart,
+      periodEnd: original.periodEnd,
+    };
+
+    original.status = "refunded";
+    list.unshift(creditNote);
+    await PlatformConfigService.set(INVOICE_CONFIG_KEY, list);
+
+    await AuditService.log({
+      organizationId: original.orgId,
+      action: "billing.credit_note_issued",
+      entityType: "organization",
+      entityId: original.orgId,
+      metadata: {
+        originalInvoiceNumber: original.invoiceNumber,
+        creditNoteNumber: invoiceNumber,
+        amount: original.totalAmount,
+        reason: reason || "refund",
+      },
+    });
+
+    return creditNote;
   }
 
   static async voidInvoice(id: string): Promise<TaxInvoice | null> {

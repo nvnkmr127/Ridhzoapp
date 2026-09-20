@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { organizations, leads, users } from "@/db/schema";
-import { count, desc, eq, isNull, max, sql } from "drizzle-orm";
+import { count, desc, eq, isNull, max, sql, and, gte } from "drizzle-orm";
 import { PlatformConfigService } from "./configService";
 
 export interface TenantHealthSummary {
@@ -25,6 +25,25 @@ export interface MrrWaterfall {
   netMrr: number;
 }
 
+export interface LifecycleFunnelStage {
+  stage: "signed_up" | "activated" | "paid" | "churned";
+  label: string;
+  count: number;
+  rate: number;
+  dropoffRate?: number;
+}
+
+export interface LifecycleFunnel {
+  totalSignedUp: number;
+  totalActivated: number;
+  totalPaid: number;
+  totalChurned: number;
+  activationRate: number;
+  paidConversionRate: number;
+  churnRate: number;
+  stages: LifecycleFunnelStage[];
+}
+
 export interface RevOpsMetrics {
   mrr: number;
   arr: number;
@@ -33,6 +52,7 @@ export interface RevOpsMetrics {
   freeAccounts: number;
   churnRiskCount: number;
   waterfall: MrrWaterfall;
+  funnel?: LifecycleFunnel;
 }
 
 const PLAN_PRICES: Record<string, number> = {
@@ -80,7 +100,10 @@ export class RevOpsService {
     const arr = mrr * 12;
     const arpu = paidAccounts > 0 ? Math.round(mrr / paidAccounts) : 0;
 
-    const healthList = await this.listTenantHealth(50);
+    const [healthList, funnel] = await Promise.all([
+      this.listTenantHealth(50),
+      this.getLifecycleFunnel(30),
+    ]);
     const atRiskList = healthList.filter((t) => t.health === "at_risk" || t.health === "critical");
     const churnRiskCount = atRiskList.length;
     const churnRiskMrr = atRiskList.reduce((acc, t) => acc + (PLAN_PRICES[t.plan] ?? 0), 0);
@@ -102,6 +125,86 @@ export class RevOpsService {
       freeAccounts,
       churnRiskCount,
       waterfall,
+      funnel,
+    };
+  }
+
+  static async getLifecycleFunnel(days?: number): Promise<LifecycleFunnel> {
+    const cohortCutoff = days ? new Date(Date.now() - days * 86_400_000) : null;
+
+    // Single query grouping tenants by lifecycle stage
+    const rows = await db
+      .select({
+        id: organizations.id,
+        plan: organizations.plan,
+        planStatus: organizations.planStatus,
+        suspendedAt: organizations.suspendedAt,
+        leadCount: count(leads.id),
+      })
+      .from(organizations)
+      .leftJoin(leads, and(eq(leads.organizationId, organizations.id), isNull(leads.deletedAt)))
+      .where(cohortCutoff ? gte(organizations.createdAt, cohortCutoff) : undefined)
+      .groupBy(organizations.id);
+
+    const totalSignedUp = rows.length;
+    let totalActivated = 0;
+    let totalPaid = 0;
+    let totalChurned = 0;
+
+    for (const r of rows) {
+      if (Number(r.leadCount) > 0) totalActivated++;
+      const isSuspended = !!r.suspendedAt;
+      const isPaid = (r.plan === "pro" || r.plan === "business") && r.planStatus === "active" && !isSuspended;
+      if (isPaid) totalPaid++;
+      const isCancelled = r.planStatus === "cancelled" || r.planStatus === "halted";
+      if (isSuspended || isCancelled) totalChurned++;
+    }
+
+    const activationRate = totalSignedUp > 0 ? Math.round((totalActivated / totalSignedUp) * 1000) / 10 : 0;
+    const paidConversionRate = totalSignedUp > 0 ? Math.round((totalPaid / totalSignedUp) * 1000) / 10 : 0;
+    const churnRate = totalSignedUp > 0 ? Math.round((totalChurned / totalSignedUp) * 1000) / 10 : 0;
+
+    const activationDropoff = totalSignedUp > 0 ? Math.round(((totalSignedUp - totalActivated) / totalSignedUp) * 1000) / 10 : 0;
+    const paidDropoff = totalActivated > 0 ? Math.round(((totalActivated - totalPaid) / totalActivated) * 1000) / 10 : 0;
+
+    const stages: LifecycleFunnelStage[] = [
+      {
+        stage: "signed_up",
+        label: "Signed Up",
+        count: totalSignedUp,
+        rate: 100,
+      },
+      {
+        stage: "activated",
+        label: "Activated (≥1 Lead)",
+        count: totalActivated,
+        rate: activationRate,
+        dropoffRate: activationDropoff,
+      },
+      {
+        stage: "paid",
+        label: "Converted to Paid",
+        count: totalPaid,
+        rate: paidConversionRate,
+        dropoffRate: paidDropoff,
+      },
+      {
+        stage: "churned",
+        label: "Churned / Suspended",
+        count: totalChurned,
+        rate: churnRate,
+      },
+    ];
+
+    return {
+      totalSignedUp,
+      totalActivated,
+      totalPaid,
+      totalChurned,
+      activationRate,
+      paidConversionRate,
+      churnRate,
+      stages,
     };
   }
 

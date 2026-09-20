@@ -1,12 +1,12 @@
 import { db } from "@/db";
 import { organizations, users, roles } from "@/db/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, isNotNull, lte, ne } from "drizzle-orm";
 import { PlatformConfigService } from "@/domains/platform/configService";
 import { NotificationService } from "@/domains/notifications/service";
 import { sendEmail, appUrl } from "@/lib/mail/mailer";
 import { AuditService } from "@/domains/audit/service";
 
-export type BillingStatus = "paid" | "pending" | "grace_period" | "locked" | "free";
+export type BillingStatus = "paid" | "pending" | "grace_period" | "locked" | "free" | "trial";
 
 export interface TenantBillingLifecycle {
   gracePeriodEndsAt?: string | null;
@@ -31,6 +31,7 @@ export interface TenantBillingInfo {
   manualPaidUntil: string | null;
   currentPeriodEnd: string | null;
   razorpaySubscriptionId: string | null;
+  trialEndsAt?: string | null;
 }
 
 const DEFAULT_GRACE_DAYS = 7;
@@ -49,7 +50,7 @@ export class BillingLifecycleService {
   }
 
   static computeStatus(
-    org: { plan?: string | null; planStatus?: string | null },
+    org: { plan?: string | null; planStatus?: string | null; trialEndsAt?: Date | string | null },
     lifecycle: TenantBillingLifecycle
   ): { status: BillingStatus; daysRemainingInGrace: number } {
     const now = Date.now();
@@ -64,19 +65,24 @@ export class BillingLifecycleService {
       return { status: "free", daysRemainingInGrace: 0 };
     }
 
+    // 2. Active trial window
+    if (org.trialEndsAt && new Date(org.trialEndsAt).getTime() > now) {
+      return { status: "trial", daysRemainingInGrace: 0 };
+    }
+
     const planStatus = org.planStatus ?? "active";
 
-    // 2. Active paid subscription
+    // 3. Active paid subscription
     if (planStatus === "active") {
       return { status: "paid", daysRemainingInGrace: 0 };
     }
 
-    // 3. Checkout initiated but not yet charged
+    // 4. Checkout initiated but not yet charged
     if (planStatus === "created") {
       return { status: "pending", daysRemainingInGrace: 0 };
     }
 
-    // 4. Halted, cancelled, or failed payment: check grace period
+    // 5. Halted, cancelled, or failed payment: check grace period
     if (lifecycle.gracePeriodEndsAt) {
       const graceEnd = new Date(lifecycle.gracePeriodEndsAt).getTime();
       if (graceEnd > now) {
@@ -99,6 +105,7 @@ export class BillingLifecycleService {
         planStatus: organizations.planStatus,
         currentPeriodEnd: organizations.currentPeriodEnd,
         razorpaySubscriptionId: organizations.razorpaySubscriptionId,
+        trialEndsAt: organizations.trialEndsAt,
       })
       .from(organizations)
       .where(eq(organizations.id, orgId))
@@ -124,6 +131,7 @@ export class BillingLifecycleService {
       manualPaidUntil: lifecycle.manualPaidUntil ?? null,
       currentPeriodEnd: org.currentPeriodEnd ? new Date(org.currentPeriodEnd).toISOString() : null,
       razorpaySubscriptionId: org.razorpaySubscriptionId ?? null,
+      trialEndsAt: org.trialEndsAt ? new Date(org.trialEndsAt).toISOString() : null,
     };
   }
 
@@ -357,6 +365,7 @@ export class BillingLifecycleService {
         planStatus: organizations.planStatus,
         currentPeriodEnd: organizations.currentPeriodEnd,
         razorpaySubscriptionId: organizations.razorpaySubscriptionId,
+        trialEndsAt: organizations.trialEndsAt,
       })
       .from(organizations)
       .orderBy(desc(organizations.createdAt));
@@ -382,9 +391,110 @@ export class BillingLifecycleService {
         manualPaidUntil: lifecycle.manualPaidUntil ?? null,
         currentPeriodEnd: org.currentPeriodEnd ? new Date(org.currentPeriodEnd).toISOString() : null,
         razorpaySubscriptionId: org.razorpaySubscriptionId ?? null,
+        trialEndsAt: org.trialEndsAt ? new Date(org.trialEndsAt).toISOString() : null,
       });
     }
 
     return results;
+  }
+
+  static async downgradeExpiredTrials(now: Date = new Date()): Promise<{
+    downgradedCount: number;
+    downgradedOrgs: Array<{ id: string; name: string; slug: string; previousPlan: string }>;
+  }> {
+    const expired = await db
+      .select({
+        id: organizations.id,
+        name: organizations.name,
+        slug: organizations.slug,
+        plan: organizations.plan,
+        trialEndsAt: organizations.trialEndsAt,
+        razorpaySubscriptionId: organizations.razorpaySubscriptionId,
+      })
+      .from(organizations)
+      .where(
+        and(
+          isNotNull(organizations.trialEndsAt),
+          lte(organizations.trialEndsAt, now),
+          ne(organizations.plan, "free")
+        )
+      );
+
+    const downgradedOrgs: Array<{ id: string; name: string; slug: string; previousPlan: string }> = [];
+
+    for (const org of expired) {
+      await db
+        .update(organizations)
+        .set({
+          plan: "free",
+          trialEndsAt: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(organizations.id, org.id));
+
+      downgradedOrgs.push({
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        previousPlan: org.plan,
+      });
+
+      await AuditService.log({
+        organizationId: org.id,
+        userId: "00000000-0000-0000-0000-000000000000",
+        action: "billing.trial_expired_downgrade",
+        entityType: "organization",
+        entityId: org.id,
+        metadata: {
+          previousPlan: org.plan,
+          revertedTo: "free",
+          expiredAt: org.trialEndsAt ? new Date(org.trialEndsAt).toISOString() : null,
+        },
+      });
+
+      try {
+        const [owner] = await db
+          .select({ email: users.email, firstName: users.firstName })
+          .from(users)
+          .where(and(eq(users.organizationId, org.id), eq(users.isActive, true)))
+          .limit(1);
+
+        if (owner?.email) {
+          await sendEmail({
+            to: owner.email,
+            subject: `Your ${org.plan} trial for ${org.name} has ended`,
+            html: `
+              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
+                <h2 style="color: #4b5563; margin-top: 0;">Trial Period Concluded</h2>
+                <p>Hello ${owner.firstName || "there"},</p>
+                <p>Your trial for the <strong>${org.plan}</strong> plan on <strong>${org.name}</strong> has concluded.</p>
+                <p>Your workspace has automatically reverted to the <strong>Free</strong> tier. All your existing customer data, leads, and automations remain completely safe.</p>
+                <p>To upgrade back to Pro or Business and restore advanced limits, visit your billing settings at any time.</p>
+              </div>
+            `,
+          });
+        }
+      } catch {
+        // non-blocking
+      }
+    }
+
+    if (downgradedOrgs.length > 0) {
+      try {
+        const { OpsAlertService } = await import("@/domains/platform/opsAlertService");
+        await OpsAlertService.dispatchAlert(
+          "billing.trial_downgrade",
+          "Trials Expired — Downgraded to Free",
+          `${downgradedOrgs.length} trial workspace(s) expired and automatically reverted to Free: ${downgradedOrgs.map((o) => `${o.name} (${o.previousPlan})`).join(", ")}`
+        );
+      } catch {
+        // non-blocking
+      }
+    }
+
+    return {
+      downgradedCount: downgradedOrgs.length,
+      downgradedOrgs,
+    };
   }
 }

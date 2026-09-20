@@ -87,4 +87,45 @@ describe("InvoiceService", () => {
     expect(voided?.status).toBe("void");
     expect(PlatformConfigService.set).toHaveBeenCalled();
   });
+
+  it("issues a GST credit note and marks original invoice refunded", async () => {
+    const mockInvoice = {
+      id: "inv_456",
+      invoiceNumber: "INV-2026-0002",
+      orgId: "org_2",
+      orgName: "Beta Corp",
+      plan: "business",
+      amount: 5000,
+      taxRate: 18,
+      taxAmount: 900,
+      totalAmount: 5900,
+      sacCode: "998313",
+      status: "paid" as const,
+      type: "invoice" as const,
+      issuedAt: new Date().toISOString(),
+      periodStart: new Date().toISOString(),
+      periodEnd: new Date().toISOString(),
+    };
+
+    const store = [mockInvoice];
+    vi.mocked(PlatformConfigService.get).mockImplementation(async () => store as any);
+    vi.mocked(PlatformConfigService.set).mockImplementation(async (_, val) => {
+      store.length = 0;
+      store.push(...(val as any[]));
+      return val as any;
+    });
+
+    const cn = await InvoiceService.issueCreditNote("inv_456", "Customer double charge");
+
+    expect(cn).not.toBeNull();
+    expect(cn?.type).toBe("credit_note");
+    expect(cn?.invoiceNumber).toMatch(/^CN-\d{4}-/);
+    expect(cn?.amount).toBe(-5000);
+    expect(cn?.taxAmount).toBe(-900);
+    expect(cn?.totalAmount).toBe(-5900);
+    expect(cn?.originalInvoiceId).toBe("inv_456");
+
+    // Original invoice should now be marked refunded
+    expect(mockInvoice.status).toBe("refunded");
+  });
 });
