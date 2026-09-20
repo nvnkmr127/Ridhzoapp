@@ -76,7 +76,7 @@ export class PlatformAttributionService {
       { campaign: string; source: string; medium: string; signups: number; paidTenants: number; mrr: number }
     >();
 
-    let totalSignups = orgList.length;
+    const totalSignups = orgList.length;
     let attributedSignups = 0;
     let attributedMrr = 0;
 

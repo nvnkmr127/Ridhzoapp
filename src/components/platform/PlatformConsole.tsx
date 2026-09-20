@@ -1475,53 +1475,53 @@ export function PlatformConsole({
       {/* Tabs */}
       <div className="flex items-center gap-2 border-b border-border pb-3 overflow-x-auto">
         <Button
-          variant={tab === "tenants" ? "default" : "ghost"}
+          variant={tab === "tenants" ? "default" : "ghost"} aria-current={tab === "tenants" ? "page" : undefined}
           size="sm"
           onClick={() => setTab("tenants")}
         >
           Organizations ({filteredOrgs.length})
         </Button>
         <Button
-          variant={tab === "revops" ? "default" : "ghost"}
+          variant={tab === "revops" ? "default" : "ghost"} aria-current={tab === "revops" ? "page" : undefined}
           size="sm"
           onClick={() => setTab("revops")}
           className="gap-1.5"
         >
           <TrendingUp className="h-3.5 w-3.5" /> RevOps &amp; Invoicing
           {revops && revops.churnRiskCount > 0 && (
-            <span className="rounded-full bg-destructive/20 px-1.5 py-0.2 text-xs font-medium text-destructive">
+            <span className="rounded-full bg-destructive/20 px-1.5 py-0.5 text-xs font-medium text-destructive">
               {revops.churnRiskCount}
             </span>
           )}
         </Button>
         <Button
-          variant={tab === "support" ? "default" : "ghost"}
+          variant={tab === "support" ? "default" : "ghost"} aria-current={tab === "support" ? "page" : undefined}
           size="sm"
           onClick={() => setTab("support")}
           className="gap-1.5"
         >
           <LifeBuoy className="h-3.5 w-3.5" /> Support Desk
           {tickets.filter((t) => t.status === "open").length > 0 && (
-            <span className="rounded-full bg-amber-500/20 px-1.5 py-0.2 text-xs font-medium text-amber-700 dark:text-amber-300">
+            <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
               {tickets.filter((t) => t.status === "open").length}
             </span>
           )}
         </Button>
         <Button
-          variant={tab === "flags" ? "default" : "ghost"}
+          variant={tab === "flags" ? "default" : "ghost"} aria-current={tab === "flags" ? "page" : undefined}
           size="sm"
           onClick={() => setTab("flags")}
           className="gap-1.5"
         >
           <Sliders className="h-3.5 w-3.5" /> Feature Flags &amp; Canary
           {maintenance.enabled && (
-            <span className="rounded-full bg-amber-500/20 px-1.5 py-0.2 text-xs font-medium text-amber-600">
+            <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-xs font-medium text-amber-600">
               Maint
             </span>
           )}
         </Button>
         <Button
-          variant={tab === "compliance" ? "default" : "ghost"}
+          variant={tab === "compliance" ? "default" : "ghost"} aria-current={tab === "compliance" ? "page" : undefined}
           size="sm"
           onClick={() => setTab("compliance")}
           className="gap-1.5"
@@ -1529,7 +1529,7 @@ export function PlatformConsole({
           <Shield className="h-3.5 w-3.5" /> GDPR &amp; Compliance
         </Button>
         <Button
-          variant={tab === "users" ? "default" : "ghost"}
+          variant={tab === "users" ? "default" : "ghost"} aria-current={tab === "users" ? "page" : undefined}
           size="sm"
           onClick={() => setTab("users")}
           className="gap-1.5"
@@ -1537,45 +1537,45 @@ export function PlatformConsole({
           Global Users ({users.length})
         </Button>
         <Button
-          variant={tab === "escalations" ? "default" : "ghost"}
+          variant={tab === "escalations" ? "default" : "ghost"} aria-current={tab === "escalations" ? "page" : undefined}
           size="sm"
           onClick={() => setTab("escalations")}
           className="gap-1.5"
         >
           SLA Escalations
           {escalations.length > 0 && (
-            <span className="rounded-full bg-amber-500/20 px-1.5 py-0.2 text-xs font-medium text-amber-700 dark:text-amber-300">
+            <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
               {escalations.length}
             </span>
           )}
         </Button>
         <Button
-          variant={tab === "dlq" ? "default" : "ghost"}
+          variant={tab === "dlq" ? "default" : "ghost"} aria-current={tab === "dlq" ? "page" : undefined}
           size="sm"
           onClick={() => setTab("dlq")}
           className="gap-1.5"
         >
           Webhook DLQ
           {dlq.length > 0 && (
-            <span className="rounded-full bg-destructive/20 px-1.5 py-0.2 text-xs font-medium text-destructive">
+            <span className="rounded-full bg-destructive/20 px-1.5 py-0.5 text-xs font-medium text-destructive">
               {dlq.length}
             </span>
           )}
         </Button>
         <Button
-          variant={tab === "system" ? "default" : "ghost"}
+          variant={tab === "system" ? "default" : "ghost"} aria-current={tab === "system" ? "page" : undefined}
           size="sm"
           onClick={() => setTab("system")}
           className="gap-1.5"
         >
           <Database className="h-3.5 w-3.5" /> System &amp; Ops Security
           {anomalies.filter((a) => a.status === "active").length > 0 && (
-            <span className="rounded-full bg-destructive/20 px-1.5 py-0.2 text-[10px] font-bold text-destructive animate-pulse">
+            <span className="rounded-full bg-destructive/20 px-1.5 py-0.5 text-[10px] font-bold text-destructive animate-pulse">
               {anomalies.filter((a) => a.status === "active").length} Threat{anomalies.filter((a) => a.status === "active").length > 1 ? "s" : ""}
             </span>
           )}
           {opsAlert.enabled && (
-            <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.2 text-[10px] font-medium text-emerald-600">
+            <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600">
               Alerts ON
             </span>
           )}
@@ -3754,7 +3754,7 @@ export function PlatformConsole({
                   {invoices.length === 0 ? (
                     <tr>
                       <td colSpan={9} className="p-6 text-center text-muted-foreground">
-                        No tax invoices recorded yet. Click "Issue Tax Invoice" to generate one.
+                        No tax invoices recorded yet. Click &quot;Issue Tax Invoice&quot; to generate one.
                       </td>
                     </tr>
                   ) : (

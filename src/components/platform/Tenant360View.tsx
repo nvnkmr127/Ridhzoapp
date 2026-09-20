@@ -652,7 +652,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
           <AlertCircle className="h-5 w-5" />
           <AlertTitle className="text-sm font-semibold flex items-center justify-between">
             <span className="flex items-center gap-2">
-              <span>🚨 Critical Ingestion Failure: Facebook Page Token Dead / Revoked ({deadMetaSources.length})</span>
+              <span>Critical Ingestion Failure: Facebook Page Token Dead / Revoked ({deadMetaSources.length})</span>
             </span>
             <Badge variant="destructive" className="text-[10px] font-mono">
               Root Cause: OAuth Code 190
@@ -1717,7 +1717,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
           </DialogHeader>
           <div className="space-y-4 py-2 text-xs">
             <p className="text-muted-foreground">
-              Directly inject operational credits into this tenant's balance to resolve churn risk or test high-volume features.
+              Directly inject operational credits into this tenant&apos;s balance to resolve churn risk or test high-volume features.
             </p>
             <div className="space-y-1.5">
               <label className="font-medium text-foreground flex items-center gap-1.5">
