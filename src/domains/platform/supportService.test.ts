@@ -82,6 +82,7 @@ describe("SupportTicketService", () => {
           createdAt: new Date().toISOString(),
         },
       ],
+      slaDeadline: new Date(Date.now() + 6 * 3600 * 1000).toISOString(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -106,5 +107,34 @@ describe("SupportTicketService", () => {
         title: "Support Reply: Webhook latency",
       })
     );
+  });
+
+  it("assigns ticket to staff and records internal private notes", async () => {
+    const existingTicket: SupportTicket = {
+      id: "tkt_2",
+      orgId: "org_1",
+      orgName: "Globex",
+      userId: "usr_1",
+      userEmail: "alice@globex.com",
+      subject: "Custom domain SSL",
+      category: "technical",
+      priority: "urgent",
+      status: "open",
+      assignedTo: null,
+      slaDeadline: new Date(Date.now() + 2 * 3600 * 1000).toISOString(),
+      messages: [],
+      internalNotes: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    vi.mocked(PlatformConfigService.get).mockResolvedValue([existingTicket]);
+
+    const assigned = await SupportTicketService.assignTicket("tkt_2", "Engineering On-Call");
+    expect(assigned?.assignedTo).toBe("Engineering On-Call");
+
+    const withNote = await SupportTicketService.addInternalNote("tkt_2", "Lead SRE", "Checked DNS CNAME record, propagated successfully.");
+    expect(withNote?.internalNotes?.length).toBe(1);
+    expect(withNote?.internalNotes?.[0].body).toContain("propagated successfully");
   });
 });

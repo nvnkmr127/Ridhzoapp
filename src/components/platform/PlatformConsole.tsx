@@ -43,6 +43,10 @@ import {
   ShieldAlert,
   Send,
   Inbox,
+  Globe,
+  UserCheck,
+  Clock,
+  StickyNote,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -105,6 +109,13 @@ import {
   listAnomaliesAction,
   resolveAnomalyAction,
   remediateAnomalyAction,
+  setTenantFlagOverrideAction,
+  assignSupportTicketAction,
+  addSupportTicketNoteAction,
+  listCustomDomainsAction,
+  registerCustomDomainAction,
+  verifyCustomDomainAction,
+  removeCustomDomainAction,
 } from "@/lib/actions/platform";
 import type {
   PlatformMetrics,
@@ -127,6 +138,7 @@ import type { Coupon } from "@/domains/billing/couponService";
 import type { SupportTicket } from "@/domains/platform/supportService";
 import type { ExecutiveDigestConfig } from "@/domains/platform/executiveDigestService";
 import type { SecurityAnomaly } from "@/domains/platform/anomalyDetectionService";
+import type { CustomDomainRecord } from "@/domains/platform/customDomainService";
 
 const PLANS = ["free", "pro", "business"];
 
@@ -149,6 +161,7 @@ export function PlatformConsole({
   initialApiKeys = [],
   initialDigestConfig,
   initialAnomalies = [],
+  initialDomains = [],
 }: {
   initial?: OrgSummary[];
   initialUsers?: GlobalUserSummary[];
@@ -168,6 +181,7 @@ export function PlatformConsole({
   initialApiKeys?: FleetApiKeySummary[];
   initialDigestConfig?: ExecutiveDigestConfig;
   initialAnomalies?: SecurityAnomaly[];
+  initialDomains?: CustomDomainRecord[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -607,6 +621,83 @@ export function PlatformConsole({
       }
     } finally {
       setAnomalyBusyId(null);
+    }
+  };
+
+  // --- Custom Domains State ---
+  const [domains, setDomains] = React.useState<CustomDomainRecord[]>(initialDomains ?? []);
+  const [domainModalOpen, setDomainModalOpen] = React.useState(false);
+  const [domainOrgId, setDomainOrgId] = React.useState("");
+  const [domainNameInput, setDomainNameInput] = React.useState("");
+  const [domainBusy, setDomainBusy] = React.useState(false);
+
+  const handleRegisterDomain = async () => {
+    if (!domainOrgId || !domainNameInput.trim()) return;
+    setDomainBusy(true);
+    try {
+      const res = await registerCustomDomainAction(domainOrgId, domainNameInput.trim());
+      if (res.ok) {
+        toast({ title: "Custom Domain Registered", description: `${res.data.domain} mapped.` });
+        setDomains((prev) => [res.data, ...prev.filter((d) => d.id !== res.data.id)]);
+        setDomainModalOpen(false);
+        setDomainNameInput("");
+      } else {
+        toast({ title: "Registration failed", description: res.message, variant: "destructive" });
+      }
+    } finally {
+      setDomainBusy(false);
+    }
+  };
+
+  const handleVerifyDomain = async (id: string) => {
+    const res = await verifyCustomDomainAction(id);
+    if (res.ok && res.data) {
+      toast({ title: "Domain Verified & SSL Active", description: `${res.data.domain} is verified.` });
+      setDomains((prev) => prev.map((d) => (d.id === id ? res.data! : d)));
+    }
+  };
+
+  const handleRemoveDomain = async (id: string) => {
+    const res = await removeCustomDomainAction(id);
+    if (res.ok) {
+      toast({ title: "Custom Domain Removed" });
+      setDomains((prev) => prev.filter((d) => d.id !== id));
+    }
+  };
+
+  // --- Support Triage & Internal Notes State ---
+  const [ticketNoteText, setTicketNoteText] = React.useState("");
+  const [ticketActiveTab, setTicketActiveTab] = React.useState<"messages" | "notes">("messages");
+
+  const handleAssignTicket = async (ticketId: string, assignee: string | null) => {
+    const res = await assignSupportTicketAction(ticketId, assignee);
+    if (res.ok && res.data) {
+      toast({ title: "Ticket Assigned", description: assignee ? `Assigned to ${assignee}` : "Unassigned" });
+      if (selectedTicket?.id === ticketId) setSelectedTicket(res.data);
+      setTickets((prev) => prev.map((t) => (t.id === ticketId ? res.data! : t)));
+    }
+  };
+
+  const handleAddTicketNote = async () => {
+    if (!selectedTicket || !ticketNoteText.trim()) return;
+    const res = await addSupportTicketNoteAction(selectedTicket.id, ticketNoteText.trim());
+    if (res.ok && res.data) {
+      toast({ title: "Internal Note Added", description: "Saved private triage note." });
+      setSelectedTicket(res.data);
+      setTickets((prev) => prev.map((t) => (t.id === res.data!.id ? res.data! : t)));
+      setTicketNoteText("");
+    }
+  };
+
+  // --- Tenant Feature Overrides ---
+  const handleToggleTenantFlag = async (flagKey: string, orgId: string, enabled: boolean) => {
+    const res = await setTenantFlagOverrideAction(flagKey, orgId, enabled);
+    if (res.ok && res.data) {
+      toast({
+        title: enabled ? "Tenant Override Granted" : "Tenant Override Revoked",
+        description: `Updated access for flag ${flagKey}.`,
+      });
+      setFlags((prev) => prev.map((f) => (f.key === flagKey ? res.data! : f)));
     }
   };
 
@@ -2245,6 +2336,102 @@ export function PlatformConsole({
               </table>
             </div>
           </div>
+
+          {/* White-Label Custom Domain & CNAME SSL Manager */}
+          <div className="lg:col-span-2 rounded-2xl border bg-card shadow-sm overflow-hidden">
+            <div className="p-5 border-b flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-sm font-semibold flex items-center gap-2">
+                  <Globe className="h-4 w-4 text-primary" /> White-Label Custom Domains &amp; CNAME Routing
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Manage tenant custom domain hostnames (e.g. crm.clientagency.com), automated SSL certificate status, and DNS CNAME targets.
+                </p>
+              </div>
+              <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => setDomainModalOpen(true)}>
+                <Plus className="h-3.5 w-3.5" /> Map Custom Domain
+              </Button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b bg-muted/40 text-left font-medium text-muted-foreground">
+                    <th className="p-3 pl-5">Custom Domain (FQDN)</th>
+                    <th className="p-3">Organization</th>
+                    <th className="p-3">CNAME Target</th>
+                    <th className="p-3">SSL Status</th>
+                    <th className="p-3">DNS Verified</th>
+                    <th className="p-3 pr-5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {domains.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="p-6 text-center text-muted-foreground">
+                        No custom domains mapped yet across tenant fleet.
+                      </td>
+                    </tr>
+                  ) : (
+                    domains.map((dom) => (
+                      <tr key={dom.id} className="hover:bg-muted/30 transition-colors">
+                        <td className="p-3 pl-5 font-mono font-semibold text-foreground flex items-center gap-1.5">
+                          <Globe className="h-3.5 w-3.5 text-primary" />
+                          {dom.domain}
+                        </td>
+                        <td className="p-3 text-muted-foreground">{dom.orgName}</td>
+                        <td className="p-3 font-mono text-muted-foreground">{dom.cnameTarget}</td>
+                        <td className="p-3">
+                          <Badge
+                            className={
+                              dom.sslStatus === "active"
+                                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 text-[10px]"
+                                : "bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[10px]"
+                            }
+                          >
+                            SSL {dom.sslStatus.toUpperCase()}
+                          </Badge>
+                        </td>
+                        <td className="p-3">
+                          {dom.verified ? (
+                            <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+                              <CheckCircle2 className="h-3.5 w-3.5" /> Verified
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-medium">
+                              <AlertTriangle className="h-3.5 w-3.5" /> Pending DNS
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3 pr-5 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            {!dom.verified && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-6 px-2 text-[10px]"
+                                onClick={() => handleVerifyDomain(dom.id)}
+                              >
+                                Verify CNAME
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-[10px] text-destructive hover:bg-destructive/10"
+                              onClick={() => handleRemoveDomain(dom.id)}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 
@@ -2423,6 +2610,71 @@ export function PlatformConsole({
               <p className="mt-1 text-xs text-muted-foreground">Tenants inactive &gt;7 days</p>
             </div>
           </div>
+
+          {/* MRR Waterfall & Revenue Dynamics Card */}
+          {revops?.waterfall && (
+            <div className="rounded-2xl border bg-card p-5 shadow-sm space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b pb-3 gap-2">
+                <div>
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-primary" /> MRR Waterfall &amp; Revenue Expansion Dynamics
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Breakdown of monthly recurring revenue flow: baseline retention, new acquisition, tier upgrades, and churn exposure.
+                  </p>
+                </div>
+                <Badge variant="outline" className="font-mono text-xs">
+                  Net MRR: ₹{revops.waterfall.netMrr.toLocaleString()}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-1">
+                <div className="rounded-lg bg-muted/40 p-3">
+                  <div className="text-[11px] font-medium text-muted-foreground uppercase">Starting MRR</div>
+                  <div className="text-lg font-bold mt-1 text-foreground">
+                    ₹{revops.waterfall.startingMrr.toLocaleString()}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">Carryover base</p>
+                </div>
+
+                <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3">
+                  <div className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 uppercase">
+                    (+) New MRR
+                  </div>
+                  <div className="text-lg font-bold mt-1 text-emerald-600 dark:text-emerald-400">
+                    +₹{revops.waterfall.newMrr.toLocaleString()}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">&lt;30d acquisitions</p>
+                </div>
+
+                <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-3">
+                  <div className="text-[11px] font-medium text-blue-700 dark:text-blue-400 uppercase">
+                    (+) Expansion
+                  </div>
+                  <div className="text-lg font-bold mt-1 text-blue-600 dark:text-blue-400">
+                    +₹{revops.waterfall.expansionMrr.toLocaleString()}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">Business tier deltas</p>
+                </div>
+
+                <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3">
+                  <div className="text-[11px] font-medium text-destructive uppercase">(-) Churn Risk</div>
+                  <div className="text-lg font-bold mt-1 text-destructive">
+                    -₹{revops.waterfall.churnRiskMrr.toLocaleString()}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">At-risk tenant exposure</p>
+                </div>
+
+                <div className="rounded-lg bg-primary/10 border border-primary/20 p-3">
+                  <div className="text-[11px] font-medium text-primary uppercase">(=) Net Run Rate</div>
+                  <div className="text-lg font-bold mt-1 text-foreground">
+                    ₹{revops.waterfall.netMrr.toLocaleString()}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">End of period MRR</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Subscription Payment & Dunning Fleet Inspector Card */}
           <div className="rounded-2xl border bg-card shadow-sm">
@@ -3189,7 +3441,7 @@ export function PlatformConsole({
                         <div className="text-[11px] text-muted-foreground truncate">
                           {t.orgName} · {t.userEmail}
                         </div>
-                        <div className="flex items-center gap-1.5 pt-0.5">
+                        <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
                           <Badge variant="outline" className="text-[10px] capitalize">
                             {t.category}
                           </Badge>
@@ -3201,6 +3453,27 @@ export function PlatformConsole({
                           >
                             {t.priority}
                           </Badge>
+                          {(() => {
+                            const deadline = t.slaDeadline ? new Date(t.slaDeadline).getTime() : 0;
+                            if (!deadline || t.status === "resolved") return null;
+                            const diffHours = Math.round((deadline - Date.now()) / (1000 * 60 * 60));
+                            const isBreached = diffHours <= 0;
+                            return (
+                              <Badge
+                                variant="outline"
+                                className={`text-[9px] font-mono ${
+                                  isBreached
+                                    ? "bg-destructive/15 text-destructive border-destructive/30 animate-pulse font-bold"
+                                    : diffHours <= 4
+                                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
+                                    : "text-muted-foreground"
+                                }`}
+                              >
+                                <Clock className="h-2.5 w-2.5 mr-1 inline" />
+                                {isBreached ? "SLA BREACHED" : `${diffHours}h SLA`}
+                              </Badge>
+                            );
+                          })()}
                           <span className="text-[10px] text-muted-foreground ml-auto">
                             {new Date(t.updatedAt).toLocaleDateString()}
                           </span>
@@ -3211,18 +3484,38 @@ export function PlatformConsole({
                 )}
               </div>
 
-              {/* Right Column: Ticket Conversation Thread */}
+              {/* Right Column: Ticket Conversation Thread & Internal Notes */}
               <div className="md:col-span-2 flex flex-col justify-between p-4">
                 {selectedTicket ? (
                   <>
-                    <div className="border-b pb-3 mb-3 flex items-start justify-between gap-3">
+                    <div className="border-b pb-3 mb-3 flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <h4 className="font-semibold text-sm text-foreground">{selectedTicket.subject}</h4>
                         <div className="text-xs text-muted-foreground">
                           {selectedTicket.orgName} · Submitted by {selectedTicket.userEmail}
                         </div>
                       </div>
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-2">
+                        {/* Assignment dropdown */}
+                        <div className="flex items-center gap-1">
+                          <UserCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                          <Select
+                            value={selectedTicket.assignedTo ?? "unassigned"}
+                            onValueChange={(val) => handleAssignTicket(selectedTicket.id, val === "unassigned" ? null : val)}
+                          >
+                            <SelectTrigger className="h-7 text-[11px] w-32">
+                              <SelectValue placeholder="Assignee" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="unassigned">Unassigned</SelectItem>
+                              <SelectItem value="Support Tier 1">Support Tier 1</SelectItem>
+                              <SelectItem value="Engineering On-Call">Engineering On-Call</SelectItem>
+                              <SelectItem value="RevOps Billing Staff">RevOps Billing Staff</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Status dropdown */}
                         <Select
                           value={selectedTicket.status}
                           onValueChange={(val: any) => handleUpdateTicketStatus(selectedTicket.id, val)}
@@ -3239,57 +3532,129 @@ export function PlatformConsole({
                       </div>
                     </div>
 
-                    {/* Messages Scroll Area */}
-                    <div className="flex-1 overflow-y-auto space-y-3 max-h-[340px] pr-2">
-                      {selectedTicket.messages.map((m) => {
-                        const isSuper = m.sender === "superadmin";
-                        return (
-                          <div
-                            key={m.id}
-                            className={`flex flex-col ${isSuper ? "items-end" : "items-start"}`}
-                          >
-                            <div className="text-[10px] text-muted-foreground mb-1">
-                              {m.senderName} ({isSuper ? "SuperAdmin" : "Tenant"}) · {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </div>
-                            <div
-                              className={`rounded-xl px-3 py-2 text-xs max-w-[85%] whitespace-pre-wrap ${
-                                isSuper
-                                  ? "bg-primary text-primary-foreground"
-                                  : "bg-muted text-foreground"
-                              }`}
-                            >
-                              {m.body}
-                            </div>
-                          </div>
-                        );
-                      })}
+                    {/* Tab switch between Customer Messages and Internal Staff Notes */}
+                    <div className="flex items-center gap-2 border-b mb-3 pb-1">
+                      <Button
+                        variant={ticketActiveTab === "messages" ? "secondary" : "ghost"}
+                        size="sm"
+                        className="h-7 px-2.5 text-xs"
+                        onClick={() => setTicketActiveTab("messages")}
+                      >
+                        Messages ({selectedTicket.messages.length})
+                      </Button>
+                      <Button
+                        variant={ticketActiveTab === "notes" ? "secondary" : "ghost"}
+                        size="sm"
+                        className="h-7 px-2.5 text-xs gap-1.5 text-amber-800 dark:text-amber-200"
+                        onClick={() => setTicketActiveTab("notes")}
+                      >
+                        <StickyNote className="h-3 w-3 text-amber-500" />
+                        Internal Notes ({selectedTicket.internalNotes?.length ?? 0})
+                      </Button>
                     </div>
 
-                    {/* Reply Input */}
-                    <div className="pt-3 border-t mt-3 space-y-2">
-                      <Input
-                        placeholder="Write a response to the tenant admin..."
-                        value={ticketReplyText}
-                        onChange={(e) => setTicketReplyText(e.target.value)}
-                        className="text-xs h-9"
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault();
-                            handleSendTicketReply();
-                          }
-                        }}
-                      />
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          size="sm"
-                          className="h-7 text-xs gap-1.5"
-                          disabled={replySending || !ticketReplyText.trim()}
-                          onClick={handleSendTicketReply}
-                        >
-                          {replySending ? "Sending..." : "Send Reply & Alert"}
-                        </Button>
-                      </div>
-                    </div>
+                    {/* Messages or Internal Notes Scroll Area */}
+                    {ticketActiveTab === "messages" ? (
+                      <>
+                        <div className="flex-1 overflow-y-auto space-y-3 max-h-[300px] pr-2">
+                          {selectedTicket.messages.map((m) => {
+                            const isSuper = m.sender === "superadmin";
+                            return (
+                              <div
+                                key={m.id}
+                                className={`flex flex-col ${isSuper ? "items-end" : "items-start"}`}
+                              >
+                                <div className="text-[10px] text-muted-foreground mb-1">
+                                  {m.senderName} ({isSuper ? "SuperAdmin" : "Tenant"}) · {new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                                <div
+                                  className={`rounded-xl px-3 py-2 text-xs max-w-[85%] whitespace-pre-wrap ${
+                                    isSuper
+                                      ? "bg-primary text-primary-foreground"
+                                      : "bg-muted text-foreground"
+                                  }`}
+                                >
+                                  {m.body}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Reply Input */}
+                        <div className="pt-3 border-t mt-3 space-y-2">
+                          <Input
+                            placeholder="Write a response to the tenant admin..."
+                            value={ticketReplyText}
+                            onChange={(e) => setTicketReplyText(e.target.value)}
+                            className="text-xs h-9"
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSendTicketReply();
+                              }
+                            }}
+                          />
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              size="sm"
+                              className="h-7 text-xs gap-1.5"
+                              disabled={replySending || !ticketReplyText.trim()}
+                              onClick={handleSendTicketReply}
+                            >
+                              {replySending ? "Sending..." : "Send Reply & Alert"}
+                            </Button>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex-1 overflow-y-auto space-y-2 max-h-[300px] pr-2">
+                          {(!selectedTicket.internalNotes || selectedTicket.internalNotes.length === 0) ? (
+                            <div className="py-8 text-center text-xs text-muted-foreground">
+                              No internal triage notes recorded for this ticket yet.
+                            </div>
+                          ) : (
+                            selectedTicket.internalNotes.map((note) => (
+                              <div key={note.id} className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs space-y-1">
+                                <div className="flex items-center justify-between text-[10px] text-amber-800 dark:text-amber-200">
+                                  <span className="font-semibold">{note.authorName}</span>
+                                  <span>{new Date(note.createdAt).toLocaleString()}</span>
+                                </div>
+                                <p className="text-foreground whitespace-pre-wrap">{note.body}</p>
+                              </div>
+                            ))
+                          )}
+                        </div>
+
+                        {/* Add Note Input */}
+                        <div className="pt-3 border-t mt-3 space-y-2">
+                          <Input
+                            placeholder="Add a private staff triage note (hidden from customer)..."
+                            value={ticketNoteText}
+                            onChange={(e) => setTicketNoteText(e.target.value)}
+                            className="text-xs h-9"
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                handleAddTicketNote();
+                              }
+                            }}
+                          />
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              className="h-7 text-xs gap-1.5"
+                              disabled={!ticketNoteText.trim()}
+                              onClick={handleAddTicketNote}
+                            >
+                              Add Private Note
+                            </Button>
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </>
                 ) : (
                   <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-muted-foreground text-xs">
@@ -3345,6 +3710,58 @@ export function PlatformConsole({
                       ) : (
                         <span className="text-muted-foreground">All Plans</span>
                       )}
+                    </div>
+
+                    {/* Per-Tenant Overrides Management */}
+                    <div className="pt-2 border-t mt-2">
+                      <div className="text-[11px] font-semibold text-foreground flex items-center justify-between mb-1">
+                        <span>Tenant Overrides ({flag.allowedOrgIds?.length ?? 0})</span>
+                        <span className="text-[10px] text-muted-foreground font-normal">Bypasses plan gates &amp; global toggle</span>
+                      </div>
+                      
+                      {flag.allowedOrgIds && flag.allowedOrgIds.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {flag.allowedOrgIds.map((orgId) => {
+                            const o = orgs.find((org) => org.id === orgId);
+                            return (
+                              <span
+                                key={orgId}
+                                className="inline-flex items-center gap-1 rounded bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 text-[10px] font-mono"
+                              >
+                                {o ? o.name : orgId.slice(0, 8)}
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleTenantFlag(flag.key, orgId, false)}
+                                  className="hover:text-destructive transition-colors ml-0.5 font-bold"
+                                  title="Revoke override"
+                                >
+                                  &times;
+                                </button>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      <select
+                        className="h-7 text-[11px] rounded border bg-background px-2 w-full text-muted-foreground"
+                        defaultValue=""
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            handleToggleTenantFlag(flag.key, e.target.value, true);
+                            e.target.value = "";
+                          }
+                        }}
+                      >
+                        <option value="">+ Grant tenant override bypass...</option>
+                        {orgs
+                          .filter((o) => !(flag.allowedOrgIds ?? []).includes(o.id))
+                          .map((o) => (
+                            <option key={o.id} value={o.id}>
+                              {o.name} ({o.slug})
+                            </option>
+                          ))}
+                      </select>
                     </div>
                   </div>
 
@@ -3686,6 +4103,64 @@ export function PlatformConsole({
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setAuditModalOrg(null)}>
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Map Custom Domain Modal */}
+      <Dialog open={domainModalOpen} onOpenChange={(open) => !open && setDomainModalOpen(false)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Globe className="h-4 w-4 text-primary" /> Map White-Label Custom Domain
+            </DialogTitle>
+            <DialogDescription>
+              Map a custom Fully Qualified Domain Name (FQDN) to an organization and provision automated SSL routing.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2 text-xs">
+            <div>
+              <label className="text-xs font-medium text-foreground">Target Organization</label>
+              <select
+                className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-xs"
+                value={domainOrgId}
+                onChange={(e) => setDomainOrgId(e.target.value)}
+              >
+                <option value="">-- Select Organization --</option>
+                {orgs.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name} ({o.slug})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-foreground">Custom FQDN (Hostname)</label>
+              <Input
+                placeholder="crm.tenantbrand.com"
+                value={domainNameInput}
+                onChange={(e) => setDomainNameInput(e.target.value)}
+                className="mt-1 text-xs"
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Tenant must point a DNS CNAME record to <code className="bg-muted px-1 rounded font-mono">cname.ridhzo.com</code>.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setDomainModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={domainBusy || !domainOrgId || !domainNameInput.trim()}
+              onClick={handleRegisterDomain}
+            >
+              {domainBusy ? "Registering..." : "Register & Provision SSL"}
             </Button>
           </DialogFooter>
         </DialogContent>

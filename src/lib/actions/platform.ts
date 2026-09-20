@@ -808,3 +808,91 @@ export async function remediateAnomalyAction(id: string) {
   }
 }
 
+// --- Per-Tenant Feature Overrides ---
+export async function setTenantFlagOverrideAction(key: string, organizationId: string, enabled: boolean) {
+  await requireSuperAdmin();
+  try {
+    const { FeatureFlagService } = await import("@/domains/platform/featureFlags");
+    const flag = await FeatureFlagService.setTenantOverride(key, organizationId, enabled);
+    revalidatePath("/admin");
+    return ok(flag);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+// --- Support Triage & Internal Notes ---
+export async function assignSupportTicketAction(ticketId: string, assignedTo: string | null) {
+  await requireSuperAdmin();
+  try {
+    const { SupportTicketService } = await import("@/domains/platform/supportService");
+    const ticket = await SupportTicketService.assignTicket(ticketId, assignedTo);
+    revalidatePath("/admin");
+    return ok(ticket);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function addSupportTicketNoteAction(ticketId: string, noteBody: string) {
+  const session = await requireSuperAdmin();
+  try {
+    const { SupportTicketService } = await import("@/domains/platform/supportService");
+    const authorName = session.user.name || session.user.email || "SuperAdmin";
+    const ticket = await SupportTicketService.addInternalNote(ticketId, authorName, noteBody);
+    revalidatePath("/admin");
+    return ok(ticket);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+// --- Custom Domains ---
+export async function listCustomDomainsAction() {
+  await requireSuperAdmin();
+  try {
+    const { CustomDomainService } = await import("@/domains/platform/customDomainService");
+    const list = await CustomDomainService.listDomains();
+    return ok(list);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function registerCustomDomainAction(orgId: string, domain: string) {
+  await requireSuperAdmin();
+  try {
+    const { CustomDomainService } = await import("@/domains/platform/customDomainService");
+    const record = await CustomDomainService.registerDomain(orgId, domain);
+    revalidatePath("/admin");
+    return ok(record);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function verifyCustomDomainAction(id: string) {
+  await requireSuperAdmin();
+  try {
+    const { CustomDomainService } = await import("@/domains/platform/customDomainService");
+    const record = await CustomDomainService.verifyDomain(id);
+    revalidatePath("/admin");
+    return ok(record);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function removeCustomDomainAction(id: string) {
+  await requireSuperAdmin();
+  try {
+    const { CustomDomainService } = await import("@/domains/platform/customDomainService");
+    const removed = await CustomDomainService.removeDomain(id);
+    revalidatePath("/admin");
+    return ok({ removed });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+

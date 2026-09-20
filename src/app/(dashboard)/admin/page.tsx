@@ -11,6 +11,7 @@ import { CouponService } from "@/domains/billing/couponService";
 import { SupportTicketService } from "@/domains/platform/supportService";
 import { ExecutiveDigestService } from "@/domains/platform/executiveDigestService";
 import { AnomalyDetectionService } from "@/domains/platform/anomalyDetectionService";
+import { CustomDomainService } from "@/domains/platform/customDomainService";
 import { PlatformConsole } from "@/components/platform/PlatformConsole";
 
 // Platform operator console — every organization on the instance. Super-admin only.
@@ -35,6 +36,7 @@ export default async function AdminPage() {
     apiKeys,
     digestConfig,
     anomalies,
+    domains,
   ] = await Promise.all([
     PlatformService.listOrganizations(),
     PlatformService.getPlatformMetrics(),
@@ -54,6 +56,7 @@ export default async function AdminPage() {
     PlatformService.listFleetApiKeys(50),
     ExecutiveDigestService.getConfig(),
     AnomalyDetectionService.scanAnomalies(),
+    CustomDomainService.listDomains(),
   ]);
 
   return (
@@ -83,6 +86,7 @@ export default async function AdminPage() {
         initialApiKeys={apiKeys}
         initialDigestConfig={digestConfig}
         initialAnomalies={anomalies}
+        initialDomains={domains}
       />
     </div>
   );

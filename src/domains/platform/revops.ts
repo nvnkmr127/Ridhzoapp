@@ -17,6 +17,14 @@ export interface TenantHealthSummary {
   whatsappCredits: number;
 }
 
+export interface MrrWaterfall {
+  startingMrr: number;
+  newMrr: number;
+  expansionMrr: number;
+  churnRiskMrr: number;
+  netMrr: number;
+}
+
 export interface RevOpsMetrics {
   mrr: number;
   arr: number;
@@ -24,6 +32,7 @@ export interface RevOpsMetrics {
   paidAccounts: number;
   freeAccounts: number;
   churnRiskCount: number;
+  waterfall: MrrWaterfall;
 }
 
 const PLAN_PRICES: Record<string, number> = {
@@ -35,17 +44,34 @@ const PLAN_PRICES: Record<string, number> = {
 export class RevOpsService {
   static async getMetrics(): Promise<RevOpsMetrics> {
     const orgs = await db
-      .select({ plan: organizations.plan, planStatus: organizations.planStatus })
+      .select({
+        id: organizations.id,
+        plan: organizations.plan,
+        planStatus: organizations.planStatus,
+        createdAt: organizations.createdAt,
+      })
       .from(organizations);
 
     let mrr = 0;
     let paidAccounts = 0;
     let freeAccounts = 0;
+    let newMrr = 0;
+    let expansionMrr = 0;
+
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
     for (const org of orgs) {
       if (org.planStatus === "active" && org.plan && PLAN_PRICES[org.plan]) {
-        mrr += PLAN_PRICES[org.plan];
+        const price = PLAN_PRICES[org.plan];
+        mrr += price;
         paidAccounts++;
+
+        if (new Date(org.createdAt).getTime() >= thirtyDaysAgo.getTime()) {
+          newMrr += price;
+        }
+        if (org.plan === "business") {
+          expansionMrr += 200; // Expansion delta over pro tier (449 - 249)
+        }
       } else {
         freeAccounts++;
       }
@@ -55,7 +81,18 @@ export class RevOpsService {
     const arpu = paidAccounts > 0 ? Math.round(mrr / paidAccounts) : 0;
 
     const healthList = await this.listTenantHealth(50);
-    const churnRiskCount = healthList.filter((t) => t.health === "at_risk" || t.health === "critical").length;
+    const atRiskList = healthList.filter((t) => t.health === "at_risk" || t.health === "critical");
+    const churnRiskCount = atRiskList.length;
+    const churnRiskMrr = atRiskList.reduce((acc, t) => acc + (PLAN_PRICES[t.plan] ?? 0), 0);
+    const startingMrr = Math.max(0, mrr - newMrr);
+
+    const waterfall: MrrWaterfall = {
+      startingMrr,
+      newMrr,
+      expansionMrr,
+      churnRiskMrr,
+      netMrr: mrr,
+    };
 
     return {
       mrr,
@@ -64,6 +101,7 @@ export class RevOpsService {
       paidAccounts,
       freeAccounts,
       churnRiskCount,
+      waterfall,
     };
   }
 

@@ -72,16 +72,35 @@ export class FeatureFlagService {
     return flag;
   }
 
+  static async setTenantOverride(key: string, organizationId: string, enabled: boolean): Promise<FeatureFlag | null> {
+    const flags = await this.list();
+    const flag = flags.find((f) => f.key === key);
+    if (!flag) return null;
+
+    flag.allowedOrgIds = flag.allowedOrgIds ?? [];
+    if (enabled) {
+      if (!flag.allowedOrgIds.includes(organizationId)) {
+        flag.allowedOrgIds.push(organizationId);
+      }
+    } else {
+      flag.allowedOrgIds = flag.allowedOrgIds.filter((id) => id !== organizationId);
+    }
+
+    await PlatformConfigService.set(this.CONFIG_KEY, flags);
+    return flag;
+  }
+
   static async isEnabled(key: string, organizationId?: string, plan?: string): Promise<boolean> {
     const flags = await this.list();
     const flag = flags.find((f) => f.key === key);
     if (!flag) return false;
-    if (!flag.enabled) return false;
 
-    // Check specific tenant bypass list
+    // Explicit tenant override bypasses global toggle & plan restrictions
     if (organizationId && flag.allowedOrgIds && flag.allowedOrgIds.includes(organizationId)) {
       return true;
     }
+
+    if (!flag.enabled) return false;
 
     // Check plan entitlement
     if (flag.plans && plan && !flag.plans.includes(plan as any)) {

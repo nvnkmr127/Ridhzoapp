@@ -12,6 +12,13 @@ export interface TicketMessage {
   createdAt: string;
 }
 
+export interface InternalNote {
+  id: string;
+  authorName: string;
+  body: string;
+  createdAt: string;
+}
+
 export interface SupportTicket {
   id: string;
   orgId: string;
@@ -22,12 +29,22 @@ export interface SupportTicket {
   category: "billing" | "technical" | "feature_request" | "urgent";
   priority: "low" | "medium" | "high" | "urgent";
   status: "open" | "in_progress" | "resolved";
+  assignedTo?: string | null;
+  slaDeadline: string;
   messages: TicketMessage[];
+  internalNotes?: InternalNote[];
   createdAt: string;
   updatedAt: string;
 }
 
 const SUPPORT_CONFIG_KEY = "support_tickets";
+
+const SLA_HOURS: Record<string, number> = {
+  urgent: 2,
+  high: 6,
+  medium: 24,
+  low: 48,
+};
 
 export class SupportTicketService {
   static async listTickets(statusFilter = "all"): Promise<SupportTicket[]> {
@@ -53,7 +70,10 @@ export class SupportTicketService {
     const [user] = await db.select({ email: users.email, firstName: users.firstName, lastName: users.lastName }).from(users).where(eq(users.id, input.userId)).limit(1);
 
     const senderName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.email || "Tenant User";
-    const now = new Date().toISOString();
+    const now = new Date();
+    const priority = input.priority ?? "medium";
+    const slaHours = SLA_HOURS[priority] ?? 24;
+    const slaDeadline = new Date(now.getTime() + slaHours * 60 * 60 * 1000).toISOString();
 
     const ticket: SupportTicket = {
       id: `tkt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -63,23 +83,52 @@ export class SupportTicketService {
       userEmail: user?.email ?? "unknown",
       subject: input.subject,
       category: input.category ?? "technical",
-      priority: input.priority ?? "medium",
+      priority,
       status: "open",
+      assignedTo: null,
+      slaDeadline,
+      internalNotes: [],
       messages: [
         {
           id: `msg_${Date.now()}`,
           sender: "tenant",
           senderName,
           body: input.body,
-          createdAt: now,
+          createdAt: now.toISOString(),
         },
       ],
-      createdAt: now,
-      updatedAt: now,
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
     };
 
     const list = await PlatformConfigService.get<SupportTicket[]>(SUPPORT_CONFIG_KEY, []);
     list.unshift(ticket);
+    await PlatformConfigService.set(SUPPORT_CONFIG_KEY, list);
+    return ticket;
+  }
+
+  static async assignTicket(ticketId: string, assignedTo: string | null): Promise<SupportTicket | null> {
+    const list = await PlatformConfigService.get<SupportTicket[]>(SUPPORT_CONFIG_KEY, []);
+    const ticket = list.find((t) => t.id === ticketId);
+    if (!ticket) return null;
+    ticket.assignedTo = assignedTo;
+    ticket.updatedAt = new Date().toISOString();
+    await PlatformConfigService.set(SUPPORT_CONFIG_KEY, list);
+    return ticket;
+  }
+
+  static async addInternalNote(ticketId: string, authorName: string, body: string): Promise<SupportTicket | null> {
+    const list = await PlatformConfigService.get<SupportTicket[]>(SUPPORT_CONFIG_KEY, []);
+    const ticket = list.find((t) => t.id === ticketId);
+    if (!ticket) return null;
+    ticket.internalNotes = ticket.internalNotes ?? [];
+    ticket.internalNotes.push({
+      id: `note_${Date.now()}`,
+      authorName,
+      body,
+      createdAt: new Date().toISOString(),
+    });
+    ticket.updatedAt = new Date().toISOString();
     await PlatformConfigService.set(SUPPORT_CONFIG_KEY, list);
     return ticket;
   }
