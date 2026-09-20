@@ -50,6 +50,8 @@ export class BillingService {
     await db.update(organizations)
       .set({ plan, planStatus: "active", razorpaySubscriptionId: subscriptionId })
       .where(eq(organizations.id, organizationId));
+    const { BillingLifecycleService } = await import("./lifecycleService");
+    await BillingLifecycleService.handlePaymentSuccess(organizationId);
   }
 
   static async cancel(organizationId: string) {
@@ -80,17 +82,23 @@ export class BillingService {
     switch (event) {
       case "subscription.activated":
       case "subscription.charged":
-      case "subscription.resumed":
+      case "subscription.resumed": {
         newStatus = "active";
         await db.update(organizations)
           .set({ planStatus: "active", ...(periodEnd ? { currentPeriodEnd: periodEnd } : {}) })
           .where(eq(organizations.id, org.id));
+        const { BillingLifecycleService } = await import("./lifecycleService");
+        await BillingLifecycleService.handlePaymentSuccess(org.id);
         break;
+      }
       case "subscription.halted":
-      case "subscription.paused":
+      case "subscription.paused": {
         newStatus = "halted";
         await db.update(organizations).set({ planStatus: "halted" }).where(eq(organizations.id, org.id));
+        const { BillingLifecycleService } = await import("./lifecycleService");
+        await BillingLifecycleService.handlePaymentFailure(org.id, `Razorpay event: ${event}`);
         break;
+      }
       case "subscription.cancelled":
       case "subscription.completed":
         // Lost the paid subscription → drop entitlements back to free.

@@ -49,6 +49,9 @@ function renderTokens(body: string, lead: { name: string | null; company?: strin
 
 export class SequenceService {
   static async create(organizationId: string, name: string, steps: SequenceStepInput[], description?: string | null) {
+    const { BillingLifecycleService } = await import("@/domains/billing/lifecycleService");
+    await BillingLifecycleService.assertFeatureAccess(organizationId, "Sequences");
+
     const [seq] = await db.insert(sequences).values({ organizationId, name, description: description ?? null }).returning();
     if (steps.length) {
       await db.insert(sequenceSteps).values(

@@ -103,3 +103,708 @@ export async function stopImpersonationAction() {
   revalidatePath("/", "layout");
   return ok({ stopped: true });
 }
+
+export async function searchGlobalUsersAction(query?: string) {
+  await requireSuperAdmin();
+  return PlatformService.searchUsers(query);
+}
+
+export async function toggleUserActiveAction(userId: string, isActive: boolean) {
+  const session = await requireSuperAdmin();
+  if (session.user.id === userId && !isActive) {
+    return fail("VALIDATION", "You cannot deactivate your own account.");
+  }
+  try {
+    const updated = await PlatformService.setUserActive(userId, isActive);
+    if (!updated) return fail("NOT_FOUND", "User not found.");
+    if (updated.organizationId) {
+      await AuditService.log({
+        organizationId: updated.organizationId,
+        userId: session.user.id,
+        action: isActive ? "platform.user_activate" : "platform.user_deactivate",
+        entityType: "user",
+        entityId: userId,
+        metadata: { email: updated.email, by: "super_admin" },
+      });
+    }
+    revalidatePath("/admin");
+    return ok({ userId, isActive });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function toggleSuperAdminAction(userId: string, isSuperAdmin: boolean) {
+  const session = await requireSuperAdmin();
+  if (session.user.id === userId && !isSuperAdmin) {
+    return fail("VALIDATION", "You cannot remove super-admin status from yourself.");
+  }
+  try {
+    const updated = await PlatformService.setSuperAdmin(userId, isSuperAdmin);
+    if (!updated) return fail("NOT_FOUND", "User not found.");
+    revalidatePath("/admin");
+    return ok({ userId, isSuperAdmin });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function setOrgSeatOverrideAction(organizationId: string, seats: number | null) {
+  const session = await requireSuperAdmin();
+  try {
+    const res = await PlatformService.setSeatOverride(organizationId, seats);
+    await AuditService.log({
+      organizationId,
+      userId: session.user.id,
+      action: "platform.seat_override",
+      entityType: "organization",
+      entityId: organizationId,
+      metadata: { seats, by: "super_admin" },
+    });
+    revalidatePath("/admin");
+    return ok(res);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function setBroadcastAction(broadcast: {
+  message: string;
+  active: boolean;
+  level: "info" | "warning" | "destructive";
+}) {
+  const session = await requireSuperAdmin();
+  try {
+    await PlatformService.setBroadcast(broadcast);
+    if (session.user.organizationId) {
+      await AuditService.log({
+        organizationId: session.user.organizationId,
+        userId: session.user.id,
+        action: broadcast.active ? "platform.broadcast_publish" : "platform.broadcast_clear",
+        entityType: "system",
+        metadata: { ...broadcast, by: "super_admin" },
+      });
+    }
+    revalidatePath("/", "layout");
+    return ok({ success: true });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function retryAllFailedDeliveriesAction() {
+  const session = await requireSuperAdmin();
+  try {
+    const res = await PlatformService.retryAllFailedDeliveries();
+    if (session.user.organizationId) {
+      await AuditService.log({
+        organizationId: session.user.organizationId,
+        userId: session.user.id,
+        action: "platform.bulk_dlq_retry",
+        entityType: "webhook_delivery",
+        metadata: { retried: res.retried, by: "super_admin" },
+      });
+    }
+    revalidatePath("/admin");
+    return ok(res);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function purgeRecycleBinAction() {
+  const session = await requireSuperAdmin();
+  try {
+    const res = await PlatformService.purgeRecycleBin();
+    if (session.user.organizationId) {
+      await AuditService.log({
+        organizationId: session.user.organizationId,
+        userId: session.user.id,
+        action: "platform.recycle_bin_purge",
+        entityType: "lead",
+        metadata: { purgedCount: res.purgedCount, by: "super_admin" },
+      });
+    }
+    revalidatePath("/admin");
+    return ok(res);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function toggleFeatureFlagAction(key: string, enabled: boolean) {
+  const session = await requireSuperAdmin();
+  try {
+    const { FeatureFlagService } = await import("@/domains/platform/featureFlags");
+    const flag = await FeatureFlagService.toggle(key, enabled);
+    if (!flag) return fail("NOT_FOUND", "Feature flag not found");
+    if (session.user.organizationId) {
+      await AuditService.log({
+        organizationId: session.user.organizationId,
+        userId: session.user.id,
+        action: "platform.toggle_feature_flag",
+        entityType: "system",
+        metadata: { key, enabled, by: "super_admin" },
+      });
+    }
+    revalidatePath("/admin");
+    return ok(flag);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function grantTenantCreditsAction(organizationId: string, aiGrant: number, whatsappGrant: number) {
+  const session = await requireSuperAdmin();
+  try {
+    const { RevOpsService } = await import("@/domains/platform/revops");
+    const credits = await RevOpsService.grantCredits(organizationId, aiGrant, whatsappGrant);
+    await AuditService.log({
+      organizationId,
+      userId: session.user.id,
+      action: "platform.grant_credits",
+      entityType: "organization",
+      entityId: organizationId,
+      metadata: { aiGrant, whatsappGrant, current: credits, by: "super_admin" },
+    });
+    revalidatePath("/admin");
+    return ok(credits);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function toggleMaintenanceModeAction(enabled: boolean, message?: string) {
+  const session = await requireSuperAdmin();
+  try {
+    const { PlatformConfigService } = await import("@/domains/platform/configService");
+    await PlatformConfigService.set("maintenance_mode", {
+      enabled,
+      message: message || "System is undergoing scheduled maintenance. Please check back shortly.",
+      updatedAt: new Date().toISOString(),
+    });
+    if (session.user.organizationId) {
+      await AuditService.log({
+        organizationId: session.user.organizationId,
+        userId: session.user.id,
+        action: enabled ? "platform.maintenance_enable" : "platform.maintenance_disable",
+        entityType: "system",
+        metadata: { enabled, message, by: "super_admin" },
+      });
+    }
+    revalidatePath("/", "layout");
+    return ok({ enabled });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function searchDsrSubjectAction(query: string) {
+  await requireSuperAdmin();
+  try {
+    const { ComplianceService } = await import("@/domains/platform/complianceService");
+    const results = await ComplianceService.searchSubject(query);
+    return ok(results);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function exportDsrDossierAction(leadId: string) {
+  await requireSuperAdmin();
+  try {
+    const { ComplianceService } = await import("@/domains/platform/complianceService");
+    const dossier = await ComplianceService.exportDsrDossier(leadId);
+    if (!dossier) return fail("NOT_FOUND", "Subject record not found");
+    return ok(dossier);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function executeRightToBeForgottenAction(leadId: string) {
+  const session = await requireSuperAdmin();
+  try {
+    const { ComplianceService } = await import("@/domains/platform/complianceService");
+    const success = await ComplianceService.executeRightToBeForgotten(leadId, session.user.id);
+    if (!success) return fail("NOT_FOUND", "Subject record not found");
+    revalidatePath("/admin");
+    return ok({ anonymized: true, leadId });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function getOpsAlertConfigAction() {
+  await requireSuperAdmin();
+  try {
+    const { OpsAlertService } = await import("@/domains/platform/opsAlertService");
+    const config = await OpsAlertService.getConfig();
+    return ok(config);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function saveOpsAlertConfigAction(config: any) {
+  const session = await requireSuperAdmin();
+  try {
+    const { OpsAlertService } = await import("@/domains/platform/opsAlertService");
+    await OpsAlertService.saveConfig(config);
+    if (session.user.organizationId) {
+      await AuditService.log({
+        organizationId: session.user.organizationId,
+        userId: session.user.id,
+        action: "platform.save_ops_webhook",
+        entityType: "system",
+        metadata: { enabled: config.enabled, urlSet: !!config.url, by: "super_admin" },
+      });
+    }
+    revalidatePath("/admin");
+    return ok(config);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function testOpsAlertAction() {
+  await requireSuperAdmin();
+  try {
+    const { OpsAlertService } = await import("@/domains/platform/opsAlertService");
+    const res = await OpsAlertService.sendTestPing();
+    if (!res.ok) return fail("SERVER", res.message);
+    return ok({ message: res.message });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function getTenantSecurityPolicyAction(organizationId: string) {
+  await requireSuperAdmin();
+  try {
+    const { SecurityPolicyService } = await import("@/domains/platform/securityPolicyService");
+    const policy = await SecurityPolicyService.getPolicy(organizationId);
+    return ok(policy);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function setTenantSecurityPolicyAction(
+  organizationId: string,
+  policy: { allowedCidrs?: string[]; enforceMfa?: boolean; sessionMaxAgeHours?: number }
+) {
+  const session = await requireSuperAdmin();
+  try {
+    const { SecurityPolicyService } = await import("@/domains/platform/securityPolicyService");
+    const updated = await SecurityPolicyService.setPolicy(organizationId, policy);
+    await AuditService.log({
+      organizationId,
+      userId: session.user.id,
+      action: "platform.set_security_policy",
+      entityType: "organization",
+      entityId: organizationId,
+      metadata: { policy: updated, by: "super_admin" },
+    });
+    revalidatePath("/admin");
+    return ok(updated);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function listBillingLifecycleAction() {
+  await requireSuperAdmin();
+  try {
+    const { BillingLifecycleService } = await import("@/domains/billing/lifecycleService");
+    const fleet = await BillingLifecycleService.listFleetBillingStatus();
+    return ok(fleet);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function extendGracePeriodAction(organizationId: string, days = 7) {
+  const session = await requireSuperAdmin();
+  try {
+    const { BillingLifecycleService } = await import("@/domains/billing/lifecycleService");
+    const updated = await BillingLifecycleService.extendGracePeriod(organizationId, days);
+    await AuditService.log({
+      organizationId,
+      userId: session.user.id,
+      action: "platform.extend_grace_period",
+      entityType: "organization",
+      entityId: organizationId,
+      metadata: { days, graceEndsAt: updated.gracePeriodEndsAt },
+    });
+    revalidatePath("/admin");
+    return ok(updated);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function markTenantManuallyPaidAction(organizationId: string, days = 30) {
+  const session = await requireSuperAdmin();
+  try {
+    const { BillingLifecycleService } = await import("@/domains/billing/lifecycleService");
+    const updated = await BillingLifecycleService.markManuallyPaid(organizationId, days);
+    await AuditService.log({
+      organizationId,
+      userId: session.user.id,
+      action: "platform.mark_manually_paid",
+      entityType: "organization",
+      entityId: organizationId,
+      metadata: { days, manualPaidUntil: updated.manualPaidUntil },
+    });
+    revalidatePath("/admin");
+    return ok(updated);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function sendDunningNoticeAction(organizationId: string) {
+  const session = await requireSuperAdmin();
+  try {
+    const { BillingLifecycleService } = await import("@/domains/billing/lifecycleService");
+    const status = await BillingLifecycleService.getTenantBillingStatus(organizationId);
+    if (!status) return fail("NOT_FOUND", "Organization not found");
+    const expiry = status.gracePeriodEndsAt ? new Date(status.gracePeriodEndsAt) : new Date(Date.now() + 7 * 86400000);
+    await BillingLifecycleService.sendDunningEmail(
+      organizationId,
+      status.orgName,
+      status.plan,
+      expiry,
+      status.failureReason || "Payment past due"
+    );
+    await AuditService.log({
+      organizationId,
+      userId: session.user.id,
+      action: "platform.send_dunning_notice",
+      entityType: "organization",
+      entityId: organizationId,
+    });
+    return ok({ sent: true });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function simulatePaymentFailureAction(organizationId: string, reason = "Card declined (Manual Test Simulation)") {
+  const session = await requireSuperAdmin();
+  try {
+    const { BillingLifecycleService } = await import("@/domains/billing/lifecycleService");
+    await BillingLifecycleService.handlePaymentFailure(organizationId, reason);
+    await AuditService.log({
+      organizationId,
+      userId: session.user.id,
+      action: "platform.simulate_payment_failure",
+      entityType: "organization",
+      entityId: organizationId,
+      metadata: { reason },
+    });
+    revalidatePath("/admin");
+    return ok({ simulated: true });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+// --- Tax Invoices ---
+export async function listInvoicesAction() {
+  await requireSuperAdmin();
+  try {
+    const { InvoiceService } = await import("@/domains/billing/invoiceService");
+    const list = await InvoiceService.listInvoices();
+    return ok(list);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function generateInvoiceAction(params: {
+  orgId: string;
+  plan: string;
+  amount: number;
+  status?: "paid" | "issued";
+  gstin?: string | null;
+}) {
+  await requireSuperAdmin();
+  try {
+    const { InvoiceService } = await import("@/domains/billing/invoiceService");
+    const inv = await InvoiceService.generateInvoice(params);
+    revalidatePath("/admin");
+    return ok(inv);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function voidInvoiceAction(id: string) {
+  await requireSuperAdmin();
+  try {
+    const { InvoiceService } = await import("@/domains/billing/invoiceService");
+    const inv = await InvoiceService.voidInvoice(id);
+    if (!inv) return fail("NOT_FOUND", "Invoice not found");
+    revalidatePath("/admin");
+    return ok(inv);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+// --- Coupons & Promo Codes ---
+export async function listCouponsAction() {
+  await requireSuperAdmin();
+  try {
+    const { CouponService } = await import("@/domains/billing/couponService");
+    const list = await CouponService.list();
+    return ok(list);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function createCouponAction(input: {
+  code: string;
+  discountType: "percent" | "fixed";
+  discountValue: number;
+  plans?: string[];
+  maxRedemptions?: number;
+  expiresAt?: string | null;
+}) {
+  await requireSuperAdmin();
+  try {
+    const { CouponService } = await import("@/domains/billing/couponService");
+    const coupon = await CouponService.create(input);
+    revalidatePath("/admin");
+    return ok(coupon);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function toggleCouponAction(id: string, active: boolean) {
+  await requireSuperAdmin();
+  try {
+    const { CouponService } = await import("@/domains/billing/couponService");
+    const coupon = await CouponService.toggle(id, active);
+    if (!coupon) return fail("NOT_FOUND", "Coupon not found");
+    revalidatePath("/admin");
+    return ok(coupon);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function deleteCouponAction(id: string) {
+  await requireSuperAdmin();
+  try {
+    const { CouponService } = await import("@/domains/billing/couponService");
+    const deleted = await CouponService.delete(id);
+    revalidatePath("/admin");
+    return ok({ deleted });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+// --- Support Desk ---
+export async function listSupportTicketsAction(statusFilter = "all") {
+  await requireSuperAdmin();
+  try {
+    const { SupportTicketService } = await import("@/domains/platform/supportService");
+    const list = await SupportTicketService.listTickets(statusFilter);
+    return ok(list);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function replySupportTicketAction(ticketId: string, body: string) {
+  const session = await requireSuperAdmin();
+  try {
+    const { SupportTicketService } = await import("@/domains/platform/supportService");
+    const senderName = session.user.name || session.user.email || "Platform SuperAdmin";
+    const ticket = await SupportTicketService.reply(ticketId, "superadmin", senderName, body);
+    if (!ticket) return fail("NOT_FOUND", "Ticket not found");
+    revalidatePath("/admin");
+    return ok(ticket);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function updateSupportTicketStatusAction(ticketId: string, status: "open" | "in_progress" | "resolved") {
+  await requireSuperAdmin();
+  try {
+    const { SupportTicketService } = await import("@/domains/platform/supportService");
+    const ticket = await SupportTicketService.updateStatus(ticketId, status);
+    if (!ticket) return fail("NOT_FOUND", "Ticket not found");
+    revalidatePath("/admin");
+    return ok(ticket);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+// --- Session Killswitch ---
+export async function revokeUserSessionsAction(userId: string) {
+  const session = await requireSuperAdmin();
+  try {
+    const { SessionService } = await import("@/domains/platform/sessionService");
+    const revokedAt = await SessionService.revokeUserSessions(userId, session.user.id);
+    revalidatePath("/admin");
+    return ok({ revokedAt });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function revokeOrgSessionsAction(orgId: string) {
+  const session = await requireSuperAdmin();
+  try {
+    const { SessionService } = await import("@/domains/platform/sessionService");
+    const revokedAt = await SessionService.revokeOrgSessions(orgId, session.user.id);
+    revalidatePath("/admin");
+    return ok({ revokedAt });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+// --- 1-Click Platform CSV Exporters ---
+export async function exportPlatformCsvAction(type: "tenants" | "financial" | "churn") {
+  await requireSuperAdmin();
+  try {
+    const { PlatformExportService } = await import("@/domains/platform/exportService");
+    let csv = "";
+    if (type === "tenants") csv = await PlatformExportService.exportTenantsDirectoryCsv();
+    else if (type === "financial") csv = await PlatformExportService.exportFinancialLedgerCsv();
+    else if (type === "churn") csv = await PlatformExportService.exportChurnRiskCsv();
+    return ok({ csv, filename: `ridhzo_${type}_export_${new Date().toISOString().slice(0, 10)}.csv` });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+// --- Tenant Audit Trail & Fleet API Keys ---
+export async function getTenantAuditLogsAction(organizationId: string) {
+  await requireSuperAdmin();
+  try {
+    const logs = await PlatformService.getTenantAuditLogs(organizationId, 50);
+    return ok(logs);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function listFleetApiKeysAction() {
+  await requireSuperAdmin();
+  try {
+    const keys = await PlatformService.listFleetApiKeys(100);
+    return ok(keys);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function revokeFleetApiKeyAction(id: string) {
+  await requireSuperAdmin();
+  try {
+    const revoked = await PlatformService.revokeFleetApiKey(id);
+    revalidatePath("/admin");
+    return ok({ revoked });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+// --- Executive Digest ---
+export async function getExecutiveDigestConfigAction() {
+  await requireSuperAdmin();
+  try {
+    const { ExecutiveDigestService } = await import("@/domains/platform/executiveDigestService");
+    const cfg = await ExecutiveDigestService.getConfig();
+    return ok(cfg);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function saveExecutiveDigestConfigAction(config: {
+  enabled?: boolean;
+  frequency?: "daily" | "weekly";
+  recipients?: string[];
+}) {
+  await requireSuperAdmin();
+  try {
+    const { ExecutiveDigestService } = await import("@/domains/platform/executiveDigestService");
+    const updated = await ExecutiveDigestService.saveConfig(config);
+    revalidatePath("/admin");
+    return ok(updated);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function sendTestExecutiveDigestAction(targetEmail: string) {
+  await requireSuperAdmin();
+  try {
+    const { ExecutiveDigestService } = await import("@/domains/platform/executiveDigestService");
+    await ExecutiveDigestService.sendTestDigest(targetEmail);
+    return ok({ success: true });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function triggerExecutiveDigestAction() {
+  await requireSuperAdmin();
+  try {
+    const { ExecutiveDigestService } = await import("@/domains/platform/executiveDigestService");
+    const res = await ExecutiveDigestService.sendDigest();
+    revalidatePath("/admin");
+    return ok(res);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+// --- Anomaly & Abuse Detection ---
+export async function listAnomaliesAction() {
+  await requireSuperAdmin();
+  try {
+    const { AnomalyDetectionService } = await import("@/domains/platform/anomalyDetectionService");
+    const anomalies = await AnomalyDetectionService.scanAnomalies();
+    return ok(anomalies);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function resolveAnomalyAction(id: string, action: "resolve" | "dismiss") {
+  await requireSuperAdmin();
+  try {
+    const { AnomalyDetectionService } = await import("@/domains/platform/anomalyDetectionService");
+    await AnomalyDetectionService.resolveAnomaly(id, action);
+    revalidatePath("/admin");
+    return ok({ success: true });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function remediateAnomalyAction(id: string) {
+  const session = await requireSuperAdmin();
+  try {
+    const { AnomalyDetectionService } = await import("@/domains/platform/anomalyDetectionService");
+    const result = await AnomalyDetectionService.executeRemediation(id, session.user.id);
+    revalidatePath("/admin");
+    return ok(result);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+

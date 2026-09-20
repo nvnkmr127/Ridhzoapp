@@ -19,7 +19,7 @@ import { OfflineStatusIndicator } from "@/components/layout/OfflineStatusIndicat
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { MobileSidebar } from "@/components/layout/MobileSidebar";
 
-export function Header() {
+export function Header({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
   const [searchOpen, setSearchOpen] = React.useState(false);
   const [shortcutLabel, setShortcutLabel] = React.useState("⌘K");
 
@@ -44,7 +44,7 @@ export function Header() {
     <div className="flex h-14 items-center justify-between border-b border-border px-4 lg:px-6 bg-background shrink-0">
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
       <div className="flex items-center flex-1 gap-2">
-        <MobileSidebar />
+        <MobileSidebar isSuperAdmin={isSuperAdmin} />
         <span className="md:hidden text-base font-semibold tracking-tight">Ridhzo</span>
         <button
           type="button"

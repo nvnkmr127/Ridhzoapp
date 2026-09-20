@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { users, leads, invitations, organizations } from "@/db/schema";
 import { and, count, eq, gt, isNull } from "drizzle-orm";
+import { PlatformConfigService } from "@/domains/platform/configService";
 
 // Per-plan ceilings. Infinity = unlimited. Enforcement lives here; charging (Stripe) is separate
 // and needs external keys — the plan column is set by that flow, which isn't wired yet.
@@ -26,7 +27,13 @@ export class PlanService {
         .limit(1);
       const org = Array.isArray(res) ? res[0] : res;
       if (!org) return "free";
-      if (org.planStatus && org.planStatus !== "active") return "free";
+      if (org.planStatus && org.planStatus !== "active") {
+        const { BillingLifecycleService } = await import("./lifecycleService");
+        const lifecycle = await BillingLifecycleService.getLifecycle(organizationId);
+        const { status } = BillingLifecycleService.computeStatus(org, lifecycle);
+        if (status === "locked" || status === "free") return "free";
+        return org.plan ?? "free";
+      }
       return org.plan ?? "free";
     } catch {
       return "free";
@@ -35,8 +42,17 @@ export class PlanService {
 
   // Counts active users + still-open invitations against the seat limit.
   static async assertCanAddSeat(organizationId: string) {
-    const { seats } = limitsFor(await this.plan(organizationId));
+    let customSeats: number | undefined;
+    try {
+      const overrides = await PlatformConfigService.get<Record<string, number>>("seat_overrides", {});
+      customSeats = overrides?.[organizationId];
+    } catch {
+      // ignore
+    }
+    const { seats: defaultSeats } = limitsFor(await this.plan(organizationId));
+    const seats = customSeats != null ? customSeats : defaultSeats;
     if (seats === Infinity) return;
+
     try {
       const resU = await db.select({ n: count() }).from(users).where(and(eq(users.organizationId, organizationId), isNull(users.deletedAt)));
       const resI = await db.select({ n: count() }).from(invitations).where(and(eq(invitations.organizationId, organizationId), isNull(invitations.acceptedAt), gt(invitations.expiresAt, new Date())));

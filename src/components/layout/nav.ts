@@ -1,4 +1,24 @@
-import { Users, Kanban, LayoutDashboard, CheckSquare, Settings, Activity, Zap, Network, Snowflake, TrendingUp, GitFork, type LucideIcon } from "lucide-react";
+import {
+  Users,
+  Kanban,
+  LayoutDashboard,
+  CheckSquare,
+  Settings,
+  Activity,
+  Zap,
+  Network,
+  Snowflake,
+  TrendingUp,
+  GitFork,
+  Building2,
+  Sliders,
+  Shield,
+  AlertTriangle,
+  Radio,
+  Database,
+  LifeBuoy,
+  type LucideIcon,
+} from "lucide-react";
 
 // Shared nav definition used by both the desktop Sidebar and the mobile drawer.
 export interface NavRoute {
@@ -23,3 +43,22 @@ export const navRoutes: NavRoute[] = [
 ];
 
 export const navGroups = ["Analytics", "CRM", "Productivity", "Settings"];
+
+export interface SuperAdminRoute {
+  label: string;
+  tab: string;
+  href: string;
+  icon: LucideIcon;
+}
+
+export const superAdminRoutes: SuperAdminRoute[] = [
+  { label: "Organizations & Fleet", tab: "tenants", href: "/admin?tab=tenants", icon: Building2 },
+  { label: "RevOps & Invoicing", tab: "revops", href: "/admin?tab=revops", icon: TrendingUp },
+  { label: "Support Desk", tab: "support", href: "/admin?tab=support", icon: LifeBuoy },
+  { label: "Feature Flags & Canary", tab: "flags", href: "/admin?tab=flags", icon: Sliders },
+  { label: "GDPR & Compliance", tab: "compliance", href: "/admin?tab=compliance", icon: Shield },
+  { label: "Global Users", tab: "users", href: "/admin?tab=users", icon: Users },
+  { label: "SLA Escalations", tab: "escalations", href: "/admin?tab=escalations", icon: AlertTriangle },
+  { label: "Webhook DLQ", tab: "dlq", href: "/admin?tab=dlq", icon: Radio },
+  { label: "System & Security", tab: "system", href: "/admin?tab=system", icon: Database },
+];

@@ -1,12 +1,13 @@
 "use client"
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { ShieldCheck } from "lucide-react";
-import { navRoutes, navGroups } from "./nav";
+import { navRoutes, navGroups, superAdminRoutes } from "./nav";
 
 export function Sidebar({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const currentTab = pathname === "/admin" ? (searchParams.get("tab") || "tenants") : null;
 
   // Hidden on mobile — the Header's hamburger opens the same nav as an overlay drawer there.
   return (
@@ -44,20 +45,29 @@ export function Sidebar({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
         ))}
 
         {isSuperAdmin && (
-          <div className="space-y-1">
-            <p className="px-3 mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">Platform</p>
-            <Link
-              href="/admin"
-              className={cn(
-                "group flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                pathname === "/admin"
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
-              )}
-            >
-              <ShieldCheck className="h-[18px] w-[18px] shrink-0" strokeWidth={1.75} />
-              Platform Admin
-            </Link>
+          <div className="space-y-1 pt-2 border-t border-border">
+            <p className="px-3 mb-2 text-[11px] font-semibold uppercase tracking-wider text-primary">
+              SuperAdmin Fleet Ops
+            </p>
+            {superAdminRoutes.map((route) => {
+              const active = pathname === "/admin" && currentTab === route.tab;
+              return (
+                <Link
+                  key={route.tab}
+                  href={route.href}
+                  prefetch={true}
+                  className={cn(
+                    "group flex items-center gap-3 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                    active
+                      ? "bg-accent text-accent-foreground font-semibold"
+                      : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+                  )}
+                >
+                  <route.icon className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+                  <span>{route.label}</span>
+                </Link>
+              );
+            })}
           </div>
         )}
       </nav>

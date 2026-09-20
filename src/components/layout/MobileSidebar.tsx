@@ -1,15 +1,17 @@
 "use client"
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Menu, X } from "lucide-react";
-import { navRoutes, navGroups } from "./nav";
+import { navRoutes, navGroups, superAdminRoutes } from "./nav";
 
 // Hamburger + slide-in nav drawer for mobile. Hidden on md+ (the fixed Sidebar takes over there).
-export function MobileSidebar() {
+export function MobileSidebar({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const currentTab = pathname === "/admin" ? (searchParams.get("tab") || "tenants") : null;
 
   return (
     <>
@@ -66,6 +68,34 @@ export function MobileSidebar() {
                   })}
                 </div>
               ))}
+
+              {isSuperAdmin && (
+                <div className="space-y-1 pt-2 border-t border-border">
+                  <p className="px-3 mb-2 text-[11px] font-semibold uppercase tracking-wider text-primary">
+                    SuperAdmin Fleet Ops
+                  </p>
+                  {superAdminRoutes.map((route) => {
+                    const active = pathname === "/admin" && currentTab === route.tab;
+                    return (
+                      <Link
+                        key={route.tab}
+                        href={route.href}
+                        prefetch={true}
+                        onClick={() => setOpen(false)}
+                        className={cn(
+                          "group flex items-center gap-3 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                          active
+                            ? "bg-accent text-accent-foreground font-semibold"
+                            : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+                        )}
+                      >
+                        <route.icon className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+                        <span>{route.label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
             </nav>
           </aside>
         </div>
