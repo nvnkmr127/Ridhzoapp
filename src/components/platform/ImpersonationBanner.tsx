@@ -1,4 +1,4 @@
-import { getImpersonatedOrgId } from "@/lib/rbac";
+import { getImpersonatedOrgId, isImpersonatingReadOnly } from "@/lib/rbac";
 import { PlatformService } from "@/domains/platform/service";
 import { ExitImpersonationButton } from "./ExitImpersonationButton";
 
@@ -7,11 +7,19 @@ import { ExitImpersonationButton } from "./ExitImpersonationButton";
 export async function ImpersonationBanner() {
   const orgId = await getImpersonatedOrgId();
   if (!orgId) return null;
+  const isReadOnly = await isImpersonatingReadOnly();
   const org = await PlatformService.getOrg(orgId);
 
   return (
-    <div className="flex items-center justify-center gap-3 bg-amber-500 px-4 py-1.5 text-center text-sm font-medium text-black">
-      <span>Viewing as <strong>{org?.name ?? "tenant"}</strong> (super-admin impersonation)</span>
+    <div
+      className={`flex items-center justify-center gap-3 px-4 py-1.5 text-center text-sm font-medium ${
+        isReadOnly ? "bg-sky-600 text-white" : "bg-amber-500 text-black"
+      }`}
+    >
+      <span>
+        Viewing as <strong>{org?.name ?? "tenant"}</strong>{" "}
+        {isReadOnly ? "— read only" : "(super-admin impersonation)"}
+      </span>
       <ExitImpersonationButton />
     </div>
   );

@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { organizations, users, leads, webhookDeliveries, roles, activities, auditLogs, apiKeys } from "@/db/schema";
-import { count, desc, eq, isNull, isNotNull, and, or, ilike, sql } from "drizzle-orm";
+import { count, desc, eq, isNull, isNotNull, and, or, ilike, like, sql } from "drizzle-orm";
 import { redisConfigured } from "@/lib/jobs/redis";
 import { PlatformConfigService, type BroadcastConfig } from "./configService";
 import { LeadService } from "@/domains/leads/service";
@@ -100,6 +100,26 @@ export interface TenantAuditSummary {
   entityType: string | null;
   metadata: Record<string, unknown>;
   createdAt: string;
+}
+
+export interface PlatformActivitySummary {
+  id: string;
+  action: string;
+  actorName: string | null;
+  actorEmail: string | null;
+  entityType: string | null;
+  orgId: string;
+  orgName: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface FoundOrg {
+  id: string;
+  name: string;
+  slug: string;
+  plan: string;
+  matchedReason?: string | null;
 }
 
 export class PlatformService {
@@ -493,6 +513,90 @@ export class PlatformService {
       .where(eq(apiKeys.id, id))
       .returning({ id: apiKeys.id });
     return !!row;
+  }
+
+  static async getPlatformActivity(limit = 50): Promise<PlatformActivitySummary[]> {
+    const rows = await db
+      .select({
+        id: auditLogs.id,
+        action: auditLogs.action,
+        actorName: auditLogs.actorName,
+        actorEmail: auditLogs.actorEmail,
+        entityType: auditLogs.entityType,
+        orgId: auditLogs.organizationId,
+        orgName: organizations.name,
+        metadata: auditLogs.metadata,
+        createdAt: auditLogs.createdAt,
+      })
+      .from(auditLogs)
+      .leftJoin(organizations, eq(auditLogs.organizationId, organizations.id))
+      .where(like(auditLogs.action, "platform.%"))
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(limit);
+
+    return rows.map((r) => ({
+      id: r.id,
+      action: r.action,
+      actorName: r.actorName,
+      actorEmail: r.actorEmail,
+      entityType: r.entityType,
+      orgId: r.orgId,
+      orgName: r.orgName,
+      metadata: (r.metadata as Record<string, unknown>) ?? {},
+      createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : new Date().toISOString(),
+    }));
+  }
+
+  static async findOrg(query: string, limit = 8): Promise<FoundOrg[]> {
+    const q = query.trim();
+    if (q.length < 2) return [];
+    const like = `%${q}%`;
+
+    const rows = await db
+      .select({
+        id: organizations.id,
+        name: organizations.name,
+        slug: organizations.slug,
+        plan: organizations.plan,
+        matchedUserEmail: users.email,
+        matchedUserName: sql<string>`concat_ws(' ', ${users.firstName}, ${users.lastName})`,
+      })
+      .from(organizations)
+      .leftJoin(users, and(eq(users.organizationId, organizations.id), isNull(users.deletedAt)))
+      .where(
+        or(
+          ilike(organizations.name, like),
+          ilike(organizations.slug, like),
+          ilike(organizations.website, like),
+          ilike(users.email, like),
+          ilike(users.firstName, like),
+          ilike(users.lastName, like),
+          ilike(sql<string>`concat_ws(' ', ${users.firstName}, ${users.lastName})`, like)
+        )
+      )
+      .limit(limit * 3);
+
+    const seen = new Map<string, FoundOrg>();
+    for (const r of rows) {
+      if (!seen.has(r.id)) {
+        let matchedReason: string | null = null;
+        if (r.matchedUserEmail && r.matchedUserEmail.toLowerCase().includes(q.toLowerCase())) {
+          matchedReason = `Member: ${r.matchedUserEmail}`;
+        } else if (r.matchedUserName && r.matchedUserName.toLowerCase().includes(q.toLowerCase())) {
+          matchedReason = `Member: ${r.matchedUserName.trim()}`;
+        }
+        seen.set(r.id, {
+          id: r.id,
+          name: r.name,
+          slug: r.slug,
+          plan: r.plan,
+          matchedReason,
+        });
+      }
+      if (seen.size >= limit) break;
+    }
+
+    return Array.from(seen.values());
   }
 }
 

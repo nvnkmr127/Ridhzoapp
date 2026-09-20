@@ -6,7 +6,8 @@ import {
   CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem,
 } from "@/components/ui/command";
 import { searchUniversalAction, UniversalSearchResults } from "@/lib/actions/search";
-import { Search, Users, LayoutGrid, CalendarClock, Settings, User } from "lucide-react";
+import { Search, Users, LayoutGrid, CalendarClock, Settings, User, Building2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 const NAV = [
   { label: "Leads", href: "/leads", icon: Users },
@@ -44,6 +45,27 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       <CommandInput placeholder="Search leads, team members, or jump to…" value={query} onValueChange={setQuery} />
       <CommandList>
         <CommandEmpty>{loading ? "Searching…" : "No results."}</CommandEmpty>
+        {results.organizations && results.organizations.length > 0 && (
+          <CommandGroup heading="Organizations (Platform)">
+            {results.organizations.map((org) => (
+              <CommandItem
+                key={org.id}
+                value={`org-${org.id}-${org.name}`}
+                onSelect={() => go(`/admin?tab=tenants&q=${encodeURIComponent(org.slug)}`)}
+              >
+                <Building2 className="mr-2 h-4 w-4 text-primary" />
+                <span className="font-medium">{org.name}</span>
+                <span className="ml-2 font-mono text-xs text-muted-foreground">({org.slug})</span>
+                <Badge variant="outline" className="ml-2 text-[10px] uppercase">
+                  {org.plan}
+                </Badge>
+                {org.matchedReason && (
+                  <span className="ml-auto text-[11px] text-muted-foreground">{org.matchedReason}</span>
+                )}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
         {results.leads.length > 0 && (
           <CommandGroup heading="Leads">
             {results.leads.map((l) => (

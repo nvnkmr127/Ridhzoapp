@@ -42,6 +42,7 @@ export default async function AdminPage() {
     capiConfig,
     capiLogs,
     campaignStats,
+    platformActivity,
   ] = await Promise.all([
     PlatformService.listOrganizations(),
     PlatformService.getPlatformMetrics(),
@@ -60,11 +61,12 @@ export default async function AdminPage() {
     SupportTicketService.listTickets("all"),
     PlatformService.listFleetApiKeys(50),
     ExecutiveDigestService.getConfig(),
-    AnomalyDetectionService.scanAnomalies(),
+    AnomalyDetectionService.getCachedAnomalies(),
     CustomDomainService.listDomains(),
     MetaCapiService.getConfig(),
     MetaCapiService.listLogs(25),
     PlatformAttributionService.getCampaignAnalytics(),
+    PlatformService.getPlatformActivity(50),
   ]);
 
   return (
@@ -98,6 +100,7 @@ export default async function AdminPage() {
         initialCapiConfig={capiConfig}
         initialCapiLogs={capiLogs}
         initialCampaigns={campaignStats}
+        initialActivity={platformActivity}
       />
     </div>
   );

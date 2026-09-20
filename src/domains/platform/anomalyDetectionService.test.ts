@@ -114,4 +114,31 @@ describe("AnomalyDetectionService", () => {
     expect(SessionService.revokeOrgSessions).toHaveBeenCalledWith("org_9", "super_1");
     expect(PlatformConfigService.set).toHaveBeenCalled();
   });
+
+  it("reads cached anomalies when available, avoiding live scan", async () => {
+    const cachedSample = [
+      {
+        id: "anom_cached_1",
+        severity: "medium" as const,
+        category: "ingestion_spike" as const,
+        organizationId: "org_c",
+        organizationName: "Cached Org",
+        title: "Cached Anomaly",
+        description: "Cached",
+        detectedAt: "2026-09-20T10:00:00.000Z",
+        metric: { name: "Leads", current: 10, threshold: 5 },
+        suggestedAction: "suspend_org" as const,
+        status: "active" as const,
+      },
+    ];
+
+    vi.mocked(PlatformConfigService.get).mockImplementation(async (key) => {
+      if (key === "cached_anomalies") return cachedSample;
+      return null;
+    });
+
+    const res = await AnomalyDetectionService.getCachedAnomalies();
+    expect(res).toEqual(cachedSample);
+    expect(db.select).not.toHaveBeenCalled();
+  });
 });

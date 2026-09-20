@@ -9,11 +9,7 @@ import { AuditService } from "@/domains/audit/service";
 import { ok, fail, actionFail } from "@/lib/actions/result";
 
 const IMPERSONATE_COOKIE = "impersonate_org";
-
-export async function listOrganizationsAction() {
-  await requireSuperAdmin();
-  return PlatformService.listOrganizations();
-}
+const IMPERSONATE_READONLY_COOKIE = "impersonate_readonly";
 
 const planSchema = z.object({ organizationId: z.string().uuid(), plan: z.enum(["free", "pro", "business"]) });
 
@@ -61,28 +57,46 @@ export async function setOrgSuspendedAction(organizationId: string, suspended: b
 }
 
 // Start impersonating a tenant: a super-admin then operates inside that org via the normal UI.
-export async function impersonateOrgAction(organizationId: string) {
+export async function impersonateOrgAction(organizationId: string, readOnly = false) {
   const session = await requireSuperAdmin();
   if (!z.string().uuid().safeParse(organizationId).success) return fail("VALIDATION", "Invalid organization.");
   const org = await PlatformService.getOrg(organizationId);
   if (!org) return fail("NOT_FOUND", "That organization no longer exists.");
 
-  (await cookies()).set(IMPERSONATE_COOKIE, organizationId, {
+  const maxAgeSeconds = 60 * 60 * 4; // 4h safety cap
+  const store = await cookies();
+  store.set(IMPERSONATE_COOKIE, organizationId, {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
     secure: process.env.NODE_ENV === "production",
-    maxAge: 60 * 60 * 4, // 4h safety cap
+    maxAge: maxAgeSeconds,
   });
+  if (readOnly) {
+    store.set(IMPERSONATE_READONLY_COOKIE, "true", {
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      secure: process.env.NODE_ENV === "production",
+      maxAge: maxAgeSeconds,
+    });
+  } else {
+    store.delete(IMPERSONATE_READONLY_COOKIE);
+  }
   await AuditService.log({
     organizationId,
     userId: session.user.id,
     action: "platform.impersonate_start",
     entityType: "organization",
     entityId: organizationId,
-    metadata: { by: "super_admin" },
+    metadata: {
+      by: "super_admin",
+      readOnly,
+      maxAgeSeconds,
+      expiresAt: new Date(Date.now() + maxAgeSeconds * 1000).toISOString(),
+    },
   });
-  return ok({ organizationId, name: org.name });
+  return ok({ organizationId, name: org.name, readOnly });
 }
 
 export async function stopImpersonationAction() {
@@ -90,6 +104,7 @@ export async function stopImpersonationAction() {
   const store = await cookies();
   const current = store.get(IMPERSONATE_COOKIE)?.value;
   store.delete(IMPERSONATE_COOKIE);
+  store.delete(IMPERSONATE_READONLY_COOKIE);
   if (current) {
     await AuditService.log({
       organizationId: current,
@@ -335,17 +350,6 @@ export async function executeRightToBeForgottenAction(leadId: string) {
   }
 }
 
-export async function getOpsAlertConfigAction() {
-  await requireSuperAdmin();
-  try {
-    const { OpsAlertService } = await import("@/domains/platform/opsAlertService");
-    const config = await OpsAlertService.getConfig();
-    return ok(config);
-  } catch (e) {
-    return actionFail(e);
-  }
-}
-
 export async function saveOpsAlertConfigAction(config: any) {
   const session = await requireSuperAdmin();
   try {
@@ -512,17 +516,6 @@ export async function simulatePaymentFailureAction(organizationId: string, reaso
 }
 
 // --- Tax Invoices ---
-export async function listInvoicesAction() {
-  await requireSuperAdmin();
-  try {
-    const { InvoiceService } = await import("@/domains/billing/invoiceService");
-    const list = await InvoiceService.listInvoices();
-    return ok(list);
-  } catch (e) {
-    return actionFail(e);
-  }
-}
-
 export async function generateInvoiceAction(params: {
   orgId: string;
   plan: string;
@@ -555,17 +548,6 @@ export async function voidInvoiceAction(id: string) {
 }
 
 // --- Coupons & Promo Codes ---
-export async function listCouponsAction() {
-  await requireSuperAdmin();
-  try {
-    const { CouponService } = await import("@/domains/billing/couponService");
-    const list = await CouponService.list();
-    return ok(list);
-  } catch (e) {
-    return actionFail(e);
-  }
-}
-
 export async function createCouponAction(input: {
   code: string;
   discountType: "percent" | "fixed";
@@ -611,17 +593,6 @@ export async function deleteCouponAction(id: string) {
 }
 
 // --- Support Desk ---
-export async function listSupportTicketsAction(statusFilter = "all") {
-  await requireSuperAdmin();
-  try {
-    const { SupportTicketService } = await import("@/domains/platform/supportService");
-    const list = await SupportTicketService.listTickets(statusFilter);
-    return ok(list);
-  } catch (e) {
-    return actionFail(e);
-  }
-}
-
 export async function replySupportTicketAction(ticketId: string, body: string) {
   const session = await requireSuperAdmin();
   try {
@@ -700,11 +671,11 @@ export async function getTenantAuditLogsAction(organizationId: string) {
   }
 }
 
-export async function listFleetApiKeysAction() {
+export async function getPlatformActivityAction() {
   await requireSuperAdmin();
   try {
-    const keys = await PlatformService.listFleetApiKeys(100);
-    return ok(keys);
+    const activity = await PlatformService.getPlatformActivity(50);
+    return ok(activity);
   } catch (e) {
     return actionFail(e);
   }
@@ -722,17 +693,6 @@ export async function revokeFleetApiKeyAction(id: string) {
 }
 
 // --- Executive Digest ---
-export async function getExecutiveDigestConfigAction() {
-  await requireSuperAdmin();
-  try {
-    const { ExecutiveDigestService } = await import("@/domains/platform/executiveDigestService");
-    const cfg = await ExecutiveDigestService.getConfig();
-    return ok(cfg);
-  } catch (e) {
-    return actionFail(e);
-  }
-}
-
 export async function saveExecutiveDigestConfigAction(config: {
   enabled?: boolean;
   frequency?: "daily" | "weekly";
@@ -777,7 +737,7 @@ export async function listAnomaliesAction() {
   await requireSuperAdmin();
   try {
     const { AnomalyDetectionService } = await import("@/domains/platform/anomalyDetectionService");
-    const anomalies = await AnomalyDetectionService.scanAnomalies();
+    const anomalies = await AnomalyDetectionService.scanAndCacheAnomalies();
     return ok(anomalies);
   } catch (e) {
     return actionFail(e);
@@ -848,17 +808,6 @@ export async function addSupportTicketNoteAction(ticketId: string, noteBody: str
 }
 
 // --- Custom Domains ---
-export async function listCustomDomainsAction() {
-  await requireSuperAdmin();
-  try {
-    const { CustomDomainService } = await import("@/domains/platform/customDomainService");
-    const list = await CustomDomainService.listDomains();
-    return ok(list);
-  } catch (e) {
-    return actionFail(e);
-  }
-}
-
 export async function registerCustomDomainAction(orgId: string, domain: string) {
   await requireSuperAdmin();
   try {
@@ -896,17 +845,6 @@ export async function removeCustomDomainAction(id: string) {
 }
 
 // --- Meta Conversions API (CAPI) & Campaign Analytics ---
-export async function getCapiConfigAction() {
-  await requireSuperAdmin();
-  try {
-    const { MetaCapiService } = await import("@/domains/platform/capiService");
-    const config = await MetaCapiService.getConfig();
-    return ok(config);
-  } catch (e) {
-    return actionFail(e);
-  }
-}
-
 export async function saveCapiConfigAction(input: {
   pixelId?: string;
   accessToken?: string;
@@ -946,17 +884,6 @@ export async function listCapiLogsAction(limit = 50) {
     const { MetaCapiService } = await import("@/domains/platform/capiService");
     const logs = await MetaCapiService.listLogs(limit);
     return ok(logs);
-  } catch (e) {
-    return actionFail(e);
-  }
-}
-
-export async function getCampaignAnalyticsAction() {
-  await requireSuperAdmin();
-  try {
-    const { PlatformAttributionService } = await import("@/domains/platform/attributionService");
-    const stats = await PlatformAttributionService.getCampaignAnalytics();
-    return ok(stats);
   } catch (e) {
     return actionFail(e);
   }

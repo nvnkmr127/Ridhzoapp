@@ -24,6 +24,10 @@ vi.mock("@/lib/jobs/workers/recycleBinWorker", () => ({
   createRecycleBinWorker: vi.fn(),
   scheduleRecycleBinScan: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock("@/lib/jobs/workers/anomalyWorker", () => ({
+  createAnomalyWorker: vi.fn(),
+  scheduleAnomalyScan: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("@/lib/jobs/workers/webhookRetryWorker", () => ({
   createWebhookRetryWorker: vi.fn(),
 }));

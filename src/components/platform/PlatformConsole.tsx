@@ -91,21 +91,18 @@ import {
   markTenantManuallyPaidAction,
   sendDunningNoticeAction,
   simulatePaymentFailureAction,
-  listInvoicesAction,
   generateInvoiceAction,
   voidInvoiceAction,
-  listCouponsAction,
   createCouponAction,
   toggleCouponAction,
   deleteCouponAction,
-  listSupportTicketsAction,
   replySupportTicketAction,
   updateSupportTicketStatusAction,
   revokeUserSessionsAction,
   revokeOrgSessionsAction,
   exportPlatformCsvAction,
   getTenantAuditLogsAction,
-  listFleetApiKeysAction,
+  getPlatformActivityAction,
   revokeFleetApiKeyAction,
   saveExecutiveDigestConfigAction,
   sendTestExecutiveDigestAction,
@@ -116,7 +113,6 @@ import {
   setTenantFlagOverrideAction,
   assignSupportTicketAction,
   addSupportTicketNoteAction,
-  listCustomDomainsAction,
   registerCustomDomainAction,
   verifyCustomDomainAction,
   removeCustomDomainAction,
@@ -129,6 +125,7 @@ import type {
   OrgSummary,
   FleetApiKeySummary,
   TenantAuditSummary,
+  PlatformActivitySummary,
 } from "@/domains/platform/service";
 import type { BroadcastConfig } from "@/domains/platform/configService";
 import type { FeatureFlag } from "@/domains/platform/featureFlags";
@@ -169,6 +166,7 @@ export function PlatformConsole({
   initialCapiConfig,
   initialCapiLogs = [],
   initialCampaigns,
+  initialActivity = [],
 }: {
   initial?: OrgSummary[];
   initialUsers?: GlobalUserSummary[];
@@ -198,6 +196,7 @@ export function PlatformConsole({
     directSignups: number;
     attributedMrr: number;
   };
+  initialActivity?: PlatformActivitySummary[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -505,6 +504,19 @@ export function PlatformConsole({
   const [auditLogs, setAuditLogs] = React.useState<TenantAuditSummary[]>([]);
   const [auditLoading, setAuditLoading] = React.useState(false);
 
+  const [activity, setActivity] = React.useState<PlatformActivitySummary[]>(initialActivity ?? []);
+  const [activityLoading, setActivityLoading] = React.useState(false);
+
+  const handleRefreshActivity = async () => {
+    setActivityLoading(true);
+    try {
+      const res = await getPlatformActivityAction();
+      if (res.ok) setActivity(res.data);
+    } finally {
+      setActivityLoading(false);
+    }
+  };
+
   const handleOpenAuditModal = async (org: OrgSummary) => {
     setAuditModalOrg(org);
     setAuditLoading(true);
@@ -533,6 +545,7 @@ export function PlatformConsole({
   };
 
   const handleRevokeOrgSession = async (orgId: string) => {
+    if (!confirm("Force ALL members of this org to re-login now?")) return;
     const res = await revokeOrgSessionsAction(orgId);
     if (res.ok) {
       toast({ title: "Tenant Sessions Terminated", description: "All members of organization forced to re-login." });
@@ -792,7 +805,14 @@ export function PlatformConsole({
   const [allowedCidrsInput, setAllowedCidrsInput] = React.useState("");
 
   // Org search & filtering
-  const [orgSearch, setOrgSearch] = React.useState("");
+  const urlOrgSearch = searchParams.get("q") || searchParams.get("search") || "";
+  const [orgSearch, setOrgSearch] = React.useState(urlOrgSearch);
+
+  React.useEffect(() => {
+    if (urlOrgSearch && urlOrgSearch !== orgSearch) {
+      setOrgSearch(urlOrgSearch);
+    }
+  }, [urlOrgSearch]);
   const [planFilter, setPlanFilter] = React.useState<string>("all");
   const [statusFilter, setStatusFilter] = React.useState<string>("all");
 
@@ -885,9 +905,9 @@ export function PlatformConsole({
     }
   }
 
-  async function impersonate(orgId: string, redirectPath = "/leads") {
+  async function impersonate(orgId: string, redirectPath = "/leads", readOnly = false) {
     setBusy(orgId);
-    const res = await impersonateOrgAction(orgId);
+    const res = await impersonateOrgAction(orgId, readOnly);
     setBusy(null);
     if (!res.ok) {
       toast({ variant: "destructive", title: "Couldn't open tenant", description: res.message });
@@ -1523,6 +1543,16 @@ export function PlatformConsole({
                           <div className="flex items-center justify-end gap-2">
                             <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => handleOpenAuditModal(o)} title="View organization audit trail">
                               <History className="h-3.5 w-3.5" /> Audit
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                              disabled={busy === o.id}
+                              onClick={() => impersonate(o.id, "/leads", true)}
+                              title="View tenant dashboard safely in read-only mode"
+                            >
+                              View (Read-Only)
                             </Button>
                             <Button variant="outline" size="sm" className="gap-1.5" disabled={busy === o.id} onClick={() => impersonate(o.id)}>
                               <LogIn className="h-3.5 w-3.5" /> Open
@@ -2488,6 +2518,86 @@ export function PlatformConsole({
                               Remove
                             </Button>
                           </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Platform Fleet Activity Log Panel */}
+          <div className="lg:col-span-2 rounded-2xl border bg-card shadow-sm overflow-hidden">
+            <div className="p-5 border-b flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-base font-semibold flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-primary" /> Platform Operator Activity Trail
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Fleet-wide audit log of administrative and super-admin actions executed across all tenant organizations.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant="outline">{activity.length} Events</Badge>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs gap-1.5"
+                  disabled={activityLoading}
+                  onClick={handleRefreshActivity}
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${activityLoading ? "animate-spin" : ""}`} />
+                  Refresh
+                </Button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b bg-muted/40 text-left font-medium text-muted-foreground">
+                    <th className="p-3 pl-5">Timestamp</th>
+                    <th className="p-3">Action</th>
+                    <th className="p-3">Target Organization</th>
+                    <th className="p-3">Operator</th>
+                    <th className="p-3 pr-5">Details</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {activity.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="p-6 text-center text-muted-foreground">
+                        No platform operator actions recorded yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    activity.map((item) => (
+                      <tr key={item.id} className="hover:bg-muted/30 transition-colors">
+                        <td className="p-3 pl-5 font-mono text-[11px] text-muted-foreground whitespace-nowrap">
+                          {new Date(item.createdAt).toLocaleString()}
+                        </td>
+                        <td className="p-3">
+                          <Badge variant="outline" className="font-mono text-[10px] uppercase">
+                            {item.action}
+                          </Badge>
+                        </td>
+                        <td className="p-3 font-medium text-foreground">
+                          {item.orgName ? (
+                            <span>{item.orgName}</span>
+                          ) : item.orgId ? (
+                            <span className="font-mono text-[11px] text-muted-foreground">{item.orgId.slice(0, 8)}...</span>
+                          ) : (
+                            <span className="text-muted-foreground">Global</span>
+                          )}
+                        </td>
+                        <td className="p-3 text-muted-foreground">
+                          {item.actorName || item.actorEmail || "System"}
+                        </td>
+                        <td className="p-3 pr-5 text-muted-foreground font-mono text-[11px] max-w-xs truncate">
+                          {item.metadata && Object.keys(item.metadata).length > 0
+                            ? JSON.stringify(item.metadata)
+                            : item.entityType ?? "—"}
                         </td>
                       </tr>
                     ))
@@ -3815,6 +3925,16 @@ export function PlatformConsole({
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-[11px] gap-1 text-muted-foreground hover:text-foreground"
+                          disabled={busy === selectedTicket.orgId}
+                          onClick={() => impersonate(selectedTicket.orgId, "/leads", true)}
+                          title="Inspect tenant dashboard safely in read-only mode"
+                        >
+                          View Tenant (Read-Only)
+                        </Button>
                         {/* Assignment dropdown */}
                         <div className="flex items-center gap-1">
                           <UserCheck className="h-3.5 w-3.5 text-muted-foreground" />

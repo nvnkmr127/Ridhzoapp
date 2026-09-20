@@ -43,6 +43,10 @@ export async function startWorkers(): Promise<void> {
   createRecycleBinWorker();
   await scheduleRecycleBinScan();
 
+  const { createAnomalyWorker, scheduleAnomalyScan } = await import("@/lib/jobs/workers/anomalyWorker");
+  createAnomalyWorker();
+  await scheduleAnomalyScan();
+
   // Consumers with an external producer (event bus).
   const { createWebhookRetryWorker } = await import("@/lib/jobs/workers/webhookRetryWorker");
   createWebhookRetryWorker();

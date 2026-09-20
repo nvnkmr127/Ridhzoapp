@@ -1,9 +1,10 @@
 "use server";
 
-import { requireOrg } from "@/lib/rbac";
+import { requireOrg, isSuperAdmin } from "@/lib/rbac";
 import { db } from "@/db";
 import { leads, users, roles } from "@/db/schema";
 import { and, eq, or, ilike, desc, isNull, sql } from "drizzle-orm";
+import { PlatformService, type FoundOrg } from "@/domains/platform/service";
 
 export type SearchLead = {
   id: string;
@@ -23,47 +24,56 @@ export type SearchUser = {
 export type UniversalSearchResults = {
   leads: SearchLead[];
   users: SearchUser[];
+  organizations?: FoundOrg[];
 };
 
-// Org-scoped universal search for the command palette. Matches leads and team members.
+// Org-scoped universal search for the command palette. Matches leads and team members,
+// plus cross-tenant organizations when called by a platform super-admin.
 export async function searchUniversalAction(query: string): Promise<UniversalSearchResults> {
   const { organizationId } = await requireOrg();
   const q = query.trim();
   if (q.length < 2) return { leads: [], users: [] };
   const like = `%${q}%`;
+  const isSuper = await isSuperAdmin();
 
-  const [leadRows, userRows] = await Promise.all([
-    db
-      .select({ id: leads.id, name: leads.name, email: leads.email, phone: leads.phone, company: leads.company })
-      .from(leads)
-      .where(and(
-        eq(leads.organizationId, organizationId),
-        or(ilike(leads.name, like), ilike(leads.email, like), ilike(leads.phone, like), ilike(leads.company, like)),
-      ))
-      .orderBy(desc(leads.createdAt))
-      .limit(10),
+  const [leadRows, userRows, orgRows] = await Promise.all([
+    organizationId
+      ? db
+          .select({ id: leads.id, name: leads.name, email: leads.email, phone: leads.phone, company: leads.company })
+          .from(leads)
+          .where(and(
+            eq(leads.organizationId, organizationId),
+            or(ilike(leads.name, like), ilike(leads.email, like), ilike(leads.phone, like), ilike(leads.company, like)),
+          ))
+          .orderBy(desc(leads.createdAt))
+          .limit(10)
+      : Promise.resolve([]),
 
-    db
-      .select({
-        id: users.id,
-        firstName: users.firstName,
-        lastName: users.lastName,
-        email: users.email,
-        roleName: roles.name,
-      })
-      .from(users)
-      .leftJoin(roles, eq(users.roleId, roles.id))
-      .where(and(
-        eq(users.organizationId, organizationId),
-        isNull(users.deletedAt),
-        or(
-          ilike(users.email, like),
-          ilike(users.firstName, like),
-          ilike(users.lastName, like),
-          ilike(sql<string>`concat_ws(' ', ${users.firstName}, ${users.lastName})`, like),
-        ),
-      ))
-      .limit(5),
+    organizationId
+      ? db
+          .select({
+            id: users.id,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            email: users.email,
+            roleName: roles.name,
+          })
+          .from(users)
+          .leftJoin(roles, eq(users.roleId, roles.id))
+          .where(and(
+            eq(users.organizationId, organizationId),
+            isNull(users.deletedAt),
+            or(
+              ilike(users.email, like),
+              ilike(users.firstName, like),
+              ilike(users.lastName, like),
+              ilike(sql<string>`concat_ws(' ', ${users.firstName}, ${users.lastName})`, like),
+            ),
+          ))
+          .limit(5)
+      : Promise.resolve([]),
+
+    isSuper ? PlatformService.findOrg(q, 6) : Promise.resolve([]),
   ]);
 
   return {
@@ -74,6 +84,7 @@ export async function searchUniversalAction(query: string): Promise<UniversalSea
       email: u.email,
       roleName: u.roleName,
     })),
+    organizations: orgRows,
   };
 }
 

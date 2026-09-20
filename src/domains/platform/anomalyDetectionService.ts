@@ -37,6 +37,7 @@ const DEFAULT_THRESHOLDS: AnomalyThresholds = {
 
 const THRESHOLDS_CONFIG_KEY = "anomaly_thresholds";
 const RESOLUTIONS_CONFIG_KEY = "anomaly_resolutions";
+const CACHED_ANOMALIES_KEY = "cached_anomalies";
 
 export class AnomalyDetectionService {
   static async getThresholds(): Promise<AnomalyThresholds> {
@@ -48,6 +49,22 @@ export class AnomalyDetectionService {
     const updated = { ...current, ...thresholds };
     await PlatformConfigService.set(THRESHOLDS_CONFIG_KEY, updated);
     return updated;
+  }
+
+  static async scanAndCacheAnomalies(): Promise<SecurityAnomaly[]> {
+    const anomalies = await this.scanAnomalies();
+    await PlatformConfigService.set(CACHED_ANOMALIES_KEY, anomalies);
+    return anomalies;
+  }
+
+  static async getCachedAnomalies(): Promise<SecurityAnomaly[]> {
+    const cached = await PlatformConfigService.get<SecurityAnomaly[] | null>(
+      CACHED_ANOMALIES_KEY,
+      null
+    );
+    if (Array.isArray(cached)) return cached;
+    // ponytail: live N+1 scan fallback when cache cold, worker cron refreshes periodically
+    return this.scanAndCacheAnomalies();
   }
 
   static async scanAnomalies(): Promise<SecurityAnomaly[]> {
@@ -238,6 +255,17 @@ export class AnomalyDetectionService {
     resolutions[id] = action === "resolve" ? "resolved" : "dismissed";
     await PlatformConfigService.set(RESOLUTIONS_CONFIG_KEY, resolutions);
 
+    const cached = await PlatformConfigService.get<SecurityAnomaly[] | null>(
+      CACHED_ANOMALIES_KEY,
+      null
+    );
+    if (Array.isArray(cached)) {
+      const updated = cached.map((a) =>
+        a.id === id ? { ...a, status: action === "resolve" ? ("resolved" as const) : ("dismissed" as const) } : a
+      );
+      await PlatformConfigService.set(CACHED_ANOMALIES_KEY, updated);
+    }
+
     await AuditService.log({
       organizationId: "00000000-0000-0000-0000-000000000000",
       action: `platform.anomaly_${action}d`,
@@ -247,7 +275,7 @@ export class AnomalyDetectionService {
   }
 
   static async executeRemediation(anomalyId: string, superAdminId?: string): Promise<{ success: boolean; message: string }> {
-    const anomalies = await this.scanAnomalies();
+    const anomalies = await this.getCachedAnomalies();
     const target = anomalies.find((a) => a.id === anomalyId);
     if (!target) {
       throw new Error(`Anomaly "${anomalyId}" not found or already mitigated.`);

@@ -29,15 +29,19 @@ export async function requireAuth() {
 export const requireOrg = cache(async function requireOrg() {
   const session = await requireAuth();
   let organizationId = session.user.organizationId;
+  let readOnly = false;
 
   if (session.user.isSuperAdmin) {
     const orgId = await getImpersonatedOrgId();
-    if (orgId) organizationId = orgId;
+    if (orgId) {
+      organizationId = orgId;
+      readOnly = await isImpersonatingReadOnly();
+    }
   }
 
   if (!organizationId) {
     if (session.user.isSuperAdmin) {
-      return { userId: session.user.id, organizationId: "", roleId: session.user.roleId };
+      return { userId: session.user.id, organizationId: "", roleId: session.user.roleId, readOnly: false };
     }
     redirect("/login");
   }
@@ -49,10 +53,18 @@ export const requireOrg = cache(async function requireOrg() {
     if (await OrgService.isSuspended(organizationId)) redirect("/suspended");
   }
 
-  return { userId: session.user.id, organizationId, roleId: session.user.roleId };
+  return { userId: session.user.id, organizationId, roleId: session.user.roleId, readOnly };
 });
 
 const IMPERSONATE_COOKIE = "impersonate_org";
+const IMPERSONATE_READONLY_COOKIE = "impersonate_readonly";
+
+export async function isImpersonatingReadOnly(): Promise<boolean> {
+  const session = await getSession();
+  if (!session?.user?.isSuperAdmin) return false;
+  const { cookies } = await import("next/headers");
+  return (await cookies()).get(IMPERSONATE_READONLY_COOKIE)?.value === "true";
+}
 
 // The org a super-admin is currently impersonating (null if none / not a super-admin).
 export async function getImpersonatedOrgId(): Promise<string | null> {
@@ -122,9 +134,15 @@ function roleGrants(role: { name: string; permissions: string[]; organizationId:
 
 // admin implicitly has every permission; other roles must list the key explicitly.
 export async function hasPermission(key: PermissionKey): Promise<boolean> {
-  // Platform super-admins hold every permission (incl. inside an impersonated tenant).
+  // Platform super-admins hold every permission (incl. inside an impersonated tenant),
+  // unless operating under read-only impersonation where non-.view keys are refused.
   const session = await getSession();
-  if (session?.user?.isSuperAdmin) return true;
+  if (session?.user?.isSuperAdmin) {
+    if (await isImpersonatingReadOnly()) {
+      return key.endsWith(".view");
+    }
+    return true;
+  }
   const role = await currentRole();
   if (!role) return false;
   return roleGrants(role, key);
