@@ -90,7 +90,7 @@ describe("Trial Lifecycle", () => {
       };
       vi.mocked(db.update).mockReturnValue(mockUpdate as any);
 
-      const res = await PlatformService.setPlan("org_1", "pro");
+      await PlatformService.setPlan("org_1", "pro");
       expect(mockUpdate.set).toHaveBeenCalledWith(
         expect.objectContaining({
           plan: "pro",

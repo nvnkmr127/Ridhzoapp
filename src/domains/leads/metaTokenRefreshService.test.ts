@@ -45,7 +45,7 @@ describe("MetaTokenRefreshService", () => {
         page2: { data: [{ id: "l3" }], paging: {} }, // no next → stop
       };
       let call = 0;
-      globalThis.fetch = (async (url: string) => {
+      globalThis.fetch = (async () => {
         const body = call === 0 ? pages.page1 : pages.page2;
         call++;
         return { ok: true, json: async () => body } as Response;

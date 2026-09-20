@@ -14,7 +14,7 @@ import {
 } from "@/lib/actions/users"
 import { createTeamAction } from "@/lib/actions/teams"
 import { inviteUserAction, revokeInvitationAction } from "@/lib/actions/invitations"
-import { UserPlus, Plus, Trash2, Mail, X } from "lucide-react"
+import { UserPlus, Plus, Trash2, Mail } from "lucide-react"
 
 type User = {
   id: string;

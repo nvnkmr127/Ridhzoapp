@@ -2,6 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Accessibility: honor the OS "reduce motion" setting. Neutralizes the app's spinners, skeleton
+   pulses, and badge animations (26+ animate-* usages) plus all transitions for users with
+   vestibular sensitivity — WCAG 2.3.3. Content stays fully functional, just without motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Monochrome, dark-first. Strictly black → white through a neutral gray scale (hue 0, sat 0),
    so the whole product reads in two colors. All shadcn semantic tokens live here; before this
    file existed they were undefined and the ui/ primitives rendered with no color. */

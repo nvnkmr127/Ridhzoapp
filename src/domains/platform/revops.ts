@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { organizations, leads, users } from "@/db/schema";
-import { count, desc, eq, isNull, max, sql, and, gte } from "drizzle-orm";
+import { count, eq, isNull, max, and, gte } from "drizzle-orm";
 import { PlatformConfigService } from "./configService";
 
 export interface TenantHealthSummary {

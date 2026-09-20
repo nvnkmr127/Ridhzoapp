@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { BillingLifecycleService } from "./lifecycleService";
 import { PlatformConfigService } from "@/domains/platform/configService";
-import { db } from "@/db";
 
 vi.mock("@/db", () => ({ db: { select: vi.fn(), insert: vi.fn(), update: vi.fn() } }));
 vi.mock("@/domains/platform/configService", () => ({

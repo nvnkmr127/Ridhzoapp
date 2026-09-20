@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { ChevronLeft, ChevronRight, Download, Tag, MessageCircle, Trash, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, Tag, MessageCircle, Trash } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,

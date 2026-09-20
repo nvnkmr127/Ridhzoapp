@@ -1,6 +1,6 @@
 "use server";
 
-import { requireOrg, requirePermission } from "@/lib/rbac";
+import { requirePermission } from "@/lib/rbac";
 import { BillingService } from "@/domains/billing/service";
 import { AuditService } from "@/domains/audit/service";
 import { verifyPaymentSignature, isConfigured } from "@/lib/billing/razorpay";

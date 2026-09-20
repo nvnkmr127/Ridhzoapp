@@ -21,7 +21,6 @@ import { WhatsAppThread } from "@/components/leads/WhatsAppThread";
 import { WhatsAppService } from "@/lib/messaging/whatsapp/service";
 import { LeadStatusControl } from "@/components/leads/LeadStatusControl";
 import { LeadAssignControl } from "@/components/leads/LeadAssignControl";
-import { listUsersAction } from "@/lib/actions/users";
 import { LeadTags } from "@/components/leads/LeadTags";
 import { LeadCustomFields } from "@/components/leads/LeadCustomFields";
 import { TagService } from "@/domains/tags/service";
@@ -38,7 +37,7 @@ import { LeadRemindersTab } from "@/components/leads/LeadRemindersTab";
 import { LeadAttachmentsTab } from "@/components/leads/LeadAttachmentsTab";
 import { LocalTime } from "@/components/LocalTime";
 import { db } from "@/db";
-import { leads, leadAttachments, followUps, leadPipelineStages, automations, users } from "@/db/schema";
+import { leads, leadAttachments, followUps, leadPipelineStages, users } from "@/db/schema";
 import { eq, and, ne, isNull, or, desc } from "drizzle-orm";
 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -84,7 +83,6 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     availableSequences,
     enrolledSequences,
     stagesList,
-    automationsList,
     duplicateRows,
     source,
     usersList,
@@ -109,11 +107,6 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     SequenceService.list(organizationId).catch(() => []),
     SequenceService.listForLead(id).catch(() => []),
     db.select({ id: leadPipelineStages.id, name: leadPipelineStages.name }).from(leadPipelineStages).catch(() => []),
-    db
-      .select({ id: automations.id, name: automations.name })
-      .from(automations)
-      .where(eq(automations.organizationId, organizationId))
-      .catch(() => []),
     dupConditions.length > 0
       ? db
           .select({ id: leads.id })

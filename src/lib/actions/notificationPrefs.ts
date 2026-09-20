@@ -5,7 +5,6 @@ import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
-import { z } from "zod";
 import { EMAIL_NOTIFICATION_TYPES } from "@/lib/notifications/emailTypes";
 import { ok, actionFail } from "@/lib/actions/result";
 

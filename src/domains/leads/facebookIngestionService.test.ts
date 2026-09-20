@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 const h = vi.hoisted(() => ({
   sources: [] as any[],
   updates: [] as any[],
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- param types the mock so .mock.calls[0][0] is typed
   processLead: vi.fn(async (_payload: any) => ({ status: "success", leadId: "lead-1" })),
   fetchLeadgenData: vi.fn(async () => ({
     id: "lg1",

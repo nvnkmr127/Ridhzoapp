@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { organizations, auditLogs, webhookDeliveries, leads, apiKeys } from "@/db/schema";
+import { organizations, auditLogs, webhookDeliveries, leads } from "@/db/schema";
 import { count, eq, and, gt, sql, inArray } from "drizzle-orm";
 import { PlatformConfigService } from "./configService";
 import { SessionService } from "./sessionService";

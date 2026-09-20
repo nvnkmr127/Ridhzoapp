@@ -9,7 +9,6 @@ import {
   Ban,
   RotateCcw,
   Building2,
-  Users,
   AlertTriangle,
   Radio,
   Activity,
@@ -30,7 +29,6 @@ import {
   HeartPulse,
   CreditCard,
   Plus,
-  FileText,
   Shield,
   Bell,
   Lock,
@@ -218,7 +216,7 @@ export function PlatformConsole({
     initialCapiConfig ?? { pixelId: "", accessToken: "", testEventCode: "", enabled: false }
   );
   const [capiLogs, setCapiLogs] = React.useState<CapiEventLog[]>(initialCapiLogs ?? []);
-  const [campaignStats, setCampaignStats] = React.useState(initialCampaigns);
+  const [campaignStats] = React.useState(initialCampaigns);
   const [savingCapi, setSavingCapi] = React.useState(false);
   const [testingCapi, setTestingCapi] = React.useState(false);
 
@@ -849,6 +847,9 @@ export function PlatformConsole({
     if (urlOrgSearch && urlOrgSearch !== orgSearch) {
       setOrgSearch(urlOrgSearch);
     }
+    // Intentionally only depends on urlOrgSearch: this syncs local state FROM the URL param.
+    // Adding orgSearch would re-run on every keystroke and fight the user's typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlOrgSearch]);
   const [planFilter, setPlanFilter] = React.useState<string>("all");
   const [statusFilter, setStatusFilter] = React.useState<string>("all");

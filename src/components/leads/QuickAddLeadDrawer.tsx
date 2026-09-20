@@ -165,7 +165,7 @@ export function QuickAddLeadDrawer({ children }: { children?: React.ReactNode })
       setCustomValues({});
       setServerError(null);
       router.refresh();
-    } catch (_err: any) {
+    } catch {
       // Transport-level failure (offline or network dropped mid-request)
       enqueueOfflineLead(leadPayload);
       toast({
