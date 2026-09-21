@@ -67,9 +67,17 @@ function toRecipient(phone: string): string {
   return `+${clean.replace(/^0+/, "")}`;
 }
 
-// Picks the message identifier from Watxio's response (supports message_id, messages[0].id, id)
+// Picks the message identifier from Watxio's response (supports data.message_id, message_id, messages[0].id, etc.)
 function pickResult(json: any): SendResult {
-  const id = json?.message_id ?? json?.messages?.[0]?.id ?? json?.id ?? json?.messageId;
+  const id =
+    json?.data?.message_id ??
+    json?.message_id ??
+    json?.data?.id ??
+    json?.messages?.[0]?.id ??
+    json?.id ??
+    json?.messageId ??
+    (json?.success ? String(Date.now()) : undefined);
+
   if (!id) throw new Error(`Watxio: no message id in response ${JSON.stringify(json)}`);
   return { providerMessageId: String(id), status: "sent" };
 }
