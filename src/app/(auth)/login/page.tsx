@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Alert } from "@/components/ui/alert";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertCircle } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useEffect, useState } from "react";
 import { sendWhatsAppOtpAction } from "@/lib/actions/auth";
@@ -153,7 +154,12 @@ export default function LoginPage() {
           <p className="text-sm text-muted-foreground">Sign in to your Ridhzo account</p>
         </CardHeader>
         <CardContent className="space-y-4">
-          {error && <Alert variant="destructive">{error}</Alert>}
+          {error && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
           {/* Google One-Click Login */}
           <Button

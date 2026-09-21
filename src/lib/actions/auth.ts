@@ -235,7 +235,23 @@ export async function sendWhatsAppOtpAction(input: z.infer<typeof sendOtpSchema>
     try {
       const template = process.env.WATXIO_OTP_TEMPLATE;
       if (template) {
-        await WatxioClient.sendTemplate(formatted, template, [code]);
+        try {
+          await WatxioClient.sendTemplate(
+            formatted,
+            template,
+            [code],
+            process.env.WATXIO_TEMPLATE_LANG || "en_US"
+          );
+        } catch (templateErr: any) {
+          console.warn(
+            "[watxio-otp] Template send failed, attempting text fallback:",
+            templateErr?.message || templateErr
+          );
+          await WatxioClient.sendText(
+            formatted,
+            `Your Ridhzo verification code is ${code}. Valid for 5 minutes. Do not share this code with anyone.`
+          );
+        }
       } else {
         await WatxioClient.sendText(
           formatted,

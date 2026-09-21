@@ -1,7 +1,6 @@
-// Watxio (WhatsApp Business API BSP) client — the ONLY file that knows Watxio's wire format.
-// Shaped on the common Meta-BSP pattern: POST /messages, Bearer token, { to, type, ... }.
-// Three unknowns are marked WATXIO_DOC below — confirm against Watxio's real API docs and
-// nothing else in the codebase changes.
+// Watxio (WhatsApp Business API BSP) client — official docs: https://flow.watxio.com/developer/docs
+// Base endpoint: https://flow.watxio.com/api/v1
+// Messages endpoint: POST /messages
 
 export interface SendResult {
   providerMessageId: string;
@@ -11,37 +10,49 @@ export interface SendResult {
 interface WatxioConfig {
   baseUrl: string;
   apiKey: string;
-  phoneNumberId: string;
+  phoneNumberId?: string;
 }
 
-// ponytail: creds from env — single WhatsApp number. Move to integrationAccounts when you
-// True when the WhatsApp Business API (Watxio BSP) env is fully set. Used by the integrations hub.
+// Normalize base URL to ensure it ends in /api/v1
+function normalizeBaseUrl(raw: string): string {
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  if (trimmed.endsWith("/api/v1")) return trimmed;
+  if (trimmed.endsWith("/api")) return `${trimmed}/v1`;
+  return `${trimmed}/api/v1`;
+}
+
+// True when the WhatsApp Business API (Watxio BSP) env is set.
 export function isConfigured(): boolean {
-  return Boolean(process.env.WATXIO_BASE_URL && process.env.WATXIO_API_KEY && process.env.WATXIO_PHONE_NUMBER_ID);
+  return Boolean(process.env.WATXIO_BASE_URL && process.env.WATXIO_API_KEY);
 }
 
-// need multiple numbers / multi-tenant, then pass the resolved config into these methods.
 function config(): WatxioConfig {
   const baseUrl = process.env.WATXIO_BASE_URL;
   const apiKey = process.env.WATXIO_API_KEY;
-  const phoneNumberId = process.env.WATXIO_PHONE_NUMBER_ID;
-  if (!baseUrl || !apiKey || !phoneNumberId) {
-    throw new Error("Watxio not configured: set WATXIO_BASE_URL, WATXIO_API_KEY, WATXIO_PHONE_NUMBER_ID");
+  if (!baseUrl || !apiKey) {
+    throw new Error("Watxio not configured: set WATXIO_BASE_URL and WATXIO_API_KEY");
   }
-  return { baseUrl: baseUrl.replace(/\/$/, ""), apiKey, phoneNumberId };
+  return {
+    baseUrl: normalizeBaseUrl(baseUrl),
+    apiKey,
+    phoneNumberId: process.env.WATXIO_PHONE_NUMBER_ID,
+  };
 }
 
 async function post(path: string, body: unknown): Promise<any> {
   const { baseUrl, apiKey } = config();
-  const res = await fetch(`${baseUrl}${path}`, {
+  const url = `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+
+  const res = await fetch(url, {
     method: "POST",
     headers: {
-      // WATXIO_DOC #1: auth header. Bearer is the common BSP default; some use "apikey: <key>".
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
+      Accept: "application/json",
     },
     body: JSON.stringify(body),
   });
+
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(`Watxio ${res.status}: ${JSON.stringify(json)}`);
@@ -49,44 +60,40 @@ async function post(path: string, body: unknown): Promise<any> {
   return json;
 }
 
-// Digits only, no '+', matching wa.me / Meta convention.
-function toNumber(phone: string): string {
-  return phone.replace(/\D/g, "");
+// Formats phone number with leading '+' for Watxio API
+function toRecipient(phone: string): string {
+  const clean = phone.trim();
+  if (clean.startsWith("+")) return clean;
+  return `+${clean.replace(/^0+/, "")}`;
 }
 
-// WATXIO_DOC #3: response shape. Meta returns { messages: [{ id }] }; adjust the pick if Watxio differs.
+// Picks the message identifier from Watxio's response (supports message_id, messages[0].id, id)
 function pickResult(json: any): SendResult {
-  const id = json?.messages?.[0]?.id ?? json?.id ?? json?.messageId;
+  const id = json?.message_id ?? json?.messages?.[0]?.id ?? json?.id ?? json?.messageId;
   if (!id) throw new Error(`Watxio: no message id in response ${JSON.stringify(json)}`);
   return { providerMessageId: String(id), status: "sent" };
 }
 
 export const WatxioClient = {
-  // Free-form session message — only valid inside the 24h customer-service window.
+  // Standard text message: POST /messages
   async sendText(phone: string, body: string): Promise<SendResult> {
-    const { phoneNumberId } = config();
-    // WATXIO_DOC #2: send-message endpoint + body. Meta shape shown.
-    const json = await post(`/${phoneNumberId}/messages`, {
-      messaging_product: "whatsapp",
-      to: toNumber(phone),
+    const json = await post("/messages", {
+      to: toRecipient(phone),
       type: "text",
       text: { body },
     });
     return pickResult(json);
   },
 
-  // Pre-approved template (HSM) — required outside the 24h window (e.g. first contact with a new lead).
-  // variables fill the template's {{1}}, {{2}}, ... body placeholders in order.
+  // Approved template (HSM): POST /messages
   async sendTemplate(
     phone: string,
     templateName: string,
     variables: string[] = [],
-    languageCode = "en",
+    languageCode = "en_US",
   ): Promise<SendResult> {
-    const { phoneNumberId } = config();
-    const json = await post(`/${phoneNumberId}/messages`, {
-      messaging_product: "whatsapp",
-      to: toNumber(phone),
+    const json = await post("/messages", {
+      to: toRecipient(phone),
       type: "template",
       template: {
         name: templateName,
