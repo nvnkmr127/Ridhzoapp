@@ -244,7 +244,7 @@ export async function sendWhatsAppOtpAction(input: z.infer<typeof sendOtpSchema>
       }
     } catch (err: any) {
       console.error("[watxio-otp] Failed to dispatch WhatsApp OTP:", err);
-      return fail("EXTERNAL_ERROR", `Failed to send WhatsApp message: ${err?.message || "Watxio error"}`);
+      return fail("SERVER", `Failed to send WhatsApp message: ${err?.message || "Watxio error"}`);
     }
   } else {
     // Unconfigured / dev fallback: log code for local testing

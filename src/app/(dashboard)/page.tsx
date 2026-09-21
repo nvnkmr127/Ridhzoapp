@@ -103,7 +103,7 @@ export default async function ExecutiveDashboardPage({
         </Suspense>
 
         <Suspense fallback={<div className="h-32 bg-muted rounded-2xl animate-pulse" />}>
-          <MetricsCards filters={filters} />
+          <MetricsCards filters={filters} hidePipelineValue />
         </Suspense>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
