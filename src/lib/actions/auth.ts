@@ -4,7 +4,7 @@ import { z } from "zod";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { db } from "@/db";
-import { users, passwordResets } from "@/db/schema";
+import { users, passwordResets, phoneOtps } from "@/db/schema";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { OrgService } from "@/domains/organizations/service";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
@@ -171,6 +171,89 @@ export async function checkPhoneExistsAction(phone: string) {
     .where(and(eq(users.phone, formatted), isNull(users.deletedAt)))
     .limit(1);
   return { exists: Boolean(existing) };
+}
+
+const sendOtpSchema = z.object({
+  phone: z.string().min(10, "Please enter a valid phone number"),
+  purpose: z.enum(["login", "signup"]).default("login"),
+});
+
+// Generates and delivers a 6-digit verification OTP over WhatsApp via Watxio
+export async function sendWhatsAppOtpAction(input: z.infer<typeof sendOtpSchema>) {
+  const parsed = sendOtpSchema.safeParse(input);
+  if (!parsed.success) {
+    return fail("VALIDATION", "Please enter a valid phone number.");
+  }
+  const clean = parsed.data.phone.trim();
+  const formatted = clean.startsWith("+") ? clean : `+91${clean.replace(/^0+/, "")}`;
+
+  if (parsed.data.purpose === "login") {
+    const [existing] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.phone, formatted), isNull(users.deletedAt)))
+      .limit(1);
+
+    if (!existing) {
+      return fail(
+        "NOT_FOUND",
+        "We don't have an account with this mobile number. Please click 'Create workspace' to sign up."
+      );
+    }
+  }
+
+  // Rate limit: 45s between OTP requests to prevent spamming
+  const [recent] = await db
+    .select({ createdAt: phoneOtps.createdAt })
+    .from(phoneOtps)
+    .where(
+      and(
+        eq(phoneOtps.phone, formatted),
+        gt(phoneOtps.createdAt, new Date(Date.now() - 45 * 1000))
+      )
+    )
+    .limit(1);
+
+  if (recent) {
+    return fail("RATE_LIMIT", "Please wait 45 seconds before requesting another OTP.");
+  }
+
+  // 6-digit numeric OTP
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const otpHash = crypto.createHash("sha256").update(code).digest("hex");
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
+
+  await db.insert(phoneOtps).values({
+    phone: formatted,
+    otpHash,
+    expiresAt,
+  });
+
+  // Send via Watxio
+  const { WatxioClient, isConfigured } = await import("@/lib/messaging/whatsapp/client");
+  if (isConfigured()) {
+    try {
+      const template = process.env.WATXIO_OTP_TEMPLATE;
+      if (template) {
+        await WatxioClient.sendTemplate(formatted, template, [code]);
+      } else {
+        await WatxioClient.sendText(
+          formatted,
+          `Your Ridhzo verification code is ${code}. Valid for 5 minutes. Do not share this code with anyone.`
+        );
+      }
+    } catch (err: any) {
+      console.error("[watxio-otp] Failed to dispatch WhatsApp OTP:", err);
+      return fail("EXTERNAL_ERROR", `Failed to send WhatsApp message: ${err?.message || "Watxio error"}`);
+    }
+  } else {
+    // Unconfigured / dev fallback: log code for local testing
+    console.log(`\n========================================`);
+    console.log(`[WATXIO WHATSAPP OTP] Phone: ${formatted} | Code: ${code}`);
+    console.log(`========================================\n`);
+  }
+
+  return ok({ sent: true, phone: formatted });
 }
 
 // Verifies whether a reset token is valid and not expired

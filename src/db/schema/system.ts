@@ -108,3 +108,16 @@ export const passwordResets = pgTable('password_resets', {
   emailIdx: index('password_resets_email_idx').on(t.email),
 }));
 
+// WhatsApp / Phone OTP verification tokens. OTPs are sha256-hashed with 5-minute expiry.
+export const phoneOtps = pgTable('phone_otps', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  phone: varchar('phone', { length: 30 }).notNull(),
+  otpHash: varchar('otp_hash', { length: 64 }).notNull(),
+  expiresAt: timestamp('expires_at').notNull(),
+  usedAt: timestamp('used_at'),
+  attempts: integer('attempts').default(0).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => ({
+  phoneIdx: index('phone_otps_phone_idx').on(t.phone),
+}));
+

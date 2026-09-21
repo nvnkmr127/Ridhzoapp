@@ -13,9 +13,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useState, useEffect } from "react";
-import { signupAction } from "@/lib/actions/auth";
-import { sendFirebasePhoneOtp, confirmFirebasePhoneOtp } from "@/lib/firebase/client";
-import type { ConfirmationResult } from "firebase/auth";
+import { signupAction, sendWhatsAppOtpAction } from "@/lib/actions/auth";
 import { captureAttribution, getStoredAttribution } from "@/lib/tracking/utm";
 
 const signupSchema = z.object({
@@ -41,7 +39,7 @@ export default function SignupPage() {
   const [phoneName, setPhoneName] = useState("");
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
-  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
+  const [otpSent, setOtpSent] = useState(false);
   const [phoneLoading, setPhoneLoading] = useState(false);
 
   const form = useForm<SignupValues>({
@@ -107,11 +105,15 @@ export default function SignupPage() {
 
     setPhoneLoading(true);
     try {
-      const res = await sendFirebasePhoneOtp(formatted, "recaptcha-signup-container");
-      setConfirmationResult(res);
+      const res = await sendWhatsAppOtpAction({ phone: formatted, purpose: "signup" });
+      if (!res.ok) {
+        setError(res.message);
+        return;
+      }
+      setOtpSent(true);
     } catch (err: any) {
       console.error("[phone-signup] sendOtp error:", err);
-      setError(err?.message || "Failed to send SMS OTP. Please verify your phone number.");
+      setError(err?.message || "Failed to send WhatsApp OTP. Please verify your phone number.");
     } finally {
       setPhoneLoading(false);
     }
@@ -120,25 +122,26 @@ export default function SignupPage() {
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!confirmationResult) return;
     if (otp.trim().length !== 6) {
-      setError("Please enter the 6-digit OTP sent to your phone.");
+      setError("Please enter the 6-digit OTP sent to your WhatsApp.");
       return;
     }
 
+    const clean = phone.trim();
+    const formatted = clean.startsWith("+") ? clean : `+91${clean.replace(/^0+/, "")}`;
+
     setPhoneLoading(true);
     try {
-      const { idToken, phoneNumber } = await confirmFirebasePhoneOtp(confirmationResult, otp.trim());
       const result = await signIn("phone-otp", {
         redirect: false,
-        idToken,
-        phoneNumber,
+        phoneNumber: formatted,
+        otp: otp.trim(),
         name: phoneName.trim(),
         orgName: phoneOrgName.trim() || `${phoneName.trim()}'s Workspace`,
       });
 
       if (result?.error) {
-        setError("Account creation failed. Please try again.");
+        setError("Invalid or expired OTP. Please try again.");
       } else {
         router.push("/leads");
       }
@@ -200,14 +203,13 @@ export default function SignupPage() {
 
           <Tabs defaultValue="phone" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="phone">Mobile OTP</TabsTrigger>
+              <TabsTrigger value="phone">WhatsApp OTP</TabsTrigger>
               <TabsTrigger value="email">Email</TabsTrigger>
             </TabsList>
 
-            {/* Mobile OTP Tab */}
+            {/* WhatsApp OTP Tab */}
             <TabsContent value="phone" className="space-y-4 pt-2">
-              <div id="recaptcha-signup-container" />
-              {!confirmationResult ? (
+              {!otpSent ? (
                 <form onSubmit={handleSendOtp} className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="signup-phone-org">Workspace name</Label>
@@ -247,12 +249,12 @@ export default function SignupPage() {
                       />
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      We will send a 6-digit verification code via SMS.
+                      We will send a 6-digit verification code via WhatsApp.
                     </p>
                   </div>
 
                   <Button type="submit" className="w-full" disabled={phoneLoading}>
-                    {phoneLoading ? "Sending SMS OTP…" : "Send OTP"}
+                    {phoneLoading ? "Sending WhatsApp OTP…" : "Send WhatsApp OTP"}
                   </Button>
                 </form>
               ) : (
@@ -270,22 +272,33 @@ export default function SignupPage() {
                       autoFocus
                     />
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>Code sent to {phone}</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setConfirmationResult(null);
-                          setOtp("");
-                        }}
-                        className="underline hover:text-foreground"
-                      >
-                        Change number
-                      </button>
+                      <span>Code sent to WhatsApp ({phone})</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={phoneLoading}
+                          onClick={handleSendOtp}
+                          className="underline hover:text-foreground"
+                        >
+                          Resend
+                        </button>
+                        <span>·</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOtpSent(false);
+                            setOtp("");
+                          }}
+                          className="underline hover:text-foreground"
+                        >
+                          Change
+                        </button>
+                      </div>
                     </div>
                   </div>
 
                   <Button type="submit" className="w-full" disabled={phoneLoading}>
-                    {phoneLoading ? "Creating workspace…" : "Verify & Create Workspace"}
+                    {phoneLoading ? "Creating…" : "Create workspace"}
                   </Button>
                 </form>
               )}

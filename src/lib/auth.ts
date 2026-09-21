@@ -26,7 +26,7 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { db } from "@/db";
 import { users, organizations } from "@/db/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, gt, desc } from "drizzle-orm";
 import { z } from "zod";
 
 // How long a session stays valid without re-authenticating (NextAuth's own JWT default — made
@@ -59,23 +59,64 @@ export const authOptions: NextAuthOptions = {
       credentials: {
         idToken: { label: "Firebase ID Token", type: "text" },
         phoneNumber: { label: "Phone Number", type: "text" },
+        otp: { label: "OTP Code", type: "text" },
         name: { label: "Full Name", type: "text" },
         orgName: { label: "Workspace Name", type: "text" },
       },
       async authorize(credentials) {
-        if (!credentials?.idToken) return null;
+        const phone = (credentials?.phoneNumber || "").trim();
+        if (!phone) return null;
 
-        const { verifyFirebaseIdToken } = await import("@/lib/auth/firebaseTokenVerifier");
-        let verified;
-        try {
-          verified = await verifyFirebaseIdToken(credentials.idToken);
-        } catch (err) {
-          console.error("[phone-auth] verification failed:", err);
-          return null;
+        let verified = false;
+
+        // 1. WhatsApp OTP via Watxio
+        if (credentials?.otp) {
+          const otp = credentials.otp.trim();
+          const otpHash = crypto.createHash("sha256").update(otp).digest("hex");
+          const { phoneOtps } = await import("@/db/schema/system");
+
+          const [record] = await db
+            .select()
+            .from(phoneOtps)
+            .where(
+              and(
+                eq(phoneOtps.phone, phone),
+                isNull(phoneOtps.usedAt),
+                gt(phoneOtps.expiresAt, new Date())
+              )
+            )
+            .orderBy(desc(phoneOtps.createdAt))
+            .limit(1);
+
+          if (record && record.attempts < 5 && record.otpHash === otpHash) {
+            await db
+              .update(phoneOtps)
+              .set({ usedAt: new Date() })
+              .where(eq(phoneOtps.id, record.id));
+            verified = true;
+          } else if (record) {
+            await db
+              .update(phoneOtps)
+              .set({ attempts: record.attempts + 1 })
+              .where(eq(phoneOtps.id, record.id));
+            return null;
+          } else {
+            return null;
+          }
+        }
+        // 2. Legacy fallback: Firebase ID Token
+        else if (credentials?.idToken) {
+          const { verifyFirebaseIdToken } = await import("@/lib/auth/firebaseTokenVerifier");
+          try {
+            const res = await verifyFirebaseIdToken(credentials.idToken);
+            if (!res.phoneNumber || res.phoneNumber === phone) verified = true;
+          } catch (err) {
+            console.error("[phone-auth] verification failed:", err);
+            return null;
+          }
         }
 
-        const phone = (verified.phoneNumber || credentials.phoneNumber || "").trim();
-        if (!phone) return null;
+        if (!verified) return null;
 
         let [existingUser] = await db
           .select()

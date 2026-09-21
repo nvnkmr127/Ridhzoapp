@@ -13,9 +13,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useEffect, useState } from "react";
-import { sendFirebasePhoneOtp, confirmFirebasePhoneOtp } from "@/lib/firebase/client";
-import { checkPhoneExistsAction } from "@/lib/actions/auth";
-import type { ConfirmationResult } from "firebase/auth";
+import { sendWhatsAppOtpAction } from "@/lib/actions/auth";
 
 const DEV = process.env.NODE_ENV === "development";
 const DEV_EMAIL = process.env.NEXT_PUBLIC_DEV_LOGIN_EMAIL || "admin@acme.com";
@@ -36,7 +34,7 @@ export default function LoginPage() {
   // Phone OTP state
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
-  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
+  const [otpSent, setOtpSent] = useState(false);
   const [phoneLoading, setPhoneLoading] = useState(false);
 
   const form = useForm<LoginValues>({
@@ -46,16 +44,20 @@ export default function LoginPage() {
 
   const onSubmit = async (data: LoginValues) => {
     setError(null);
-    const result = await signIn("credentials", {
-      redirect: false,
-      email: data.email,
-      password: data.password,
-    });
+    try {
+      const result = await signIn("credentials", {
+        redirect: false,
+        email: data.email,
+        password: data.password,
+      });
 
-    if (result?.error) {
-      setError("Invalid email or password. If you don't have an account, please click 'Create workspace' below.");
-    } else {
-      router.push("/");
+      if (result?.error) {
+        setError("Invalid email or password. Please try again.");
+      } else {
+        router.push("/");
+      }
+    } catch {
+      setError("An unexpected error occurred. Please try again.");
     }
   };
 
@@ -85,18 +87,15 @@ export default function LoginPage() {
 
     setPhoneLoading(true);
     try {
-      const check = await checkPhoneExistsAction(formatted);
-      if (!check.exists) {
-        setError("We don't have an account with this mobile number. Please click 'Create workspace' below to sign up.");
-        setPhoneLoading(false);
+      const res = await sendWhatsAppOtpAction({ phone: formatted, purpose: "login" });
+      if (!res.ok) {
+        setError(res.message);
         return;
       }
-
-      const res = await sendFirebasePhoneOtp(formatted, "recaptcha-container");
-      setConfirmationResult(res);
+      setOtpSent(true);
     } catch (err: any) {
       console.error("[phone-login] sendOtp error:", err);
-      setError(err?.message || "Failed to send SMS OTP. Please check your number.");
+      setError(err?.message || "Failed to send WhatsApp OTP. Please check your number.");
     } finally {
       setPhoneLoading(false);
     }
@@ -105,23 +104,24 @@ export default function LoginPage() {
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!confirmationResult) return;
     if (otp.trim().length !== 6) {
-      setError("Please enter the 6-digit OTP sent to your phone.");
+      setError("Please enter the 6-digit OTP sent to your WhatsApp.");
       return;
     }
 
+    const clean = phone.trim();
+    const formatted = clean.startsWith("+") ? clean : `+91${clean.replace(/^0+/, "")}`;
+
     setPhoneLoading(true);
     try {
-      const { idToken, phoneNumber } = await confirmFirebasePhoneOtp(confirmationResult, otp.trim());
       const result = await signIn("phone-otp", {
         redirect: false,
-        idToken,
-        phoneNumber,
+        phoneNumber: formatted,
+        otp: otp.trim(),
       });
 
       if (result?.error) {
-        setError("Sign in failed. Could not verify user.");
+        setError("Invalid or expired OTP. Please try again.");
       } else {
         router.push("/");
       }
@@ -195,14 +195,13 @@ export default function LoginPage() {
 
           <Tabs defaultValue="phone" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="phone">Mobile OTP</TabsTrigger>
+              <TabsTrigger value="phone">WhatsApp OTP</TabsTrigger>
               <TabsTrigger value="email">Email</TabsTrigger>
             </TabsList>
 
-            {/* Mobile Phone SMS OTP Tab */}
+            {/* WhatsApp OTP Tab */}
             <TabsContent value="phone" className="space-y-4 pt-2">
-              <div id="recaptcha-container" />
-              {!confirmationResult ? (
+              {!otpSent ? (
                 <form onSubmit={handleSendOtp} className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="phone">Mobile Number</Label>
@@ -220,12 +219,12 @@ export default function LoginPage() {
                       />
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      We will send a 6-digit verification code via SMS.
+                      We will send a 6-digit verification code via WhatsApp.
                     </p>
                   </div>
 
                   <Button type="submit" className="w-full" disabled={phoneLoading}>
-                    {phoneLoading ? "Sending SMS OTP…" : "Send OTP"}
+                    {phoneLoading ? "Sending WhatsApp OTP…" : "Send WhatsApp OTP"}
                   </Button>
                 </form>
               ) : (
@@ -240,19 +239,31 @@ export default function LoginPage() {
                       value={otp}
                       onChange={(e) => setOtp(e.target.value)}
                       className="text-center tracking-widest text-lg font-bold"
+                      autoFocus
                     />
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>Code sent to {phone}</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setConfirmationResult(null);
-                          setOtp("");
-                        }}
-                        className="underline hover:text-foreground"
-                      >
-                        Change number
-                      </button>
+                      <span>Code sent to WhatsApp ({phone})</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={phoneLoading}
+                          onClick={handleSendOtp}
+                          className="underline hover:text-foreground"
+                        >
+                          Resend
+                        </button>
+                        <span>·</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOtpSent(false);
+                            setOtp("");
+                          }}
+                          className="underline hover:text-foreground"
+                        >
+                          Change
+                        </button>
+                      </div>
                     </div>
                   </div>
 
