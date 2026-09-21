@@ -45,6 +45,16 @@ export class OrgService {
     const slug = `${slugify(input.orgName)}-${Math.random().toString(36).slice(2, 7)}`;
     const passwordHash = await bcrypt.hash(input.password, 10);
 
+    let firstName = input.firstName?.trim() || undefined;
+    let lastName = input.lastName?.trim() || undefined;
+    if (firstName && !lastName) {
+      const parts = firstName.split(/\s+/);
+      if (parts.length > 1) {
+        firstName = parts[0];
+        lastName = parts.slice(1).join(" ");
+      }
+    }
+
     return db.transaction(async (tx) => {
       const [existing] = await tx.select({ id: users.id }).from(users).where(eq(users.email, input.email)).limit(1);
       if (existing) throw new Error("An account with that email already exists");
@@ -55,8 +65,8 @@ export class OrgService {
         organizationId: org.id,
         email: input.email,
         passwordHash,
-        firstName: input.firstName,
-        lastName: input.lastName,
+        firstName: firstName || null,
+        lastName: lastName || null,
         roleId: adminRole?.id ?? null,
         isActive: true,
       });

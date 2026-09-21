@@ -12,6 +12,7 @@ import {
   followUps,
 } from './schema';
 import bcrypt from 'bcryptjs';
+import { sql } from 'drizzle-orm';
 
 const ORG_ID = '00000000-0000-0000-0000-000000000002';
 const USER_ID = '00000000-0000-0000-0000-000000000001';
@@ -159,6 +160,25 @@ async function seed() {
       stageWonId = stages[3].id;
     }
   }
+
+  // Ensure sequential lead display_id trigger is installed
+  await db.execute(sql`
+    CREATE OR REPLACE FUNCTION assign_lead_display_id() RETURNS trigger AS $$
+    BEGIN
+      IF NEW.display_id IS NULL THEN
+        INSERT INTO lead_counters (organization_id, last_value)
+        VALUES (NEW.organization_id, 1)
+        ON CONFLICT (organization_id) DO UPDATE SET last_value = lead_counters.last_value + 1
+        RETURNING last_value INTO NEW.display_id;
+      END IF;
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+
+    DROP TRIGGER IF EXISTS trg_assign_lead_display_id ON leads;
+    CREATE TRIGGER trg_assign_lead_display_id BEFORE INSERT ON leads
+    FOR EACH ROW EXECUTE FUNCTION assign_lead_display_id();
+  `);
 
   // 7. Dummy Leads
   const insertedLeads = await db

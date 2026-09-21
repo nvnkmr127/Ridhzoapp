@@ -66,4 +66,40 @@ describe("jwt callback — session liveness refresh", () => {
     expect(result.roleId).toBe("role-1");
     expect(typeof result.refreshedAt).toBe("number");
   });
+
+  it("updates token.name on refresh from database user fields", async () => {
+    limitSpy.mockResolvedValue([{
+      id: "u1",
+      firstName: "Pavan",
+      lastName: null,
+      email: "pavan@example.com",
+      roleId: "role-1",
+      organizationId: "org-1",
+      isSuperAdmin: false,
+      isActive: true,
+      deletedAt: null,
+      phone: null,
+    }]);
+    const token = { id: "u1", name: "pavan null", refreshedAt: Date.now() - 120_000 };
+    const result = await jwtCallback({ token } as any);
+    expect(result.name).toBe("Pavan");
+  });
+});
+
+const sessionCallback = authOptions.callbacks!.session!;
+
+describe("session callback — name sanitization", () => {
+  it("strips literal 'null' from token.name if present in existing session", async () => {
+    const token = { id: "u1", name: "pavan null", roleId: "r1", organizationId: "o1", isSuperAdmin: false };
+    const session = { user: { name: "", email: "pavan@example.com" }, expires: "2099" };
+    const result = await sessionCallback({ session: session as any, token: token as any });
+    expect(result.user.name).toBe("pavan");
+  });
+
+  it("falls back to email when name evaluates to only 'null'", async () => {
+    const token = { id: "u1", name: "null", roleId: "r1", organizationId: "o1", isSuperAdmin: false };
+    const session = { user: { name: "", email: "pavan@example.com" }, expires: "2099" };
+    const result = await sessionCallback({ session: session as any, token: token as any });
+    expect(result.user.name).toBe("pavan@example.com");
+  });
 });

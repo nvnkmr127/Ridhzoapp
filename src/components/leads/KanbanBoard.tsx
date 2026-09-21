@@ -7,7 +7,7 @@ import { changeLeadStatusAction, listStageLeadsAction } from "@/lib/actions/lead
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 
-type Card = { id: string; name: string; email: string | null; phone: string | null; status: string };
+type Card = { id: string; displayId?: number | null; name: string; email: string | null; phone: string | null; status: string };
 
 type StageState = {
   data: Card[];
@@ -183,10 +183,19 @@ export function KanbanBoard({
                   }}
                   className="rounded-lg border border-border bg-card p-3 hover:border-ring/60 transition-colors cursor-grab active:cursor-grabbing"
                 >
-                  <Link href={`/leads/${c.id}`} className="font-medium text-sm hover:underline text-foreground">
-                    {c.name}
-                  </Link>
-                  <div className="mt-1 text-xs text-muted-foreground truncate">{c.email || c.phone || "—"}</div>
+                  <div className="flex items-center justify-between gap-1">
+                    <Link href={`/leads/${c.id}`} className="font-medium text-sm hover:underline text-foreground truncate">
+                      {c.name}
+                    </Link>
+                    {c.displayId != null && (
+                      <span className="text-xs text-muted-foreground tabular-nums shrink-0">#{c.displayId}</span>
+                    )}
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground space-y-0.5">
+                    {c.phone && <div className="truncate">{c.phone}</div>}
+                    {c.email && <div className="truncate">{c.email}</div>}
+                    {!c.phone && !c.email && <div>—</div>}
+                  </div>
                 </div>
               ))}
 

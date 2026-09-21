@@ -130,7 +130,7 @@ export const authOptions: NextAuthOptions = {
         return {
           id: existingUser.id,
           email: existingUser.email,
-          name: `${existingUser.firstName ?? ""} ${existingUser.lastName ?? ""}`.trim() || phone,
+          name: [existingUser.firstName, existingUser.lastName].filter(Boolean).join(" ") || phone,
           roleId: existingUser.roleId,
           organizationId: existingUser.organizationId,
           isSuperAdmin: existingUser.isSuperAdmin,
@@ -180,7 +180,7 @@ export const authOptions: NextAuthOptions = {
         return {
           id: user.id,
           email: user.email,
-          name: `${user.firstName} ${user.lastName}`,
+          name: [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email,
           roleId: user.roleId,
           organizationId: user.organizationId,
           isSuperAdmin: user.isSuperAdmin,
@@ -299,6 +299,9 @@ export const authOptions: NextAuthOptions = {
       if (token.id && Date.now() - refreshedAt > SESSION_REFRESH_INTERVAL_MS) {
         const [u] = await db
           .select({
+            firstName: users.firstName,
+            lastName: users.lastName,
+            email: users.email,
             roleId: users.roleId,
             organizationId: users.organizationId,
             isSuperAdmin: users.isSuperAdmin,
@@ -331,6 +334,7 @@ export const authOptions: NextAuthOptions = {
           token.isSuperAdmin = false;
           token.phone = null;
         } else {
+          token.name = [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email;
           token.roleId = u.roleId;
           token.organizationId = u.organizationId;
           token.isSuperAdmin = u.isSuperAdmin;
@@ -342,9 +346,13 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       if (token) {
+        const rawName = (typeof token.name === "string" ? token.name : session.user?.name) ?? "";
+        const cleanName = rawName.replace(/\s+null\b|\bnull\s+|\bnull\b/g, "").trim();
+
         session.user = {
           ...session.user,
           id: token.id as string,
+          name: cleanName || session.user?.email || null,
           roleId: token.roleId as string,
           organizationId: (token.organizationId as string) ?? null,
           isSuperAdmin: Boolean(token.isSuperAdmin),
