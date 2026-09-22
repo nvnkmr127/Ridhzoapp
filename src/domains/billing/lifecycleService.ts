@@ -104,24 +104,28 @@ export class BillingLifecycleService {
   }
 
   static async getTenantBillingStatus(orgId: string): Promise<TenantBillingInfo | null> {
-    const [org] = await db
-      .select({
-        id: organizations.id,
-        name: organizations.name,
-        slug: organizations.slug,
-        plan: organizations.plan,
-        planStatus: organizations.planStatus,
-        currentPeriodEnd: organizations.currentPeriodEnd,
-        razorpaySubscriptionId: organizations.razorpaySubscriptionId,
-        trialEndsAt: organizations.trialEndsAt,
-      })
-      .from(organizations)
-      .where(eq(organizations.id, orgId))
-      .limit(1);
+    // Independent reads — run them together so this (called by the grace banner on every page) costs
+    // one DB round-trip, not two, on the remote database.
+    const [[org], lifecycle] = await Promise.all([
+      db
+        .select({
+          id: organizations.id,
+          name: organizations.name,
+          slug: organizations.slug,
+          plan: organizations.plan,
+          planStatus: organizations.planStatus,
+          currentPeriodEnd: organizations.currentPeriodEnd,
+          razorpaySubscriptionId: organizations.razorpaySubscriptionId,
+          trialEndsAt: organizations.trialEndsAt,
+        })
+        .from(organizations)
+        .where(eq(organizations.id, orgId))
+        .limit(1),
+      this.getLifecycle(orgId),
+    ]);
 
     if (!org) return null;
 
-    const lifecycle = await this.getLifecycle(orgId);
     const { status, daysRemainingInGrace } = this.computeStatus(org, lifecycle);
 
     return {

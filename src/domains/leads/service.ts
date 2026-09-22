@@ -545,19 +545,17 @@ export class LeadService {
 
   static async listLeadsByStage(organizationId: string, limitPerStage = 20, statuses?: string[]) {
     const cols = statuses && statuses.length ? statuses : ["new", "active", "won", "lost", "unqualified"];
-    const results: Record<string, { data: any[]; total: number }> = {};
 
-    for (const st of cols) {
-      const { data, total } = await this.listLeads({
-        organizationId,
-        status: st,
-        page: 1,
-        limit: limitPerStage,
-      });
-      results[st] = { data, total };
-    }
+    // Fetch every column concurrently — the board previously issued them one status at a time, so on
+    // the remote DB it cost one ~300ms round-trip per column (~1.5s for 5). In parallel it's ~one.
+    const perColumn = await Promise.all(
+      cols.map(async (st) => {
+        const { data, total } = await this.listLeads({ organizationId, status: st, page: 1, limit: limitPerStage });
+        return [st, { data, total }] as const;
+      }),
+    );
 
-    return results;
+    return Object.fromEntries(perColumn) as Record<string, { data: any[]; total: number }>;
   }
 
   // Soft delete → recycle bin. The lead disappears from all lists but is recoverable for 30 days.

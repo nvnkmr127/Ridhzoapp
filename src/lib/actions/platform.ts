@@ -11,13 +11,19 @@ import { ok, fail, actionFail } from "@/lib/actions/result";
 const IMPERSONATE_COOKIE = "impersonate_org";
 const IMPERSONATE_READONLY_COOKIE = "impersonate_readonly";
 
+// Validate ids the way Postgres does — any 8-4-4-4-12 hex string. z.string().uuid() enforces RFC
+// 4122 version/variant bits and so REJECTS valid Postgres uuids used as sentinels/seeds (the nil
+// platform org "0000…0000" and seed orgs like "0000…0002"), which made "Open tenant" fail with
+// "Invalid organization" for those tenants. guid() matches the database.
+const orgIdSchema = z.string().guid();
+
 // Platform-scoped events (broadcast, maintenance, feature flags, DLQ retry, recycle-bin purge)
 // belong to no tenant. Log them under the fixed system org so they're never dropped just because
 // the acting super-admin happens to have no organizationId.
 const PLATFORM_ORG_ID = "00000000-0000-0000-0000-000000000000";
 
 const planSchema = z.object({
-  organizationId: z.string().uuid(),
+  organizationId: orgIdSchema,
   plan: z.enum(["free", "pro", "business"]),
   trialDays: z.number().int().positive().nullable().optional(),
 });
@@ -58,7 +64,7 @@ export async function setOrgPlanAction(input: z.infer<typeof planSchema>) {
 
 export async function setOrgSuspendedAction(organizationId: string, suspended: boolean) {
   const session = await requireSuperAdmin();
-  if (!z.string().uuid().safeParse(organizationId).success) return fail("VALIDATION", "Invalid organization.");
+  if (!orgIdSchema.safeParse(organizationId).success) return fail("VALIDATION", "Invalid organization.");
   try {
     const row = await PlatformService.setSuspended(organizationId, suspended);
     if (!row) return fail("NOT_FOUND", "That organization no longer exists.");
@@ -80,7 +86,7 @@ export async function setOrgSuspendedAction(organizationId: string, suspended: b
 // Start impersonating a tenant: a super-admin then operates inside that org via the normal UI.
 export async function impersonateOrgAction(organizationId: string, readOnly = false) {
   const session = await requireSuperAdmin();
-  if (!z.string().uuid().safeParse(organizationId).success) return fail("VALIDATION", "Invalid organization.");
+  if (!orgIdSchema.safeParse(organizationId).success) return fail("VALIDATION", "Invalid organization.");
   const org = await PlatformService.getOrg(organizationId);
   if (!org) return fail("NOT_FOUND", "That organization no longer exists.");
 
@@ -915,7 +921,7 @@ export async function listCapiLogsAction(limit = 50) {
 
 export async function exportTenantDossierAction(organizationId: string) {
   await requireSuperAdmin();
-  if (!z.string().uuid().safeParse(organizationId).success) return fail("VALIDATION", "Invalid organization.");
+  if (!orgIdSchema.safeParse(organizationId).success) return fail("VALIDATION", "Invalid organization.");
   try {
     const dossier = await PlatformService.exportTenantDossier(organizationId);
     if (!dossier) return fail("NOT_FOUND", "Organization not found.");
@@ -927,7 +933,7 @@ export async function exportTenantDossierAction(organizationId: string) {
 
 export async function hardDeleteTenantAction(organizationId: string, confirmation: string) {
   const session = await requireSuperAdmin();
-  if (!z.string().uuid().safeParse(organizationId).success) return fail("VALIDATION", "Invalid organization.");
+  if (!orgIdSchema.safeParse(organizationId).success) return fail("VALIDATION", "Invalid organization.");
   try {
     const res = await PlatformService.hardDeleteTenant(organizationId, confirmation, session.user.id);
     if (!res.success) {

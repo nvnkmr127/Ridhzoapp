@@ -24,7 +24,7 @@ export default async function DashboardLayout({
   // finish the work). Enforced here so enabling the toggle actually gates tenants, not just reflects
   // its own state in the console.
   if (!superAdmin) {
-    const maintenance = await PlatformConfigService.get<{ enabled: boolean; message: string }>(
+    const maintenance = await PlatformConfigService.getGlobalCached<{ enabled: boolean; message: string }>(
       "maintenance_mode",
       { enabled: false, message: "" },
     );

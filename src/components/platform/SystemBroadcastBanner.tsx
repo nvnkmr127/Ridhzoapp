@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { AlertTriangle, Info, AlertCircle } from "lucide-react";
 
 export async function SystemBroadcastBanner() {
-  const broadcast = await PlatformConfigService.get<BroadcastConfig | null>("broadcast", null);
+  const broadcast = await PlatformConfigService.getGlobalCached<BroadcastConfig | null>("broadcast", null);
   if (!broadcast || !broadcast.active || !broadcast.message?.trim()) return null;
 
   let currentOrg: { id: string; plan: string } | null = null;
