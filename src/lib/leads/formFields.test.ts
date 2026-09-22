@@ -84,11 +84,22 @@ describe("buildSubmission", () => {
     const bad = buildSubmission(withSelect, { name: "Ada", tier: "Z", email: "a@b.com" });
     expect(bad.ok).toBe(false);
   });
-  it("keeps select options through sanitize and drops them for non-select types", () => {
+  it("keeps select/multiselect options through sanitize and drops them for other types", () => {
     const [sel] = sanitizeFields([{ label: "Tier", type: "select", options: [" A ", "", "B"] }]);
     expect(sel.options).toEqual(["A", "B"]);
+    const [multi] = sanitizeFields([{ label: "Interests", type: "multiselect", options: ["X", "Y"] }]);
+    expect(multi.type).toBe("multiselect");
+    expect(multi.options).toEqual(["X", "Y"]);
     const [txt] = sanitizeFields([{ label: "Name", type: "text", options: ["x"] }]);
     expect(txt.options).toBeUndefined();
+  });
+  it("validates every chosen option of a multiselect", () => {
+    const withMulti = [
+      { key: "interests", label: "Interests", type: "multiselect" as const, required: false, step: 1, options: ["X", "Y", "Z"] },
+      ...fields,
+    ];
+    expect(buildSubmission(withMulti, { name: "Ada", interests: "X, Z", email: "a@b.com" }).ok).toBe(true);
+    expect(buildSubmission(withMulti, { name: "Ada", interests: "X, Q", email: "a@b.com" }).ok).toBe(false);
   });
   it("rejects a malformed email", () => {
     expect(buildSubmission(fields, { email: "nope" }).ok).toBe(false);

@@ -117,11 +117,44 @@ export function PublicLeadForm({
             </div>
           );
         }
-        if (f.type === "date") {
+        if (f.type === "date" || f.type === "datetime") {
           return (
             <div key={f.key} className="space-y-1">
               <label className="text-sm text-muted-foreground">{label}</label>
-              <Input type="date" value={values[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} />
+              <Input type={f.type === "datetime" ? "datetime-local" : "date"} value={values[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} />
+            </div>
+          );
+        }
+        if (f.type === "checkbox") {
+          return (
+            <label key={f.key} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={values[f.key] === "true"}
+                onChange={(e) => set(f.key, e.target.checked ? "true" : "")}
+              />
+              {label}
+            </label>
+          );
+        }
+        if (f.type === "multiselect") {
+          // Store selections as a comma-separated string — what the server + custom-field validator expect.
+          const selected = new Set((values[f.key] ?? "").split(",").map((s) => s.trim()).filter(Boolean));
+          const toggle = (opt: string) => {
+            const next = new Set(selected);
+            next.has(opt) ? next.delete(opt) : next.add(opt);
+            set(f.key, [...next].join(","));
+          };
+          return (
+            <div key={f.key} className="space-y-1">
+              <label className="text-sm text-muted-foreground">{label}</label>
+              <div className="flex flex-wrap gap-2">
+                {(f.options ?? []).map((o) => (
+                  <label key={o} className="flex items-center gap-1.5 rounded-md border px-2 py-1 text-sm">
+                    <input type="checkbox" checked={selected.has(o)} onChange={() => toggle(o)} /> {o}
+                  </label>
+                ))}
+              </div>
             </div>
           );
         }

@@ -53,7 +53,8 @@ export class FacebookIngestionService {
     const organizationId = matchedSource.organizationId;
     const sourceId = matchedSource.id;
     const sourceConfig = matchedConfig;
-    const pageAccessToken = sourceConfig.pageAccessToken;
+    const { readSecret } = await import("@/lib/crypto/secret");
+    const pageAccessToken = readSecret(sourceConfig.pageAccessToken);
 
     // Form filter (empty = all forms). form_id is in the webhook payload, so we can drop unselected
     // forms before spending a Graph call.

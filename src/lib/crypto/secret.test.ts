@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { encryptSecret, decryptSecret } from "./secret";
+import { encryptSecret, decryptSecret, readSecret } from "./secret";
 
 describe("secret encryption (AES-256-GCM)", () => {
   beforeAll(() => {
@@ -22,5 +22,19 @@ describe("secret encryption (AES-256-GCM)", () => {
     const enc = encryptSecret("secret");
     expect(decryptSecret(enc.slice(0, -4) + "AAAA")).toBeNull(); // tampered tag/data
     expect(decryptSecret("not-a-valid-payload")).toBeNull();
+  });
+
+  describe("readSecret (tolerant migration read)", () => {
+    it("decrypts an encrypted value", () => {
+      expect(readSecret(encryptSecret("EAAB-fb-page-token"))).toBe("EAAB-fb-page-token");
+    });
+    it("returns legacy plaintext unchanged (not yet re-encrypted)", () => {
+      expect(readSecret("EAAB-legacy-plaintext-token")).toBe("EAAB-legacy-plaintext-token");
+    });
+    it("returns null for empty/nullish", () => {
+      expect(readSecret(null)).toBeNull();
+      expect(readSecret(undefined)).toBeNull();
+      expect(readSecret("")).toBeNull();
+    });
   });
 });

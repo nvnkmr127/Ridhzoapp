@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { ok, fail, actionFail } from "@/lib/actions/result";
 import { sanitizeFields } from "@/lib/leads/formFields";
+import { readSecret } from "@/lib/crypto/secret";
 import { db } from "@/db";
 import { webhookEvents, leads } from "@/db/schema";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
@@ -211,8 +212,9 @@ export async function subscribeFacebookWebhooksAction(sourceId: string) {
       return fail("VALIDATION", "Missing Facebook Page ID or Access Token. Reconnect the Page first.");
     }
     const { MetaTokenRefreshService } = await import("@/domains/leads/metaTokenRefreshService");
-    await MetaTokenRefreshService.subscribePageToLeadgen(config.pageId, config.pageAccessToken);
-    // Persist so the UI can show "Live" instead of prompting to enable it again.
+    await MetaTokenRefreshService.subscribePageToLeadgen(config.pageId, readSecret(config.pageAccessToken)!);
+    // Persist so the UI can show "Live" instead of prompting to enable it again. Keep config's
+    // encrypted token untouched (spread the stored value, don't write back the decrypted one).
     await LeadSourceService.updateSource(source.id, { config: { ...config, webhookSubscribed: true } }, organizationId);
     revalidatePath("/settings/sources");
     return ok({ subscribed: true });
@@ -238,7 +240,7 @@ export async function listFacebookFormsAction(sourceId: string) {
     }
 
     const { MetaTokenRefreshService } = await import("@/domains/leads/metaTokenRefreshService");
-    const forms = await MetaTokenRefreshService.listPageLeadForms(config.pageId, config.pageAccessToken);
+    const forms = await MetaTokenRefreshService.listPageLeadForms(config.pageId, readSecret(config.pageAccessToken)!);
     return ok({ forms });
   } catch (e) {
     if (await flagIfAuthError(e, sourceId)) {
@@ -266,14 +268,15 @@ export async function listFacebookFormFieldsAction(sourceId: string) {
     }
 
     const { MetaTokenRefreshService } = await import("@/domains/leads/metaTokenRefreshService");
-    const allForms = await MetaTokenRefreshService.listPageLeadForms(config.pageId, config.pageAccessToken);
+    const token = readSecret(config.pageAccessToken)!;
+    const allForms = await MetaTokenRefreshService.listPageLeadForms(config.pageId, token);
     const filter: string[] = Array.isArray(config.formFilter) ? config.formFilter.map(String) : [];
     const forms = filter.length ? allForms.filter((f) => filter.includes(f.id)) : allForms;
 
     const byKey = new Map<string, { key: string; label: string }>();
     for (const form of forms) {
       try {
-        const questions = await MetaTokenRefreshService.listFormQuestions(form.id, config.pageAccessToken);
+        const questions = await MetaTokenRefreshService.listFormQuestions(form.id, token);
         for (const q of questions) if (!byKey.has(q.key)) byKey.set(q.key, { key: q.key, label: q.label });
       } catch (e) {
         console.warn(`[FB] failed to load questions for form ${form.id}`, e);

@@ -32,7 +32,8 @@ export class FacebookSyncService {
 
     const config = (source.config as Record<string, any>) ?? {};
     const pageId = config.pageId;
-    const pageAccessToken = config.pageAccessToken;
+    const { readSecret } = await import("@/lib/crypto/secret");
+    const pageAccessToken = readSecret(config.pageAccessToken);
     if (!pageId || !pageAccessToken) {
       throw new Error("Missing Facebook Page ID or Access Token in source configuration.");
     }

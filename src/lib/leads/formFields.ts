@@ -3,7 +3,9 @@
 // leftover payload keys there). Pure + testable — the public form, the submit action, and the
 // builder all share this.
 
-export type FormFieldType = "text" | "email" | "tel" | "number" | "textarea" | "select" | "date" | "url";
+export type FormFieldType =
+  | "text" | "email" | "tel" | "number" | "textarea" | "select" | "date" | "url"
+  | "checkbox" | "multiselect" | "datetime";
 export interface FormField {
   key: string;
   label: string;
@@ -11,14 +13,17 @@ export interface FormField {
   required: boolean;
   /** Which page of a multi-step form this field appears on (1-based). Single-step forms use 1. */
   step: number;
-  /** Choices for a `select` field. Ignored for other types. */
+  /** Choices for a `select` / `multiselect` field. Ignored for other types. */
   options?: string[];
 }
 
 export const MAX_STEPS = 10;
 
 export const STANDARD_KEYS = ["name", "email", "phone", "company", "message"] as const;
-const FIELD_TYPES: FormFieldType[] = ["text", "email", "tel", "number", "textarea", "select", "date", "url"];
+const FIELD_TYPES: FormFieldType[] = [
+  "text", "email", "tel", "number", "textarea", "select", "date", "url", "checkbox", "multiselect", "datetime",
+];
+const OPTION_FORM_TYPES: FormFieldType[] = ["select", "multiselect"];
 
 export const DEFAULT_FORM_FIELDS: FormField[] = [
   { key: "name", label: "Your name", type: "text", required: true, step: 1 },
@@ -54,7 +59,7 @@ export function sanitizeFields(input: unknown): FormField[] {
     seen.add(key);
     const type = FIELD_TYPES.includes(r.type as FormFieldType) ? (r.type as FormFieldType) : "text";
     const step = Math.min(MAX_STEPS, Math.max(1, Math.floor(Number(r.step)) || 1));
-    const options = type === "select" && Array.isArray(r.options)
+    const options = OPTION_FORM_TYPES.includes(type) && Array.isArray(r.options)
       ? r.options.map((o) => String(o).trim()).filter(Boolean).slice(0, 50)
       : undefined;
     out.push({ key, label, type, required: Boolean(r.required), step, ...(options ? { options } : {}) });
@@ -97,6 +102,11 @@ export function buildSubmission(
     // A select must hold one of its configured choices (never trust the client's posted value).
     if (v && field.type === "select" && field.options?.length && !field.options.includes(v)) {
       return { ok: false, error: `${field.label} must be one of: ${field.options.join(", ")}.` };
+    }
+    // A multiselect posts a comma-separated list; every chosen value must be a configured option.
+    if (v && field.type === "multiselect" && field.options?.length) {
+      const bad = v.split(",").map((s) => s.trim()).filter(Boolean).find((s) => !field.options!.includes(s));
+      if (bad) return { ok: false, error: `${field.label} has an invalid option: ${bad}.` };
     }
     if (v) values[field.key] = v;
   }

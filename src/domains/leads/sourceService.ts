@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { leadSources, leads, assignmentRules } from "@/db/schema/leads";
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import crypto from "crypto";
+import { encryptSecret } from "@/lib/crypto/secret";
 
 export class LeadSourceService {
   static async getSources(organizationId?: string) {
@@ -96,7 +97,8 @@ export class LeadSourceService {
     const config = {
       ...((existing?.config as Record<string, unknown>) ?? {}),
       pageId: page.pageId,
-      pageAccessToken: page.pageAccessToken,
+      // Encrypt the Page access token at rest; every read path decrypts via readSecret.
+      pageAccessToken: encryptSecret(page.pageAccessToken),
       expiresAt: page.expiresAt ? page.expiresAt.toISOString() : null,
       needsReconnect: false,
     };

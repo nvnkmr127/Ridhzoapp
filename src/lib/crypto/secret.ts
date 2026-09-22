@@ -32,3 +32,12 @@ export function decryptSecret(payload: string): string | null {
     return null; // wrong key / corrupt / tampered
   }
 }
+
+// Tolerant read for values that may be encrypted (new writes) OR still plaintext (rows written
+// before encryption was added). GCM's auth tag makes a false "decrypt" of real plaintext
+// cryptographically impossible, so anything that fails to decrypt is returned as-is. This lets a
+// token store migrate lazily — each row becomes ciphertext on its next write — without a backfill.
+export function readSecret(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return decryptSecret(value) ?? value;
+}

@@ -23,8 +23,11 @@ const TYPES: FormFieldType[] = ["text", "email", "tel", "number", "textarea", "s
 function defTypeToFormType(t: string): FormFieldType {
   switch (t) {
     case "number": case "currency": return "number";
-    case "select": case "multiselect": return "select";
-    case "date": case "datetime": return "date";
+    case "select": return "select";
+    case "multiselect": return "multiselect";
+    case "date": return "date";
+    case "datetime": return "datetime";
+    case "checkbox": return "checkbox";
     case "url": return "url";
     case "textarea": return "textarea";
     default: return "text";
@@ -58,7 +61,7 @@ export function FormFieldsEditor({ sourceId, initialConfig }: { sourceId: string
         type,
         required: !!def.required,
         step: Math.max(1, ...fs.map((f) => f.step)),
-        ...(type === "select" && def.options?.length ? { options: def.options } : {}),
+        ...((type === "select" || type === "multiselect") && def.options?.length ? { options: def.options } : {}),
       }];
     });
   }
@@ -124,7 +127,7 @@ export function FormFieldsEditor({ sourceId, initialConfig }: { sourceId: string
                 <option key={t} value={t}>{t}</option>
               ))}
             </select>
-            {f.type === "select" && (
+            {(f.type === "select" || f.type === "multiselect") && (
               <Input
                 className="h-8 flex-1 min-w-[160px]"
                 value={(f.options ?? []).join(", ")}
