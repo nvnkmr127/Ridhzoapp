@@ -23,8 +23,19 @@ export const metadata: Metadata = {
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Ridhzo" },
   icons: {
-    icon: [{ url: "/icon.svg", type: "image/svg+xml" }, { url: "/icon-192.png", sizes: "192x192", type: "image/png" }],
-    apple: [{ url: "/apple-icon.png", sizes: "180x180" }],
+    icon: [
+      {
+        url: "/logos/Ridhzo-Logo-Final_Logo-Icon-Dark.png",
+        media: "(prefers-color-scheme: light)",
+      },
+      {
+        url: "/logos/Ridhzo-Logo-Final_Logo-Icon-Light.png",
+        media: "(prefers-color-scheme: dark)",
+      },
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/logos/Ridhzo-Logo-Final_AppIcon-Dark.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [{ url: "/logos/Ridhzo-Logo-Final_AppIcon-Dark.png", sizes: "180x180" }],
   },
 };
 

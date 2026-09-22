@@ -1,7 +1,7 @@
 // Web Push service worker for Ridhzo CRM.
 // Handles immediate activation, push notifications, and lead target click routing.
 
-const CACHE_NAME = 'ridhzo-cache-v1';
+const CACHE_NAME = 'ridhzo-cache-v2';
 const OFFLINE_FALLBACK = '/offline.html';
 const PRECACHE_URLS = [
   OFFLINE_FALLBACK,
@@ -9,7 +9,13 @@ const PRECACHE_URLS = [
   '/icon-512.png',
   '/icon.svg',
   '/favicon.ico',
+  '/favicon-32x32.png',
+  '/favicon-16x16.png',
   '/apple-icon.png',
+  '/logos/Ridhzo-Logo-Final_Horizontal-Light.png',
+  '/logos/Ridhzo-Logo-Final_AppIcon-Dark.png',
+  '/logos/Ridhzo-Logo-Final_Logo-Icon-Light.png',
+  '/logos/Ridhzo-Logo-Final_Logo-Icon-Dark.png',
 ];
 
 self.addEventListener('install', (event) => {

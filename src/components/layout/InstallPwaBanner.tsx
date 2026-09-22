@@ -99,7 +99,7 @@ export function InstallPwaBanner() {
         <div className="flex items-center gap-3">
           <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-xl border border-white/10 shadow-sm">
             <Image
-              src="/icon-192.png"
+              src="/logos/Ridhzo-Logo-Final_AppIcon-Dark.png"
               alt="Ridhzo App Icon"
               width={36}
               height={36}

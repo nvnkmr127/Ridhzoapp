@@ -1,5 +1,6 @@
 "use client"
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -29,7 +30,16 @@ export function MobileSidebar({ isSuperAdmin = false }: { isSuperAdmin?: boolean
           <div className="absolute inset-0 bg-black/70 animate-in fade-in-0" onClick={() => setOpen(false)} />
           <aside className="absolute left-0 top-0 flex h-full w-64 flex-col border-r border-border bg-card animate-in slide-in-from-left duration-200">
             <div className="flex h-14 items-center justify-between px-6 border-b border-border">
-              <span className="text-base font-semibold tracking-tight">Ridhzo</span>
+              <Link href="/leads" onClick={() => setOpen(false)} className="flex items-center">
+                <Image
+                  src="/logos/Ridhzo-Logo-Final_Horizontal-Light.png"
+                  alt="Ridhzo"
+                  width={110}
+                  height={32}
+                  className="h-7 w-auto object-contain"
+                  priority
+                />
+              </Link>
               <button
                 type="button"
                 onClick={() => setOpen(false)}

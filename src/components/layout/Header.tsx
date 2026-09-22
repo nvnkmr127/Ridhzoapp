@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { PlusCircle, Search, User } from "lucide-react";
 import { signOut } from "next-auth/react";
+import Image from "next/image";
 import Link from "next/link";
 import { QuickAddLeadDrawer } from "@/components/leads/QuickAddLeadDrawer";
 import { NotificationBell } from "@/components/layout/NotificationBell";
@@ -45,7 +46,16 @@ export function Header({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
       <div className="flex items-center flex-1 gap-2">
         <MobileSidebar isSuperAdmin={isSuperAdmin} />
-        <span className="md:hidden text-base font-semibold tracking-tight">Ridhzo</span>
+        <Link href="/leads" className="md:hidden flex items-center">
+          <Image
+            src="/logos/Ridhzo-Logo-Final_Horizontal-Light.png"
+            alt="Ridhzo"
+            width={95}
+            height={26}
+            className="h-6 w-auto object-contain"
+            priority
+          />
+        </Link>
         <button
           type="button"
           onClick={() => setSearchOpen(true)}

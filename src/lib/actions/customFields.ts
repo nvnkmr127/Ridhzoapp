@@ -1,8 +1,8 @@
 "use server";
 
 import { requireOrg, requirePermission, hasPermission } from "@/lib/rbac";
-import { CustomFieldService } from "@/domains/customFields/service";
-import { revalidatePath } from "next/cache";
+import { CustomFieldService, customFieldsTag } from "@/domains/customFields/service";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
 
@@ -12,7 +12,7 @@ export async function listCustomFieldsAction() {
   const { organizationId } = await requireOrg();
   if (!organizationId) return [];
   const isAdmin = await hasPermission("settings.manage");
-  const fields = await CustomFieldService.list(organizationId);
+  const fields = await CustomFieldService.listCached(organizationId);
   return isAdmin ? fields : fields.filter((f) => !f.adminOnly);
 }
 
@@ -38,6 +38,7 @@ export async function createCustomFieldAction(input: z.infer<typeof createSchema
   if (!parsed.success) return fail("VALIDATION", "Please provide a label and a valid field type.", zodFieldErrors(parsed.error));
   try {
     const row = await CustomFieldService.create(organizationId, parsed.data);
+    revalidateTag(customFieldsTag(organizationId));
     revalidatePath("/settings/custom-fields");
     revalidatePath("/leads");
     revalidatePath("/");
@@ -67,6 +68,7 @@ export async function updateCustomFieldAction(input: z.infer<typeof updateSchema
   const { id, ...patch } = parsed.data;
   try {
     const row = await CustomFieldService.update(organizationId, id, patch);
+    revalidateTag(customFieldsTag(organizationId));
     revalidatePath("/settings/custom-fields");
     revalidatePath("/leads");
     revalidatePath("/");
@@ -80,6 +82,7 @@ export async function reorderCustomFieldsAction(orderedIds: string[]) {
   const { organizationId } = await requirePermission("settings.manage");
   try {
     const res = await CustomFieldService.reorder(organizationId, orderedIds);
+    revalidateTag(customFieldsTag(organizationId));
     revalidatePath("/settings/custom-fields");
     revalidatePath("/leads");
     revalidatePath("/");
@@ -93,6 +96,7 @@ export async function deleteCustomFieldAction(id: string) {
   const { organizationId } = await requirePermission("settings.manage");
   try {
     await CustomFieldService.remove(organizationId, id);
+    revalidateTag(customFieldsTag(organizationId));
     revalidatePath("/settings/custom-fields");
     revalidatePath("/leads");
     revalidatePath("/");

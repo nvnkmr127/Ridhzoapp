@@ -56,14 +56,18 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     notFound();
   }
 
-  // Non-admins never see admin-only custom values: strip them from the lead's customData before
-  // it reaches any client component (detail fields, insights card, RSC payload).
-  if (!(await hasPermission("settings.manage")) && lead.customData && typeof lead.customData === "object") {
-    const defs = await CustomFieldService.list(organizationId);
+  // Fetch the org's custom-field defs once (cached) — used both to strip admin-only values for
+  // non-admins and to hand the detail component its defs on the server, so the custom fields render
+  // on first paint instead of after a client round-trip.
+  const isFieldAdmin = await hasPermission("settings.manage");
+  const allCustomDefs = await CustomFieldService.listCached(organizationId);
+  if (!isFieldAdmin && lead.customData && typeof lead.customData === "object") {
     const cd = { ...(lead.customData as Record<string, unknown>) };
-    for (const f of defs) if (f.adminOnly) delete cd[f.key];
+    for (const f of allCustomDefs) if (f.adminOnly) delete cd[f.key];
     (lead as { customData: unknown }).customData = cd;
   }
+  // Match what listCustomFieldsAction returns for this viewer (admin-only hidden from non-admins).
+  const visibleCustomDefs = (isFieldAdmin ? allCustomDefs : allCustomDefs.filter((f) => !f.adminOnly)) as any;
 
   const cleanEmail = lead.email?.trim() || undefined;
   const cleanPhone = lead.phone?.trim() || undefined;
@@ -432,7 +436,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
 
           {/* Custom Fields Card */}
           <SectionCard icon={Braces} title="Custom Attributes">
-            <LeadCustomFields leadId={lead.id} initialData={(lead.customData as Record<string, unknown>) ?? {}} />
+            <LeadCustomFields leadId={lead.id} initialData={(lead.customData as Record<string, unknown>) ?? {}} initialDefs={visibleCustomDefs} />
           </SectionCard>
         </div>
 

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { verifyResetTokenAction } from "@/lib/actions/auth";
 import { ResetPasswordForm } from "@/components/auth/ResetPasswordForm";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -16,6 +17,16 @@ export default async function ResetPasswordPage({
     <div className="flex min-h-dvh w-full items-center justify-center bg-muted py-10 px-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 text-center">
+          <div className="flex justify-center pb-2">
+            <Image
+              src="/logos/Ridhzo-Logo-Final_Horizontal-Light.png"
+              alt="Ridhzo"
+              width={140}
+              height={44}
+              className="h-9 w-auto object-contain"
+              priority
+            />
+          </div>
           <CardTitle className="text-2xl font-bold">Reset your password</CardTitle>
           <p className="text-sm text-muted-foreground">
             Choose a new, secure password for your account

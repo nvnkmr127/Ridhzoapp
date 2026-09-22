@@ -29,7 +29,7 @@ export interface ImportField {
 // (non-disabled) custom field. Admin-only custom fields are hidden from non-admin importers, same
 // as the manual create form. This is what the wizard lists as "Supported columns".
 export async function getImportFields(organizationId: string, isAdmin = true): Promise<ImportField[]> {
-  const defs = await CustomFieldService.list(organizationId);
+  const defs = await CustomFieldService.listCached(organizationId);
   const custom = defs
     .filter((d) => !d.disabled && (isAdmin || !d.adminOnly))
     .map((d) => ({ key: d.key, label: d.label, required: !!d.required, custom: true }));

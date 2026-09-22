@@ -90,11 +90,15 @@ export class PlatformConfigService {
   // these from Next's data cache (60s TTL, invalidated by set()) removes two queries from the critical
   // path of every navigation. Do NOT use for per-tenant config (billing lifecycle) — use get().
   static async getGlobalCached<T>(key: string, defaultValue: T): Promise<T> {
-    const cached = unstable_cache(
-      async () => this.get<T>(key, defaultValue),
-      ["platform-config", key],
-      { tags: [configTag(key)], revalidate: 60 },
-    );
-    return cached();
+    try {
+      return await unstable_cache(
+        async () => this.get<T>(key, defaultValue),
+        ["platform-config", key],
+        { tags: [configTag(key)], revalidate: 60 },
+      )();
+    } catch {
+      // unstable_cache needs a Next request context; outside one (workers, tests) read directly.
+      return this.get<T>(key, defaultValue);
+    }
   }
 }

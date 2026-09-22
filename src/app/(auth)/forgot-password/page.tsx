@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,6 +43,16 @@ export default function ForgotPasswordPage() {
     <div className="flex min-h-dvh w-full items-center justify-center bg-muted py-10 px-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 text-center">
+          <div className="flex justify-center pb-2">
+            <Image
+              src="/logos/Ridhzo-Logo-Final_Horizontal-Light.png"
+              alt="Ridhzo"
+              width={140}
+              height={44}
+              className="h-9 w-auto object-contain"
+              priority
+            />
+          </div>
           <CardTitle className="text-2xl font-bold">Forgot password</CardTitle>
           <p className="text-sm text-muted-foreground">
             Enter your email and we will send you a reset link

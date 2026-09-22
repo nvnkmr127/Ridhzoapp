@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -158,6 +159,16 @@ export default function SignupPage() {
     <div className="flex min-h-dvh w-full items-center justify-center bg-muted py-10 px-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 text-center">
+          <div className="flex justify-center pb-2">
+            <Image
+              src="/logos/Ridhzo-Logo-Final_Horizontal-Light.png"
+              alt="Ridhzo"
+              width={140}
+              height={44}
+              className="h-9 w-auto object-contain"
+              priority
+            />
+          </div>
           <CardTitle className="text-2xl font-bold">Create your workspace</CardTitle>
           <p className="text-sm text-muted-foreground">Start closing leads faster with Ridhzo</p>
         </CardHeader>

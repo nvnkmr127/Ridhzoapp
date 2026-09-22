@@ -1,4 +1,5 @@
 "use client"
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -13,7 +14,16 @@ export function Sidebar({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
   return (
     <aside className="hidden md:flex flex-col h-full w-64 flex-shrink-0 border-r border-border bg-card">
       <div className="h-14 flex items-center px-6 border-b border-border">
-        <span className="text-base font-semibold tracking-tight">Ridhzo</span>
+        <Link href="/leads" className="flex items-center">
+          <Image
+            src="/logos/Ridhzo-Logo-Final_Horizontal-Light.png"
+            alt="Ridhzo"
+            width={110}
+            height={32}
+            className="h-7 w-auto object-contain"
+            priority
+          />
+        </Link>
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-5 space-y-6">

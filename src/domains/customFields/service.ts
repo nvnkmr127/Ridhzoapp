@@ -1,6 +1,11 @@
 import { db } from "@/db";
 import { customFieldDefs } from "@/db/schema";
 import { and, asc, eq, max } from "drizzle-orm";
+import { unstable_cache } from "next/cache";
+
+// Cache tag for an org's custom-field defs. Mutations (create/update/reorder/remove) revalidate it
+// so cached reads refresh immediately instead of after the TTL.
+export const customFieldsTag = (organizationId: string) => `custom-fields:${organizationId}`;
 
 export type CustomFieldType =
   | "text" | "textarea" | "number" | "currency" | "date" | "datetime"
@@ -29,6 +34,23 @@ export class CustomFieldService {
       .from(customFieldDefs)
       .where(eq(customFieldDefs.organizationId, organizationId))
       .orderBy(asc(customFieldDefs.orderIndex), asc(customFieldDefs.createdAt));
+  }
+
+  // Cached read of an org's field defs, for the many UI surfaces that fetch them on open (add/edit
+  // form, lead profile, import wizard, mapping editors). Defs change rarely, so serving them from
+  // Next's data cache removes a ~300ms remote round-trip from every one of those opens. Invalidated
+  // on any mutation via customFieldsTag(orgId).
+  static async listCached(organizationId: string) {
+    try {
+      return await unstable_cache(
+        () => this.list(organizationId),
+        ["custom-fields", organizationId],
+        { tags: [customFieldsTag(organizationId)], revalidate: 300 },
+      )();
+    } catch {
+      // unstable_cache needs a Next request context; outside one (workers, tests) read directly.
+      return this.list(organizationId);
+    }
   }
 
   // A key unique within the org. Falls back to base_2, base_3… on collision so two fields never

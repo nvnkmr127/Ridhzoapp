@@ -20,10 +20,12 @@ const isInternalKey = (k: string) => k.startsWith("_") || INTERNAL_EXTRA_KEYS.ha
 
 // Renders the org's DEFINED custom fields as typed inputs bound to this lead's customData.
 // Any extra keys (e.g. raw webhook payload) are shown read-only so nothing is hidden.
-export function LeadCustomFields({ leadId, initialData }: { leadId: string; initialData: Record<string, unknown> }) {
+export function LeadCustomFields({ leadId, initialData, initialDefs }: { leadId: string; initialData: Record<string, unknown>; initialDefs?: CustomFieldDef[] }) {
   const router = useRouter();
   const { toast } = useToast();
-  const [defs, setDefs] = React.useState<CustomFieldDef[]>([]);
+  // Seed from the server-provided defs so the fields paint immediately; still refresh in the
+  // background in case they changed since render.
+  const [defs, setDefs] = React.useState<CustomFieldDef[]>(() => (initialDefs ?? []).filter((f) => !f.disabled));
   const [values, setValues] = React.useState<Record<string, string>>(() => {
     const out: Record<string, string> = {};
     for (const [k, v] of Object.entries(initialData || {})) {
