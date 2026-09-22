@@ -293,7 +293,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column: Lead Info & Attributes */}
-        <div className="lg:col-span-1 space-y-6">
+        <div className="lg:col-span-1 space-y-6 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-6rem)] lg:overflow-y-auto lg:pr-2 lg:pb-6 lg:overscroll-contain">
           {/* Next Best Action — the coach prompt */}
           <SectionCard icon={Sparkles} title="Next Best Action" className={nbaAccent}>
             <div className="space-y-2">
