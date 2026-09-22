@@ -62,27 +62,29 @@ export function Header({
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
       <div className="flex items-center flex-1 gap-2">
         <MobileSidebar isSuperAdmin={isSuperAdmin} />
-        <Link href="/leads" className="md:hidden flex items-center">
-          <Image
-            src="/logos/Ridhzo-Logo-Final_Horizontal-Light.png"
-            alt="Ridhzo"
-            width={95}
-            height={26}
-            className="h-6 w-auto object-contain"
-            priority
-          />
-        </Link>
-        {usageStats && usageStats.plan !== "free" && (
-          <div className="hidden md:flex items-center ml-2">
-            {usageStats.plan === "unlimited" || usageStats.plan === "business" ? (
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Unlimited</span>
-            ) : (
-              <Badge variant="secondary" className="uppercase text-[10px] px-1.5 py-0">
-                {usageStats.plan}
-              </Badge>
-            )}
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <Link href="/leads" className="flex items-center">
+            <Image
+              src="/logos/Ridhzo-Logo-Final_Horizontal-Light.png"
+              alt="Ridhzo"
+              width={95}
+              height={26}
+              className="h-6 w-auto object-contain md:hidden"
+              priority
+            />
+          </Link>
+          {usageStats && usageStats.plan !== "free" && (
+            <div className="flex items-center">
+              {usageStats.plan === "unlimited" || usageStats.plan === "business" ? (
+                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Unlimited</span>
+              ) : (
+                <Badge variant="secondary" className="uppercase text-[10px] px-1.5 py-0">
+                  {usageStats.plan}
+                </Badge>
+              )}
+            </div>
+          )}
+        </div>
         <button
           type="button"
           onClick={() => setSearchOpen(true)}

@@ -50,7 +50,7 @@ export default async function DashboardLayout({
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background text-foreground">
-      <Sidebar isSuperAdmin={superAdmin} />
+      <Sidebar isSuperAdmin={superAdmin} plan={usageStats?.plan} />
       <div className="flex flex-col flex-1 overflow-hidden">
         <SystemBroadcastBanner />
         <PaymentGraceBanner />

@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 import { navRoutes, navGroups, superAdminRoutes } from "./nav";
 
 function SuperAdminNavLinks({ pathname }: { pathname: string }) {
@@ -35,23 +36,41 @@ function SuperAdminNavLinks({ pathname }: { pathname: string }) {
   );
 }
 
-export function Sidebar({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
+
+export function Sidebar({
+  isSuperAdmin = false,
+  plan,
+}: {
+  isSuperAdmin?: boolean;
+  plan?: string;
+}) {
   const pathname = usePathname();
 
   // Hidden on mobile — the Header's hamburger opens the same nav as an overlay drawer there.
   return (
     <aside className="hidden md:flex flex-col h-full w-64 flex-shrink-0 border-r border-border bg-card">
-      <div className="h-14 flex items-center px-6 border-b border-border">
-        <Link href="/leads" className="flex items-center">
+      <div className="h-14 flex items-center justify-between px-5 border-b border-border">
+        <Link href="/leads" className="flex items-center gap-2">
           <Image
             src="/logos/Ridhzo-Logo-Final_Horizontal-Light.png"
             alt="Ridhzo"
-            width={110}
-            height={32}
-            className="h-7 w-auto object-contain"
+            width={100}
+            height={30}
+            className="h-6 w-auto object-contain"
             priority
           />
         </Link>
+        {plan && plan !== "free" && (
+          <div className="flex items-center">
+            {plan === "unlimited" || plan === "business" ? (
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Unlimited</span>
+            ) : (
+              <Badge variant="secondary" className="uppercase text-[10px] px-1.5 py-0 h-5">
+                {plan}
+              </Badge>
+            )}
+          </div>
+        )}
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 py-5 space-y-6">
