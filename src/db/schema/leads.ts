@@ -20,12 +20,14 @@ export const leadSources = pgTable('lead_sources', {
 
 export const leadPipelines = pgTable('lead_pipelines', {
   id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').references(() => organizations.id).notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
 export const leadPipelineStages = pgTable('lead_pipeline_stages', {
   id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').references(() => organizations.id).notNull(),
   pipelineId: uuid('pipeline_id').references(() => leadPipelines.id).notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   orderIndex: integer('order_index').notNull().default(0),
@@ -112,9 +114,12 @@ export const leadStatusHistory = pgTable('lead_status_history', {
 
 export const tags = pgTable('tags', {
   id: uuid('id').defaultRandom().primaryKey(),
-  name: varchar('name', { length: 255 }).notNull().unique(),
+  organizationId: uuid('organization_id').references(() => organizations.id).notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+}, (table) => ({
+  orgNameUnique: uniqueIndex('tags_org_name_unique').on(table.organizationId, table.name),
+}));
 
 export const leadTags = pgTable('lead_tags', {
   leadId: uuid('lead_id').references(() => leads.id).notNull(),

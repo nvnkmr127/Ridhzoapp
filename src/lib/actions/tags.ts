@@ -5,8 +5,8 @@ import { TagService } from "@/domains/tags/service";
 import { revalidatePath } from "next/cache";
 
 export async function listTagsAction() {
-  await requireOrg();
-  return TagService.listAll();
+  const { organizationId } = await requireOrg();
+  return TagService.listAll(organizationId);
 }
 
 export async function addTagAction(leadId: string, name: string) {

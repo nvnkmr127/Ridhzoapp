@@ -129,6 +129,7 @@ async function seed() {
   const [pipeline] = await db
     .insert(leadPipelines)
     .values({
+      organizationId: ORG_ID,
       name: 'Standard Sales Pipeline',
     })
     .onConflictDoNothing()
@@ -145,10 +146,10 @@ async function seed() {
     const stages = await db
       .insert(leadPipelineStages)
       .values([
-        { pipelineId, name: 'New Lead', orderIndex: 1 },
-        { pipelineId, name: 'Contacted', orderIndex: 2 },
-        { pipelineId, name: 'Qualified', orderIndex: 3 },
-        { pipelineId, name: 'Won', orderIndex: 4 },
+        { organizationId: ORG_ID, pipelineId, name: 'New Lead', orderIndex: 1 },
+        { organizationId: ORG_ID, pipelineId, name: 'Contacted', orderIndex: 2 },
+        { organizationId: ORG_ID, pipelineId, name: 'Qualified', orderIndex: 3 },
+        { organizationId: ORG_ID, pipelineId, name: 'Won', orderIndex: 4 },
       ])
       .onConflictDoNothing()
       .returning();

@@ -35,7 +35,9 @@ export class InboundIntentService {
         content: `AI read the reply — intent: ${intent.replace("_", " ")}, sentiment: ${sentiment}.`,
       });
       // Tag so replies are filterable/segmentable; interested/scheduling are the buying signals.
-      await TagService.addToLead(leadId, `intent:${intent}`, organizationId).catch(() => {});
+      if (organizationId) {
+        await TagService.addToLead(leadId, `intent:${intent}`, organizationId).catch(() => {});
+      }
     } catch {
       /* best-effort classification */
     }

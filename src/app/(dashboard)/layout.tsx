@@ -18,7 +18,7 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const superAdmin = await isSuperAdmin();
-  const { userId } = await requireOrg();
+  const { userId, organizationId } = await requireOrg();
 
   // Maintenance mode: lock the app for everyone except super-admins (who need in to turn it off /
   // finish the work). Enforced here so enabling the toggle actually gates tenants, not just reflects
@@ -53,7 +53,7 @@ export default async function DashboardLayout({
         <PaymentGraceBanner />
         <ImpersonationBanner />
         <InstallPwaBanner />
-        <Header isSuperAdmin={superAdmin} />
+        <Header isSuperAdmin={superAdmin} organizationId={organizationId} />
         <main className="flex-1 overflow-y-auto">
           {children}
         </main>

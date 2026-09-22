@@ -35,7 +35,13 @@ const formSchema = z.object({
   ownerId: z.string().optional().or(z.literal("")).or(emptyStringToUndefined),
 });
 
-export function QuickAddLeadDrawer({ children }: { children?: React.ReactNode }) {
+export function QuickAddLeadDrawer({
+  children,
+  organizationId,
+}: {
+  children?: React.ReactNode;
+  organizationId?: string;
+}) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const { toast } = useToast();
@@ -111,7 +117,7 @@ export function QuickAddLeadDrawer({ children }: { children?: React.ReactNode })
     };
 
     if (typeof window !== "undefined" && !navigator.onLine) {
-      enqueueOfflineLead(leadPayload);
+      enqueueOfflineLead(leadPayload, organizationId);
       toast({
         title: "Saved offline ⚡",
         description: "You're offline. Lead was saved locally and will auto-sync once reconnected.",
@@ -167,7 +173,7 @@ export function QuickAddLeadDrawer({ children }: { children?: React.ReactNode })
       router.refresh();
     } catch {
       // Transport-level failure (offline or network dropped mid-request)
-      enqueueOfflineLead(leadPayload);
+      enqueueOfflineLead(leadPayload, organizationId);
       toast({
         title: "Connection dropped — Saved offline ⚡",
         description: "Could not reach server. Lead was safely saved locally and will auto-sync when online.",

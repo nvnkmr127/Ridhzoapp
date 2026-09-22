@@ -6,9 +6,11 @@ vi.mock("@/db", () => ({
   db: {
     select: vi.fn(() => ({
       from: vi.fn(() => ({
-        where: vi.fn(() => ({
-          limit: vi.fn().mockResolvedValue([{ id: "tag-1", name: "VIP" }]),
-        })),
+        where: vi.fn(() => {
+          const p = Promise.resolve([{ id: "lead-1" }, { id: "lead-2" }]);
+          (p as any).limit = vi.fn().mockResolvedValue([{ id: "tag-1", name: "VIP" }]);
+          return p;
+        }),
       })),
     })),
     insert: vi.fn(() => ({
@@ -24,18 +26,18 @@ vi.mock("@/db", () => ({
 
 describe("TagService Bulk Operations", () => {
   it("should bulk add a tag to multiple leads cleanly", async () => {
-    const result = await TagService.bulkAddToLeads(["lead-1", "lead-2"], "VIP");
+    const result = await TagService.bulkAddToLeads(["lead-1", "lead-2"], "VIP", "org-1");
     expect(result).toEqual({ id: "tag-1", name: "VIP" });
     expect(db.insert).toHaveBeenCalled();
   });
 
   it("should handle empty lead arrays gracefully", async () => {
-    const result = await TagService.bulkAddToLeads([], "VIP");
+    const result = await TagService.bulkAddToLeads([], "VIP", "org-1");
     expect(result).toEqual([]);
   });
 
   it("should bulk remove tag from multiple leads cleanly", async () => {
-    await TagService.bulkRemoveFromLeads(["lead-1", "lead-2"], "tag-1");
+    await TagService.bulkRemoveFromLeads(["lead-1", "lead-2"], "tag-1", "org-1");
     expect(db.delete).toHaveBeenCalled();
   });
 });

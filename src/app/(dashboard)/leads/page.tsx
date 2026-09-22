@@ -49,7 +49,7 @@ export default async function LeadsPage({
     SavedViewService.listViews(organizationId, userId),
     listUsersAction().catch(() => []),
     LeadSourceService.getSources(organizationId).catch(() => []),
-    TagService.listAll().catch(() => []),
+    TagService.listAll(organizationId).catch(() => []),
     CustomFieldService.list(organizationId).catch(() => []),
     LeadService.listLeads({
       organizationId,
@@ -113,7 +113,7 @@ export default async function LeadsPage({
               <Upload className="mr-2 h-4 w-4" /> Import Leads
             </Button>
           </LeadImportWizard>
-          <QuickAddLeadDrawer>
+          <QuickAddLeadDrawer organizationId={organizationId}>
             <Button>
               <Plus className="mr-2 h-4 w-4" /> Add Lead
             </Button>

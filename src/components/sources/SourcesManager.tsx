@@ -479,6 +479,7 @@ export function SourcesManager({
 }) {
   const { toast } = useToast();
   const [sources, setSources] = React.useState<Source[]>(initialSources);
+  React.useEffect(() => setSources(initialSources), [initialSources]);
   const [connectingId, setConnectingId] = React.useState<string | null>(null);
   const [creatingForm, setCreatingForm] = React.useState(false);
   const [editingFormId, setEditingFormId] = React.useState<string | null>(null);

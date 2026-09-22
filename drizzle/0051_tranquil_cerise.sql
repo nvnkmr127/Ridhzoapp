@@ -1,0 +1,4 @@
+ALTER TABLE "lead_pipeline_stages" ADD COLUMN "organization_id" uuid NOT NULL;--> statement-breakpoint
+ALTER TABLE "lead_pipelines" ADD COLUMN "organization_id" uuid NOT NULL;--> statement-breakpoint
+ALTER TABLE "lead_pipeline_stages" ADD CONSTRAINT "lead_pipeline_stages_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "lead_pipelines" ADD CONSTRAINT "lead_pipelines_organization_id_organizations_id_fk" FOREIGN KEY ("organization_id") REFERENCES "public"."organizations"("id") ON DELETE no action ON UPDATE no action;

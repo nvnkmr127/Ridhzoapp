@@ -92,14 +92,14 @@ describe("session callback — name sanitization", () => {
   it("strips literal 'null' from token.name if present in existing session", async () => {
     const token = { id: "u1", name: "pavan null", roleId: "r1", organizationId: "o1", isSuperAdmin: false };
     const session = { user: { name: "", email: "pavan@example.com" }, expires: "2099" };
-    const result = await sessionCallback({ session: session as any, token: token as any });
+    const result = (await sessionCallback({ session, token } as any)) as any;
     expect(result.user.name).toBe("pavan");
   });
 
   it("falls back to email when name evaluates to only 'null'", async () => {
     const token = { id: "u1", name: "null", roleId: "r1", organizationId: "o1", isSuperAdmin: false };
     const session = { user: { name: "", email: "pavan@example.com" }, expires: "2099" };
-    const result = await sessionCallback({ session: session as any, token: token as any });
+    const result = (await sessionCallback({ session, token } as any)) as any;
     expect(result.user.name).toBe("pavan@example.com");
   });
 });

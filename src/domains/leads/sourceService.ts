@@ -5,18 +5,19 @@ import crypto from "crypto";
 import { encryptSecret } from "@/lib/crypto/secret";
 
 export class LeadSourceService {
-  static async getSources(organizationId?: string) {
-    if (organizationId) {
-      return db.select().from(leadSources).where(eq(leadSources.organizationId, organizationId));
-    }
-    return db.select().from(leadSources);
+  static async getSources(organizationId: string) {
+    if (!organizationId) return [];
+    return db.select().from(leadSources).where(eq(leadSources.organizationId, organizationId));
   }
 
   /** Lead counts per source: total live, unworked "new", and recycle-bin (soft-deleted). */
   static async getLeadCounts(
     sourceIds: string[],
+    organizationId?: string,
   ): Promise<Record<string, { total: number; new: number; deleted: number }>> {
     if (sourceIds.length === 0) return {};
+    const conditions = [inArray(leads.sourceId, sourceIds)];
+    if (organizationId) conditions.push(eq(leads.organizationId, organizationId));
     const rows = await db
       .select({
         sourceId: leads.sourceId,
@@ -25,7 +26,7 @@ export class LeadSourceService {
         deleted: sql<number>`count(*) filter (where ${leads.deletedAt} is not null)`,
       })
       .from(leads)
-      .where(inArray(leads.sourceId, sourceIds))
+      .where(and(...conditions))
       .groupBy(leads.sourceId);
     const out: Record<string, { total: number; new: number; deleted: number }> = {};
     for (const r of rows) {
@@ -39,7 +40,10 @@ export class LeadSourceService {
     return source;
   }
 
-  static async createSource(data: { name: string; type: string; organizationId?: string; config?: any }) {
+  static async createSource(data: { name: string; type: string; organizationId: string; config?: any }) {
+    if (!data.organizationId) {
+      throw new Error("organizationId is required to create a lead source");
+    }
     const webhookSecret = crypto.randomBytes(32).toString("hex");
     
     const [source] = await db.insert(leadSources).values({

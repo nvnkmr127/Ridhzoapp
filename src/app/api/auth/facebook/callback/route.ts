@@ -96,6 +96,14 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    if (session?.user?.isSuperAdmin) {
+      const { getImpersonatedOrgId } = await import("@/lib/rbac");
+      const impersonatedOrgId = await getImpersonatedOrgId();
+      if (impersonatedOrgId) {
+        organizationId = impersonatedOrgId;
+      }
+    }
+
     if (pages.length === 0) return respond({ error: "no_pages" }, false);
 
     // In popup mode, stash the Page tokens server-side (keyed to this user) and send the opener only

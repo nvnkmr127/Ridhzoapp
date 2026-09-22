@@ -110,7 +110,10 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     OrgService.getOrganization(organizationId).catch(() => null),
     SequenceService.list(organizationId).catch(() => []),
     SequenceService.listForLead(id).catch(() => []),
-    db.select({ id: leadPipelineStages.id, name: leadPipelineStages.name }).from(leadPipelineStages).catch(() => []),
+    db.select({ id: leadPipelineStages.id, name: leadPipelineStages.name })
+      .from(leadPipelineStages)
+      .where(eq(leadPipelineStages.organizationId, organizationId))
+      .catch(() => []),
     dupConditions.length > 0
       ? db
           .select({ id: leads.id })

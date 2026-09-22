@@ -5,8 +5,8 @@ import { WifiOff, RefreshCw } from "lucide-react";
 import { useOfflineSync } from "@/hooks/use-offline-sync";
 import { Button } from "@/components/ui/button";
 
-export function OfflineStatusIndicator() {
-  const { isOnline, pendingCount, isSyncing, syncNow } = useOfflineSync();
+export function OfflineStatusIndicator({ organizationId }: { organizationId?: string } = {}) {
+  const { isOnline, pendingCount, isSyncing, syncNow } = useOfflineSync(organizationId);
 
   if (isOnline && pendingCount === 0) {
     return null;

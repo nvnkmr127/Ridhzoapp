@@ -9,16 +9,16 @@ import {
 } from "@/lib/offline/outbox";
 import { useToast } from "@/hooks/use-toast";
 
-export function useOfflineSync() {
+export function useOfflineSync(organizationId?: string) {
   const { toast } = useToast();
   const [isOnline, setIsOnline] = React.useState(true);
   const [pendingCount, setPendingCount] = React.useState(0);
   const [isSyncing, setIsSyncing] = React.useState(false);
 
   const refreshCount = React.useCallback(() => {
-    const items = getOfflineOutbox();
+    const items = getOfflineOutbox(organizationId);
     setPendingCount(items.length);
-  }, []);
+  }, [organizationId]);
 
   const runSync = React.useCallback(async () => {
     if (typeof window === "undefined" || !navigator.onLine) return;
@@ -29,7 +29,7 @@ export function useOfflineSync() {
           title: "Offline lead synced ⚡",
           description: `${lead.payload.name} was successfully uploaded to your CRM.`,
         });
-      });
+      }, organizationId);
       if (result.synced > 0) {
         toast({
           title: `All caught up!`,
@@ -43,11 +43,19 @@ export function useOfflineSync() {
           description: dup.message || "A lead with these details already exists — it was not added again.",
         });
       }
+      if (result.failed > 0) {
+        const firstErr = result.items.find((i) => !i.success)?.error;
+        toast({
+          variant: "destructive",
+          title: "Sync incomplete",
+          description: firstErr || "Some offline leads could not be synced and will be retried.",
+        });
+      }
     } finally {
       setIsSyncing(false);
       refreshCount();
     }
-  }, [toast, refreshCount]);
+  }, [toast, refreshCount, organizationId]);
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
@@ -64,8 +72,11 @@ export function useOfflineSync() {
       setIsOnline(false);
     };
 
-    const handleOutboxChange = () => {
-      refreshCount();
+    const handleOutboxChange = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      if (!detail?.organizationId || !organizationId || detail.organizationId === organizationId) {
+        refreshCount();
+      }
     };
 
     window.addEventListener("online", handleOnline);
@@ -77,7 +88,7 @@ export function useOfflineSync() {
       window.removeEventListener("offline", handleOffline);
       window.removeEventListener(OFFLINE_OUTBOX_EVENT, handleOutboxChange);
     };
-  }, [runSync, refreshCount]);
+  }, [runSync, refreshCount, organizationId]);
 
   return {
     isOnline,

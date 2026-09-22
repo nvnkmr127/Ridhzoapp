@@ -135,4 +135,54 @@ describe("Offline Outbox Sync", () => {
     expect(result.failed).toBe(1);
     expect(getOfflineOutbox()).toHaveLength(1);
   });
+
+  it("isolates offline outbox queues between workspaces", () => {
+    enqueueOfflineLead({ name: "Org 1 Lead" }, "org_1");
+    enqueueOfflineLead({ name: "Org 2 Lead" }, "org_2");
+
+    const outboxOrg1 = getOfflineOutbox("org_1");
+    const outboxOrg2 = getOfflineOutbox("org_2");
+    const outboxOrgNew = getOfflineOutbox("org_new_workspace");
+
+    expect(outboxOrg1).toHaveLength(1);
+    expect(outboxOrg1[0].payload.name).toBe("Org 1 Lead");
+
+    expect(outboxOrg2).toHaveLength(1);
+    expect(outboxOrg2[0].payload.name).toBe("Org 2 Lead");
+
+    // A newly created workspace has 0 offline leads
+    expect(outboxOrgNew).toHaveLength(0);
+  });
+
+  it("flushes only the specified workspace outbox", async () => {
+    vi.mocked(createLeadAction).mockResolvedValue({
+      ok: true,
+      data: { id: "lead-new" } as any,
+    });
+
+    enqueueOfflineLead({ name: "Org 1 Lead" }, "org_1");
+    enqueueOfflineLead({ name: "Org 2 Lead" }, "org_2");
+
+    const result = await flushOfflineOutbox(undefined, "org_1");
+
+    expect(result.synced).toBe(1);
+    expect(getOfflineOutbox("org_1")).toHaveLength(0);
+    expect(getOfflineOutbox("org_2")).toHaveLength(1);
+  });
+
+  it("drops poisoned leads after 5 failed sync attempts to prevent infinite stuck queues", async () => {
+    vi.mocked(createLeadAction).mockResolvedValue({
+      ok: false,
+      code: "VALIDATION",
+      message: "Invalid field format",
+    });
+
+    enqueueOfflineLead({ name: "Poisoned Lead" }, "org_retry");
+
+    for (let i = 0; i < 5; i++) {
+      await flushOfflineOutbox(undefined, "org_retry");
+    }
+
+    expect(getOfflineOutbox("org_retry")).toHaveLength(0);
+  });
 });

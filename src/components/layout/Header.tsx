@@ -20,7 +20,13 @@ import { OfflineStatusIndicator } from "@/components/layout/OfflineStatusIndicat
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { MobileSidebar } from "@/components/layout/MobileSidebar";
 
-export function Header({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
+export function Header({
+  isSuperAdmin = false,
+  organizationId,
+}: {
+  isSuperAdmin?: boolean;
+  organizationId?: string;
+}) {
   const [searchOpen, setSearchOpen] = React.useState(false);
   const [shortcutLabel, setShortcutLabel] = React.useState("⌘K");
 
@@ -67,9 +73,9 @@ export function Header({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
         </button>
       </div>
       <div className="flex items-center gap-4">
-        <OfflineStatusIndicator />
+        <OfflineStatusIndicator organizationId={organizationId} />
         <div className="hidden md:flex">
-          <QuickAddLeadDrawer>
+          <QuickAddLeadDrawer organizationId={organizationId}>
             <Button size="sm" className="gap-1">
               <PlusCircle className="h-4 w-4" />
               Quick Add
