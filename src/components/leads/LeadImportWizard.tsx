@@ -13,38 +13,44 @@ import { useToast } from "@/hooks/use-toast";
 import { Download, Upload, CheckCircle2, AlertTriangle, Copy, FlaskConical, Play } from "lucide-react";
 import { listSourcesAction } from "@/lib/actions/sources";
 import { listUsersAction } from "@/lib/actions/users";
-import { parseImportCsvAction, simulateImportAction, commitImportAction } from "@/lib/actions/import";
+import { parseImportCsvAction, simulateImportAction, commitImportAction, listImportFieldsAction } from "@/lib/actions/import";
 import { validateCsvFile } from "@/lib/csvFile";
 
-// Client-safe copy of the importable fields (the server module can't be imported here — it pulls in db).
-const FIELDS = [
-  { key: "name", label: "Name", required: true },
-  { key: "email", label: "Email", required: false },
-  { key: "phone", label: "Phone", required: false },
-  { key: "company", label: "Company", required: false },
-  { key: "status", label: "Status", required: false },
-  { key: "expectedValue", label: "Expected value", required: false },
-] as const;
-type FieldKey = (typeof FIELDS)[number]["key"];
+type ImportField = { key: string; label: string; required: boolean; custom: boolean };
+
+// Client-safe copy of the fixed lead fields (the server module can't be imported here — it pulls in
+// db). Org custom fields are fetched at open and appended, so they can be mapped and imported too.
+const STATIC_FIELDS: ImportField[] = [
+  { key: "name", label: "Name", required: true, custom: false },
+  { key: "email", label: "Email", required: false, custom: false },
+  { key: "phone", label: "Phone", required: false, custom: false },
+  { key: "company", label: "Company", required: false, custom: false },
+  { key: "status", label: "Status", required: false, custom: false },
+  { key: "expectedValue", label: "Expected value", required: false, custom: false },
+];
 
 const STATUSES = ["new", "active", "won", "lost", "unqualified"];
 
-type Row = Record<FieldKey, string>;
+type Row = Record<string, string>;
 type Analysis = {
   total: number; newCount: number; duplicateCount: number; errorCount: number;
   rows: { index: number; valid: boolean; duplicate: boolean; reason?: string }[];
 };
 
 const NONE = "__none__";
-const emptyRow = (): Row => ({ name: "", email: "", phone: "", company: "", status: "", expectedValue: "" });
+const emptyRow = (fields: ImportField[]): Row => Object.fromEntries(fields.map((f) => [f.key, ""]));
 
-function downloadSample() {
-  const header = FIELDS.map((f) => f.key).join(",");
-  const examples = [
-    "Alice Tan,alice@example.com,+6591234567,Acme Pte Ltd,new,5000",
-    "Bob Rivera,bob@example.com,+6598765432,Rivera Realty,active,12000",
-    "Priya Nair,priya@example.com,+919812345678,,new,",
+function downloadSample(fields: ImportField[]) {
+  // Fixed columns get realistic examples; custom columns are left blank in the example rows so the
+  // header shows their exact key (that's what the mapping matches on).
+  const header = fields.map((f) => f.key).join(",");
+  const base = [
+    { name: "Alice Tan", email: "alice@example.com", phone: "+6591234567", company: "Acme Pte Ltd", status: "new", expectedValue: "5000" },
+    { name: "Bob Rivera", email: "bob@example.com", phone: "+6598765432", company: "Rivera Realty", status: "active", expectedValue: "12000" },
+    { name: "Priya Nair", email: "priya@example.com", phone: "+919812345678", company: "", status: "new", expectedValue: "" },
   ];
+  const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const examples = base.map((ex) => fields.map((f) => esc((ex as Record<string, string>)[f.key] ?? "")).join(","));
   const csv = [header, ...examples].join("\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
   const a = document.createElement("a");
@@ -54,6 +60,18 @@ function downloadSample() {
   URL.revokeObjectURL(url);
 }
 
+// Split a flat wizard row into the shape the server expects: fixed lead fields at the top level,
+// everything else nested under customData (keyed by custom-field key).
+function toImportRow(row: Row, customKeys: string[]) {
+  const customData: Record<string, string> = {};
+  for (const k of customKeys) if (row[k] != null && row[k] !== "") customData[k] = row[k];
+  return {
+    name: row.name, email: row.email, phone: row.phone,
+    company: row.company, status: row.status, expectedValue: row.expectedValue,
+    customData,
+  };
+}
+
 export function LeadImportWizard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -61,6 +79,8 @@ export function LeadImportWizard({ children }: { children: React.ReactNode }) {
 
   const [sources, setSources] = React.useState<{ id: string; name: string }[]>([]);
   const [users, setUsers] = React.useState<{ id: string; name: string }[]>([]);
+  const [fields, setFields] = React.useState<ImportField[]>(STATIC_FIELDS);
+  const customKeys = React.useMemo(() => fields.filter((f) => f.custom).map((f) => f.key), [fields]);
 
   const [step, setStep] = React.useState<"setup" | "review">("setup");
   const [headers, setHeaders] = React.useState<string[]>([]);
@@ -80,6 +100,9 @@ export function LeadImportWizard({ children }: { children: React.ReactNode }) {
     if (!open) return;
     listSourcesAction().then((r) => setSources(r as any)).catch(() => {});
     listUsersAction().then((r) => setUsers(r as any)).catch(() => {});
+    listImportFieldsAction()
+      .then((r) => { if (r.ok) setFields(r.data as ImportField[]); })
+      .catch(() => {});
   }, [open]);
 
   function reset() {
@@ -90,13 +113,13 @@ export function LeadImportWizard({ children }: { children: React.ReactNode }) {
   // Rebuild the mapped rows from the raw upload + current field→header mapping.
   const buildRows = React.useCallback((raw: Record<string, string>[], map: Record<string, string>): Row[] =>
     raw.map((rec) => {
-      const r = emptyRow();
-      for (const f of FIELDS) {
+      const r = emptyRow(fields);
+      for (const f of fields) {
         const h = map[f.key];
         if (h && rec[h] != null) r[f.key] = String(rec[h]);
       }
       return r;
-    }), []);
+    }), [fields]);
 
   async function onFile(file: File) {
     const problem = validateCsvFile(file);
@@ -123,7 +146,7 @@ export function LeadImportWizard({ children }: { children: React.ReactNode }) {
     }
   }
 
-  function remap(fieldKey: FieldKey, header: string) {
+  function remap(fieldKey: string, header: string) {
     const map = { ...mapping, [fieldKey]: header === NONE ? "" : header };
     setMapping(map);
     const built = buildRows(rawRows, map);
@@ -131,13 +154,13 @@ export function LeadImportWizard({ children }: { children: React.ReactNode }) {
     runSimulate(built, false);
   }
 
-  function editCell(rowIdx: number, key: FieldKey, value: string) {
+  function editCell(rowIdx: number, key: string, value: string) {
     setRows((cur) => cur.map((r, i) => (i === rowIdx ? { ...r, [key]: value } : r)));
   }
 
   async function runSimulate(theRows: Row[], announce: boolean) {
     try {
-      const res = await simulateImportAction({ rows: theRows });
+      const res = await simulateImportAction({ rows: theRows.map((r) => toImportRow(r, customKeys)) });
       if (!res.ok) { toast({ variant: "destructive", title: "Simulation failed", description: res.message }); return; }
       const analysis = res.data as Analysis;
       setAnalysis(analysis);
@@ -153,7 +176,7 @@ export function LeadImportWizard({ children }: { children: React.ReactNode }) {
     setBusy(true);
     try {
       const res = await commitImportAction({
-        rows,
+        rows: rows.map((r) => toImportRow(r, customKeys)),
         config: { sourceId: sourceId || null, ownerId: ownerId || null, fallbackStatus },
       });
       if (!res.ok) { toast({ variant: "destructive", title: "Import failed", description: res.message }); return; }
@@ -176,9 +199,9 @@ export function LeadImportWizard({ children }: { children: React.ReactNode }) {
     if (!analysis) return;
     const failed = analysis.rows.filter((r) => !r.valid || r.duplicate);
     if (failed.length === 0) return;
-    const cols = FIELDS.map((f) => f.key);
+    const cols = fields.map((f) => f.key);
     const esc = (v: string) => `"${(v ?? "").replace(/"/g, '""')}"`;
-    const header = [...FIELDS.map((f) => f.label), "Reason"].join(",");
+    const header = [...fields.map((f) => f.label), "Reason"].join(",");
     const lines = failed.map((f) => {
       const row = rows[f.index] ?? ({} as Row);
       const reason = f.reason || (f.duplicate ? "Duplicate of an existing or earlier row" : "Invalid row");
@@ -213,17 +236,24 @@ export function LeadImportWizard({ children }: { children: React.ReactNode }) {
             <div>
               <p className="mb-2 text-sm font-medium">Supported columns</p>
               <div className="flex flex-wrap gap-2">
-                {FIELDS.map((f) => (
-                  <Badge key={f.key} variant={f.required ? "default" : "secondary"} className="font-normal">
+                {fields.map((f) => (
+                  <Badge
+                    key={f.key}
+                    variant={f.required ? "default" : f.custom ? "outline" : "secondary"}
+                    className="font-normal"
+                  >
                     {f.key}{f.required ? " *" : ""}
                   </Badge>
                 ))}
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">* required. All other columns are optional.</p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                * required. All other columns are optional.
+                {customKeys.length > 0 && " Outlined columns are your custom fields."}
+              </p>
             </div>
 
             {/* 2. Download sample */}
-            <Button variant="outline" onClick={downloadSample} className="gap-2">
+            <Button variant="outline" onClick={() => downloadSample(fields)} className="gap-2">
               <Download className="h-4 w-4" /> Download sample lead file
             </Button>
 
@@ -270,7 +300,7 @@ export function LeadImportWizard({ children }: { children: React.ReactNode }) {
             <div>
               <p className="mb-2 text-sm font-medium">Map your columns</p>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {FIELDS.map((f) => (
+                {fields.map((f) => (
                   <div key={f.key} className="space-y-1">
                     <label className="text-xs text-muted-foreground">{f.label}{f.required ? " *" : ""}</label>
                     <Select value={mapping[f.key] || NONE} onValueChange={(v) => remap(f.key, v)}>
@@ -293,7 +323,7 @@ export function LeadImportWizard({ children }: { children: React.ReactNode }) {
                   <thead className="sticky top-0 bg-muted">
                     <tr>
                       <th className="p-2 text-left font-medium">Status</th>
-                      {FIELDS.map((f) => <th key={f.key} className="p-2 text-left font-medium">{f.label}</th>)}
+                      {fields.map((f) => <th key={f.key} className="p-2 text-left font-medium">{f.label}</th>)}
                     </tr>
                   </thead>
                   <tbody>
@@ -308,13 +338,13 @@ export function LeadImportWizard({ children }: { children: React.ReactNode }) {
                               : dup ? <span className="flex items-center gap-1 text-amber-500"><Copy className="h-3 w-3" /> dup</span>
                               : <span className="flex items-center gap-1 text-emerald-500"><CheckCircle2 className="h-3 w-3" /> ok</span>}
                           </td>
-                          {FIELDS.map((f) => (
+                          {fields.map((f) => (
                             <td key={f.key} className="p-1">
                               <Input
-                                value={row[f.key]}
+                                value={row[f.key] ?? ""}
                                 onChange={(e) => editCell(i, f.key, e.target.value)}
                                 onBlur={() => runSimulate(rows, false)}
-                                className={`h-7 text-xs ${f.required && !row[f.key].trim() ? "border-rose-500" : ""}`}
+                                className={`h-7 text-xs ${f.required && !(row[f.key] ?? "").trim() ? "border-rose-500" : ""}`}
                               />
                             </td>
                           ))}

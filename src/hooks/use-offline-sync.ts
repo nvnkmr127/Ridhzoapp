@@ -36,6 +36,13 @@ export function useOfflineSync() {
           description: `Synced ${result.synced} offline lead${result.synced === 1 ? "" : "s"}.`,
         });
       }
+      for (const dup of result.duplicates) {
+        toast({
+          variant: "destructive",
+          title: `"${dup.name}" was a duplicate`,
+          description: dup.message || "A lead with these details already exists — it was not added again.",
+        });
+      }
     } finally {
       setIsSyncing(false);
       refreshCount();

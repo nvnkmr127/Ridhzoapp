@@ -4,6 +4,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { PlanService } from "@/domains/billing/planService";
 import { normalizeEmail, normalizePhone } from "@/lib/leads/normalize";
 import { CustomStatusSchemaService } from "@/domains/leads/customStatusSchemaService";
+import { CustomFieldService, FieldValidationError } from "@/domains/customFields/service";
 
 // Columns the importer understands. `name` is the only required one.
 export const IMPORT_FIELDS = [
@@ -17,6 +18,24 @@ export const IMPORT_FIELDS = [
 
 export type ImportFieldKey = (typeof IMPORT_FIELDS)[number]["key"];
 
+export interface ImportField {
+  key: string;
+  label: string;
+  required: boolean;
+  custom: boolean;
+}
+
+// The full column set the importer accepts for an org: the fixed lead fields plus every active
+// (non-disabled) custom field. Admin-only custom fields are hidden from non-admin importers, same
+// as the manual create form. This is what the wizard lists as "Supported columns".
+export async function getImportFields(organizationId: string, isAdmin = true): Promise<ImportField[]> {
+  const defs = await CustomFieldService.list(organizationId);
+  const custom = defs
+    .filter((d) => !d.disabled && (isAdmin || !d.adminOnly))
+    .map((d) => ({ key: d.key, label: d.label, required: !!d.required, custom: true }));
+  return [...IMPORT_FIELDS.map((f) => ({ ...f, custom: false })), ...custom];
+}
+
 export interface ImportRow {
   name?: string;
   email?: string;
@@ -24,6 +43,9 @@ export interface ImportRow {
   company?: string;
   status?: string;
   expectedValue?: string;
+  // Raw custom-field values keyed by the field's `key` (all strings off the CSV). Validated and
+  // coerced (numbers, dates, option checks) against the org's field defs before being stored.
+  customData?: Record<string, unknown>;
 }
 
 export interface ImportConfig {
@@ -38,6 +60,7 @@ export interface AnalyzedRow extends ImportRow {
   duplicate: boolean;
   reason?: string;
   cleanedExpectedValue?: string | null;
+  cleanedCustomData?: Record<string, unknown>;
 }
 
 export interface ImportAnalysis {
@@ -64,7 +87,7 @@ function cleanNumericValue(val?: string | null): { valid: boolean; value: string
 export class LeadImportService {
   // Validates each row and flags duplicates — both against existing org leads and earlier
   // rows in the same file. Pure read; used by both the simulate and commit paths.
-  static async analyze(organizationId: string, rows: ImportRow[]): Promise<ImportAnalysis> {
+  static async analyze(organizationId: string, rows: ImportRow[], opts: { isAdmin?: boolean } = {}): Promise<ImportAnalysis> {
     const existing = await db
       .select({ email: leads.email, phone: leads.phone })
       .from(leads)
@@ -72,6 +95,9 @@ export class LeadImportService {
 
     const existingEmails = new Set(existing.map((e) => e.email?.toLowerCase()).filter(Boolean));
     const existingPhones = new Set(existing.map((e) => digits(e.phone)).filter((d) => d.length >= 6));
+
+    // Fetch custom-field defs ONCE, then validate every row against them in memory.
+    const customDefs = await CustomFieldService.list(organizationId);
 
     const seenEmail = new Set<string>();
     const seenPhone = new Set<string>();
@@ -85,8 +111,26 @@ export class LeadImportService {
       let valid = true;
       let duplicate = false;
       let reason: string | undefined;
+      let cleanedCustomData: Record<string, unknown> | undefined;
 
-      if (!name) {
+      // Validate + coerce custom-field values (required, number, date, option checks). A bad value
+      // fails the row with the field's own message, just like the manual create form.
+      if (customDefs.length > 0) {
+        try {
+          cleanedCustomData = CustomFieldService.validateWith(customDefs, r.customData ?? {}, opts);
+        } catch (e) {
+          if (e instanceof FieldValidationError) {
+            valid = false;
+            reason = e.message;
+          } else {
+            throw e;
+          }
+        }
+      }
+
+      if (!valid) {
+        // custom-field error already set above
+      } else if (!name) {
         valid = false;
         reason = "Missing required name";
       } else if (!numCheck.valid) {
@@ -111,6 +155,7 @@ export class LeadImportService {
         duplicate,
         reason,
         cleanedExpectedValue: numCheck.value,
+        cleanedCustomData,
       };
     });
 
@@ -128,9 +173,10 @@ export class LeadImportService {
     organizationId: string,
     userId: string | null,
     rows: ImportRow[],
-    config: ImportConfig
+    config: ImportConfig,
+    opts: { isAdmin?: boolean } = {}
   ): Promise<{ imported: number; skipped: number }> {
-    const analysis = await this.analyze(organizationId, rows);
+    const analysis = await this.analyze(organizationId, rows, opts);
     const toInsert = analysis.rows.filter((r) => r.valid && !r.duplicate);
 
     // Never trust the client-supplied owner/source ids: a crafted request could otherwise attach
@@ -180,6 +226,7 @@ export class LeadImportService {
               sourceId: config.sourceId || null,
               ownerId: config.ownerId || userId || null,
               expectedValue: r.cleanedExpectedValue || null,
+              customData: r.cleanedCustomData ?? {},
             };
           })
         );

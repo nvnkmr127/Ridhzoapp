@@ -14,7 +14,15 @@ export interface TenantBillingLifecycle {
   failureReason?: string | null;
   dunningSentAt?: string | null;
   manualPaidUntil?: string | null;
+  // When we last told admins "payment successful". One payment fans out to several success signals
+  // (browser verify + Razorpay `activated`/`charged` + retries), so we suppress repeats within a
+  // short window to avoid duplicate bell/push notifications for the same payment.
+  lastPaymentSuccessNotifiedAt?: string | null;
 }
+
+// A single payment produces multiple success calls seconds/minutes apart; real renewals are ~monthly.
+// ponytail: fixed dedup window, key on subscription period instead if sub-window renewals ever exist.
+const PAYMENT_SUCCESS_NOTIFY_DEDUP_MS = 15 * 60 * 1000;
 
 export interface TenantBillingInfo {
   orgId: string;
@@ -252,13 +260,24 @@ export class BillingLifecycleService {
   static async handlePaymentSuccess(orgId: string): Promise<void> {
     try {
       const currentLifecycle = await this.getLifecycle(orgId);
+
+      // Dedup: skip the notification + CAPI conversion if we already fired one for this payment
+      // within the window. Clearing the grace/failure flags below stays idempotent and always runs.
+      const lastNotifiedAt = currentLifecycle.lastPaymentSuccessNotifiedAt
+        ? new Date(currentLifecycle.lastPaymentSuccessNotifiedAt).getTime()
+        : 0;
+      const alreadyNotified = Date.now() - lastNotifiedAt < PAYMENT_SUCCESS_NOTIFY_DEDUP_MS;
+
       const updatedLifecycle: TenantBillingLifecycle = {
         ...currentLifecycle,
         gracePeriodEndsAt: null,
         lastPaymentFailureAt: null,
         failureReason: null,
+        ...(alreadyNotified ? {} : { lastPaymentSuccessNotifiedAt: new Date().toISOString() }),
       };
       await this.setLifecycle(orgId, updatedLifecycle);
+
+      if (alreadyNotified) return;
 
       try {
         await NotificationService.notifyOrgAdmins(orgId, {

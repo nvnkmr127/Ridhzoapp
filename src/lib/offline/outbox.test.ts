@@ -93,7 +93,31 @@ describe("Offline Outbox Sync", () => {
     enqueueOfflineLead({ name: "Duplicate Lead", email: "dup@example.com" });
     const result = await flushOfflineOutbox();
 
+    expect(result.duplicates).toHaveLength(1);
+    expect(result.duplicates[0].name).toBe("Duplicate Lead");
+    expect(getOfflineOutbox()).toHaveLength(0);
+  });
+
+  it("syncs both offline leads even when the older one duplicates the newer (server 'already used' wording)", async () => {
+    // Newest is processed first and succeeds; the older same-contact lead comes back as a
+    // CONFLICT worded "already used by lead X" — must still be dropped, not stuck in the queue.
+    vi.mocked(createLeadAction)
+      .mockResolvedValueOnce({ ok: true, data: { id: "lead-1" } as any })
+      .mockResolvedValueOnce({
+        ok: false,
+        code: "CONFLICT",
+        message: 'Duplicate phone number: already used by lead "Newer"',
+      });
+
+    enqueueOfflineLead({ name: "Older", phone: "+919876543210" });
+    enqueueOfflineLead({ name: "Newer", phone: "+919876543210" });
+
+    const result = await flushOfflineOutbox();
+
     expect(result.synced).toBe(1);
+    expect(result.failed).toBe(0);
+    expect(result.duplicates).toHaveLength(1);
+    expect(result.duplicates[0].name).toBe("Older");
     expect(getOfflineOutbox()).toHaveLength(0);
   });
 

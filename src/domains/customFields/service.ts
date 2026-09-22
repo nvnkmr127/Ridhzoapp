@@ -135,8 +135,18 @@ export class CustomFieldService {
     data: Record<string, unknown> = {},
     opts: { isAdmin?: boolean } = {},
   ) {
-    const isAdmin = opts.isAdmin ?? true;
     const defs = await this.list(organizationId);
+    return this.validateWith(defs, data, opts);
+  }
+
+  // Same rules as validate() but against already-fetched defs — so a bulk caller (CSV import) can
+  // load the org's field defs ONCE and validate thousands of rows without a query per row.
+  static validateWith(
+    defs: Awaited<ReturnType<typeof CustomFieldService.list>>,
+    data: Record<string, unknown> = {},
+    opts: { isAdmin?: boolean } = {},
+  ) {
+    const isAdmin = opts.isAdmin ?? true;
     const clean: Record<string, unknown> = {};
     for (const def of defs) {
       if (def.disabled) continue; // disabled fields aren't captured

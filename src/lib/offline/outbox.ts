@@ -77,6 +77,7 @@ export function clearOfflineOutbox(): void {
 export interface SyncResults {
   synced: number;
   failed: number;
+  duplicates: { name: string; message: string }[];
   items: { id: string; success: boolean; error?: string }[];
 }
 
@@ -84,16 +85,17 @@ export async function flushOfflineOutbox(
   onLeadSynced?: (lead: OfflineLeadItem) => void,
 ): Promise<SyncResults> {
   if (typeof window === "undefined" || !navigator.onLine) {
-    return { synced: 0, failed: 0, items: [] };
+    return { synced: 0, failed: 0, duplicates: [], items: [] };
   }
 
   const items = getOfflineOutbox();
   if (items.length === 0) {
-    return { synced: 0, failed: 0, items: [] };
+    return { synced: 0, failed: 0, duplicates: [], items: [] };
   }
 
   let synced = 0;
   let failed = 0;
+  const duplicates: { name: string; message: string }[] = [];
   const itemResults: { id: string; success: boolean; error?: string }[] = [];
 
   for (const item of items) {
@@ -105,11 +107,14 @@ export async function flushOfflineOutbox(
         itemResults.push({ id: item.id, success: true });
         onLeadSynced?.(item);
       } else {
-        // If it was rejected because lead already exists, drop it so it does not block the queue
-        const isDuplicate = res.message?.toLowerCase().includes("already exists");
+        // If it was rejected as a duplicate, drop it so it does not block the queue. Match on the
+        // CONFLICT code — the server phrases duplicates several ways ("Duplicate phone number:
+        // already used by lead X", "...already exists"), so a message-substring check misses most
+        // of them and leaves the older of two same-contact offline leads stuck forever.
+        const isDuplicate = res.code === "CONFLICT" || res.message?.toLowerCase().includes("already exists");
         if (isDuplicate) {
           removeOfflineLead(item.id);
-          synced++;
+          duplicates.push({ name: item.payload.name, message: res.message });
           itemResults.push({ id: item.id, success: true });
         } else {
           failed++;
@@ -122,5 +127,5 @@ export async function flushOfflineOutbox(
     }
   }
 
-  return { synced, failed, items: itemResults };
+  return { synced, failed, duplicates, items: itemResults };
 }

@@ -130,6 +130,47 @@ describe("BillingLifecycleService.assertFeatureAccess", () => {
   });
 });
 
+describe("BillingLifecycleService.handlePaymentSuccess dedup", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("notifies admins the first time and records the timestamp", async () => {
+    const { NotificationService } = await import("@/domains/notifications/service");
+    (PlatformConfigService.get as any).mockResolvedValue({});
+
+    await BillingLifecycleService.handlePaymentSuccess("org-1");
+
+    expect(NotificationService.notifyOrgAdmins).toHaveBeenCalledTimes(1);
+    const saved = (PlatformConfigService.set as any).mock.calls.at(-1)[1];
+    expect(saved.lastPaymentSuccessNotifiedAt).toBeDefined();
+  });
+
+  it("does not notify again for the same payment within the dedup window", async () => {
+    const { NotificationService } = await import("@/domains/notifications/service");
+    // A success was already announced 1 minute ago (browser verify) — the webhook must stay silent.
+    (PlatformConfigService.get as any).mockResolvedValue({
+      lastPaymentSuccessNotifiedAt: new Date(Date.now() - 60 * 1000).toISOString(),
+    });
+
+    await BillingLifecycleService.handlePaymentSuccess("org-1");
+
+    expect(NotificationService.notifyOrgAdmins).not.toHaveBeenCalled();
+    // Grace flags are still cleared idempotently.
+    const saved = (PlatformConfigService.set as any).mock.calls.at(-1)[1];
+    expect(saved.gracePeriodEndsAt).toBeNull();
+  });
+
+  it("notifies again for a genuine renewal after the window has passed", async () => {
+    const { NotificationService } = await import("@/domains/notifications/service");
+    (PlatformConfigService.get as any).mockResolvedValue({
+      lastPaymentSuccessNotifiedAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+
+    await BillingLifecycleService.handlePaymentSuccess("org-1");
+
+    expect(NotificationService.notifyOrgAdmins).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("BillingLifecycleService manual overrides", () => {
   beforeEach(() => vi.clearAllMocks());
 
