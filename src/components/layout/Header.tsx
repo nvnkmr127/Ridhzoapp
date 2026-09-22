@@ -92,7 +92,7 @@ export function Header({
         >
           <Search className="mr-2 h-4 w-4" />
           Search leads, team members, or jump to…
-          <kbd className="ml-auto text-xs bg-muted text-muted-foreground rounded px-1.5 py-0.5 font-mono">{shortcutLabel}</kbd>
+          <kbd suppressHydrationWarning className="ml-auto text-xs bg-muted text-muted-foreground rounded px-1.5 py-0.5 font-mono">{shortcutLabel}</kbd>
         </button>
       </div>
       <div className="flex items-center gap-4">

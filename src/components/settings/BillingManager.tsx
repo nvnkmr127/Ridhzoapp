@@ -134,7 +134,11 @@ export function BillingManager({
           <div>
             <div className="text-sm text-muted-foreground">Current plan</div>
             <div className="text-2xl font-bold capitalize">{current} <Badge variant={planStatus === "active" ? "default" : "secondary"}>{planStatus}</Badge></div>
-            {currentPeriodEnd && <div className="text-xs text-muted-foreground mt-1">Renews {new Date(currentPeriodEnd).toLocaleDateString()}</div>}
+            {currentPeriodEnd && (
+              <div suppressHydrationWarning className="text-xs text-muted-foreground mt-1">
+                Renews {new Date(currentPeriodEnd).toLocaleDateString()}
+              </div>
+            )}
           </div>
           {current !== "free" && <Button variant="outline" onClick={cancel} disabled={busy === "cancel"}>Cancel plan</Button>}
         </div>
