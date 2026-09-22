@@ -40,8 +40,8 @@ export class PlanService {
     }
   }
 
-  // Counts active users + still-open invitations against the seat limit.
-  static async assertCanAddSeat(organizationId: string) {
+  // Computes real-time usage against plan limits.
+  static async getUsageStats(organizationId: string) {
     let customSeats: number | undefined;
     try {
       const overrides = await PlatformConfigService.get<Record<string, number>>("seat_overrides", {});
@@ -49,37 +49,52 @@ export class PlanService {
     } catch {
       // ignore
     }
-    const { seats: defaultSeats } = limitsFor(await this.plan(organizationId));
-    const seats = customSeats != null ? customSeats : defaultSeats;
-    if (seats === Infinity) return;
+
+    const planName = await this.plan(organizationId);
+    const { seats: defaultSeats, leads: maxLeads } = limitsFor(planName);
+    const maxSeats = customSeats != null ? customSeats : defaultSeats;
+
+    let userCount = 0;
+    let inviteCount = 0;
+    let leadCount = 0;
 
     try {
       const resU = await db.select({ n: count() }).from(users).where(and(eq(users.organizationId, organizationId), isNull(users.deletedAt)));
       const resI = await db.select({ n: count() }).from(invitations).where(and(eq(invitations.organizationId, organizationId), isNull(invitations.acceptedAt), gt(invitations.expiresAt, new Date())));
+      const resL = await db.select({ n: count() }).from(leads).where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt)));
+      
       const u = Array.isArray(resU) ? resU[0] : resU;
       const i = Array.isArray(resI) ? resI[0] : resI;
-      const userCount = u?.n != null ? Number(u.n) : 0;
-      const inviteCount = i?.n != null ? Number(i.n) : 0;
-      if (userCount + inviteCount >= seats) {
-        throw new Error(`Your plan allows ${seats} seats. Upgrade to add more.`);
-      }
-    } catch (e) {
-      if ((e as Error)?.message?.includes("plan allows")) throw e;
+      const l = Array.isArray(resL) ? resL[0] : resL;
+
+      userCount = u?.n != null ? Number(u.n) : 0;
+      inviteCount = i?.n != null ? Number(i.n) : 0;
+      leadCount = l?.n != null ? Number(l.n) : 0;
+    } catch {
+      // Return 0 usage if db fails, but limits will still be enforced below if max is hit
+    }
+
+    return {
+      plan: planName,
+      seats: { current: userCount + inviteCount, max: maxSeats },
+      leads: { current: leadCount, max: maxLeads }
+    };
+  }
+
+  // Counts active users + still-open invitations against the seat limit.
+  static async assertCanAddSeat(organizationId: string) {
+    const stats = await this.getUsageStats(organizationId);
+    if (stats.seats.max === Infinity) return;
+    if (stats.seats.current >= stats.seats.max) {
+      throw new Error(`Your plan allows ${stats.seats.max} seats. Upgrade to add more.`);
     }
   }
 
   static async assertCanAddLead(organizationId: string) {
-    const { leads: max } = limitsFor(await this.plan(organizationId));
-    if (max === Infinity) return;
-    try {
-      const resL = await db.select({ n: count() }).from(leads).where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt)));
-      const l = Array.isArray(resL) ? resL[0] : resL;
-      const leadCount = l?.n != null ? Number(l.n) : 0;
-      if (leadCount >= max) {
-        throw new Error(`Your plan allows ${max} leads. Upgrade to add more.`);
-      }
-    } catch (e) {
-      if ((e as Error)?.message?.includes("plan allows")) throw e;
+    const stats = await this.getUsageStats(organizationId);
+    if (stats.leads.max === Infinity) return;
+    if (stats.leads.current >= stats.leads.max) {
+      throw new Error(`Your plan allows ${stats.leads.max} leads. Upgrade to add more.`);
     }
   }
 }

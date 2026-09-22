@@ -37,6 +37,7 @@ export class PlatformConfigService {
 
   private static async ensureTable(): Promise<void> {
     if (this.tableEnsured) return;
+    if (typeof db.execute !== "function") return; // graceful exit for vitest mocks
     try {
       await db.execute(sql`
         CREATE TABLE IF NOT EXISTS platform_configs (

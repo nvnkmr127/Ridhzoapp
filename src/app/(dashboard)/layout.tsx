@@ -7,6 +7,7 @@ import { PaymentGraceBanner } from "@/components/billing/PaymentGraceBanner";
 import { FloatingAssistant } from "@/components/assistant/FloatingAssistant";
 import { isSuperAdmin, requireOrg } from "@/lib/rbac";
 import { PlatformConfigService } from "@/domains/platform/configService";
+import { PlanService } from "@/domains/billing/planService";
 import { Wrench } from "lucide-react";
 
 // Every dashboard page is authed and DB-backed — render per request, never prerender at build.
@@ -45,6 +46,8 @@ export default async function DashboardLayout({
     }
   }
 
+  const usageStats = await PlanService.getUsageStats(organizationId);
+
   return (
     <div className="flex h-dvh overflow-hidden bg-background text-foreground">
       <Sidebar isSuperAdmin={superAdmin} />
@@ -53,7 +56,7 @@ export default async function DashboardLayout({
         <PaymentGraceBanner />
         <ImpersonationBanner />
         <InstallPwaBanner />
-        <Header isSuperAdmin={superAdmin} organizationId={organizationId} />
+        <Header isSuperAdmin={superAdmin} organizationId={organizationId} usageStats={usageStats} />
         <main className="flex-1 overflow-y-auto">
           {children}
         </main>

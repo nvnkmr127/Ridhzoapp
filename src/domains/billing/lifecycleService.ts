@@ -12,6 +12,7 @@ export interface TenantBillingLifecycle {
   gracePeriodEndsAt?: string | null;
   lastPaymentFailureAt?: string | null;
   failureReason?: string | null;
+  failureCount?: number;
   dunningSentAt?: string | null;
   manualPaidUntil?: string | null;
   // When we last told admins "payment successful". One payment fans out to several success signals
@@ -35,6 +36,7 @@ export interface TenantBillingInfo {
   daysRemainingInGrace: number;
   lastPaymentFailureAt: string | null;
   failureReason: string | null;
+  failureCount: number;
   dunningSentAt: string | null;
   manualPaidUntil: string | null;
   currentPeriodEnd: string | null;
@@ -139,6 +141,7 @@ export class BillingLifecycleService {
       daysRemainingInGrace,
       lastPaymentFailureAt: lifecycle.lastPaymentFailureAt ?? null,
       failureReason: lifecycle.failureReason ?? null,
+      failureCount: lifecycle.failureCount ?? 0,
       dunningSentAt: lifecycle.dunningSentAt ?? null,
       manualPaidUntil: lifecycle.manualPaidUntil ?? null,
       currentPeriodEnd: org.currentPeriodEnd ? new Date(org.currentPeriodEnd).toISOString() : null,
@@ -159,10 +162,60 @@ export class BillingLifecycleService {
 
       const currentLifecycle = await this.getLifecycle(orgId);
       const now = new Date();
+      const currentFailures = (currentLifecycle.failureCount ?? 0) + 1;
+
+      // Automatically downgrade on 2 or more consecutive payment failures
+      if (currentFailures >= 2) {
+        const previousPlan = org.plan ?? "free";
+        await db
+          .update(organizations)
+          .set({
+            plan: "free",
+            planStatus: "halted",
+            updatedAt: now,
+          })
+          .where(eq(organizations.id, orgId));
+
+        const updatedLifecycle: TenantBillingLifecycle = {
+          ...currentLifecycle,
+          failureCount: currentFailures,
+          lastPaymentFailureAt: now.toISOString(),
+          failureReason: `${reason} (2 consecutive failures: automatically downgraded to Free)`,
+          gracePeriodEndsAt: null, // Grace period ends, account is downgraded & locked for reactivation
+        };
+        await this.setLifecycle(orgId, updatedLifecycle);
+
+        try {
+          await AuditService.log({
+            organizationId: orgId,
+            action: "billing.automatic_downgrade",
+            entityType: "organization",
+            entityId: orgId,
+            metadata: { reason, failureCount: currentFailures, previousPlan, newPlan: "free" },
+          });
+        } catch {
+          // ignore
+        }
+
+        try {
+          await NotificationService.notifyOrgAdmins(orgId, {
+            type: "billing_dunning",
+            title: "Plan Downgraded to Free — Payment Failed Twice",
+            body: `Your subscription payment failed 2 times. Your workspace has been downgraded to the Free tier. Reactivate your subscription at any time to restore access.`,
+          });
+        } catch (err) {
+          console.warn("[lifecycleService] Failed to notify admins of downgrade", err);
+        }
+
+        return;
+      }
+
+      // 1st failure: 7-day grace period
       const graceEndsAt = new Date(now.getTime() + DEFAULT_GRACE_DAYS * 24 * 60 * 60 * 1000);
 
       const updatedLifecycle: TenantBillingLifecycle = {
         ...currentLifecycle,
+        failureCount: currentFailures,
         gracePeriodEndsAt: graceEndsAt.toISOString(),
         lastPaymentFailureAt: now.toISOString(),
         failureReason: reason,
@@ -195,7 +248,7 @@ export class BillingLifecycleService {
           action: "billing.payment_failed",
           entityType: "organization",
           entityId: orgId,
-          metadata: { reason, graceEndsAt: graceEndsAt.toISOString() },
+          metadata: { reason, failureCount: currentFailures, graceEndsAt: graceEndsAt.toISOString() },
         });
       } catch {
         // ignore
@@ -274,6 +327,7 @@ export class BillingLifecycleService {
 
       const updatedLifecycle: TenantBillingLifecycle = {
         ...currentLifecycle,
+        failureCount: 0,
         gracePeriodEndsAt: null,
         lastPaymentFailureAt: null,
         failureReason: null,
@@ -410,6 +464,7 @@ export class BillingLifecycleService {
         daysRemainingInGrace,
         lastPaymentFailureAt: lifecycle.lastPaymentFailureAt ?? null,
         failureReason: lifecycle.failureReason ?? null,
+        failureCount: lifecycle.failureCount ?? 0,
         dunningSentAt: lifecycle.dunningSentAt ?? null,
         manualPaidUntil: lifecycle.manualPaidUntil ?? null,
         currentPeriodEnd: org.currentPeriodEnd ? new Date(org.currentPeriodEnd).toISOString() : null,

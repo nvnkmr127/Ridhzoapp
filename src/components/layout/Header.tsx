@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { PlusCircle, Search, User } from "lucide-react";
+import { PlusCircle, Search, User, PieChart } from "lucide-react";
 import { signOut } from "next-auth/react";
 import Image from "next/image";
 import Link from "next/link";
@@ -19,13 +19,23 @@ import { EnablePushButton } from "@/components/layout/EnablePushButton";
 import { OfflineStatusIndicator } from "@/components/layout/OfflineStatusIndicator";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { MobileSidebar } from "@/components/layout/MobileSidebar";
+import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+
+type UsageStats = {
+  plan: string;
+  seats: { current: number; max: number };
+  leads: { current: number; max: number };
+};
 
 export function Header({
   isSuperAdmin = false,
   organizationId,
+  usageStats,
 }: {
   isSuperAdmin?: boolean;
   organizationId?: string;
+  usageStats?: UsageStats | null;
 }) {
   const [searchOpen, setSearchOpen] = React.useState(false);
   const [shortcutLabel, setShortcutLabel] = React.useState("⌘K");
@@ -62,6 +72,17 @@ export function Header({
             priority
           />
         </Link>
+        {usageStats && usageStats.plan !== "free" && (
+          <div className="hidden md:flex items-center ml-2">
+            {usageStats.plan === "unlimited" || usageStats.plan === "business" ? (
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Unlimited</span>
+            ) : (
+              <Badge variant="secondary" className="uppercase text-[10px] px-1.5 py-0">
+                {usageStats.plan}
+              </Badge>
+            )}
+          </div>
+        )}
         <button
           type="button"
           onClick={() => setSearchOpen(true)}
@@ -73,6 +94,37 @@ export function Header({
         </button>
       </div>
       <div className="flex items-center gap-4">
+        {usageStats && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="hidden md:flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/80 cursor-default">
+                  <PieChart className="h-4 w-4" />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="w-48 p-3 space-y-2 bg-popover text-popover-foreground border border-border shadow-md">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium">Seats</span>
+                    <span className="text-muted-foreground">{usageStats.seats.current} / {usageStats.seats.max === Infinity ? "∞" : usageStats.seats.max}</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
+                    <div className="h-full bg-primary" style={{ width: `${Math.min(100, (usageStats.seats.current / (usageStats.seats.max === Infinity ? 1 : usageStats.seats.max)) * 100)}%` }} />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium">Leads</span>
+                    <span className="text-muted-foreground">{usageStats.leads.current} / {usageStats.leads.max === Infinity ? "∞" : usageStats.leads.max}</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
+                    <div className="h-full bg-primary" style={{ width: `${Math.min(100, (usageStats.leads.current / (usageStats.leads.max === Infinity ? 1 : usageStats.leads.max)) * 100)}%` }} />
+                  </div>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
         <OfflineStatusIndicator organizationId={organizationId} />
         <div className="hidden md:flex">
           <QuickAddLeadDrawer organizationId={organizationId}>

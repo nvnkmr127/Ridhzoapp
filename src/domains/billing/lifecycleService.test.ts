@@ -97,6 +97,7 @@ describe("BillingLifecycleService.assertFeatureAccess", () => {
       daysRemainingInGrace: 1,
       lastPaymentFailureAt: null,
       failureReason: null,
+      failureCount: 1,
       dunningSentAt: null,
       manualPaidUntil: null,
       currentPeriodEnd: null,
@@ -118,6 +119,7 @@ describe("BillingLifecycleService.assertFeatureAccess", () => {
       daysRemainingInGrace: 0,
       lastPaymentFailureAt: null,
       failureReason: "Card declined",
+      failureCount: 2,
       dunningSentAt: null,
       manualPaidUntil: null,
       currentPeriodEnd: null,
@@ -192,3 +194,56 @@ describe("BillingLifecycleService manual overrides", () => {
     expect(updated.failureReason).toBeNull();
   });
 });
+
+describe("BillingLifecycleService.handlePaymentFailure auto-downgrade", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("first failure initiates 7-day grace period and increments failureCount to 1", async () => {
+    const { db } = await import("@/db");
+    (db.select as any).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([{ id: "org-1", name: "Acme", plan: "starter" }]),
+        }),
+      }),
+    });
+    (PlatformConfigService.get as any).mockResolvedValue({ failureCount: 0 });
+
+    await BillingLifecycleService.handlePaymentFailure("org-1", "Card expired");
+
+    const saved = (PlatformConfigService.set as any).mock.calls.at(-1)[1];
+    expect(saved.failureCount).toBe(1);
+    expect(saved.gracePeriodEndsAt).toBeDefined();
+  });
+
+  it("second failure automatically downgrades to Free and halts subscription", async () => {
+    const { db } = await import("@/db");
+    const setMock = vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue(undefined),
+    });
+    (db.select as any).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([{ id: "org-1", name: "Acme", plan: "starter" }]),
+        }),
+      }),
+    });
+    (db.update as any).mockReturnValue({ set: setMock });
+    (PlatformConfigService.get as any).mockResolvedValue({ failureCount: 1 });
+
+    await BillingLifecycleService.handlePaymentFailure("org-1", "Insufficient funds");
+
+    expect(db.update).toHaveBeenCalled();
+    expect(setMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        plan: "free",
+        planStatus: "halted",
+      })
+    );
+
+    const saved = (PlatformConfigService.set as any).mock.calls.at(-1)[1];
+    expect(saved.failureCount).toBe(2);
+    expect(saved.gracePeriodEndsAt).toBeNull();
+  });
+});
+
