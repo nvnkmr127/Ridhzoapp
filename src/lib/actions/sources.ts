@@ -7,8 +7,8 @@ import { z } from "zod";
 import { ok, fail, actionFail } from "@/lib/actions/result";
 import { sanitizeFields } from "@/lib/leads/formFields";
 import { db } from "@/db";
-import { webhookEvents } from "@/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { webhookEvents, leads } from "@/db/schema";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 
 /** After a Page reconnects, requeue the leads that failed during the token outage so nothing is
  *  permanently lost. Scoped to auth-failure events for that page. Best-effort. */
@@ -284,6 +284,44 @@ export async function listFacebookFormFieldsAction(sourceId: string) {
     if (await flagIfAuthError(e, sourceId)) {
       return fail("VALIDATION", "Facebook access for this Page has expired. Please reconnect the Page, then try again.");
     }
+    return actionFail(e);
+  }
+}
+
+// Provenance/attribution keys we stash in customData — never offered as mappable "questions".
+const INTERNAL_CUSTOM_KEYS = new Set([
+  "leadSource", "expectedValue", "formId", "campaignId", "gclId", "channel", "inbound_message",
+  "facebook_lead_id", "facebook_form_id", "facebook_page_id",
+  "meta_ad_id", "meta_ad_name", "meta_adset_id", "meta_adset_name", "meta_campaign_id", "meta_campaign_name",
+]);
+
+/**
+ * Discovers the custom-question keys a webhook source (e.g. Google Lead Ads) has actually delivered,
+ * by scanning its recent leads' customData — since Google exposes no "list form questions" API. The
+ * mapping UI uses these as the source-side options; the user can also add a key by hand.
+ */
+export async function listSourceLeadFieldsAction(sourceId: string) {
+  const { organizationId } = await requirePermission("sources.manage");
+  try {
+    const source = await LeadSourceService.getSource(sourceId);
+    if (!source || source.organizationId !== organizationId) return fail("NOT_FOUND", "Source not found");
+
+    const rows = await db
+      .select({ customData: leads.customData })
+      .from(leads)
+      .where(and(eq(leads.sourceId, sourceId), eq(leads.organizationId, organizationId), isNull(leads.deletedAt)))
+      .orderBy(desc(leads.createdAt))
+      .limit(50);
+
+    const keys = new Set<string>();
+    for (const r of rows) {
+      const data = (r.customData as Record<string, unknown>) ?? {};
+      for (const k of Object.keys(data)) {
+        if (!k.startsWith("_") && !INTERNAL_CUSTOM_KEYS.has(k)) keys.add(k);
+      }
+    }
+    return ok({ fields: [...keys].map((key) => ({ key, label: key })) });
+  } catch (e) {
     return actionFail(e);
   }
 }

@@ -35,7 +35,7 @@ import {
   PlayCircle,
 } from "lucide-react";
 import { FormFieldsEditor } from "./FormFieldsEditor";
-import { FacebookFieldMappingEditor } from "./FacebookFieldMappingEditor";
+import { SourceFieldMappingEditor } from "./SourceFieldMappingEditor";
 import {
   Dialog,
   DialogContent,
@@ -443,7 +443,25 @@ const SourceCard = React.memo(function SourceCard({
               {showFieldMapping ? "Close field mapping" : "Map fields to custom fields"}
             </Button>
             {showFieldMapping && (
-              <FacebookFieldMappingEditor sourceId={s.id} initialConfig={s.config} />
+              <SourceFieldMappingEditor sourceId={s.id} initialConfig={s.config} provider="facebook" />
+            )}
+          </div>
+        )}
+
+        {s.type === "google_lead_ads" && (
+          <div className="pt-1 border-t border-border/50">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1 text-xs"
+              title="Map Google form questions to your fields"
+              onClick={() => setShowFieldMapping((v) => !v)}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              {showFieldMapping ? "Close field mapping" : "Map fields to custom fields"}
+            </Button>
+            {showFieldMapping && (
+              <SourceFieldMappingEditor sourceId={s.id} initialConfig={s.config} provider="google" />
             )}
           </div>
         )}

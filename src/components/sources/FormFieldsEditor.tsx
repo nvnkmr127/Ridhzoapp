@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { GripVertical, Plus, Trash2, ArrowUp, ArrowDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { updateSourceFormAction } from "@/lib/actions/sources";
+import { listCustomFieldsAction } from "@/lib/actions/customFields";
+import type { CustomFieldDef } from "@/components/leads/CustomFieldInputs";
 import {
   resolveFormFields,
   isStandard,
@@ -14,14 +16,52 @@ import {
   type FormFieldType,
 } from "@/lib/leads/formFields";
 
-const TYPES: FormFieldType[] = ["text", "email", "tel", "number", "textarea"];
+const TYPES: FormFieldType[] = ["text", "email", "tel", "number", "textarea", "select", "date", "url"];
+
+// Map a custom-field def's type to the closest web-form input type, so inserting a field renders the
+// right control and (via the shared key) validates on ingestion.
+function defTypeToFormType(t: string): FormFieldType {
+  switch (t) {
+    case "number": case "currency": return "number";
+    case "select": case "multiselect": return "select";
+    case "date": case "datetime": return "date";
+    case "url": return "url";
+    case "textarea": return "textarea";
+    default: return "text";
+  }
+}
 
 // Per-webform field builder. Reorders, adds, removes and edits fields; standard keys map to lead
 // columns, custom ones to custom_data. Saves the schema onto the source's config.
 export function FormFieldsEditor({ sourceId, initialConfig }: { sourceId: string; initialConfig: unknown }) {
   const { toast } = useToast();
   const [fields, setFields] = React.useState<FormField[]>(() => resolveFormFields(initialConfig));
+  const [customDefs, setCustomDefs] = React.useState<CustomFieldDef[]>([]);
   const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    listCustomFieldsAction().then((r) => setCustomDefs((r as CustomFieldDef[]).filter((f) => !f.disabled))).catch(() => {});
+  }, []);
+
+  // Append a form field bound to an org custom field: same key (so ingestion writes + validates it),
+  // matching input type and options. This is how a web/multi-step form captures a real custom field.
+  function addFromCustomField(def: CustomFieldDef) {
+    setFields((fs) => {
+      if (fs.some((f) => f.key === def.key)) {
+        toast({ title: "Already added", description: `"${def.label}" is already on the form.` });
+        return fs;
+      }
+      const type = defTypeToFormType(def.type);
+      return [...fs, {
+        key: def.key,
+        label: def.label,
+        type,
+        required: !!def.required,
+        step: Math.max(1, ...fs.map((f) => f.step)),
+        ...(type === "select" && def.options?.length ? { options: def.options } : {}),
+      }];
+    });
+  }
 
   const update = (i: number, patch: Partial<FormField>) =>
     setFields((fs) => fs.map((f, idx) => (idx === i ? { ...f, ...patch } : f)));
@@ -84,6 +124,14 @@ export function FormFieldsEditor({ sourceId, initialConfig }: { sourceId: string
                 <option key={t} value={t}>{t}</option>
               ))}
             </select>
+            {f.type === "select" && (
+              <Input
+                className="h-8 flex-1 min-w-[160px]"
+                value={(f.options ?? []).join(", ")}
+                placeholder="Options (comma-separated)"
+                onChange={(e) => update(i, { options: e.target.value.split(",").map((o) => o.trim()).filter(Boolean) })}
+              />
+            )}
             <label className="flex items-center gap-1 text-xs text-muted-foreground">
               <input type="checkbox" checked={f.required} onChange={(e) => update(i, { required: e.target.checked })} />
               Required
@@ -108,8 +156,19 @@ export function FormFieldsEditor({ sourceId, initialConfig }: { sourceId: string
           </div>
         ))}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button type="button" variant="outline" size="sm" className="gap-1" onClick={add}><Plus className="h-3.5 w-3.5" /> Add field</Button>
+        {customDefs.length > 0 && (
+          <select
+            value=""
+            onChange={(e) => { const d = customDefs.find((c) => c.key === e.target.value); if (d) addFromCustomField(d); }}
+            className="h-8 rounded-md border bg-background px-2 text-xs"
+            title="Add a field bound to one of your custom fields"
+          >
+            <option value="">+ Add from custom field…</option>
+            {customDefs.map((d) => <option key={d.key} value={d.key}>{d.label}</option>)}
+          </select>
+        )}
         <Button type="button" size="sm" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save fields"}</Button>
       </div>
     </div>

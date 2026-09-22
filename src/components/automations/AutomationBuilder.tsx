@@ -122,8 +122,13 @@ export function AutomationBuilder({
           <SelectTrigger><SelectValue placeholder="Select trigger" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="lead.created">Lead created</SelectItem>
+            <SelectItem value="lead.updated">Lead updated</SelectItem>
             <SelectItem value="lead.assigned">Lead assigned</SelectItem>
             <SelectItem value="lead.status_changed">Lead status changed</SelectItem>
+            <SelectItem value="lead.stage_changed">Lead stage changed (pipeline)</SelectItem>
+            <SelectItem value="lead.tag_added">Tag added to lead</SelectItem>
+            <SelectItem value="follow_up.scheduled">Follow-up scheduled</SelectItem>
+            <SelectItem value="follow_up.overdue">Follow-up overdue</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -151,6 +156,9 @@ export function AutomationBuilder({
                 <SelectItem value="equals">Equals</SelectItem>
                 <SelectItem value="not_equals">Not equals</SelectItem>
                 <SelectItem value="contains">Contains</SelectItem>
+                <SelectItem value="does_not_contain">Does not contain</SelectItem>
+                <SelectItem value="greater_than">Greater than</SelectItem>
+                <SelectItem value="less_than">Less than</SelectItem>
               </SelectContent>
             </Select>
             <Input placeholder="Value" value={advVal} onChange={(e) => setAdvVal(e.target.value)} />

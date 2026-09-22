@@ -73,6 +73,23 @@ describe("buildSubmission", () => {
     const r = buildSubmission(req, { name: "Ada", email: "a@b.com" });
     expect(r).toEqual({ ok: false, error: "Company is required." });
   });
+  it("accepts a valid select option and rejects an invalid one", () => {
+    const withSelect = [
+      { key: "tier", label: "Tier", type: "select" as const, required: false, step: 1, options: ["A", "B"] },
+      ...fields,
+    ];
+    const good = buildSubmission(withSelect, { name: "Ada", tier: "A", email: "a@b.com" });
+    expect(good.ok).toBe(true);
+    expect(good.ok && good.values.tier).toBe("A");
+    const bad = buildSubmission(withSelect, { name: "Ada", tier: "Z", email: "a@b.com" });
+    expect(bad.ok).toBe(false);
+  });
+  it("keeps select options through sanitize and drops them for non-select types", () => {
+    const [sel] = sanitizeFields([{ label: "Tier", type: "select", options: [" A ", "", "B"] }]);
+    expect(sel.options).toEqual(["A", "B"]);
+    const [txt] = sanitizeFields([{ label: "Name", type: "text", options: ["x"] }]);
+    expect(txt.options).toBeUndefined();
+  });
   it("rejects a malformed email", () => {
     expect(buildSubmission(fields, { email: "nope" }).ok).toBe(false);
   });

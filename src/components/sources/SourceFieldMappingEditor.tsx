@@ -2,17 +2,22 @@
 
 import * as React from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, RefreshCw } from "lucide-react";
-import { listFacebookFormFieldsAction, updateSourceFieldMappingsAction } from "@/lib/actions/sources";
+import { Loader2, RefreshCw, Plus } from "lucide-react";
+import {
+  listFacebookFormFieldsAction,
+  listSourceLeadFieldsAction,
+  updateSourceFieldMappingsAction,
+} from "@/lib/actions/sources";
 import { listCustomFieldsAction } from "@/lib/actions/customFields";
 import type { CustomFieldDef } from "@/components/leads/CustomFieldInputs";
 
 type Rule = { facebookFieldKey: string; targetField: "name" | "email" | "phone" | "expectedValue" | "customData"; customDataKey?: string };
-type FbField = { key: string; label: string };
+type SourceField = { key: string; label: string };
 
-// The fixed lead-field targets a Facebook question can map to. "" = leave in customData under its
-// raw Facebook key (the default behaviour when unmapped).
+// The fixed lead-field targets a question can map to. "" = leave in customData under its raw key
+// (the default when unmapped).
 const STANDARD_TARGETS: { value: string; label: string }[] = [
   { value: "", label: "— Leave as raw data —" },
   { value: "name", label: "Name" },
@@ -21,69 +26,79 @@ const STANDARD_TARGETS: { value: string; label: string }[] = [
   { value: "expectedValue", label: "Expected value" },
 ];
 
-// Encodes a rule's target as a single <select> value: "std:email" for a lead field, or "cf:<key>"
-// for a custom field. Keeps one dropdown per Facebook question.
+// Encodes a rule's target as a single <select> value: "std:email" for a lead field, "cf:<key>" for
+// a custom field. Keeps one dropdown per question.
 function ruleToValue(r?: Rule): string {
   if (!r) return "";
   if (r.targetField === "customData") return r.customDataKey ? `cf:${r.customDataKey}` : "";
   return `std:${r.targetField}`;
 }
 
-export function FacebookFieldMappingEditor({
+export function SourceFieldMappingEditor({
   sourceId,
   initialConfig,
+  provider,
 }: {
   sourceId: string;
   initialConfig: unknown;
+  provider: "facebook" | "google";
 }) {
   const { toast } = useToast();
-  const [fbFields, setFbFields] = React.useState<FbField[]>([]);
+  const [sourceFields, setSourceFields] = React.useState<SourceField[]>([]);
   const [customFields, setCustomFields] = React.useState<CustomFieldDef[]>([]);
   const [rules, setRules] = React.useState<Rule[]>(
     () => (((initialConfig as any)?.fieldMappings ?? []) as Rule[]),
   );
+  const [manualKey, setManualKey] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
 
   const loadFields = React.useCallback(async () => {
     setLoading(true);
     try {
-      const [fbRes, cfRes] = await Promise.all([
-        listFacebookFormFieldsAction(sourceId),
-        listCustomFieldsAction(),
-      ]);
+      const fieldsPromise = provider === "facebook"
+        ? listFacebookFormFieldsAction(sourceId)
+        : listSourceLeadFieldsAction(sourceId);
+      const [fieldsRes, cfRes] = await Promise.all([fieldsPromise, listCustomFieldsAction()]);
       setCustomFields((cfRes as CustomFieldDef[]).filter((f) => !f.disabled));
-      if (fbRes.ok) {
-        setFbFields(fbRes.data.fields);
+      if (fieldsRes.ok) {
+        setSourceFields(fieldsRes.data.fields);
       } else {
-        toast({ variant: "destructive", title: "Couldn't load Facebook questions", description: fbRes.message });
+        toast({ variant: "destructive", title: "Couldn't load form questions", description: fieldsRes.message });
       }
     } catch {
-      toast({ variant: "destructive", title: "Couldn't load Facebook questions", description: "Please try again." });
+      toast({ variant: "destructive", title: "Couldn't load form questions", description: "Please try again." });
     } finally {
       setLoading(false);
     }
-  }, [sourceId, toast]);
+  }, [sourceId, provider, toast]);
 
   React.useEffect(() => { void loadFields(); }, [loadFields]);
 
-  // Show every discovered Facebook question, plus any already-mapped key that wasn't rediscovered
-  // (e.g. a form was since edited) so a saved rule is never silently hidden.
+  // Show every discovered question, plus any already-mapped or manually-added key not rediscovered,
+  // so a saved rule is never silently hidden.
   const rows = React.useMemo(() => {
-    const map = new Map<string, string>(fbFields.map((f) => [f.key, f.label]));
+    const map = new Map<string, string>(sourceFields.map((f) => [f.key, f.label]));
     for (const r of rules) if (!map.has(r.facebookFieldKey)) map.set(r.facebookFieldKey, r.facebookFieldKey);
     return [...map.entries()].map(([key, label]) => ({ key, label }));
-  }, [fbFields, rules]);
+  }, [sourceFields, rules]);
 
-  function setTarget(fbKey: string, value: string) {
+  function setTarget(fieldKey: string, value: string) {
     setRules((cur) => {
-      const rest = cur.filter((r) => r.facebookFieldKey !== fbKey);
+      const rest = cur.filter((r) => r.facebookFieldKey !== fieldKey);
       if (!value) return rest; // unmapped → no rule (raw customData)
       if (value.startsWith("cf:")) {
-        return [...rest, { facebookFieldKey: fbKey, targetField: "customData", customDataKey: value.slice(3) }];
+        return [...rest, { facebookFieldKey: fieldKey, targetField: "customData", customDataKey: value.slice(3) }];
       }
-      return [...rest, { facebookFieldKey: fbKey, targetField: value.slice(4) as Rule["targetField"] }];
+      return [...rest, { facebookFieldKey: fieldKey, targetField: value.slice(4) as Rule["targetField"] }];
     });
+  }
+
+  function addManualKey() {
+    const key = manualKey.trim();
+    if (!key) return;
+    if (!sourceFields.some((f) => f.key === key)) setSourceFields((cur) => [...cur, { key, label: key }]);
+    setManualKey("");
   }
 
   async function save() {
@@ -91,13 +106,17 @@ export function FacebookFieldMappingEditor({
     try {
       const res = await updateSourceFieldMappingsAction({ sourceId, fieldMappings: rules });
       if (!res.ok) { toast({ variant: "destructive", title: "Couldn't save mapping", description: res.message }); return; }
-      toast({ title: "Field mapping saved", description: "New Facebook leads will use these mappings." });
+      toast({ title: "Field mapping saved", description: "New leads from this source will use these mappings." });
     } catch {
       toast({ variant: "destructive", title: "Couldn't save mapping", description: "Please try again." });
     } finally {
       setSaving(false);
     }
   }
+
+  const emptyHint = provider === "facebook"
+    ? "No questions found. Select the forms to capture above, then reload."
+    : "No questions seen yet — they appear after the first Google lead arrives. Add a column key by hand below to map it ahead of time.";
 
   return (
     <div className="mt-2 rounded-xl border bg-muted/30 p-3">
@@ -109,12 +128,9 @@ export function FacebookFieldMappingEditor({
       </div>
 
       {loading && rows.length === 0 ? (
-        <p className="text-xs text-muted-foreground">Loading questions from Facebook…</p>
+        <p className="text-xs text-muted-foreground">Loading questions…</p>
       ) : rows.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          No questions found. Select the forms to capture above, then reload. Unmapped questions are still
-          stored on the lead as raw data.
-        </p>
+        <p className="text-xs text-muted-foreground">{emptyHint} Unmapped questions are still stored on the lead as raw data.</p>
       ) : (
         <div className="space-y-1.5">
           {rows.map((row) => (
@@ -136,6 +152,19 @@ export function FacebookFieldMappingEditor({
           ))}
         </div>
       )}
+
+      <div className="mt-2 flex items-center gap-2">
+        <Input
+          value={manualKey}
+          onChange={(e) => setManualKey(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addManualKey(); } }}
+          placeholder="Add a question / column key…"
+          className="h-8 text-xs"
+        />
+        <Button variant="outline" size="sm" className="h-8 gap-1 text-xs" onClick={addManualKey} disabled={!manualKey.trim()}>
+          <Plus className="h-3 w-3" /> Add
+        </Button>
+      </div>
 
       <div className="mt-3 flex justify-end">
         <Button size="sm" className="h-8 text-xs" onClick={save} disabled={saving || loading}>

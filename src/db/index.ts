@@ -20,6 +20,7 @@ function getClient(): postgres.Sql {
       connect_timeout: 10, // Generous handshake timeout for cloud proxy
       max_lifetime: 60 * 30, // 30m max connection lifetime
       ssl: connectionString?.includes("localhost") ? false : "prefer",
+      onnotice: () => {},
       // Never in production: logging every query WITH bound params leaks lead PII (names, emails,
       // phones) and reset-token hashes into stdout/persisted logs.
       debug: isProd

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { LeadSourceService } from "@/domains/leads/sourceService";
 import { IngestionService } from "@/lib/leads/ingestion";
+import { applySourceFieldMappings } from "@/lib/leads/sourceFieldMapping";
 
 // Google Ads Lead Form webhook receiver.
 // In Google Ads → Lead form → "Deliver leads", set:
@@ -46,9 +47,22 @@ export async function POST(req: NextRequest) {
   if ((body as any).is_test) return NextResponse.json({ status: "test_ok" }, { status: 200 });
 
   const cols = mapColumns((body as any).user_column_data);
-  const name = cols.FULL_NAME || [cols.FIRST_NAME, cols.LAST_NAME].filter(Boolean).join(" ").trim() || "Google Lead";
-  const email = cols.EMAIL || cols.USER_EMAIL || undefined;
-  const phone = cols.PHONE_NUMBER || cols.USER_PHONE || undefined;
+  // Google's built-in contact columns; everything else is a custom question and is offered for
+  // mapping to a custom field. Keep this set so those contact columns don't leak into customData.
+  const STANDARD_GOOGLE_COLS = new Set([
+    "FULL_NAME", "FIRST_NAME", "LAST_NAME", "EMAIL", "USER_EMAIL", "PHONE_NUMBER", "USER_PHONE", "COMPANY_NAME",
+  ]);
+  const extraCols = Object.fromEntries(Object.entries(cols).filter(([k]) => !STANDARD_GOOGLE_COLS.has(k)));
+
+  // Apply the source's saved field mappings to the custom questions (question → custom field / lead
+  // field). Unmapped questions land in customData under their raw column id — flat (not nested), so
+  // ingestion coerces any whose key matches an org custom field, same as Facebook/web-form leads.
+  const rules = Array.isArray((source.config as any)?.fieldMappings) ? (source.config as any).fieldMappings : [];
+  const applied = applySourceFieldMappings(extraCols, rules);
+
+  const name = applied.name || cols.FULL_NAME || [cols.FIRST_NAME, cols.LAST_NAME].filter(Boolean).join(" ").trim() || "Google Lead";
+  const email = applied.email || cols.EMAIL || cols.USER_EMAIL || undefined;
+  const phone = applied.phone || cols.PHONE_NUMBER || cols.USER_PHONE || undefined;
   if (!email && !phone) {
     return NextResponse.json({ error: "Lead has no email or phone to dedupe on" }, { status: 422 });
   }
@@ -62,11 +76,12 @@ export async function POST(req: NextRequest) {
       sourceId,
       organizationId: source.organizationId,
       externalId: (body as any).lead_id ? String((body as any).lead_id) : undefined,
+      expectedValue: applied.expectedValue,
       customData: {
         formId: (body as any).form_id,
         campaignId: (body as any).campaign_id,
         gclId: (body as any).gcl_id,
-        fields: cols,
+        ...applied.customData,
       },
     });
     return NextResponse.json({ status: result.status, leadId: result.leadId }, { status: 200 });

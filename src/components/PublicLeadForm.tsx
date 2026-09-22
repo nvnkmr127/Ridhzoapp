@@ -99,11 +99,33 @@ export function PublicLeadForm({
 
       {(steps[step] ?? []).map((f) => {
         const label = f.required ? `${f.label} *` : f.label;
-        return f.type === "textarea" ? (
-          <Textarea key={f.key} placeholder={label} value={values[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} />
-        ) : (
-          <Input key={f.key} type={f.type} placeholder={label} value={values[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} />
-        );
+        if (f.type === "textarea") {
+          return <Textarea key={f.key} placeholder={label} value={values[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} />;
+        }
+        if (f.type === "select") {
+          return (
+            <div key={f.key} className="space-y-1">
+              <label className="text-sm text-muted-foreground">{label}</label>
+              <select
+                value={values[f.key] ?? ""}
+                onChange={(e) => set(f.key, e.target.value)}
+                className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+              >
+                <option value="">Select…</option>
+                {(f.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+          );
+        }
+        if (f.type === "date") {
+          return (
+            <div key={f.key} className="space-y-1">
+              <label className="text-sm text-muted-foreground">{label}</label>
+              <Input type="date" value={values[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} />
+            </div>
+          );
+        }
+        return <Input key={f.key} type={f.type} placeholder={label} value={values[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} />;
       })}
 
       <div className="flex gap-2">
