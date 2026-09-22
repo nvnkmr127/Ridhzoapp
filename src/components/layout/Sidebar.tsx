@@ -5,6 +5,8 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Sparkles } from "lucide-react";
 import { navRoutes, navGroups, superAdminRoutes } from "./nav";
 
 function SuperAdminNavLinks({ pathname }: { pathname: string }) {
@@ -112,6 +114,25 @@ export function Sidebar({
           </div>
         )}
       </nav>
+
+      {plan !== "unlimited" && plan !== "business" && (
+        <div className="p-3 border-t border-border">
+          <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-2">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+              <Sparkles className="h-3.5 w-3.5 text-primary" />
+              <span>Unlimited Plan</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground leading-tight">
+              Unlimited seats, leads, and custom workflows.
+            </p>
+            <Button asChild size="sm" className="w-full h-7 text-xs font-medium gap-1.5 shadow-sm">
+              <Link href="/settings/billing">
+                Upgrade Now
+              </Link>
+            </Button>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

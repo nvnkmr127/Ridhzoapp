@@ -51,13 +51,10 @@ export function QuickAddLeadDrawer({
   const [serverError, setServerError] = React.useState<string | null>(null);
 
   const fetchCustomFields = React.useCallback(() => {
-    console.log("[QuickAddLeadDrawer:Client] Fetching custom fields...");
     listCustomFieldsAction()
       .then((r) => {
-        console.log("[QuickAddLeadDrawer:Client] Raw response from listCustomFieldsAction:", r);
         const list = Array.isArray(r) ? r : Array.isArray((r as any)?.data) ? (r as any).data : [];
         const d = (list as CustomFieldDef[]).filter((f) => !f.disabled);
-        console.log(`[QuickAddLeadDrawer:Client] Parsed ${d.length} active custom field definition(s):`, d);
         setDefs(d);
         setCustomValues((prev) => ({ ...defaultCustomValues(d), ...prev }));
       })
@@ -94,7 +91,6 @@ export function QuickAddLeadDrawer({
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setServerError(null);
-    console.log("[QuickAddLeadDrawer:Client] Submitting lead form:", { values, customValues });
     const activeDefs = defs.filter((d) => !d.disabled);
     const missing = activeDefs.filter((d) => d.required && !(String(customValues[d.key] ?? "")).trim());
     if (missing.length) {

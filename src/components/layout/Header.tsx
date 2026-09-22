@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { PlusCircle, Search, User, PieChart } from "lucide-react";
+import { PlusCircle, Search, User, PieChart, Sparkles } from "lucide-react";
 import { signOut } from "next-auth/react";
 import Image from "next/image";
 import Link from "next/link";
@@ -74,7 +74,7 @@ export function Header({
             />
           </Link>
           {usageStats && usageStats.plan !== "free" && (
-            <div className="flex items-center">
+            <div className="flex items-center md:hidden">
               {usageStats.plan === "unlimited" || usageStats.plan === "business" ? (
                 <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Unlimited</span>
               ) : (
@@ -123,6 +123,16 @@ export function Header({
                     <div className="h-full bg-primary" style={{ width: `${Math.min(100, (usageStats.leads.current / (usageStats.leads.max === Infinity ? 1 : usageStats.leads.max)) * 100)}%` }} />
                   </div>
                 </div>
+                {usageStats.plan !== "unlimited" && usageStats.plan !== "business" && (
+                  <div className="pt-2 border-t border-border">
+                    <Button asChild size="sm" className="w-full h-7 text-xs gap-1.5 font-medium">
+                      <Link href="/settings/billing">
+                        <Sparkles className="h-3.5 w-3.5" />
+                        Upgrade to Unlimited
+                      </Link>
+                    </Button>
+                  </div>
+                )}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
