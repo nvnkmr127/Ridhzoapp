@@ -11,8 +11,14 @@ export default async function AutomationsPage() {
 
   return (
     <div className="flex-1 space-y-4 p-4 pt-4 sm:p-8 sm:pt-6">
-      <div className="flex items-center justify-between space-y-2">
-        <h2 className="text-3xl font-bold tracking-tight">Automations</h2>
+      <div className="flex items-start justify-between space-y-2">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Automations</h2>
+          <p className="text-sm text-muted-foreground">
+            Instant, one-off reactions to an event — e.g. when a lead comes in, assign it and send a welcome.
+            For a multi-day drip of messages, use <Link href="/sequences" className="underline">Sequences</Link> instead.
+          </p>
+        </div>
         <div className="flex items-center space-x-2">
           <Link href="/automations/create">
             <Button>

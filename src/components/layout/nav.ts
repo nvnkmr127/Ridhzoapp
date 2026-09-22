@@ -29,12 +29,12 @@ export interface NavRoute {
 }
 
 export const navRoutes: NavRoute[] = [
-  { label: "Executive Dashboard", icon: LayoutDashboard, href: "/", group: "Analytics" },
+  { label: "Dashboard", icon: LayoutDashboard, href: "/", group: "Analytics" },
   { label: "My Dashboard", icon: Activity, href: "/my-dashboard", group: "Analytics" },
   { label: "Insights", icon: TrendingUp, href: "/insights", group: "Analytics" },
   { label: "Leads", icon: Users, href: "/leads", group: "CRM" },
-  { label: "Pipeline", icon: Kanban, href: "/leads/kanban", group: "CRM" },
-  { label: "Going cold", icon: Snowflake, href: "/leads/cold", group: "CRM" },
+  { label: "Pipeline Board", icon: Kanban, href: "/leads/kanban", group: "CRM" },
+  { label: "Cold Leads", icon: Snowflake, href: "/leads/cold", group: "CRM" },
   { label: "Follow-ups", icon: CheckSquare, href: "/follow-ups", group: "Productivity" },
   { label: "Automations", icon: Zap, href: "/automations", group: "Productivity" },
   { label: "Sequences", icon: GitFork, href: "/sequences", group: "Productivity" },

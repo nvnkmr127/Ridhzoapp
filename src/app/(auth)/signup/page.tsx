@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Eye, EyeOff } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useState, useEffect } from "react";
 import { signupAction, sendWhatsAppOtpAction } from "@/lib/actions/auth";
@@ -27,6 +27,10 @@ const signupSchema = z.object({
 
 type SignupValues = z.infer<typeof signupSchema>;
 
+// Common dial codes for the signup phone field, so non-India users aren't stuck on +91. The list is
+// short by design; a user on any other country can still paste a full +<code> number.
+const COUNTRY_CODES = ["+91", "+1", "+44", "+61", "+971", "+65", "+27", "+234", "+92", "+880", "+94", "+64", "+49", "+33", "+55"];
+
 export default function SignupPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -40,6 +44,8 @@ export default function SignupPage() {
   const [phoneOrgName, setPhoneOrgName] = useState("");
   const [phoneName, setPhoneName] = useState("");
   const [phone, setPhone] = useState("");
+  const [countryCode, setCountryCode] = useState("+91");
+  const [showPassword, setShowPassword] = useState(false);
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [phoneLoading, setPhoneLoading] = useState(false);
@@ -96,14 +102,14 @@ export default function SignupPage() {
     }
 
     const clean = phone.trim();
-    if (!clean || clean.length < 10) {
-      setError("Please enter a valid 10-digit mobile number.");
+    if (!clean || clean.replace(/\D/g, "").length < 6) {
+      setError("Please enter a valid mobile number.");
       return;
     }
 
     const formatted = clean.startsWith("+")
       ? clean
-      : `+91${clean.replace(/^0+/, "")}`;
+      : `${countryCode}${clean.replace(/^0+/, "")}`;
 
     setPhoneLoading(true);
     try {
@@ -130,7 +136,7 @@ export default function SignupPage() {
     }
 
     const clean = phone.trim();
-    const formatted = clean.startsWith("+") ? clean : `+91${clean.replace(/^0+/, "")}`;
+    const formatted = clean.startsWith("+") ? clean : `${countryCode}${clean.replace(/^0+/, "")}`;
 
     setPhoneLoading(true);
     try {
@@ -252,9 +258,14 @@ export default function SignupPage() {
                   <div className="space-y-2">
                     <Label htmlFor="signup-phone">Mobile Number</Label>
                     <div className="flex">
-                      <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-muted-foreground text-sm">
-                        +91
-                      </span>
+                      <select
+                        aria-label="Country code"
+                        value={countryCode}
+                        onChange={(e) => setCountryCode(e.target.value)}
+                        className="rounded-l-md border border-r-0 border-input bg-muted text-muted-foreground text-sm px-2 focus:outline-none"
+                      >
+                        {COUNTRY_CODES.map((c) => <option key={c} value={c}>{c}</option>)}
+                      </select>
                       <Input
                         id="signup-phone"
                         type="tel"
@@ -350,9 +361,21 @@ export default function SignupPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="password">Password</Label>
-                  <Input id="password" type="password" {...form.register("password")} />
-                  {form.formState.errors.password && (
+                  <div className="relative">
+                    <Input id="password" type={showPassword ? "text" : "password"} className="pr-10" {...form.register("password")} />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {form.formState.errors.password ? (
                     <p className="text-sm text-destructive">{form.formState.errors.password.message}</p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">At least 6 characters.</p>
                   )}
                 </div>
 

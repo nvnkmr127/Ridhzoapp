@@ -58,7 +58,8 @@ export default async function ExecutiveDashboardPage({
         <DashboardDateFilter />
       </div>
 
-      {sla.totalLeads === 0 && <GettingStarted />}
+      {/* Keep the setup guide up through the first few leads (it's dismissible once they're rolling). */}
+      {sla.totalLeads < 5 && <GettingStarted />}
 
       <div className="space-y-6">
         <div className="rounded-2xl border bg-card p-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

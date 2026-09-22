@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Trash2, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,24 +8,36 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useRouter } from "next/navigation";
 import { createAutomation, updateAutomation } from "@/lib/actions/automations";
+import { listUsersAction } from "@/lib/actions/users";
+import { getTenantStatusSchemaAction } from "@/lib/actions/customStatuses";
+import { listTemplates } from "@/lib/actions/messaging";
 
-// Per-action JSON hints so users know the shape each action's config expects.
+// Fallback JSON hint for any action without a dedicated control (there are none today).
 const ACTION_CONFIG_HINT: Record<string, string> = {
-  assign_lead: '{"userId": "..."}',
-  assign_round_robin: '{} (optional {"maxCapacity": 25})',
-  change_status: '{"status": "contacted"}',
-  add_note: '{"content": "Reach out today"}',
-  create_task: '{"title": "Call lead", "dueInDays": 1}',
-  schedule_follow_up: '{"title": "First follow-up", "dueInDays": 1}',
   send_whatsapp: '{"templateName": "welcome", "variables": ["{{name}}"]}',
-  enroll_in_sequence: '{"sequenceId": "..."}',
 };
 
 const ANY_SOURCE = "__any__";
+const NONE = "__none__";
 
 type Source = { id: string; name: string };
 type Seq = { id: string; name: string };
+type User = { id: string; name: string };
+type Status = { key: string; label: string };
 type ActionRow = { type: string; configStr: string };
+
+// Read/patch a single key inside an action row's JSON config string, so the friendly controls can
+// bind to individual fields while the saved format stays the same {type, config} the engine expects.
+function readCfg(configStr: string, key: string): string {
+  try { const v = JSON.parse(configStr || "{}")[key]; return v == null ? "" : String(v); } catch { return ""; }
+}
+function patchCfg(configStr: string, patch: Record<string, unknown>): string {
+  let base: Record<string, unknown> = {};
+  try { base = JSON.parse(configStr || "{}"); } catch { base = {}; }
+  const next = { ...base, ...patch };
+  for (const k of Object.keys(next)) if (next[k] === "" || next[k] == null) delete next[k];
+  return JSON.stringify(next);
+}
 
 // Conditions may arrive as a single leaf {field,operator,value} or an AND group {type,conditions}.
 function parseConditions(c: any): { source: string; advField: string; advOp: string; advVal: string } {
@@ -60,9 +72,21 @@ export function AutomationBuilder({
       : [{ type: "assign_lead", configStr: "" }],
   );
   const [loading, setLoading] = useState(false);
+  const [users, setUsers] = useState<User[]>([]);
+  const [statuses, setStatuses] = useState<Status[]>([]);
+  const [templates, setTemplates] = useState<{ id: string; name: string }[]>([]);
+
+  // Load the org's team, statuses, and WhatsApp templates so actions are pick-lists, not JSON.
+  useEffect(() => {
+    listUsersAction().then((u) => setUsers(u as User[])).catch(() => {});
+    getTenantStatusSchemaAction().then((s) => { if (Array.isArray(s)) setStatuses(s as Status[]); }).catch(() => {});
+    listTemplates("whatsapp").then((t) => setTemplates(t as { id: string; name: string }[])).catch(() => {});
+  }, []);
 
   const setAction = (i: number, patch: Partial<ActionRow>) =>
     setActions((rows) => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  const patchAction = (i: number, cfg: Record<string, unknown>) =>
+    setActions((rows) => rows.map((r, idx) => (idx === i ? { ...r, configStr: patchCfg(r.configStr, cfg) } : r)));
 
   const seqIdOf = (configStr: string) => {
     try { return JSON.parse(configStr || "{}").sequenceId ?? ""; } catch { return ""; }
@@ -196,13 +220,59 @@ export function AutomationBuilder({
               )}
             </div>
 
-            {/* enroll_in_sequence gets a friendly dropdown; other actions take JSON config. */}
+            {/* Friendly, no-JSON controls per action type. */}
             {a.type === "enroll_in_sequence" ? (
               <Select value={seqIdOf(a.configStr)} onValueChange={(v) => setAction(i, { configStr: JSON.stringify({ sequenceId: v }) })}>
                 <SelectTrigger><SelectValue placeholder="Choose a sequence…" /></SelectTrigger>
                 <SelectContent>
                   {sequences.length === 0 && <SelectItem value="none" disabled>No sequences yet — create one first</SelectItem>}
                   {sequences.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            ) : a.type === "assign_lead" ? (
+              <Select value={readCfg(a.configStr, "userId") || NONE} onValueChange={(v) => patchAction(i, { userId: v === NONE ? "" : v })}>
+                <SelectTrigger><SelectValue placeholder="Assign to…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>Choose a team member…</SelectItem>
+                  {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            ) : a.type === "change_status" ? (
+              <Select value={readCfg(a.configStr, "status") || NONE} onValueChange={(v) => patchAction(i, { status: v === NONE ? "" : v })}>
+                <SelectTrigger><SelectValue placeholder="Set status to…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>Choose a status…</SelectItem>
+                  {statuses.map((s) => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            ) : a.type === "assign_round_robin" ? (
+              <div className="space-y-1">
+                <Input
+                  type="number" min={1}
+                  value={readCfg(a.configStr, "maxCapacity")}
+                  onChange={(e) => patchAction(i, { maxCapacity: e.target.value })}
+                  placeholder="Max open leads per rep (optional)"
+                />
+                <p className="text-xs text-muted-foreground">Balances new leads across your team. Leave blank for no cap.</p>
+              </div>
+            ) : a.type === "add_note" ? (
+              <Input value={readCfg(a.configStr, "content")} onChange={(e) => patchAction(i, { content: e.target.value })} placeholder="Note to add to the lead…" />
+            ) : (a.type === "create_task" || a.type === "schedule_follow_up") ? (
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Input className="flex-1" value={readCfg(a.configStr, "title")} onChange={(e) => patchAction(i, { title: e.target.value })} placeholder={a.type === "create_task" ? "Task title (e.g. Call lead)" : "Follow-up title"} />
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground">Due in</span>
+                  <Input className="w-20" type="number" min={0} value={readCfg(a.configStr, "dueInDays") || "1"} onChange={(e) => patchAction(i, { dueInDays: e.target.value })} />
+                  <span className="text-xs text-muted-foreground">days</span>
+                </div>
+              </div>
+            ) : a.type === "send_whatsapp" ? (
+              <Select value={readCfg(a.configStr, "templateName") || NONE} onValueChange={(v) => patchAction(i, { templateName: v === NONE ? "" : v })}>
+                <SelectTrigger><SelectValue placeholder="Choose a WhatsApp template…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>Choose a template…</SelectItem>
+                  {templates.length === 0 && <SelectItem value="_empty" disabled>No templates yet — add one in Settings → Templates</SelectItem>}
+                  {templates.map((t) => <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             ) : (

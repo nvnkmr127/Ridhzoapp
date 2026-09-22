@@ -16,7 +16,8 @@ export default async function SequencesPage() {
           <GitFork className="h-7 w-7" /> Sequences
         </h2>
         <p className="text-sm text-muted-foreground">
-          Multi-step WhatsApp &amp; email drips. Enroll leads from any lead page; steps fire automatically on schedule.
+          Multi-step WhatsApp &amp; email drips over days. Enroll leads from any lead page; steps fire automatically on schedule.
+          For a single instant action on an event, use <Link href="/automations" className="underline">Automations</Link>.
         </p>
       </div>
 
