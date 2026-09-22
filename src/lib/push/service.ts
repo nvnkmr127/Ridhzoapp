@@ -20,14 +20,28 @@ function getVapidKeys(): { publicKey: string; privateKey: string } {
   return autoVapidKeys;
 }
 
+function formatVapidSubject(rawSubject?: string): string {
+  const trimmed = rawSubject?.replace(/^["']|["']$/g, "").trim();
+  if (!trimmed) return "mailto:admin@ridhzo.com";
+  if (trimmed.startsWith("mailto:") || trimmed.startsWith("https://")) return trimmed;
+  if (trimmed.startsWith("http://")) return trimmed.replace(/^http:\/\//, "https://");
+  if (trimmed.includes("@")) return `mailto:${trimmed}`;
+  return `https://${trimmed}`;
+}
+
 // Configure VAPID lazily so the app still boots when push isn't set up.
 function ensureConfigured(): boolean {
   if (configured) return true;
-  const keys = getVapidKeys();
-  const subject = process.env.VAPID_SUBJECT || "mailto:admin@ridhzo.com";
-  webpush.setVapidDetails(subject, keys.publicKey, keys.privateKey);
-  configured = true;
-  return true;
+  try {
+    const keys = getVapidKeys();
+    const subject = formatVapidSubject(process.env.VAPID_SUBJECT);
+    webpush.setVapidDetails(subject, keys.publicKey, keys.privateKey);
+    configured = true;
+    return true;
+  } catch (err) {
+    console.error("[PUSH_SERVICE] Failed to configure VAPID details:", err);
+    return false;
+  }
 }
 
 export interface PushPayload {
@@ -38,6 +52,7 @@ export interface PushPayload {
 
 export const PushService = {
   getVapidKeys,
+  formatVapidSubject,
   async saveSubscription(userId: string, sub: { endpoint: string; keys: { p256dh: string; auth: string } }) {
     // endpoint is unique; upsert so re-subscribing on the same device doesn't duplicate.
     await db.insert(pushSubscriptions)
@@ -57,21 +72,25 @@ export const PushService = {
 
   // Fire a push to every device the user has enabled. Never throws — push is best-effort.
   async sendToUser(userId: string, payload: PushPayload) {
-    if (!ensureConfigured()) return;
-    const subs = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, userId));
-    const body = JSON.stringify(payload);
-    await Promise.all(subs.map(async (s) => {
-      try {
-        await webpush.sendNotification(
-          { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-          body,
-        );
-      } catch (err: any) {
-        // 404/410 => the subscription is dead; drop it so we stop trying.
-        if (err?.statusCode === 404 || err?.statusCode === 410) {
-          await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, s.endpoint));
+    try {
+      if (!ensureConfigured()) return;
+      const subs = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, userId));
+      const body = JSON.stringify(payload);
+      await Promise.all(subs.map(async (s) => {
+        try {
+          await webpush.sendNotification(
+            { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
+            body,
+          );
+        } catch (err: any) {
+          // 404/410 => the subscription is dead; drop it so we stop trying.
+          if (err?.statusCode === 404 || err?.statusCode === 410) {
+            await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, s.endpoint));
+          }
         }
-      }
-    }));
+      }));
+    } catch (err) {
+      console.error("[PUSH_SERVICE] Best-effort push failed for user:", userId, err);
+    }
   },
 };
