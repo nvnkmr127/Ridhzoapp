@@ -68,6 +68,24 @@ export class IngestionService {
       throw new Error("Valid Lead Source with Organization is required");
     }
 
+    // Coerce/validate any custom-field values against the org's field defs, so an inbound lead
+    // (Facebook, web form, API) stores typed values (number, date, option-checked) under the field's
+    // key — same rules as manual create — instead of raw strings. Lenient: a bad value is left as-is
+    // rather than dropping the lead, and non-def keys (attribution, raw payload) pass through
+    // untouched. Runs once here so every ingestion path (new insert AND dedup merge) gets it.
+    if (payload.customData && Object.keys(payload.customData).length > 0) {
+      try {
+        const { CustomFieldService } = await import("@/domains/customFields/service");
+        const defs = await CustomFieldService.list(organizationId);
+        if (defs.length > 0) {
+          const cleaned = CustomFieldService.validateWith(defs, payload.customData, { isAdmin: true, lenient: true });
+          payload.customData = { ...payload.customData, ...cleaned };
+        }
+      } catch (e) {
+        console.error("[ingestion] custom-field validation failed (keeping raw values)", e);
+      }
+    }
+
     // Match phones on digits only (so "+15550101234" / "15550101234" / "+1 555 010 1234" dedup) and
     // NEVER dedup against a soft-deleted lead — otherwise a re-inquiry would be merged into a lead
     // sitting in the recycle bin and silently lost. Mirrors LeadService.createLead's dedup.

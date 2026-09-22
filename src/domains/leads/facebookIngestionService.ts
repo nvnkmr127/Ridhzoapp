@@ -83,7 +83,9 @@ export class FacebookIngestionService {
     }
 
     const { FacebookLeadMappingService } = await import("@/domains/leads/facebookLeadMappingService");
-    const mapped = FacebookLeadMappingService.mapFacebookLeadToStandardLead(fbLeadData);
+    // Apply the source's saved field mappings (form question → custom field / lead field), if any.
+    const fieldMappings = Array.isArray(sourceConfig.fieldMappings) ? sourceConfig.fieldMappings : undefined;
+    const mapped = FacebookLeadMappingService.mapFacebookLeadToStandardLead(fbLeadData, fieldMappings);
     if (!mapped.email && !mapped.phone) {
       await this.markEvent(event.id, "processed", { reason: "no_contact_info" });
       return { status: "skipped", reason: "no_contact_info" };

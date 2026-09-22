@@ -51,6 +51,30 @@ describe("FacebookLeadMappingService", () => {
     expect(mapped.customData["meta_ad_id"]).toBe("ad_888");
   });
 
+  it("routes a form question to a custom field key when a mapping rule is provided", () => {
+    const rawFbLead: FacebookLeadDetails = {
+      id: "leadgen_1",
+      created_time: "2026-08-28T10:00:00Z",
+      form_id: "form_1",
+      field_data: [
+        { name: "full_name", values: ["Bob Roy"] },
+        { name: "email", values: ["bob@example.com"] },
+        { name: "what_is_your_preferred_time_to_call?", values: ["Afternoon"] },
+      ],
+    };
+
+    const mapped = FacebookLeadMappingService.mapFacebookLeadToStandardLead(rawFbLead, [
+      { facebookFieldKey: "what_is_your_preferred_time_to_call?", targetField: "customData", customDataKey: "preferred_time" },
+    ]);
+
+    // The answer now lands under the org custom-field key, not the raw Facebook question name.
+    expect(mapped.customData["preferred_time"]).toBe("Afternoon");
+    expect(mapped.customData["what_is_your_preferred_time_to_call?"]).toBeUndefined();
+    // Built-in name/email mapping still works (custom rules are additive, not a replacement).
+    expect(mapped.name).toBe("Bob Roy");
+    expect(mapped.email).toBe("bob@example.com");
+  });
+
   it("should concatenate first_name and last_name when full_name is absent", () => {
     const rawFbLead: FacebookLeadDetails = {
       id: "leadgen_67890",

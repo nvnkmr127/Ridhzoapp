@@ -192,6 +192,29 @@ export class MetaTokenRefreshService {
   }
 
   /**
+   * Lists the questions (fields) of one lead form, so the UI can offer them as mapping targets.
+   * Meta returns each question's `key` (what appears in a lead's field_data[].name) and `label`.
+   */
+  static async listFormQuestions(
+    formId: string,
+    pageAccessToken: string,
+  ): Promise<Array<{ key: string; label: string; type?: string }>> {
+    if (!formId || !pageAccessToken) {
+      throw new Error("formId and pageAccessToken are required to list form questions");
+    }
+    const url = `${GRAPH}/${encodeURIComponent(formId)}?fields=questions{key,label,type}&access_token=${encodeURIComponent(pageAccessToken)}`;
+    const json = await graphGet(url);
+    const questions: any[] = Array.isArray(json?.questions?.data)
+      ? json.questions.data
+      : Array.isArray(json?.questions)
+        ? json.questions
+        : [];
+    return questions
+      .map((q) => ({ key: String(q.key ?? q.name ?? ""), label: String(q.label ?? q.key ?? ""), type: q.type }))
+      .filter((q) => q.key);
+  }
+
+  /**
    * Fetches historical leads submitted to a specific lead form, following Graph API cursor
    * pagination until the form is exhausted or `maxTotal` is reached. `pageSize` is the per-request
    * page; Meta caps it around a few hundred.

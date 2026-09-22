@@ -66,6 +66,9 @@ export class FacebookSyncService {
         `since=${opts.since ?? "-"} until=${opts.until ?? "-"}`,
     );
 
+    // Apply the source's saved field mappings (form question → custom field / lead field), if any.
+    const fieldMappings = Array.isArray(config.fieldMappings) ? config.fieldMappings : undefined;
+
     for (const form of forms) {
       const rawLeads = await MetaTokenRefreshService.fetchFormLeads(form.id, pageAccessToken, 100, 1000, opts);
       totalFetched += rawLeads.length;
@@ -73,7 +76,7 @@ export class FacebookSyncService {
       console.log(`[FB_SYNC] form=${form.id} name="${form.name}" fetched=${rawLeads.length}`);
 
       for (const fbLead of rawLeads) {
-        const mapped = FacebookLeadMappingService.mapFacebookLeadToStandardLead(fbLead);
+        const mapped = FacebookLeadMappingService.mapFacebookLeadToStandardLead(fbLead, fieldMappings);
         if (!mapped.email && !mapped.phone) {
           skippedNoContact++;
           continue;

@@ -248,6 +248,81 @@ export async function listFacebookFormsAction(sourceId: string) {
   }
 }
 
+/**
+ * Lists the questions of a Facebook source's forms (union across the selected forms, or all live
+ * forms when no filter is set), de-duplicated by question key — the mapping UI offers these as the
+ * "Facebook field" side. Best-effort per form: one form failing doesn't sink the whole list.
+ */
+export async function listFacebookFormFieldsAction(sourceId: string) {
+  const { organizationId } = await requirePermission("sources.manage");
+  try {
+    const source = await LeadSourceService.getSource(sourceId);
+    if (!source || source.organizationId !== organizationId) return fail("NOT_FOUND", "Source not found");
+    if (source.type !== "facebook_lead_ads") return fail("VALIDATION", "Not a Facebook Lead Ads source.");
+
+    const config = (source.config as Record<string, any>) ?? {};
+    if (!config.pageId || !config.pageAccessToken) {
+      return fail("VALIDATION", "Missing Facebook Page ID or Access Token in source configuration.");
+    }
+
+    const { MetaTokenRefreshService } = await import("@/domains/leads/metaTokenRefreshService");
+    const allForms = await MetaTokenRefreshService.listPageLeadForms(config.pageId, config.pageAccessToken);
+    const filter: string[] = Array.isArray(config.formFilter) ? config.formFilter.map(String) : [];
+    const forms = filter.length ? allForms.filter((f) => filter.includes(f.id)) : allForms;
+
+    const byKey = new Map<string, { key: string; label: string }>();
+    for (const form of forms) {
+      try {
+        const questions = await MetaTokenRefreshService.listFormQuestions(form.id, config.pageAccessToken);
+        for (const q of questions) if (!byKey.has(q.key)) byKey.set(q.key, { key: q.key, label: q.label });
+      } catch (e) {
+        console.warn(`[FB] failed to load questions for form ${form.id}`, e);
+      }
+    }
+    return ok({ fields: [...byKey.values()] });
+  } catch (e) {
+    if (await flagIfAuthError(e, sourceId)) {
+      return fail("VALIDATION", "Facebook access for this Page has expired. Please reconnect the Page, then try again.");
+    }
+    return actionFail(e);
+  }
+}
+
+const fieldMappingSchema = z.object({
+  sourceId: z.string().uuid(),
+  fieldMappings: z.array(z.object({
+    facebookFieldKey: z.string().min(1),
+    targetField: z.enum(["name", "email", "phone", "expectedValue", "customData"]),
+    customDataKey: z.string().optional(),
+  })),
+});
+
+/** Saves how this Facebook source maps form questions to lead fields / custom fields. */
+export async function updateSourceFieldMappingsAction(input: z.infer<typeof fieldMappingSchema>) {
+  const { organizationId } = await requirePermission("sources.manage");
+  const parsed = fieldMappingSchema.safeParse(input);
+  if (!parsed.success) return fail("VALIDATION", "Invalid mapping data");
+  try {
+    const source = await LeadSourceService.getSource(parsed.data.sourceId);
+    if (!source || source.organizationId !== organizationId) return fail("NOT_FOUND", "Source not found");
+
+    // A customData target needs a key (which custom field to write); drop incomplete rows.
+    const clean = parsed.data.fieldMappings.filter(
+      (m) => m.targetField !== "customData" || (m.customDataKey && m.customDataKey.trim()),
+    );
+    const currentConfig = (source.config as Record<string, unknown>) ?? {};
+    const updated = await LeadSourceService.updateSource(
+      source.id,
+      { config: { ...currentConfig, fieldMappings: clean } },
+      organizationId,
+    );
+    revalidatePath("/settings/sources");
+    return ok(updated);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
 /** If the error is a dead-token error, mark the source as needing reconnect. Returns whether it was. */
 async function flagIfAuthError(e: unknown, sourceId: string): Promise<boolean> {
   const { MetaTokenRefreshService } = await import("@/domains/leads/metaTokenRefreshService");

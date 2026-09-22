@@ -35,6 +35,7 @@ import {
   PlayCircle,
 } from "lucide-react";
 import { FormFieldsEditor } from "./FormFieldsEditor";
+import { FacebookFieldMappingEditor } from "./FacebookFieldMappingEditor";
 import {
   Dialog,
   DialogContent,
@@ -188,6 +189,7 @@ const SourceCard = React.memo(function SourceCard({
   leadCount,
 }: SourceCardProps) {
   const webhookUrl = `${origin}/api/webhooks/${s.type}?sourceId=${s.id}`;
+  const [showFieldMapping, setShowFieldMapping] = React.useState(false);
   const formFilter = (s.config as any)?.formFilter;
   const hasFormFilter = Array.isArray(formFilter) && formFilter.length > 0;
   const formFilterNames = ((s.config as any)?.formFilterNames ?? {}) as Record<string, string>;
@@ -428,6 +430,21 @@ const SourceCard = React.memo(function SourceCard({
                     }.`}
               </p>
             ) : null}
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2 h-8 gap-1 text-xs"
+              disabled={needsReconnect}
+              title={needsReconnect ? "Reconnect the Page first" : "Map form questions to your fields"}
+              onClick={() => setShowFieldMapping((v) => !v)}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              {showFieldMapping ? "Close field mapping" : "Map fields to custom fields"}
+            </Button>
+            {showFieldMapping && (
+              <FacebookFieldMappingEditor sourceId={s.id} initialConfig={s.config} />
+            )}
           </div>
         )}
       </div>

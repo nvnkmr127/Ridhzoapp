@@ -14,7 +14,13 @@ export class FacebookLeadAdsAdapter implements LeadSourceAdapter {
     // historical sync, and this generic-webhook adapter — writes identical customData (the meta_*
     // attribution keys the lead UI reads, plus leadSource).
     const { FacebookLeadMappingService } = await import("@/domains/leads/facebookLeadMappingService");
-    const mapped = FacebookLeadMappingService.mapFacebookLeadToStandardLead(rawPayload);
+    // Honor the source's saved field mappings so this path writes the same customData as the others.
+    const { LeadSourceService } = await import("@/domains/leads/sourceService");
+    const source = await LeadSourceService.getSource(sourceId).catch(() => null);
+    const fieldMappings = Array.isArray((source?.config as any)?.fieldMappings)
+      ? (source!.config as any).fieldMappings
+      : undefined;
+    const mapped = FacebookLeadMappingService.mapFacebookLeadToStandardLead(rawPayload, fieldMappings);
 
     return {
       name: mapped.name,

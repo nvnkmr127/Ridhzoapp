@@ -61,7 +61,12 @@ export class FacebookLeadMappingService {
     facebookLead: FacebookLeadDetails,
     customRules?: FacebookFieldMappingRule[]
   ): MappedLeadResult {
-    const rules = customRules && customRules.length > 0 ? customRules : this.getDefaultMappingRules();
+    // Custom rules are ADDITIVE, not a replacement: a user who maps one question to a custom field
+    // must not lose the built-in name/email/phone mapping. Custom rules come first so they win the
+    // `.find` for any question key they cover; defaults fill every key they don't.
+    const rules = customRules && customRules.length > 0
+      ? [...customRules, ...this.getDefaultMappingRules()]
+      : this.getDefaultMappingRules();
 
     let name = "Facebook Lead";
     let email: string | null = null;

@@ -141,16 +141,19 @@ export class CustomFieldService {
 
   // Same rules as validate() but against already-fetched defs — so a bulk caller (CSV import) can
   // load the org's field defs ONCE and validate thousands of rows without a query per row.
+  // `lenient` (used by inbound ingestion) never throws: a bad or missing custom value is skipped so
+  // a real inbound lead is never dropped over a malformed field — the caller keeps the raw value.
   static validateWith(
     defs: Awaited<ReturnType<typeof CustomFieldService.list>>,
     data: Record<string, unknown> = {},
-    opts: { isAdmin?: boolean } = {},
+    opts: { isAdmin?: boolean; lenient?: boolean } = {},
   ) {
     const isAdmin = opts.isAdmin ?? true;
     const clean: Record<string, unknown> = {};
     for (const def of defs) {
       if (def.disabled) continue; // disabled fields aren't captured
       if (def.adminOnly && !isAdmin) continue; // non-admins can't see or set admin-only fields
+      try {
       const raw = data[def.key];
       const options = def.options ?? [];
 
@@ -213,6 +216,10 @@ export class CustomFieldService {
         }
         default: // text, textarea
           clean[def.key] = raw;
+      }
+      } catch (e) {
+        if (opts.lenient && e instanceof FieldValidationError) continue; // skip bad/missing field
+        throw e;
       }
     }
     return clean;

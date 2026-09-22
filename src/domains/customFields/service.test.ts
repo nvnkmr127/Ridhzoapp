@@ -35,3 +35,25 @@ describe("CustomFieldService.validate", () => {
     expect(await CustomFieldService.validate("org", { budget: "x", evil: "y" })).toEqual({ budget: "x" });
   });
 });
+
+describe("CustomFieldService.validateWith — lenient (inbound ingestion)", () => {
+  const defs = [
+    { key: "budget", label: "Budget", type: "number", required: false, options: [], disabled: false, adminOnly: false },
+    { key: "tier", label: "Tier", type: "select", required: true, options: ["A", "B"], disabled: false, adminOnly: false },
+  ] as any;
+
+  it("coerces good values and skips bad ones instead of throwing", () => {
+    const out = CustomFieldService.validateWith(defs, { budget: "1,200", tier: "Z" }, { lenient: true });
+    // budget coerced; the invalid select is skipped (caller keeps its raw value), no throw.
+    expect(out).toEqual({ budget: 1200 });
+  });
+
+  it("skips a missing required field in lenient mode (never drops the lead)", () => {
+    expect(() => CustomFieldService.validateWith(defs, { budget: "5" }, { lenient: true })).not.toThrow();
+    expect(CustomFieldService.validateWith(defs, { budget: "5" }, { lenient: true })).toEqual({ budget: 5 });
+  });
+
+  it("still throws in strict (default) mode", () => {
+    expect(() => CustomFieldService.validateWith(defs, { tier: "Z" })).toThrow(/one of/);
+  });
+});
