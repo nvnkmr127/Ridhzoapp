@@ -15,8 +15,13 @@ export function LeadTags({ leadId, initialTags }: { leadId: string; initialTags:
   const [value, setValue] = React.useState("");
   const [busy, setBusy] = React.useState(false);
 
-  // Existing tags feed the datalist for autocomplete.
-  React.useEffect(() => { listTagsAction().then((r) => setAll(r as Tag[])).catch(() => {}); }, []);
+  const [hasFetchedAll, setHasFetchedAll] = React.useState(false);
+
+  const ensureAllTags = React.useCallback(() => {
+    if (hasFetchedAll) return;
+    setHasFetchedAll(true);
+    listTagsAction().then((r) => setAll(r as Tag[])).catch(() => {});
+  }, [hasFetchedAll]);
 
   async function add() {
     const name = value.trim();
@@ -62,7 +67,11 @@ export function LeadTags({ leadId, initialTags }: { leadId: string; initialTags:
         value={value}
         list="tag-suggestions"
         placeholder="Add a tag + Enter"
-        onChange={(e) => setValue(e.target.value)}
+        onFocus={ensureAllTags}
+        onChange={(e) => {
+          ensureAllTags();
+          setValue(e.target.value);
+        }}
         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
         className="h-8 text-sm"
       />

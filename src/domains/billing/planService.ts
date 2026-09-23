@@ -41,7 +41,7 @@ export class PlanService {
   }
 
   // Computes real-time usage against plan limits.
-  static async getUsageStats(organizationId: string) {
+  static async getUsageStats(organizationId: string, knownPlan?: string) {
     let customSeats: number | undefined;
     try {
       const overrides = await PlatformConfigService.get<Record<string, number>>("seat_overrides", {});
@@ -50,7 +50,7 @@ export class PlanService {
       // ignore
     }
 
-    const planName = await this.plan(organizationId);
+    const planName = knownPlan ?? (await this.plan(organizationId));
     const { seats: defaultSeats, leads: maxLeads } = limitsFor(planName);
     const maxSeats = customSeats != null ? customSeats : defaultSeats;
 

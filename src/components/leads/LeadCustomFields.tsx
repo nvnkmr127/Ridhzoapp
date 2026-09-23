@@ -37,8 +37,10 @@ export function LeadCustomFields({ leadId, initialData, initialDefs }: { leadId:
   const [saving, setSaving] = React.useState(false);
 
   React.useEffect(() => {
-    listCustomFieldsAction().then((r) => setDefs((r as CustomFieldDef[]).filter((f) => !f.disabled))).catch(() => {});
-  }, []);
+    if (!initialDefs || initialDefs.length === 0) {
+      listCustomFieldsAction().then((r) => setDefs((r as CustomFieldDef[]).filter((f) => !f.disabled))).catch(() => {});
+    }
+  }, [initialDefs]);
 
   const definedKeys = new Set(defs.map((d) => d.key));
   const extraKeys = Object.keys(initialData || {}).filter((k) => !definedKeys.has(k) && !isInternalKey(k));

@@ -1,19 +1,25 @@
 import { requireOrg } from "@/lib/rbac";
-import { BillingLifecycleService } from "@/domains/billing/lifecycleService";
+import { BillingLifecycleService, type TenantBillingInfo } from "@/domains/billing/lifecycleService";
 import { AlertTriangle, ShieldAlert, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
-export async function PaymentGraceBanner() {
-  let orgId: string;
-  try {
-    const auth = await requireOrg();
-    orgId = auth.organizationId;
-  } catch {
-    return null;
+export async function PaymentGraceBanner({
+  billingInfo: initialBilling,
+}: {
+  billingInfo?: TenantBillingInfo | null;
+} = {}) {
+  let billing = initialBilling;
+  if (billing === undefined) {
+    let orgId: string;
+    try {
+      const auth = await requireOrg();
+      orgId = auth.organizationId;
+    } catch {
+      return null;
+    }
+    billing = await BillingLifecycleService.getTenantBillingStatus(orgId);
   }
-
-  const billing = await BillingLifecycleService.getTenantBillingStatus(orgId);
   if (!billing) return null;
 
   // Check if automatically downgraded due to 2+ payment failures

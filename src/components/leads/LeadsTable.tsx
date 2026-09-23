@@ -60,6 +60,7 @@ export function LeadsTable({
   total = 0,
   totalPages = 1,
   customColumns = [],
+  initialUsers,
 }: {
   leads: Lead[];
   page?: number;
@@ -67,6 +68,7 @@ export function LeadsTable({
   total?: number;
   totalPages?: number;
   customColumns?: CustomColumn[];
+  initialUsers?: User[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -80,12 +82,14 @@ export function LeadsTable({
       .then((s) => setStatusMap(new Map((s as any[]).map((x) => [x.key, { label: x.label, color: x.color }]))))
       .catch(() => {});
   }, []);
-  const [users, setUsers] = React.useState<User[]>([]);
+  const [users, setUsers] = React.useState<User[]>(initialUsers ?? []);
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
-    listUsersAction().then(setUsers).catch(() => {});
-  }, []);
+    if (!initialUsers || initialUsers.length === 0) {
+      listUsersAction().then(setUsers).catch(() => {});
+    }
+  }, [initialUsers]);
 
   const [leadToDelete, setLeadToDelete] = React.useState<Lead | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);

@@ -13,16 +13,26 @@ export interface PipelineScorecard {
   recommendations: string[];
 }
 
+export interface ScorecardInputData {
+  health?: { totalActiveLeads: number; healthScorePercentage: number };
+  sla?: { complianceRatePercentage: number };
+  stagnantLeads?: { id: string }[];
+  velocity?: { avgWeeklyTouchpoints: number };
+}
+
 export class PipelineScorecardService {
   /**
    * Computes multi-axis organization pipeline health scorecard (0-100) and letter grade.
    */
-  static async getPipelineScorecard(organizationId: string): Promise<PipelineScorecard> {
+  static async getPipelineScorecard(
+    organizationId: string,
+    precomputed?: ScorecardInputData
+  ): Promise<PipelineScorecard> {
     const [health, sla, stagnantLeads, velocity] = await Promise.all([
-      EngagementHealthService.getEngagementHealthBreakdown(organizationId),
-      SlaAnalyticsService.getSlaMetrics(organizationId),
-      StageStagnationService.getStagnantLeads(organizationId, 10),
-      EngagementVelocityService.getEngagementVelocity(organizationId),
+      precomputed?.health ?? EngagementHealthService.getEngagementHealthBreakdown(organizationId),
+      precomputed?.sla ?? SlaAnalyticsService.getSlaMetrics(organizationId),
+      precomputed?.stagnantLeads ?? StageStagnationService.getStagnantLeads(organizationId, 10),
+      precomputed?.velocity ?? EngagementVelocityService.getEngagementVelocity(organizationId),
     ]);
 
     const slaScore = sla.complianceRatePercentage;

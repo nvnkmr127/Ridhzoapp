@@ -170,6 +170,7 @@ export default async function LeadsPage({
           customColumns={(customFieldDefs as any[])
             .filter((f) => f.showOnTable && !f.disabled && (isAdmin || !f.adminOnly))
             .map((f) => ({ key: f.key, label: f.label }))}
+          initialUsers={usersList}
         />
       )}
     </div>

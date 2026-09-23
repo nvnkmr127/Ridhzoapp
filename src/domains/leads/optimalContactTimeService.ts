@@ -27,13 +27,19 @@ export class OptimalContactTimeService {
   /**
    * Analyzes activity timestamps to identify optimal outreach hours and days for maximum conversion.
    */
-  static async getOptimalContactTimes(organizationId: string): Promise<OptimalContactTimeMetrics> {
-    const orgLeads = await db
-      .select({ id: leads.id })
-      .from(leads)
-      .where(eq(leads.organizationId, organizationId));
+  static async getOptimalContactTimes(organizationId: string, knownLeadIds?: string[]): Promise<OptimalContactTimeMetrics> {
+    let leadIds: string[];
+    if (knownLeadIds !== undefined) {
+      leadIds = knownLeadIds;
+    } else {
+      const orgLeads = await db
+        .select({ id: leads.id })
+        .from(leads)
+        .where(eq(leads.organizationId, organizationId));
+      leadIds = orgLeads.map((l) => l.id);
+    }
 
-    if (orgLeads.length === 0) {
+    if (leadIds.length === 0) {
       return {
         totalTouchpointsAnalyzed: 0,
         bestHourOfDayLabel: "10:00 AM - 11:00 AM",
@@ -42,8 +48,6 @@ export class OptimalContactTimeService {
         dailyDistribution: [],
       };
     }
-
-    const leadIds = orgLeads.map((l) => l.id);
 
     const actRows = await db
       .select({ createdAt: activities.createdAt })

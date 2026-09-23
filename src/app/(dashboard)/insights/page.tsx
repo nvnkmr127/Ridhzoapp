@@ -61,12 +61,17 @@ export default async function InsightsPage() {
     ActivityDigestService.getDailyActivityDigest(organizationId),
   ]);
 
-  const [capacities, overdue] = await Promise.all([
+  const [capacities, overdue, sla] = await Promise.all([
     CapacityAssignmentService.getRepCapacities(organizationId),
     FollowUpEscalationService.getOverdueFollowUps(organizationId),
+    (await import("@/domains/leads/slaAnalyticsService")).SlaAnalyticsService.getSlaMetrics(organizationId),
   ]);
 
-  const scorecard = await PipelineScorecardService.getPipelineScorecard(organizationId);
+  const scorecard = await PipelineScorecardService.getPipelineScorecard(organizationId, {
+    health,
+    sla,
+    stagnantLeads: stagnant,
+  });
   const GRADE_COLOR: Record<string, string> = { A: "text-emerald-500", B: "text-lime-500", C: "text-amber-500", D: "text-rose-500" };
 
   return (

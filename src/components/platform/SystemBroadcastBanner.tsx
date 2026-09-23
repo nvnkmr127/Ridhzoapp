@@ -5,25 +5,35 @@ import { organizations } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { AlertTriangle, Info, AlertCircle } from "lucide-react";
 
-export async function SystemBroadcastBanner() {
-  const broadcast = await PlatformConfigService.getGlobalCached<BroadcastConfig | null>("broadcast", null);
+export async function SystemBroadcastBanner({
+  currentOrg: initialOrg,
+  broadcast: initialBroadcast,
+}: {
+  currentOrg?: { id: string; plan: string } | null;
+  broadcast?: BroadcastConfig | null;
+} = {}) {
+  const broadcast = initialBroadcast !== undefined
+    ? initialBroadcast
+    : await PlatformConfigService.getGlobalCached<BroadcastConfig | null>("broadcast", null);
   if (!broadcast || !broadcast.active || !broadcast.message?.trim()) return null;
 
-  let currentOrg: { id: string; plan: string } | null = null;
-  try {
-    const auth = await requireOrg();
-    if (auth.organizationId) {
-      const [org] = await db
-        .select({ id: organizations.id, plan: organizations.plan })
-        .from(organizations)
-        .where(eq(organizations.id, auth.organizationId))
-        .limit(1);
-      if (org) {
-        currentOrg = { id: org.id, plan: org.plan ?? "free" };
+  let currentOrg: { id: string; plan: string } | null = initialOrg ?? null;
+  if (initialOrg === undefined) {
+    try {
+      const auth = await requireOrg();
+      if (auth.organizationId) {
+        const [org] = await db
+          .select({ id: organizations.id, plan: organizations.plan })
+          .from(organizations)
+          .where(eq(organizations.id, auth.organizationId))
+          .limit(1);
+        if (org) {
+          currentOrg = { id: org.id, plan: org.plan ?? "free" };
+        }
       }
+    } catch {
+      // Unauthenticated or not inside an org
     }
-  } catch {
-    // Unauthenticated or not inside an org
   }
 
   if (!shouldShowBroadcast(broadcast, currentOrg)) {

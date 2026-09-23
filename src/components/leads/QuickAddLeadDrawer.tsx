@@ -63,13 +63,7 @@ export function QuickAddLeadDrawer({
       });
   }, []);
 
-  // Preload on mount so fields are immediately available with 0 delay when opening
-  React.useEffect(() => {
-    fetchCustomFields();
-    listUsersAction().then(setUsers).catch(() => {});
-  }, [fetchCustomFields]);
-
-  // Re-fetch when opening to pick up any fields created in Settings
+  // Fetch fields and users only when the drawer is opened
   React.useEffect(() => {
     if (open) {
       setServerError(null);

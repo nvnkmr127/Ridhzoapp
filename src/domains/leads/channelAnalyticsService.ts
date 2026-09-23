@@ -18,17 +18,21 @@ export class ChannelAnalyticsService {
   /**
    * Analyzes communication channel utilization across WhatsApp, Phone Calls, Emails, and Notes.
    */
-  static async getChannelMetrics(organizationId: string): Promise<ChannelAnalytics> {
-    const orgLeads = await db
-      .select({ id: leads.id })
-      .from(leads)
-      .where(eq(leads.organizationId, organizationId));
-
-    if (orgLeads.length === 0) {
-      return { totalTouchpoints: 0, topChannel: "None", distribution: [] };
+  static async getChannelMetrics(organizationId: string, knownLeadIds?: string[]): Promise<ChannelAnalytics> {
+    let leadIds: string[];
+    if (knownLeadIds !== undefined) {
+      leadIds = knownLeadIds;
+    } else {
+      const orgLeads = await db
+        .select({ id: leads.id })
+        .from(leads)
+        .where(eq(leads.organizationId, organizationId));
+      leadIds = orgLeads.map((l) => l.id);
     }
 
-    const leadIds = orgLeads.map((l) => l.id);
+    if (leadIds.length === 0) {
+      return { totalTouchpoints: 0, topChannel: "None", distribution: [] };
+    }
 
     // Fetch activity type counts
     const actRows = await db

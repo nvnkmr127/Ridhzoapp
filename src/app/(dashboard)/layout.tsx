@@ -8,6 +8,7 @@ import { FloatingAssistant } from "@/components/assistant/FloatingAssistant";
 import { isSuperAdmin, requireOrg } from "@/lib/rbac";
 import { PlatformConfigService } from "@/domains/platform/configService";
 import { PlanService } from "@/domains/billing/planService";
+import { BillingLifecycleService } from "@/domains/billing/lifecycleService";
 import { Wrench } from "lucide-react";
 
 // Every dashboard page is authed and DB-backed — render per request, never prerender at build.
@@ -46,14 +47,18 @@ export default async function DashboardLayout({
     }
   }
 
-  const usageStats = await PlanService.getUsageStats(organizationId);
+  const billingInfo = await BillingLifecycleService.getTenantBillingStatus(organizationId);
+  const effectivePlan = billingInfo
+    ? (billingInfo.status === "locked" || billingInfo.status === "free" ? "free" : billingInfo.plan)
+    : undefined;
+  const usageStats = await PlanService.getUsageStats(organizationId, effectivePlan);
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background text-foreground">
       <Sidebar isSuperAdmin={superAdmin} plan={usageStats?.plan} />
       <div className="flex flex-col flex-1 overflow-hidden">
-        <SystemBroadcastBanner />
-        <PaymentGraceBanner />
+        <SystemBroadcastBanner currentOrg={{ id: organizationId, plan: usageStats?.plan ?? effectivePlan ?? "free" }} />
+        <PaymentGraceBanner billingInfo={billingInfo} />
         <ImpersonationBanner />
         <InstallPwaBanner />
         <Header isSuperAdmin={superAdmin} organizationId={organizationId} usageStats={usageStats} />

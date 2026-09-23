@@ -22,7 +22,8 @@ export class ActivityDigestService {
    */
   static async getDailyActivityDigest(
     organizationId: string,
-    targetDateStr?: string
+    targetDateStr?: string,
+    knownLeadIds?: string[]
   ): Promise<DailyActivityDigest> {
     let startOfDay: Date;
     let endOfDay: Date;
@@ -57,11 +58,16 @@ export class ActivityDigestService {
     }
 
     // Fetch org lead IDs
-    const orgLeads = await db
-      .select({ id: leads.id })
-      .from(leads)
-      .where(eq(leads.organizationId, organizationId));
-    const leadIds = orgLeads.map((l) => l.id);
+    let leadIds: string[];
+    if (knownLeadIds !== undefined) {
+      leadIds = knownLeadIds;
+    } else {
+      const orgLeads = await db
+        .select({ id: leads.id })
+        .from(leads)
+        .where(eq(leads.organizationId, organizationId));
+      leadIds = orgLeads.map((l) => l.id);
+    }
 
     if (leadIds.length === 0) {
       return { date: dateFormatted, totalActivities: 0, typeBreakdown: {}, repSummaries: [] };

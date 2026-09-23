@@ -8,39 +8,10 @@ import { useRouter } from "next/navigation";
 // the tab is visible, and immediately when the user returns to the tab — so inbound leads surface
 // on their own. Paused while hidden so we don't wake Neon / burn queries on a backgrounded tab.
 // ponytail: poll, not realtime. Swap for SSE/websocket only if sub-interval latency is required.
+// Automatic full-page router.refresh() polling was removed to eliminate recurring
+// server component execution waves on /leads. Lightweight refresh strategy will be
+// implemented in a subsequent phase.
 export function LeadsAutoRefresh({ intervalMs = 20_000 }: { intervalMs?: number }) {
-  const router = useRouter();
-
-  React.useEffect(() => {
-    let timer: ReturnType<typeof setInterval> | undefined;
-
-    const start = () => {
-      stop();
-      timer = setInterval(() => {
-        if (document.visibilityState === "visible") router.refresh();
-      }, intervalMs);
-    };
-    const stop = () => {
-      if (timer) clearInterval(timer);
-      timer = undefined;
-    };
-
-    const onVisible = () => {
-      if (document.visibilityState === "visible") {
-        router.refresh(); // catch up immediately on return, then resume polling
-        start();
-      } else {
-        stop();
-      }
-    };
-
-    if (document.visibilityState === "visible") start();
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      stop();
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [router, intervalMs]);
-
+  // Automatic full-tree refresh disabled (Phase 2).
   return null;
 }
