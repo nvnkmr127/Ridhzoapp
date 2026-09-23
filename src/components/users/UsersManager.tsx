@@ -2,6 +2,7 @@
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { PasswordInput } from "@/components/ui/password-input"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
@@ -277,7 +278,7 @@ export function UsersManager({
             <Input placeholder="Last name" value={form.lastName} onChange={(e) => set("lastName", e.target.value)} />
             <Input type="email" placeholder="Email" value={form.email} onChange={(e) => set("email", e.target.value)} />
             <div>
-              <Input type="password" placeholder="Initial password (min 6 characters)" value={form.password}
+              <PasswordInput placeholder="Initial password (min 6 characters)" value={form.password}
                 onChange={(e) => set("password", e.target.value)} />
               {form.password && form.password.length < 6 && (
                 <p className="text-xs text-destructive mt-1">Must be at least 6 characters</p>

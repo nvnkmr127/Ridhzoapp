@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { acceptInvitationAction } from "@/lib/actions/invitations";
@@ -47,7 +48,7 @@ export function AcceptInviteForm({ token, email }: { token: string; email: strin
       </div>
       <div className="space-y-1">
         <Label htmlFor="pw">Choose a password</Label>
-        <Input id="pw" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min 6 characters" required />
+        <PasswordInput id="pw" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min 6 characters" required />
       </div>
       <Button type="submit" className="w-full" disabled={saving || password.length < 6}>
         {saving ? "Creating account…" : "Accept invitation"}

@@ -4,6 +4,7 @@ import * as React from "react";
 import { Sparkles, Mail, Copy, RefreshCw, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -217,8 +218,7 @@ export function LeadIntelligenceManager({ initial }: { initial: View }) {
           </div>
           <div>
             <Label>Auth header value</Label>
-            <Input
-              type="password"
+            <PasswordInput
               value={authValue}
               onChange={(e) => setAuthValue(e.target.value)}
               placeholder={v.hasEnrichmentAuthValue ? "•••••••• (leave blank to keep)" : "Bearer sk-… or the raw key"}
@@ -280,8 +280,7 @@ export function LeadIntelligenceManager({ initial }: { initial: View }) {
           </div>
           <div>
             <Label>Access token</Label>
-            <Input
-              type="password"
+            <PasswordInput
               value={accessToken}
               onChange={(e) => setAccessToken(e.target.value)}
               placeholder={v.hasCapiAccessToken ? "•••••••• (leave blank to keep)" : "System-user access token"}

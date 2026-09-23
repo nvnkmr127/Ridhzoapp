@@ -4,6 +4,7 @@ import * as React from "react";
 import { Mail, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { updateEmailSettingsAction, sendTestEmailAction } from "@/lib/actions/emailSettings";
@@ -112,8 +113,7 @@ export function EmailSettingsManager({ initial }: { initial: View }) {
           </div>
           <div>
             <Label>Password</Label>
-            <Input
-              type="password"
+            <PasswordInput
               value={f.smtpPassword}
               onChange={(e) => set("smtpPassword")(e.target.value)}
               placeholder={hasPassword ? "•••••••• (leave blank to keep)" : "SMTP password"}

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Alert } from "@/components/ui/alert";
 import { resetPasswordAction } from "@/lib/actions/auth";
@@ -73,9 +74,8 @@ export function ResetPasswordForm({ token, email }: { token: string; email: stri
 
       <div className="space-y-2">
         <Label htmlFor="password">New Password</Label>
-        <Input
+        <PasswordInput
           id="password"
-          type="password"
           placeholder="Min 6 characters"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -86,9 +86,8 @@ export function ResetPasswordForm({ token, email }: { token: string; email: stri
 
       <div className="space-y-2">
         <Label htmlFor="confirmPassword">Confirm New Password</Label>
-        <Input
+        <PasswordInput
           id="confirmPassword"
-          type="password"
           placeholder="Re-enter password"
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}

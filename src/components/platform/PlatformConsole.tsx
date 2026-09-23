@@ -54,6 +54,7 @@ import type { CampaignAnalytics } from "@/domains/platform/attributionService";
 import { saveCapiConfigAction, sendTestCapiPingAction } from "@/lib/actions/platform";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
@@ -4227,8 +4228,7 @@ export function PlatformConsole({
 
               <div className="space-y-1">
                 <label className="font-semibold text-foreground">Conversions System User Access Token</label>
-                <Input
-                  type="password"
+                <PasswordInput
                   placeholder="EAAG..."
                   value={capiConfig.accessToken}
                   onChange={(e) => setCapiConfig((prev) => ({ ...prev, accessToken: e.target.value.trim() }))}
