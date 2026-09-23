@@ -40,6 +40,7 @@ export type ListLeadsOptions = {
   page?: number;
   limit?: number;
   currentUserId?: string;
+  enforceOwnerId?: string;
 };
 
 export class LeadService {
@@ -415,6 +416,11 @@ export class LeadService {
     // Recycled (soft-deleted) leads never appear in normal lists.
     const baseConditions = [eq(leads.organizationId, options.organizationId), isNull(leads.deletedAt)];
 
+    // Strict owner isolation: non-admin callers strictly only see their own assigned leads.
+    if (options.enforceOwnerId) {
+      baseConditions.push(eq(leads.ownerId, options.enforceOwnerId));
+    }
+
     // Global Search (Name, Phone, Email, Company)
     if (options.search && options.search.trim()) {
       const term = options.search.trim();
@@ -439,7 +445,7 @@ export class LeadService {
 
     // Shortcut params
     if (options.status) baseConditions.push(eq(leads.status, options.status));
-    if (options.ownerId) {
+    if (!options.enforceOwnerId && options.ownerId) {
       if (options.ownerId === "null" || options.ownerId === "unassigned") {
         baseConditions.push(isNull(leads.ownerId));
       } else {
@@ -460,6 +466,10 @@ export class LeadService {
       } else if (options.filters.rules) {
         rules = options.filters.rules;
         logic = options.filters.logic || "AND";
+      }
+
+      if (options.enforceOwnerId) {
+        rules = rules.filter((r) => r.field !== "ownerId");
       }
 
       const ruleConds = rules
@@ -517,7 +527,7 @@ export class LeadService {
   // a SQL superset of NextBestActionService's high-priority rules (new & uncontacted, overdue follow-up
   // on an open lead, hot active lead, or a lead that recently opened shared content). NextBestAction
   // stays the authority on the final label; this just narrows what we score.
-  static async listPriorityCandidates(organizationId: string, engagedIds: string[] = [], limit = 200) {
+  static async listPriorityCandidates(organizationId: string, engagedIds: string[] = [], limit = 200, enforceOwnerId?: string) {
     const now = new Date();
     const openStatuses = ["new", "active"];
     const orConds = [
@@ -539,18 +549,23 @@ export class LeadService {
         nextFollowUpAt: leads.nextFollowUpAt,
       })
       .from(leads)
-      .where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt), or(...orConds)))
+      .where(and(
+        eq(leads.organizationId, organizationId),
+        isNull(leads.deletedAt),
+        ...(enforceOwnerId ? [eq(leads.ownerId, enforceOwnerId)] : []),
+        or(...orConds)
+      ))
       .limit(limit);
   }
 
-  static async listLeadsByStage(organizationId: string, limitPerStage = 20, statuses?: string[]) {
+  static async listLeadsByStage(organizationId: string, limitPerStage = 20, statuses?: string[], enforceOwnerId?: string) {
     const cols = statuses && statuses.length ? statuses : ["new", "active", "won", "lost", "unqualified"];
 
     // Fetch every column concurrently — the board previously issued them one status at a time, so on
     // the remote DB it cost one ~300ms round-trip per column (~1.5s for 5). In parallel it's ~one.
     const perColumn = await Promise.all(
       cols.map(async (st) => {
-        const { data, total } = await this.listLeads({ organizationId, status: st, page: 1, limit: limitPerStage });
+        const { data, total } = await this.listLeads({ organizationId, status: st, page: 1, limit: limitPerStage, enforceOwnerId });
         return [st, { data, total }] as const;
       }),
     );

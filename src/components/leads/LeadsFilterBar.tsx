@@ -24,10 +24,11 @@ export function LeadsFilterBar({
   const searchParams = useSearchParams();
 
   // Read current URL params
+  const defaultViewId = views[0]?.id || "preset-all";
   const currentSearch = searchParams.get("search") || "";
   const currentSort = searchParams.get("sort") || "createdAt";
   const currentOrder = (searchParams.get("order") as "asc" | "desc") || "desc";
-  const currentViewId = searchParams.get("viewId") || "preset-all";
+  const currentViewId = searchParams.get("viewId") || defaultViewId;
   const rawFiltersParam = searchParams.get("filters");
 
   const [term, setTerm] = React.useState(currentSearch);
@@ -121,7 +122,7 @@ export function LeadsFilterBar({
       filters: null,
       status: null,
       owner: null,
-      viewId: "preset-all",
+      viewId: defaultViewId,
       page: "1",
     });
   }

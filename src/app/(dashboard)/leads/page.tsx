@@ -46,7 +46,7 @@ export default async function LeadsPage({
   }
 
   const [views, usersList, sourcesList, tagsList, customFieldDefs, leadResult] = await Promise.all([
-    SavedViewService.listViews(organizationId, userId),
+    SavedViewService.listViews(organizationId, userId, isAdmin),
     listUsersAction().catch(() => []),
     LeadSourceService.getSources(organizationId).catch(() => []),
     TagService.listAll(organizationId).catch(() => []),
@@ -62,6 +62,7 @@ export default async function LeadsPage({
       page,
       limit,
       currentUserId: userId,
+      enforceOwnerId: isAdmin ? undefined : userId,
     }),
   ]);
 

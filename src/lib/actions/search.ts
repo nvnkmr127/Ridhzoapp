@@ -30,11 +30,15 @@ export type UniversalSearchResults = {
 // Org-scoped universal search for the command palette. Matches leads and team members,
 // plus cross-tenant organizations when called by a platform super-admin.
 export async function searchUniversalAction(query: string): Promise<UniversalSearchResults> {
-  const { organizationId } = await requireOrg();
+  const { userId, organizationId } = await requireOrg();
   const q = query.trim();
   if (q.length < 2) return { leads: [], users: [] };
   const like = `%${q}%`;
-  const isSuper = await isSuperAdmin();
+  const [isSuper, { hasPermission }] = await Promise.all([
+    isSuperAdmin(),
+    import("@/lib/rbac"),
+  ]);
+  const isAdmin = await hasPermission("settings.manage");
 
   const [leadRows, userRows, orgRows] = await Promise.all([
     organizationId
@@ -43,6 +47,8 @@ export async function searchUniversalAction(query: string): Promise<UniversalSea
           .from(leads)
           .where(and(
             eq(leads.organizationId, organizationId),
+            isNull(leads.deletedAt),
+            ...(!isAdmin && userId ? [eq(leads.ownerId, userId)] : []),
             or(ilike(leads.name, like), ilike(leads.email, like), ilike(leads.phone, like), ilike(leads.company, like)),
           ))
           .orderBy(desc(leads.createdAt))

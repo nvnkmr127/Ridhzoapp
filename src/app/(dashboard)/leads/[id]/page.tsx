@@ -48,7 +48,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   }
 
   const startMs = Date.now();
-  const { organizationId } = await requireOrg();
+  const { userId, organizationId } = await requireOrg();
 
   // 1. Fetch lead first — if missing, 404 immediately and skip all child queries.
   const lead = await LeadService.getLead(id, organizationId);
@@ -56,10 +56,14 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     notFound();
   }
 
+  const isFieldAdmin = await hasPermission("settings.manage");
+  if (!isFieldAdmin && lead.ownerId !== userId) {
+    notFound();
+  }
+
   // Fetch the org's custom-field defs once (cached) — used both to strip admin-only values for
   // non-admins and to hand the detail component its defs on the server, so the custom fields render
   // on first paint instead of after a client round-trip.
-  const isFieldAdmin = await hasPermission("settings.manage");
   const allCustomDefs = await CustomFieldService.listCached(organizationId);
   if (!isFieldAdmin && lead.customData && typeof lead.customData === "object") {
     const cd = { ...(lead.customData as Record<string, unknown>) };

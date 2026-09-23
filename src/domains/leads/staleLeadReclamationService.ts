@@ -20,7 +20,8 @@ export class StaleLeadReclamationService {
    */
   static async detectStaleLeads(
     organizationId: string,
-    daysInactiveThreshold: number = 14
+    daysInactiveThreshold: number = 14,
+    enforceOwnerId?: string
   ): Promise<StaleLeadSummary[]> {
     const thresholdDate = new Date(Date.now() - daysInactiveThreshold * 24 * 60 * 60 * 1000);
 
@@ -38,7 +39,9 @@ export class StaleLeadReclamationService {
       .where(
         and(
           eq(leads.organizationId, organizationId),
+          isNull(leads.deletedAt),
           inArray(leads.status, ["new", "active"]),
+          ...(enforceOwnerId ? [eq(leads.ownerId, enforceOwnerId)] : []),
           or(
             lt(leads.lastContactedAt, thresholdDate),
             and(isNull(leads.lastContactedAt), lt(leads.createdAt, thresholdDate))
@@ -63,9 +66,10 @@ export class StaleLeadReclamationService {
   static async reclaimStaleLeads(
     organizationId: string,
     daysInactiveThreshold: number = 14,
-    actorUserId?: string
+    actorUserId?: string,
+    enforceOwnerId?: string
   ): Promise<{ reclaimedCount: number; leadIds: string[] }> {
-    const staleLeads = await this.detectStaleLeads(organizationId, daysInactiveThreshold);
+    const staleLeads = await this.detectStaleLeads(organizationId, daysInactiveThreshold, enforceOwnerId);
     if (staleLeads.length === 0) return { reclaimedCount: 0, leadIds: [] };
 
     const staleIds = staleLeads.map((l) => l.id);

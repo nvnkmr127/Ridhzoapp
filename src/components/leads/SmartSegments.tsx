@@ -13,7 +13,11 @@ const META: Record<SmartSegmentKey, { icon: typeof Flame; href: string }> = {
 
 export async function SmartSegments() {
   const { organizationId } = await requireOrg();
-  const segments = (await SmartSegmentationService.getSmartSegments(organizationId)).filter((s) => s.count > 0);
+  const { hasPermission } = await import("@/lib/rbac");
+  const isAdmin = await hasPermission("settings.manage");
+  const segments = (await SmartSegmentationService.getSmartSegments(organizationId)).filter(
+    (s) => s.count > 0 && (isAdmin || s.key !== "unassigned_new")
+  );
   if (segments.length === 0) return null;
 
   return (

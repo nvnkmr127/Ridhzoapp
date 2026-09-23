@@ -10,8 +10,38 @@ import { requireOrg, hasPermission } from "@/lib/rbac";
 import { UsersManager } from "@/components/users/UsersManager";
 import { RolesManager } from "@/components/users/RolesManager";
 
+import { ShieldAlert } from "lucide-react";
+
 export default async function UsersPage() {
-  if (!(await hasPermission("users.manage"))) redirect("/leads");
+  const canManageUsers = await hasPermission("users.manage");
+  if (!canManageUsers) {
+    return (
+      <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6 max-w-2xl">
+        <div className="flex items-center gap-3">
+          <Link href="/settings">
+            <Button variant="ghost" size="icon" aria-label="Go back"><ArrowLeft className="h-5 w-5" /></Button>
+          </Link>
+          <h2 className="text-2xl font-bold tracking-tight">Users &amp; Roles</h2>
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-6 text-center space-y-4">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+            <ShieldAlert className="h-6 w-6" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold">Access Restricted</h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              You do not have permission to view or manage users and roles for this workspace. Contact an administrator for access.
+            </p>
+          </div>
+          <div className="pt-2">
+            <Link href="/settings">
+              <Button variant="outline">Return to Settings</Button>
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
   const { organizationId, userId } = await requireOrg();
   const canManageRoles = await hasPermission("roles.manage");
   const [users, teams, roles, invites] = await Promise.all([

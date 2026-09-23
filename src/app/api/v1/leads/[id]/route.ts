@@ -24,6 +24,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const lead = await LeadService.getLead(id, auth.organizationId);
   if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
 
+  if (auth.userId) {
+    const isAdmin = await hasPermissionForRoleId(auth.roleId ?? null, "settings.manage");
+    if (!isAdmin && lead.ownerId !== auth.userId) {
+      return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+    }
+  }
+
   const activities = await ActivityService.getLeadActivities(id);
   const fus = await db
     .select({ id: followUps.id, title: followUps.title, type: followUps.type, status: followUps.status, dueAt: followUps.dueAt })
@@ -80,6 +87,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const body = await req.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Invalid body", details: parsed.error.issues }, { status: 422 });
+
+  const currentLead = await LeadService.getLead(id, auth.organizationId);
+  if (!currentLead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+
+  if (auth.userId) {
+    const isAdmin = await hasPermissionForRoleId(auth.roleId ?? null, "settings.manage");
+    if (!isAdmin && currentLead.ownerId !== auth.userId) {
+      return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+    }
+  }
 
   try {
     const { name, email, phone, company } = parsed.data;
@@ -141,6 +158,16 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
   if (!idSchema.safeParse(id).success) {
     return NextResponse.json({ error: "Invalid lead ID format. Expected a valid UUID." }, { status: 400 });
+  }
+
+  const targetLead = await LeadService.getLead(id, auth.organizationId);
+  if (!targetLead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+
+  if (auth.userId) {
+    const isAdmin = await hasPermissionForRoleId(auth.roleId ?? null, "settings.manage");
+    if (!isAdmin && targetLead.ownerId !== auth.userId) {
+      return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+    }
   }
 
   // Mobile-token requests carry a role — hold it to the same leads.delete gate the web UI enforces.

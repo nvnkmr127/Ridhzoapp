@@ -91,7 +91,7 @@ export const DEFAULT_LEAD_VIEWS: SavedViewData[] = [
 ];
 
 export class SavedViewService {
-  static async listViews(organizationId: string, userId?: string): Promise<SavedViewData[]> {
+  static async listViews(organizationId: string, userId?: string, isAdmin: boolean = true): Promise<SavedViewData[]> {
     const customRows = await db.select().from(savedViews)
       .where(
         and(
@@ -111,7 +111,11 @@ export class SavedViewService {
       userId: row.userId,
     }));
 
-    return [...DEFAULT_LEAD_VIEWS, ...customViews];
+    const presets = isAdmin
+      ? DEFAULT_LEAD_VIEWS
+      : DEFAULT_LEAD_VIEWS.filter((v) => v.id !== "preset-all" && v.id !== "preset-unassigned");
+
+    return [...presets, ...customViews];
   }
 
   static async getViewById(id: string, organizationId: string): Promise<SavedViewData | null> {

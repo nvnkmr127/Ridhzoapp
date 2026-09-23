@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Snowflake, ArrowLeft, MessageCircle, Phone } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { requireOrg } from "@/lib/rbac";
+import { requireOrg, hasPermission } from "@/lib/rbac";
 import { StaleLeadReclamationService } from "@/domains/leads/staleLeadReclamationService";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,11 +21,16 @@ export default async function ColdLeadsPage({
 }: {
   searchParams: Promise<{ days?: string }>;
 }) {
-  const { organizationId } = await requireOrg();
+  const [{ userId, organizationId }, isAdmin] = await Promise.all([
+    requireOrg(),
+    hasPermission("settings.manage"),
+  ]);
   const days = Math.max(1, Number((await searchParams).days) || 14);
-  const stale = (await StaleLeadReclamationService.detectStaleLeads(organizationId, days)).sort(
-    (a, b) => b.daysInactive - a.daysInactive
-  );
+  const stale = (await StaleLeadReclamationService.detectStaleLeads(
+    organizationId,
+    days,
+    isAdmin ? undefined : userId
+  )).sort((a, b) => b.daysInactive - a.daysInactive);
 
   return (
     <div className="space-y-6">

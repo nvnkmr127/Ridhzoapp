@@ -44,7 +44,7 @@ function MobileSuperAdminNavLinks({
 }
 
 // Hamburger + slide-in nav drawer for mobile. Hidden on md+ (the fixed Sidebar takes over there).
-export function MobileSidebar({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
+export function MobileSidebar({ isSuperAdmin = false, plan }: { isSuperAdmin?: boolean; plan?: string }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
@@ -65,14 +65,34 @@ export function MobileSidebar({ isSuperAdmin = false }: { isSuperAdmin?: boolean
           <aside className="absolute left-0 top-0 flex h-full w-64 flex-col border-r border-border bg-card animate-in slide-in-from-left duration-200">
             <div className="flex h-14 items-center justify-between px-6 border-b border-border">
               <Link href="/leads" onClick={() => setOpen(false)} className="flex items-center">
-                <Image
-                  src="/logos/Ridhzo-Logo-Final_Horizontal-Light.png"
-                  alt="Ridhzo"
-                  width={110}
-                  height={32}
-                  className="h-7 w-auto object-contain"
-                  priority
-                />
+                {plan === "starter" ? (
+                  <Image
+                    src="/logos/Ridhzo-Logo-Final_Horizontal-Light-Starter.png"
+                    alt="Ridhzo Starter"
+                    width={130}
+                    height={32}
+                    className="h-7 w-auto object-contain"
+                    priority
+                  />
+                ) : plan === "unlimited" || plan === "business" ? (
+                  <Image
+                    src="/logos/Ridhzo-Logo-Final_Horizontal-Light-Unlimited.png"
+                    alt="Ridhzo Unlimited"
+                    width={140}
+                    height={32}
+                    className="h-7 w-auto object-contain"
+                    priority
+                  />
+                ) : (
+                  <Image
+                    src="/logos/Ridhzo-Logo-Final_Horizontal-Light.png"
+                    alt="Ridhzo"
+                    width={110}
+                    height={32}
+                    className="h-7 w-auto object-contain"
+                    priority
+                  />
+                )}
               </Link>
               <button
                 type="button"

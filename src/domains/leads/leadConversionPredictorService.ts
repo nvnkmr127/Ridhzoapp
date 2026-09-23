@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { leads } from "@/db/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 
 export type ConversionLikelihoodTier = "very_high" | "high" | "moderate" | "low";
 
@@ -29,7 +29,10 @@ export class LeadConversionPredictorService {
   /**
    * Predicts lead conversion win probabilities and computes high-probability deal pipeline metrics for active leads.
    */
-  static async getConversionPredictions(organizationId: string): Promise<LeadConversionPredictionReport> {
+  static async getConversionPredictions(
+    organizationId: string,
+    enforceOwnerId?: string
+  ): Promise<LeadConversionPredictionReport> {
     const activeLeads = await db
       .select({
         id: leads.id,
@@ -50,7 +53,9 @@ export class LeadConversionPredictorService {
       .where(
         and(
           eq(leads.organizationId, organizationId),
-          inArray(leads.status, ["new", "active"])
+          isNull(leads.deletedAt),
+          inArray(leads.status, ["new", "active"]),
+          ...(enforceOwnerId ? [eq(leads.ownerId, enforceOwnerId)] : [])
         )
       );
 

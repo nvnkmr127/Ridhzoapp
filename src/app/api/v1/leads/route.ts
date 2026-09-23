@@ -31,6 +31,13 @@ export async function GET(req: NextRequest) {
   }
 
   const where = [eq(leads.organizationId, auth.organizationId), isNull(leads.deletedAt)];
+  if (auth.userId) {
+    const { hasPermissionForRoleId } = await import("@/lib/rbac");
+    const isAdmin = await hasPermissionForRoleId(auth.roleId ?? null, "settings.manage");
+    if (!isAdmin) {
+      where.push(eq(leads.ownerId, auth.userId));
+    }
+  }
   if (status) where.push(eq(leads.status, status));
   if (search) {
     // Match name/email/company (case-insensitive) or phone digits, so mobile can search the

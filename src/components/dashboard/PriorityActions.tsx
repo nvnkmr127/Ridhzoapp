@@ -22,10 +22,19 @@ function waLink(phone: string | null, label: string) {
 // Server component: the AI/rules-driven "do this next" panel. Reuses the per-lead
 // NextBestAction engine, aggregated org-wide, floating content-openers to the top.
 export async function PriorityActions() {
-  const { organizationId } = await requireOrg();
+  const [{ userId, organizationId }, { hasPermission }] = await Promise.all([
+    requireOrg(),
+    import("@/lib/rbac"),
+  ]);
+  const isAdmin = await hasPermission("settings.manage");
   const engaged = await ContentSharingService.recentlyEngagedLeadIds(organizationId);
   // Only leads that can plausibly be high-priority are fetched + scored (not every lead in the org).
-  const data = await LeadService.listPriorityCandidates(organizationId, [...engaged]);
+  const data = await LeadService.listPriorityCandidates(
+    organizationId,
+    [...engaged],
+    200,
+    isAdmin ? undefined : userId
+  );
 
   const scored = data.map((l) => {
     const isEngaged = engaged.has(l.id);

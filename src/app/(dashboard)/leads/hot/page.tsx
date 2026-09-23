@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Flame, ArrowLeft, MessageCircle, Phone, Eye, EyeOff } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { requireOrg } from "@/lib/rbac";
+import { requireOrg, hasPermission } from "@/lib/rbac";
 import { formatCurrency } from "@/lib/format";
 import { getOrgFormat } from "@/lib/format.server";
 import { ContentSharingService } from "@/domains/leads/contentSharingService";
@@ -35,12 +35,16 @@ function waLink(phone: string | null) {
 }
 
 export default async function HotLeadsPage() {
-  const { organizationId } = await requireOrg();
+  const [{ userId, organizationId }, isAdmin] = await Promise.all([
+    requireOrg(),
+    hasPermission("settings.manage"),
+  ]);
+  const enforceOwnerId = isAdmin ? undefined : userId;
   const fmt = await getOrgFormat(organizationId);
   const [report, engaged, ignored] = await Promise.all([
-    LeadConversionPredictorService.getConversionPredictions(organizationId),
+    LeadConversionPredictorService.getConversionPredictions(organizationId, enforceOwnerId),
     ContentSharingService.recentlyEngagedLeadIds(organizationId),
-    ContentSharingService.ignoredShares(organizationId),
+    ContentSharingService.ignoredShares(organizationId, undefined, enforceOwnerId),
   ]);
 
   function nudgeLink(phone: string | null, title: string) {

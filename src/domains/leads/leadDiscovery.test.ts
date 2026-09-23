@@ -226,6 +226,38 @@ describe("Lead Discovery Subsystem - Search, Filters, Sorting, Views & Tenant Is
       expect(res.data[0].ownerId).toBeNull();
     });
 
+    it("should strictly enforce owner isolation for non-admin team members", async () => {
+      const mockSelect = {
+        from: vi.fn().mockReturnThis(),
+        where: vi.fn().mockReturnThis(),
+        orderBy: vi.fn().mockReturnThis(),
+        limit: vi.fn().mockReturnThis(),
+        offset: vi.fn().mockResolvedValue([
+          { id: "lead-1", ownerId: USER_1, organizationId: ORG_A },
+        ]),
+      };
+
+      const mockCount = {
+        from: vi.fn().mockReturnThis(),
+        where: vi.fn().mockResolvedValue([{ total: 1 }]),
+      };
+
+      (db.select as any).mockImplementation((arg?: any) => {
+        if (arg && arg.total) return mockCount;
+        return mockSelect;
+      });
+
+      const res = await LeadService.listLeads({
+        organizationId: ORG_A,
+        enforceOwnerId: USER_1,
+        // Attempting to filter by unassigned or another user must be ignored
+        filters: [{ field: "ownerId", operator: "is_empty" }],
+      });
+
+      expect(res.data.length).toBe(1);
+      expect(res.data[0].ownerId).toBe(USER_1);
+    });
+
     it("should support OR condition grouping", async () => {
       const mockSelect = {
         from: vi.fn().mockReturnThis(),
@@ -326,6 +358,22 @@ describe("Lead Discovery Subsystem - Search, Filters, Sorting, Views & Tenant Is
       expect(views.length).toBeGreaterThan(8); // 8 presets + 1 custom
       expect(views[0].id).toBe("preset-all");
       expect(views.find((v) => v.id === "custom-view-1")?.name).toBe("High Value Leads");
+    });
+
+    it("should filter out preset-all and preset-unassigned for non-admin team members", async () => {
+      const mockSelect = {
+        from: vi.fn().mockReturnThis(),
+        where: vi.fn().mockReturnThis(),
+        orderBy: vi.fn().mockResolvedValue([]),
+      };
+
+      (db.select as any).mockReturnValue(mockSelect);
+
+      const views = await SavedViewService.listViews(ORG_A, USER_1, false);
+
+      expect(views.some((v) => v.id === "preset-all")).toBe(false);
+      expect(views.some((v) => v.id === "preset-unassigned")).toBe(false);
+      expect(views[0].id).toBe("preset-my");
     });
 
     it("should create a custom saved view bound to organizationId", async () => {

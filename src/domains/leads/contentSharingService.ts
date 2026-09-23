@@ -1,7 +1,7 @@
 import { randomBytes } from "crypto";
 import { db } from "@/db";
 import { sharedLinks, sharedLinkViews, leads, users, organizations } from "@/db/schema";
-import { and, asc, count, desc, eq, gt, gte, lt, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, lt, isNull, sql } from "drizzle-orm";
 import { NotificationService } from "@/domains/notifications/service";
 import { ActivityService } from "@/domains/activities/service";
 
@@ -99,7 +99,7 @@ export class ContentSharingService {
    * Content that was shared but never opened, older than the given age — the "who's ignoring
    * you" list for re-engagement. Oldest first.
    */
-  static async ignoredShares(organizationId: string, olderThanMs = 24 * 60 * 60 * 1000) {
+  static async ignoredShares(organizationId: string, olderThanMs = 24 * 60 * 60 * 1000, enforceOwnerId?: string) {
     const before = new Date(Date.now() - olderThanMs);
     return db
       .select({
@@ -115,6 +115,8 @@ export class ContentSharingService {
       .where(
         and(
           eq(sharedLinks.organizationId, organizationId),
+          isNull(leads.deletedAt),
+          ...(enforceOwnerId ? [eq(leads.ownerId, enforceOwnerId)] : []),
           eq(sharedLinks.viewCount, 0),
           lt(sharedLinks.createdAt, before),
         ),

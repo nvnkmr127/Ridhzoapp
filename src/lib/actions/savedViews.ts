@@ -89,5 +89,7 @@ export async function deleteSavedViewAction(id: string) {
 
 export async function getSavedViewsAction() {
   const { userId, organizationId } = await requireOrg();
-  return SavedViewService.listViews(organizationId, userId);
+  const { hasPermission } = await import("@/lib/rbac");
+  const isAdmin = await hasPermission("settings.manage");
+  return SavedViewService.listViews(organizationId, userId, isAdmin);
 }

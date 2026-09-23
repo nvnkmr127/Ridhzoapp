@@ -3,8 +3,8 @@ import { getServerSession } from "next-auth/next";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
-import { roles } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { roles, users } from "@/db/schema";
+import { eq, and, isNull } from "drizzle-orm";
 import type { PermissionKey } from "@/lib/permissions";
 import { SYSTEM_ROLE_PERMISSIONS } from "@/lib/permissions";
 
@@ -92,8 +92,28 @@ const roleCache = new Map<string, { role: { name: string; permissions: string[];
 // Cached per request and in-memory (60s TTL) so role lookup doesn't block every page navigation.
 const currentRole = cache(async function currentRole(): Promise<{ name: string; permissions: string[]; organizationId: string | null } | null> {
   const session = await getSession();
-  const roleId = session?.user?.roleId;
-  if (!roleId) return null;
+  let roleId = session?.user?.roleId;
+
+  // If session has no roleId, check user row in DB to avoid false-negative redirects on fresh sessions
+  if (!roleId && session?.user?.id) {
+    const [u] = await db
+      .select({ roleId: users.roleId })
+      .from(users)
+      .where(eq(users.id, session.user.id))
+      .limit(1);
+    if (u?.roleId) roleId = u.roleId;
+  }
+
+  // If still no role assigned, fallback to shared system 'admin' role so workspace owner isn't locked out
+  if (!roleId) {
+    const [admin] = await db
+      .select({ name: roles.name, permissions: roles.permissions, organizationId: roles.organizationId })
+      .from(roles)
+      .where(and(eq(roles.name, "admin"), isNull(roles.organizationId)))
+      .limit(1);
+    if (admin) return { name: admin.name, permissions: admin.permissions ?? [], organizationId: null };
+    return null;
+  }
 
   const now = Date.now();
   const cached = roleCache.get(roleId);

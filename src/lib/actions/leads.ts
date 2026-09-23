@@ -442,12 +442,15 @@ export const bulkAssignLeadAction = async (input: { leadIds: string[], ownerId: 
 };
 
 export async function listStageLeadsAction(status: string, page: number = 1, limit: number = 20) {
-  const { organizationId } = await requireOrg();
+  const { userId, organizationId } = await requireOrg();
+  const { hasPermission } = await import("@/lib/rbac");
+  const isAdmin = await hasPermission("settings.manage");
   return LeadService.listLeads({
     organizationId,
     status,
     page,
     limit,
+    enforceOwnerId: isAdmin ? undefined : userId,
   });
 }
 
