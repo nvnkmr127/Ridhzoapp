@@ -21,21 +21,31 @@ export class PipelineAgingService {
   /**
    * Evaluates age distribution of active pipeline deals across 0-7d, 8-14d, 15-30d, and 30d+ age buckets.
    */
-  static async getPipelineAgingMatrix(organizationId: string): Promise<PipelineAgingMatrix> {
-    const activeLeads = await db
-      .select({
-        id: leads.id,
-        status: leads.status,
-        expectedValue: leads.expectedValue,
-        createdAt: leads.createdAt,
-      })
-      .from(leads)
-      .where(
-        and(
-          eq(leads.organizationId, organizationId),
-          inArray(leads.status, ["new", "active"])
-        )
-      );
+  static async getPipelineAgingMatrix(
+    organizationId: string,
+    preloadedLeads?: {
+      id: string;
+      status: string | null;
+      expectedValue: string | null;
+      createdAt: Date;
+    }[]
+  ): Promise<PipelineAgingMatrix> {
+    const activeLeads = preloadedLeads
+      ? preloadedLeads.filter((l) => l.status && ["new", "active"].includes(l.status))
+      : await db
+          .select({
+            id: leads.id,
+            status: leads.status,
+            expectedValue: leads.expectedValue,
+            createdAt: leads.createdAt,
+          })
+          .from(leads)
+          .where(
+            and(
+              eq(leads.organizationId, organizationId),
+              inArray(leads.status, ["new", "active"])
+            )
+          );
 
     if (activeLeads.length === 0) {
       return {

@@ -22,7 +22,8 @@ export class ActivityDigestService {
    */
   static async getDailyActivityDigest(
     organizationId: string,
-    targetDateStr?: string
+    targetDateStr?: string,
+    preloadedUsers?: { id: string; firstName: string | null; lastName: string | null; email: string }[]
   ): Promise<DailyActivityDigest> {
     let startOfDay: Date;
     let endOfDay: Date;
@@ -41,7 +42,7 @@ export class ActivityDigestService {
     }
 
     // Fetch org users
-    const orgUsers = await db
+    const orgUsers = preloadedUsers ?? await db
       .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email })
       .from(users)
       .where(and(eq(users.organizationId, organizationId), eq(users.isActive, true)));

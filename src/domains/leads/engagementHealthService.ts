@@ -28,25 +28,39 @@ export class EngagementHealthService {
   /**
    * Evaluates active lead interaction recency and groups organization leads into health tiers.
    */
-  static async getEngagementHealthBreakdown(organizationId: string): Promise<EngagementHealthBreakdown> {
-    const activeLeads = await db
-      .select({
-        id: leads.id,
-        name: leads.name,
-        phone: leads.phone,
-        email: leads.email,
-        status: leads.status,
-        lastContactedAt: leads.lastContactedAt,
-        createdAt: leads.createdAt,
-        ownerId: leads.ownerId,
-      })
-      .from(leads)
-      .where(
-        and(
-          eq(leads.organizationId, organizationId),
-          inArray(leads.status, ["new", "active"])
-        )
-      );
+  static async getEngagementHealthBreakdown(
+    organizationId: string,
+    preloadedLeads?: {
+      id: string;
+      name: string;
+      phone: string | null;
+      email: string | null;
+      status: string;
+      lastContactedAt: Date | null;
+      createdAt: Date;
+      ownerId: string | null;
+    }[]
+  ): Promise<EngagementHealthBreakdown> {
+    const activeLeads = preloadedLeads
+      ? preloadedLeads.filter((l) => l.status && ["new", "active"].includes(l.status))
+      : await db
+          .select({
+            id: leads.id,
+            name: leads.name,
+            phone: leads.phone,
+            email: leads.email,
+            status: leads.status,
+            lastContactedAt: leads.lastContactedAt,
+            createdAt: leads.createdAt,
+            ownerId: leads.ownerId,
+          })
+          .from(leads)
+          .where(
+            and(
+              eq(leads.organizationId, organizationId),
+              inArray(leads.status, ["new", "active"])
+            )
+          );
 
     if (activeLeads.length === 0) {
       return {

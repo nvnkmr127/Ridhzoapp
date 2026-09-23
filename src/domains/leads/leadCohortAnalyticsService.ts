@@ -16,8 +16,15 @@ export class LeadCohortAnalyticsService {
   /**
    * Computes monthly cohort retention, deal conversion, and churn risk curves for an organization.
    */
-  static async getCohortAnalytics(organizationId: string): Promise<CohortMetric[]> {
-    const orgLeads = await db
+  static async getCohortAnalytics(
+    organizationId: string,
+    preloadedLeads?: {
+      id: string;
+      status: string | null;
+      createdAt: Date;
+    }[]
+  ): Promise<CohortMetric[]> {
+    const orgLeads = preloadedLeads ?? await db
       .select({
         id: leads.id,
         status: leads.status,

@@ -35,36 +35,46 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
   );
 }
 
+import { AnalyticsCoordinator } from "@/domains/leads/analyticsCoordinator";
+import { SlaAnalyticsService } from "@/domains/leads/slaAnalyticsService";
+
 export default async function InsightsPage() {
   const { organizationId } = await requireOrg();
   const fmt = await getOrgFormat(organizationId);
   // Money in the workspace's configured currency/locale (was hardcoded USD).
   const money = (n: number) => formatCurrency(n, fmt);
+
+  // Preload shared tenant datasets in ONE parallel round trip
+  const [tenantLeads, tenantUsers] = await Promise.all([
+    AnalyticsCoordinator.getTenantLeads(organizationId),
+    AnalyticsCoordinator.getTenantUsers(organizationId),
+  ]);
+
   const [forecast, winLoss, sourceRoi, health, bestTime, qualification, velocity, aging] = await Promise.all([
-    RevenueForecastService.getRevenueForecast(organizationId),
-    WinLossAnalyticsService.getWinLossAnalytics(organizationId),
-    SourceRoiAnalyticsService.getLeadSourceRoiMetrics(organizationId),
-    EngagementHealthService.getEngagementHealthBreakdown(organizationId),
+    RevenueForecastService.getRevenueForecast(organizationId, tenantLeads),
+    WinLossAnalyticsService.getWinLossAnalytics(organizationId, tenantLeads),
+    SourceRoiAnalyticsService.getLeadSourceRoiMetrics(organizationId, tenantLeads),
+    EngagementHealthService.getEngagementHealthBreakdown(organizationId, tenantLeads),
     OptimalContactTimeService.getOptimalContactTimes(organizationId),
-    LeadQualificationMatrixService.getQualificationReport(organizationId),
-    PipelineVelocityService.getVelocityMetrics(organizationId),
-    PipelineAgingService.getPipelineAgingMatrix(organizationId),
+    LeadQualificationMatrixService.getQualificationReport(organizationId, tenantLeads),
+    PipelineVelocityService.getVelocityMetrics(organizationId, tenantLeads),
+    PipelineAgingService.getPipelineAgingMatrix(organizationId, tenantLeads),
   ]);
 
   const [stagnant, cohorts, ltv, geo, channels, team, digest] = await Promise.all([
-    StageStagnationService.getStagnantLeads(organizationId),
-    LeadCohortAnalyticsService.getCohortAnalytics(organizationId),
-    CustomerLtvAnalyticsService.getLtvAnalytics(organizationId),
-    LeadGeoAnalyticsService.getGeoAnalytics(organizationId),
+    StageStagnationService.getStagnantLeads(organizationId, 10, tenantLeads),
+    LeadCohortAnalyticsService.getCohortAnalytics(organizationId, tenantLeads),
+    CustomerLtvAnalyticsService.getLtvAnalytics(organizationId, tenantLeads),
+    LeadGeoAnalyticsService.getGeoAnalytics(organizationId, tenantLeads),
     ChannelAnalyticsService.getChannelMetrics(organizationId),
-    TeamPerformanceService.getTeamLeaderboard(organizationId),
-    ActivityDigestService.getDailyActivityDigest(organizationId),
+    TeamPerformanceService.getTeamLeaderboard(organizationId, undefined, tenantUsers),
+    ActivityDigestService.getDailyActivityDigest(organizationId, undefined, tenantUsers),
   ]);
 
   const [capacities, overdue, sla] = await Promise.all([
-    CapacityAssignmentService.getRepCapacities(organizationId),
+    CapacityAssignmentService.getRepCapacities(organizationId, 25, tenantUsers),
     FollowUpEscalationService.getOverdueFollowUps(organizationId),
-    (await import("@/domains/leads/slaAnalyticsService")).SlaAnalyticsService.getSlaMetrics(organizationId),
+    SlaAnalyticsService.getSlaMetrics(organizationId, 15, tenantLeads),
   ]);
 
   const scorecard = await PipelineScorecardService.getPipelineScorecard(organizationId, {

@@ -20,9 +20,15 @@ export class SlaAnalyticsService {
    */
   static async getSlaMetrics(
     organizationId: string,
-    slaMinutesThreshold: number = 15
+    slaMinutesThreshold: number = 15,
+    preloadedLeads?: {
+      id: string;
+      createdAt: Date;
+      lastContactedAt: Date | null;
+      status: string;
+    }[]
   ): Promise<SlaMetrics> {
-    const orgLeads = await db
+    const orgLeads = preloadedLeads ?? await db
       .select({
         id: leads.id,
         createdAt: leads.createdAt,

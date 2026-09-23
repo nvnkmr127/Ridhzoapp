@@ -14,8 +14,16 @@ export class LeadGeoAnalyticsService {
   /**
    * Aggregates lead volume, win rates, and revenue performance by geographic territory.
    */
-  static async getGeoAnalytics(organizationId: string): Promise<LocationMetric[]> {
-    const orgLeads = await db
+  static async getGeoAnalytics(
+    organizationId: string,
+    preloadedLeads?: {
+      id: string;
+      status: string | null;
+      expectedValue: string | null;
+      customData: unknown;
+    }[]
+  ): Promise<LocationMetric[]> {
+    const orgLeads = preloadedLeads ?? await db
       .select({
         id: leads.id,
         status: leads.status,

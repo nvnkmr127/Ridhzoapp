@@ -24,29 +24,46 @@ export class StageStagnationService {
    */
   static async getStagnantLeads(
     organizationId: string,
-    daysThreshold: number = 10
+    daysThreshold: number = 10,
+    preloadedLeads?: {
+      id: string;
+      name: string;
+      phone: string | null;
+      email: string | null;
+      status: string;
+      stageId: string | null;
+      ownerId: string | null;
+      updatedAt: Date;
+    }[]
   ): Promise<StagnantLeadSummary[]> {
     const thresholdDate = new Date(Date.now() - daysThreshold * 24 * 60 * 60 * 1000);
 
-    const candidates = await db
-      .select({
-        id: leads.id,
-        name: leads.name,
-        phone: leads.phone,
-        email: leads.email,
-        status: leads.status,
-        stageId: leads.stageId,
-        ownerId: leads.ownerId,
-        updatedAt: leads.updatedAt,
-      })
-      .from(leads)
-      .where(
-        and(
-          eq(leads.organizationId, organizationId),
-          inArray(leads.status, ["new", "active"]),
-          lt(leads.updatedAt, thresholdDate)
+    const candidates = preloadedLeads
+      ? preloadedLeads.filter(
+          (l) =>
+            l.status &&
+            ["new", "active"].includes(l.status) &&
+            new Date(l.updatedAt) < thresholdDate
         )
-      );
+      : await db
+          .select({
+            id: leads.id,
+            name: leads.name,
+            phone: leads.phone,
+            email: leads.email,
+            status: leads.status,
+            stageId: leads.stageId,
+            ownerId: leads.ownerId,
+            updatedAt: leads.updatedAt,
+          })
+          .from(leads)
+          .where(
+            and(
+              eq(leads.organizationId, organizationId),
+              inArray(leads.status, ["new", "active"]),
+              lt(leads.updatedAt, thresholdDate)
+            )
+          );
 
     const nowMs = Date.now();
 

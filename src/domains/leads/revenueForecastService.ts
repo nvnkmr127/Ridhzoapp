@@ -29,8 +29,11 @@ export class RevenueForecastService {
   /**
    * Calculates weighted pipeline revenue projection and status stage financial breakdown for an organization.
    */
-  static async getRevenueForecast(organizationId: string): Promise<RevenueForecast> {
-    const orgLeads = await db
+  static async getRevenueForecast(
+    organizationId: string,
+    preloadedLeads?: { id: string; status: string | null; expectedValue: string | null }[]
+  ): Promise<RevenueForecast> {
+    const orgLeads = preloadedLeads ?? await db
       .select({
         id: leads.id,
         status: leads.status,

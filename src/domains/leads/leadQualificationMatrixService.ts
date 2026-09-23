@@ -33,27 +33,43 @@ export class LeadQualificationMatrixService {
   /**
    * Evaluates BANT (Budget, Authority, Need, Timeline) lead qualification scores and readiness status for organization leads.
    */
-  static async getQualificationReport(organizationId: string): Promise<OrganizationLeadQualificationReport> {
-    const activeLeads = await db
-      .select({
-        id: leads.id,
-        name: leads.name,
-        phone: leads.phone,
-        email: leads.email,
-        company: leads.company,
-        status: leads.status,
-        expectedValue: leads.expectedValue,
-        customData: leads.customData,
-        nextFollowUpAt: leads.nextFollowUpAt,
-        ownerId: leads.ownerId,
-      })
-      .from(leads)
-      .where(
-        and(
-          eq(leads.organizationId, organizationId),
-          inArray(leads.status, ["new", "active"])
-        )
-      );
+  static async getQualificationReport(
+    organizationId: string,
+    preloadedLeads?: {
+      id: string;
+      name: string;
+      phone: string | null;
+      email: string | null;
+      company: string | null;
+      status: string;
+      expectedValue: string | null;
+      customData: unknown;
+      nextFollowUpAt: Date | null;
+      ownerId: string | null;
+    }[]
+  ): Promise<OrganizationLeadQualificationReport> {
+    const activeLeads = preloadedLeads
+      ? preloadedLeads.filter((l) => l.status && ["new", "active"].includes(l.status))
+      : await db
+          .select({
+            id: leads.id,
+            name: leads.name,
+            phone: leads.phone,
+            email: leads.email,
+            company: leads.company,
+            status: leads.status,
+            expectedValue: leads.expectedValue,
+            customData: leads.customData,
+            nextFollowUpAt: leads.nextFollowUpAt,
+            ownerId: leads.ownerId,
+          })
+          .from(leads)
+          .where(
+            and(
+              eq(leads.organizationId, organizationId),
+              inArray(leads.status, ["new", "active"])
+            )
+          );
 
     if (activeLeads.length === 0) {
       return {

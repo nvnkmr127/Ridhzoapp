@@ -16,8 +16,12 @@ export class CapacityAssignmentService {
   /**
    * Calculates active lead workload and remaining capacity for all active reps in an organization.
    */
-  static async getRepCapacities(organizationId: string, defaultMaxCapacity: number = 25): Promise<RepCapacity[]> {
-    const orgUsers = await db
+  static async getRepCapacities(
+    organizationId: string,
+    defaultMaxCapacity: number = 25,
+    preloadedUsers?: { id: string; email: string }[]
+  ): Promise<RepCapacity[]> {
+    const orgUsers = preloadedUsers ?? await db
       .select({ id: users.id, email: users.email })
       .from(users)
       .where(and(eq(users.organizationId, organizationId), eq(users.isActive, true)));

@@ -21,8 +21,11 @@ export class PipelineVelocityService {
   /**
    * Calculates status stage velocity (residence time in hours) and funnel conversion rates for an organization.
    */
-  static async getVelocityMetrics(organizationId: string): Promise<PipelineVelocityMetrics> {
-    const orgLeads = await db
+  static async getVelocityMetrics(
+    organizationId: string,
+    preloadedLeads?: { id: string; status: string | null; createdAt: Date }[]
+  ): Promise<PipelineVelocityMetrics> {
+    const orgLeads = preloadedLeads ?? await db
       .select({ id: leads.id, status: leads.status, createdAt: leads.createdAt })
       .from(leads)
       .where(eq(leads.organizationId, organizationId));

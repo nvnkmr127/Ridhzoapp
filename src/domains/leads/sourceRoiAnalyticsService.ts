@@ -17,7 +17,10 @@ export class SourceRoiAnalyticsService {
   /**
    * Computes lead source attribution, win rates, and revenue ROI performance per channel for an organization.
    */
-  static async getLeadSourceRoiMetrics(organizationId: string): Promise<SourceRoiMetric[]> {
+  static async getLeadSourceRoiMetrics(
+    organizationId: string,
+    preloadedLeads?: { sourceId: string | null; status: string | null; expectedValue: string | null }[]
+  ): Promise<SourceRoiMetric[]> {
     const sourcesList = await db
       .select({
         id: leadSources.id,
@@ -32,7 +35,7 @@ export class SourceRoiAnalyticsService {
       sourceMap[s.id] = { name: s.name, type: s.type ?? "custom" };
     }
 
-    const leadRows = await db
+    const leadRows = preloadedLeads ?? await db
       .select({
         sourceId: leads.sourceId,
         status: leads.status,

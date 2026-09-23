@@ -22,17 +22,29 @@ export class CustomerLtvAnalyticsService {
   /**
    * Calculates Customer Lifetime Value (LTV), repeat deal frequency, and VIP client rankings.
    */
-  static async getLtvAnalytics(organizationId: string): Promise<CustomerLtvAnalytics> {
-    const wonLeads = await db
-      .select({
-        id: leads.id,
-        name: leads.name,
-        phone: leads.phone,
-        email: leads.email,
-        expectedValue: leads.expectedValue,
-      })
-      .from(leads)
-      .where(and(eq(leads.organizationId, organizationId), eq(leads.status, "won")));
+  static async getLtvAnalytics(
+    organizationId: string,
+    preloadedLeads?: {
+      id: string;
+      name: string;
+      phone: string | null;
+      email: string | null;
+      status: string;
+      expectedValue: string | null;
+    }[]
+  ): Promise<CustomerLtvAnalytics> {
+    const wonLeads = preloadedLeads
+      ? preloadedLeads.filter((l) => l.status === "won")
+      : await db
+          .select({
+            id: leads.id,
+            name: leads.name,
+            phone: leads.phone,
+            email: leads.email,
+            expectedValue: leads.expectedValue,
+          })
+          .from(leads)
+          .where(and(eq(leads.organizationId, organizationId), eq(leads.status, "won")));
 
     if (wonLeads.length === 0) {
       return {

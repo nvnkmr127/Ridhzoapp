@@ -22,9 +22,10 @@ export class TeamPerformanceService {
    */
   static async getTeamLeaderboard(
     organizationId: string,
-    periodDays?: number
+    periodDays?: number,
+    preloadedUsers?: { id: string; email: string; firstName: string | null; lastName: string | null }[]
   ): Promise<RepPerformanceMetric[]> {
-    const orgUsers = await db
+    const orgUsers = preloadedUsers ?? await db
       .select({
         id: users.id,
         email: users.email,

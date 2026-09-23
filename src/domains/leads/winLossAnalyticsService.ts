@@ -21,20 +21,25 @@ export class WinLossAnalyticsService {
   /**
    * Computes win/loss performance metrics and categorizes loss reason taxonomies.
    */
-  static async getWinLossAnalytics(organizationId: string): Promise<WinLossAnalytics> {
-    const closedLeads = await db
-      .select({
-        id: leads.id,
-        status: leads.status,
-        lostReason: leads.lostReason,
-      })
-      .from(leads)
-      .where(
-        and(
-          eq(leads.organizationId, organizationId),
-          inArray(leads.status, ["won", "lost", "unqualified"])
-        )
-      );
+  static async getWinLossAnalytics(
+    organizationId: string,
+    preloadedLeads?: { id: string; status: string | null; lostReason: string | null }[]
+  ): Promise<WinLossAnalytics> {
+    const closedLeads = preloadedLeads
+      ? preloadedLeads.filter((l) => l.status && ["won", "lost", "unqualified"].includes(l.status))
+      : await db
+          .select({
+            id: leads.id,
+            status: leads.status,
+            lostReason: leads.lostReason,
+          })
+          .from(leads)
+          .where(
+            and(
+              eq(leads.organizationId, organizationId),
+              inArray(leads.status, ["won", "lost", "unqualified"])
+            )
+          );
 
     if (closedLeads.length === 0) {
       return {
