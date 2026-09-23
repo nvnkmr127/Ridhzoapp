@@ -57,7 +57,6 @@ export class EngagementVelocityService {
       };
     }
 
-    const leadIds = activeLeads.map((l) => l.id);
     const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
@@ -67,16 +66,18 @@ export class EngagementVelocityService {
         createdAt: activities.createdAt,
       })
       .from(activities)
+      .innerJoin(leads, eq(activities.leadId, leads.id))
       .where(
         and(
-          inArray(activities.leadId, leadIds),
+          eq(leads.organizationId, organizationId),
+          inArray(leads.status, ["new", "active"]),
           gte(activities.createdAt, fourteenDaysAgo)
         )
       );
 
     const touchpointMap: Record<string, { recent: number; previous: number }> = {};
-    for (const id of leadIds) {
-      touchpointMap[id] = { recent: 0, previous: 0 };
+    for (const lead of activeLeads) {
+      touchpointMap[lead.id] = { recent: 0, previous: 0 };
     }
 
     for (const act of actRows) {

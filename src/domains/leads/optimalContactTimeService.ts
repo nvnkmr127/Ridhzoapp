@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { activities, leads } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 export interface HourlyDistribution {
   hour: number;
@@ -27,19 +27,14 @@ export class OptimalContactTimeService {
   /**
    * Analyzes activity timestamps to identify optimal outreach hours and days for maximum conversion.
    */
-  static async getOptimalContactTimes(organizationId: string, knownLeadIds?: string[]): Promise<OptimalContactTimeMetrics> {
-    let leadIds: string[];
-    if (knownLeadIds !== undefined) {
-      leadIds = knownLeadIds;
-    } else {
-      const orgLeads = await db
-        .select({ id: leads.id })
-        .from(leads)
-        .where(eq(leads.organizationId, organizationId));
-      leadIds = orgLeads.map((l) => l.id);
-    }
+  static async getOptimalContactTimes(organizationId: string): Promise<OptimalContactTimeMetrics> {
+    const actRows = await db
+      .select({ createdAt: activities.createdAt })
+      .from(activities)
+      .innerJoin(leads, eq(activities.leadId, leads.id))
+      .where(eq(leads.organizationId, organizationId));
 
-    if (leadIds.length === 0) {
+    if (actRows.length === 0) {
       return {
         totalTouchpointsAnalyzed: 0,
         bestHourOfDayLabel: "10:00 AM - 11:00 AM",
@@ -48,11 +43,6 @@ export class OptimalContactTimeService {
         dailyDistribution: [],
       };
     }
-
-    const actRows = await db
-      .select({ createdAt: activities.createdAt })
-      .from(activities)
-      .where(inArray(activities.leadId, leadIds));
 
     const hoursCounts = new Array(24).fill(0);
     const daysCounts = new Array(7).fill(0);

@@ -19,25 +19,20 @@ vi.mock("@/db", () => ({
 describe("OptimalContactTimeService", () => {
   it("should calculate optimal outreach hour and day based on activity timestamps", async () => {
     const { db } = await import("@/db");
-    // Mock Org Leads
-    (db.select as any).mockImplementationOnce(() => ({
-      from: () => ({
-        where: () => Promise.resolve([{ id: "lead-1" }]),
-      }),
-    }));
-
     // Tuesday at 14:30 PM
     const tuesdayTwoPm = new Date("2026-08-25T14:30:00.000Z"); // Tuesday
 
-    // Mock Activities
+    // Mock Activities joined with leads
     (db.select as any).mockImplementationOnce(() => ({
       from: () => ({
-        where: () =>
-          Promise.resolve([
-            { createdAt: tuesdayTwoPm },
-            { createdAt: tuesdayTwoPm },
-            { createdAt: tuesdayTwoPm },
-          ]),
+        innerJoin: () => ({
+          where: () =>
+            Promise.resolve([
+              { createdAt: tuesdayTwoPm },
+              { createdAt: tuesdayTwoPm },
+              { createdAt: tuesdayTwoPm },
+            ]),
+        }),
       }),
     }));
 

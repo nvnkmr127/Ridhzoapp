@@ -30,12 +30,14 @@ describe("PipelineVelocityService", () => {
     }));
     (db.select as any).mockImplementationOnce(() => ({
       from: () => ({
-        where: () => ({
-          orderBy: () =>
-            Promise.resolve([
-              { leadId: "lead-1", oldStatus: "new", newStatus: "active", createdAt: new Date("2026-08-01T12:00:00Z") },
-              { leadId: "lead-1", oldStatus: "active", newStatus: "won", createdAt: new Date("2026-08-02T12:00:00Z") },
-            ]),
+        innerJoin: () => ({
+          where: () => ({
+            orderBy: () =>
+              Promise.resolve([
+                { leadId: "lead-1", oldStatus: "new", newStatus: "active", createdAt: new Date("2026-08-01T12:00:00Z") },
+                { leadId: "lead-1", oldStatus: "active", newStatus: "won", createdAt: new Date("2026-08-02T12:00:00Z") },
+              ]),
+          }),
         }),
       }),
     }));

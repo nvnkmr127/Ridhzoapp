@@ -24,21 +24,17 @@ describe("ActivityDigestService", () => {
         where: () => Promise.resolve([{ id: "user-1", email: "rep1@example.com", firstName: "Alice", lastName: "Smith" }]),
       }),
     }));
-    // Mock Leads
+    // Mock Activity counts joined with leads
     (db.select as any).mockImplementationOnce(() => ({
       from: () => ({
-        where: () => Promise.resolve([{ id: "lead-1" }]),
-      }),
-    }));
-    // Mock Activity counts
-    (db.select as any).mockImplementationOnce(() => ({
-      from: () => ({
-        where: () => ({
-          groupBy: () =>
-            Promise.resolve([
-              { userId: "user-1", type: "note", count: 5 },
-              { userId: "user-1", type: "call", count: 3 },
-            ]),
+        innerJoin: () => ({
+          where: () => ({
+            groupBy: () =>
+              Promise.resolve([
+                { userId: "user-1", type: "note", count: 5 },
+                { userId: "user-1", type: "call", count: 3 },
+              ]),
+          }),
         }),
       }),
     }));

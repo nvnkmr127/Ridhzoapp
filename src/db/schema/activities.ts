@@ -34,6 +34,7 @@ export const followUps = pgTable('follow_ups', {
 }, (table) => ({
   userDueIdx: index('follow_ups_user_due_idx').on(table.userId, table.status, table.dueAt),
   leadIdx: index('follow_ups_lead_idx').on(table.leadId),
+  leadStatusDueIdx: index('follow_ups_lead_status_due_idx').on(table.leadId, table.status, table.dueAt),
 }));
 
 export const reminders = pgTable('reminders', {

@@ -82,6 +82,7 @@ export const leads = pgTable('leads', {
   orgEmailIdx: index('leads_org_email_idx').on(table.organizationId, table.email),
   orgOwnerIdx: index('leads_org_owner_idx').on(table.organizationId, table.ownerId),
   orgStatusIdx: index('leads_org_status_idx').on(table.organizationId, table.status),
+  orgStatusCreatedIdx: index('leads_org_status_created_idx').on(table.organizationId, table.status, table.createdAt),
   orgSourceIdx: index('leads_org_source_idx').on(table.organizationId, table.sourceId),
   // Enforce per-tenant dedup at the DB layer (replaces the racy check-then-insert).
   // Partial: only active (non-deleted) rows with a real value participate, so soft-deleted
@@ -110,7 +111,9 @@ export const leadStatusHistory = pgTable('lead_status_history', {
   newStatus: varchar('new_status', { length: 50 }).notNull(),
   changedById: uuid('changed_by_id').references(() => users.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+}, (table) => ({
+  leadCreatedIdx: index('lead_status_history_lead_created_idx').on(table.leadId, table.createdAt),
+}));
 
 export const tags = pgTable('tags', {
   id: uuid('id').defaultRandom().primaryKey(),

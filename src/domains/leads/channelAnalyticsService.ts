@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { activities, leads, whatsappMessages } from "@/db/schema";
-import { eq, inArray, count } from "drizzle-orm";
+import { eq, count } from "drizzle-orm";
 
 export interface ChannelDistributionMetric {
   channel: string;
@@ -18,37 +18,24 @@ export class ChannelAnalyticsService {
   /**
    * Analyzes communication channel utilization across WhatsApp, Phone Calls, Emails, and Notes.
    */
-  static async getChannelMetrics(organizationId: string, knownLeadIds?: string[]): Promise<ChannelAnalytics> {
-    let leadIds: string[];
-    if (knownLeadIds !== undefined) {
-      leadIds = knownLeadIds;
-    } else {
-      const orgLeads = await db
-        .select({ id: leads.id })
-        .from(leads)
-        .where(eq(leads.organizationId, organizationId));
-      leadIds = orgLeads.map((l) => l.id);
-    }
-
-    if (leadIds.length === 0) {
-      return { totalTouchpoints: 0, topChannel: "None", distribution: [] };
-    }
-
-    // Fetch activity type counts
+  static async getChannelMetrics(organizationId: string): Promise<ChannelAnalytics> {
+    // Fetch activity type counts via direct relationship join
     const actRows = await db
       .select({
         type: activities.type,
         count: count(),
       })
       .from(activities)
-      .where(inArray(activities.leadId, leadIds))
+      .innerJoin(leads, eq(activities.leadId, leads.id))
+      .where(eq(leads.organizationId, organizationId))
       .groupBy(activities.type);
 
-    // Fetch whatsapp message count
+    // Fetch whatsapp message count via direct relationship join
     const waCountResult = await db
       .select({ count: count() })
       .from(whatsappMessages)
-      .where(inArray(whatsappMessages.leadId, leadIds));
+      .innerJoin(leads, eq(whatsappMessages.leadId, leads.id))
+      .where(eq(leads.organizationId, organizationId));
 
     const waCount = Number(waCountResult[0]?.count ?? 0);
 

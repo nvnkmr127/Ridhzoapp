@@ -167,27 +167,22 @@ export class LeadStatusService {
     const schema = await CustomStatusSchemaService.getTenantStatusSchema(organizationId);
     const statusKeys = schema.map((s) => s.key);
 
-    const orgLeads = await db
-      .select({ id: leads.id })
-      .from(leads)
-      .where(eq(leads.organizationId, organizationId));
-
     const durationsByStatus: Record<string, number[]> = {};
     for (const k of statusKeys) durationsByStatus[k] = [];
 
-    if (orgLeads.length > 0) {
-      const leadIds = orgLeads.map((l) => l.id);
+    const histories = await db
+      .select({
+        leadId: leadStatusHistory.leadId,
+        oldStatus: leadStatusHistory.oldStatus,
+        newStatus: leadStatusHistory.newStatus,
+        createdAt: leadStatusHistory.createdAt,
+      })
+      .from(leadStatusHistory)
+      .innerJoin(leads, eq(leadStatusHistory.leadId, leads.id))
+      .where(eq(leads.organizationId, organizationId))
+      .orderBy(leadStatusHistory.createdAt);
 
-      const histories = await db
-        .select({
-          leadId: leadStatusHistory.leadId,
-          oldStatus: leadStatusHistory.oldStatus,
-          newStatus: leadStatusHistory.newStatus,
-          createdAt: leadStatusHistory.createdAt,
-        })
-        .from(leadStatusHistory)
-        .where(inArray(leadStatusHistory.leadId, leadIds))
-        .orderBy(leadStatusHistory.createdAt);
+    if (histories.length > 0) {
 
       const leadHistories: Record<string, typeof histories> = {};
       for (const h of histories) {

@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { leads, leadStatusHistory } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 export interface StageVelocity {
   avgHours: number;
@@ -35,7 +35,6 @@ export class PipelineVelocityService {
       };
     }
 
-    const leadIds = orgLeads.map((l) => l.id);
     const historyRows = await db
       .select({
         leadId: leadStatusHistory.leadId,
@@ -44,7 +43,8 @@ export class PipelineVelocityService {
         createdAt: leadStatusHistory.createdAt,
       })
       .from(leadStatusHistory)
-      .where(inArray(leadStatusHistory.leadId, leadIds))
+      .innerJoin(leads, eq(leadStatusHistory.leadId, leads.id))
+      .where(eq(leads.organizationId, organizationId))
       .orderBy(leadStatusHistory.createdAt);
 
     // Track total hours and count per status stage

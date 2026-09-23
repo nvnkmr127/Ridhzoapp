@@ -16,30 +16,27 @@ vi.mock("@/db", () => ({
 describe("ChannelAnalyticsService", () => {
   it("should calculate channel utilization breakdown across WhatsApp and call touchpoints", async () => {
     const { db } = await import("@/db");
-    // Mock Org Leads
+    // Mock Activities joined with leads
     (db.select as any).mockImplementationOnce(() => ({
       from: () => ({
-        where: () => Promise.resolve([{ id: "lead-1" }, { id: "lead-2" }]),
-      }),
-    }));
-
-    // Mock Activities
-    (db.select as any).mockImplementationOnce(() => ({
-      from: () => ({
-        where: () => ({
-          groupBy: () =>
-            Promise.resolve([
-              { type: "call", count: 15 },
-              { type: "note", count: 5 },
-            ]),
+        innerJoin: () => ({
+          where: () => ({
+            groupBy: () =>
+              Promise.resolve([
+                { type: "call", count: 15 },
+                { type: "note", count: 5 },
+              ]),
+          }),
         }),
       }),
     }));
 
-    // Mock WhatsApp message count
+    // Mock WhatsApp message count joined with leads
     (db.select as any).mockImplementationOnce(() => ({
       from: () => ({
-        where: () => Promise.resolve([{ count: 30 }]),
+        innerJoin: () => ({
+          where: () => Promise.resolve([{ count: 30 }]),
+        }),
       }),
     }));
 

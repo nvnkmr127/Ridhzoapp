@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { activities, users, leads } from "@/db/schema";
-import { and, eq, gte, lt, inArray, count } from "drizzle-orm";
+import { and, eq, gte, lt, count } from "drizzle-orm";
 
 export interface RepActivitySummary {
   userId: string;
@@ -22,8 +22,7 @@ export class ActivityDigestService {
    */
   static async getDailyActivityDigest(
     organizationId: string,
-    targetDateStr?: string,
-    knownLeadIds?: string[]
+    targetDateStr?: string
   ): Promise<DailyActivityDigest> {
     let startOfDay: Date;
     let endOfDay: Date;
@@ -57,23 +56,7 @@ export class ActivityDigestService {
       userMap[u.id] = [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email;
     }
 
-    // Fetch org lead IDs
-    let leadIds: string[];
-    if (knownLeadIds !== undefined) {
-      leadIds = knownLeadIds;
-    } else {
-      const orgLeads = await db
-        .select({ id: leads.id })
-        .from(leads)
-        .where(eq(leads.organizationId, organizationId));
-      leadIds = orgLeads.map((l) => l.id);
-    }
-
-    if (leadIds.length === 0) {
-      return { date: dateFormatted, totalActivities: 0, typeBreakdown: {}, repSummaries: [] };
-    }
-
-    // Query activities for the date range
+    // Query activities for the date range via direct relationship join
     const actRows = await db
       .select({
         userId: activities.userId,
@@ -81,9 +64,10 @@ export class ActivityDigestService {
         count: count(),
       })
       .from(activities)
+      .innerJoin(leads, eq(activities.leadId, leads.id))
       .where(
         and(
-          inArray(activities.leadId, leadIds),
+          eq(leads.organizationId, organizationId),
           gte(activities.createdAt, startOfDay),
           lt(activities.createdAt, endOfDay)
         )

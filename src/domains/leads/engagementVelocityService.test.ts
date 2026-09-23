@@ -37,14 +37,16 @@ describe("EngagementVelocityService", () => {
 
     (db.select as any).mockImplementationOnce(() => ({
       from: () => ({
-        where: () =>
-          Promise.resolve([
-            { leadId: "lead-accel", createdAt: fourDaysAgo },
-            { leadId: "lead-accel", createdAt: fourDaysAgo },
-            { leadId: "lead-accel", createdAt: tenDaysAgo }, // 2 recent vs 1 previous => accelerating
-            { leadId: "lead-decel", createdAt: tenDaysAgo },
-            { leadId: "lead-decel", createdAt: tenDaysAgo }, // 0 recent vs 2 previous => decelerating
-          ]),
+        innerJoin: () => ({
+          where: () =>
+            Promise.resolve([
+              { leadId: "lead-accel", createdAt: fourDaysAgo },
+              { leadId: "lead-accel", createdAt: fourDaysAgo },
+              { leadId: "lead-accel", createdAt: tenDaysAgo }, // 2 recent vs 1 previous => accelerating
+              { leadId: "lead-decel", createdAt: tenDaysAgo },
+              { leadId: "lead-decel", createdAt: tenDaysAgo }, // 0 recent vs 2 previous => decelerating
+            ]),
+        }),
       }),
     }));
 
