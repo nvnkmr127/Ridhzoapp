@@ -239,7 +239,9 @@ export function LeadHeaderQuickActions({ lead, whatsappMode = "personal" }: Lead
                 !isOverdue && currentDate && "border-primary/40",
               )}
               disabled={loading}
-              title={currentDate ? `Next follow-up: ${formatLocalDateTime(currentDate, "datetime")}` : "Schedule a follow-up"}
+              // Static text: a formatted date here renders differently on the server vs the browser
+              // (hydration mismatch). The date itself is shown on the button via <LocalTime>.
+              title={currentDate ? "Change or clear the next follow-up" : "Schedule a follow-up"}
             >
               {isOverdue ? <Clock className="h-4 w-4 sm:h-3.5 sm:w-3.5" /> : <Calendar className="h-4 w-4 sm:h-3.5 sm:w-3.5 text-amber-500" />}
               <span className="truncate max-w-full">
