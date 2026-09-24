@@ -48,7 +48,8 @@ export function contentTypeFor(fileName: string): string | null {
 // R2: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET. Keep the bucket private
 // (no public domain / r2.dev) — reads are proxied through the access-checked route.
 function r2() {
-  const { R2_ACCOUNT_ID: account, R2_ACCESS_KEY_ID: key, R2_SECRET_ACCESS_KEY: secret, R2_BUCKET: bucket } = process.env;
+  const { R2_ACCOUNT_ID: account, R2_ACCESS_KEY_ID: key, R2_SECRET_ACCESS_KEY: secret, R2_BUCKET, R2_BUCKET_NAME } = process.env;
+  const bucket = R2_BUCKET || R2_BUCKET_NAME;
   if (!account || !key || !secret || !bucket) return null;
   return { key, secret, base: `https://${account}.r2.cloudflarestorage.com/${bucket}` };
 }
