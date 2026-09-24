@@ -1,10 +1,10 @@
 // No "server-only" import: the background worker (plain Node, not Next) also uses this to
 // delete files when leads are purged. Only server code imports it.
-import { randomUUID } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { mkdir, stat, unlink, writeFile } from "node:fs/promises";
-import path from "node:path";
-import { Readable } from "node:stream";
+import { randomUUID } from "crypto";
+import { createReadStream } from "fs";
+import { mkdir, stat, unlink, writeFile } from "fs/promises";
+import path from "path";
+import { Readable } from "stream";
 
 // Private file storage for lead attachments. Never public: every read goes through
 // /api/attachments/[id], which checks the viewer may open the lead.

@@ -26,7 +26,7 @@ const nextConfig: NextConfig = {
       config.resolve.fallback = {
         ...config.resolve.fallback,
         crypto: false, stream: false, http: false, https: false, net: false, tls: false,
-        dns: false, fs: false, child_process: false,
+        dns: false, fs: false, "fs/promises": false, child_process: false, path: false, os: false,
       };
       // INSTALLED npm packages resolve fine, so resolve.fallback never fires for them — they must
       // be aliased to false to be dropped from the Edge bundle (this is what fixes the Vercel
@@ -56,7 +56,7 @@ const nextConfig: NextConfig = {
       config.resolve.fallback = {
         ...config.resolve.fallback,
         pg: false, http: false, https: false, net: false, tls: false, dns: false,
-        fs: false, child_process: false, bullmq: false, ioredis: false, "web-push": false,
+        fs: false, "fs/promises": false, child_process: false, path: false, os: false, bullmq: false, ioredis: false, "web-push": false,
       };
     }
     return config;
