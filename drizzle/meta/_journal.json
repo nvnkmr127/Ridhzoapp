@@ -393,6 +393,13 @@
       "when": 1790228900345,
       "tag": "0055_sequence_enrollment_pause",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1790236763655,
+      "tag": "0056_meetings",
+      "breakpoints": true
     }
   ]
 }

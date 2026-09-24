@@ -19,7 +19,7 @@ async function assertFollowUpAccess(id: string, ctx: { userId: string; organizat
 
 const followUpSchema = z.object({
   leadId: z.string().uuid(),
-  type: z.enum(["Call", "WhatsApp", "Email", "Meeting", "Task", "Note", "Custom"]),
+  type: z.enum(["Call", "WhatsApp", "Email", "Task", "Note", "Custom"]),
   title: z.string().min(1, "Title is required").max(255),
   description: z.string().optional(),
   dueAt: z.coerce.date(),

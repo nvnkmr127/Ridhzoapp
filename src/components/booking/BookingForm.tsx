@@ -9,10 +9,10 @@ import { requestMeetingAction } from "@/lib/actions/booking";
 
 export function BookingForm({ slug }: { slug: string }) {
   const { toast } = useToast();
-  const [f, setF] = React.useState({ name: "", email: "", phone: "", when: "", message: "" });
+  const [f, setF] = React.useState({ name: "", email: "", phone: "", when: "", message: "", mode: "online" as "online" | "in_person" });
   const [saving, setSaving] = React.useState(false);
   const [done, setDone] = React.useState(false);
-  const set = (k: keyof typeof f, v: string) => setF((s) => ({ ...s, [k]: v }));
+  const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((s) => ({ ...s, [k]: v }));
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -42,6 +42,17 @@ export function BookingForm({ slug }: { slug: string }) {
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1"><Label htmlFor="email">Email</Label><Input id="email" type="email" value={f.email} onChange={(e) => set("email", e.target.value)} /></div>
         <div className="space-y-1"><Label htmlFor="phone">Phone</Label><Input id="phone" value={f.phone} onChange={(e) => set("phone", e.target.value)} /></div>
+      </div>
+      <div className="space-y-1">
+        <Label>How would you like to meet?</Label>
+        <div className="grid grid-cols-2 gap-2" role="radiogroup">
+          {([["online", "Online (video call)"], ["in_person", "In person"]] as const).map(([k, label]) => (
+            <button key={k} type="button" role="radio" aria-checked={f.mode === k} onClick={() => set("mode", k)}
+              className={`rounded-md border px-3 py-2 text-sm ${f.mode === k ? "border-foreground font-medium" : "border-input text-muted-foreground"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="space-y-1"><Label htmlFor="when">Preferred date & time *</Label><Input id="when" type="datetime-local" value={f.when} onChange={(e) => set("when", e.target.value)} required /></div>
       <div className="space-y-1">

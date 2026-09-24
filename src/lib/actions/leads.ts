@@ -504,15 +504,11 @@ export async function checkLeadDuplicatesAction(leadId: string) {
 // Quick follow-ups set from the lead header. Only THESE are rescheduled/cleared here — other pending
 // follow-ups (manual reminders, personal-mode sequence steps) are left alone. It used to grab the
 // newest pending follow-up of any kind, so scheduling a call could move a sequence's WhatsApp task,
-// and "Clear" cancelled every reminder on the lead.
-const QUICK_FOLLOW_UP = {
-  followup: "Follow-up",
-  meeting: "Meeting",
-  site_visit: "Site visit",
-} as const;
-export type QuickFollowUpKind = keyof typeof QUICK_FOLLOW_UP;
+// and "Clear" cancelled every reminder on the lead. Meetings and site visits are booked as meetings
+// (src/domains/meetings), not here.
+const QUICK_FOLLOW_UP_TYPE = "followup";
 
-export async function updateLeadFollowUpAction(leadId: string, nextFollowUpAt: string | null, kind: QuickFollowUpKind = "followup") {
+export async function updateLeadFollowUpAction(leadId: string, nextFollowUpAt: string | null) {
   const { userId, organizationId } = await assertWritable();
 
   // Guard against an unparseable date string reaching `new Date(...)` → Invalid Date in the column.
@@ -528,8 +524,7 @@ export async function updateLeadFollowUpAction(leadId: string, nextFollowUpAt: s
     await assertLeadAccess(leadId, { userId, organizationId });
     const { db } = await import("@/db");
     const { leads, followUps } = await import("@/db/schema");
-    const { eq, and, desc, inArray } = await import("drizzle-orm");
-    const quickTypes = Object.keys(QUICK_FOLLOW_UP);
+    const { eq, and, desc } = await import("drizzle-orm");
 
     const [updated] = await db.update(leads)
       .set({ nextFollowUpAt: followUpDate, updatedAt: new Date() })
@@ -543,20 +538,20 @@ export async function updateLeadFollowUpAction(leadId: string, nextFollowUpAt: s
       const [existing] = await db
         .select()
         .from(followUps)
-        .where(and(eq(followUps.leadId, leadId), eq(followUps.status, "pending"), inArray(followUps.type, quickTypes)))
+        .where(and(eq(followUps.leadId, leadId), eq(followUps.status, "pending"), eq(followUps.type, QUICK_FOLLOW_UP_TYPE)))
         .orderBy(desc(followUps.createdAt))
         .limit(1);
 
-      const title = `${QUICK_FOLLOW_UP[kind]} with ${updated.name || "lead"}`;
+      const title = `Follow-up with ${updated.name || "lead"}`;
       if (existing) {
         await db.update(followUps)
-          .set({ dueAt: followUpDate, type: kind, title, updatedAt: new Date() })
+          .set({ dueAt: followUpDate, title, updatedAt: new Date() })
           .where(eq(followUps.id, existing.id));
       } else {
         await db.insert(followUps).values({
           leadId,
           userId: updated.ownerId || userId,
-          type: kind,
+          type: QUICK_FOLLOW_UP_TYPE,
           title,
           status: "pending",
           dueAt: followUpDate,
@@ -565,7 +560,7 @@ export async function updateLeadFollowUpAction(leadId: string, nextFollowUpAt: s
     } else {
       await db.update(followUps)
         .set({ status: "cancelled", updatedAt: new Date() })
-        .where(and(eq(followUps.leadId, leadId), eq(followUps.status, "pending"), inArray(followUps.type, quickTypes)));
+        .where(and(eq(followUps.leadId, leadId), eq(followUps.status, "pending"), eq(followUps.type, QUICK_FOLLOW_UP_TYPE)));
     }
 
     // Normalize next_follow_up_at to the soonest pending follow-up (not just the date clicked).

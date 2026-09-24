@@ -3,7 +3,7 @@ import { notifications, users, roles } from "@/db/schema";
 import { and, desc, eq, isNull, inArray } from "drizzle-orm";
 
 // High-signal notification types that also warrant an email. Chatty ones (self-completions) don't.
-const EMAIL_TYPES = new Set(["new_lead", "lead_assigned", "follow_up_due", "follow_up_overdue", "sla_escalation"]);
+const EMAIL_TYPES = new Set(["new_lead", "lead_assigned", "follow_up_due", "follow_up_overdue", "sla_escalation", "meeting_scheduled", "meeting_reminder"]);
 
 export class NotificationService {
   static async create(data: { userId: string; type: string; title: string; body?: string; leadId?: string }) {

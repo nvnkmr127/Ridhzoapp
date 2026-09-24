@@ -43,7 +43,12 @@ export function NbaActions({ action, hasPhone, hasEmail }: { action: Recommended
       buttons = [call || whatsapp, followUp()];
       break;
     case "close_deal":
-      buttons = [followUp("Book meeting / site visit"), whatsapp];
+      buttons = [
+        <Button key="meet" size="sm" className="gap-1.5" onClick={() => emitLeadAction({ type: "meeting" })}>
+          <CalendarPlus className="h-3.5 w-3.5" /> Book meeting / site visit
+        </Button>,
+        whatsapp,
+      ];
       break;
     case "qualify_lead":
       buttons = [

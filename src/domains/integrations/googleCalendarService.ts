@@ -54,16 +54,43 @@ export class GoogleCalendarService {
     return { accessToken: refreshed.access_token, calendarId: cred.calendarId };
   }
 
-  // Best-effort: create a calendar event for the user. Returns false if not connected/unconfigured.
-  static async createEvent(userId: string, event: { summary: string; description?: string; start: Date; end: Date; attendeeEmail?: string }) {
+  // Best-effort: create a calendar event for the user. Returns the event (id + Meet link when
+  // requested), or null if not connected/unconfigured/failed.
+  static async createEvent(userId: string, event: google.CalendarEventInput) {
+    if (!google.isConfigured()) return null;
+    try {
+      const token = await this.validToken(userId);
+      if (!token) return null;
+      const created = await google.insertEvent(token.accessToken, token.calendarId, event);
+      return { id: created.id, meetUrl: created.hangoutLink ?? null };
+    } catch (e) {
+      console.error("[google-calendar] event create failed", e);
+      return null;
+    }
+  }
+
+  static async updateEvent(userId: string, eventId: string, event: google.CalendarEventInput) {
     if (!google.isConfigured()) return false;
     try {
       const token = await this.validToken(userId);
       if (!token) return false;
-      await google.insertEvent(token.accessToken, token.calendarId, event);
+      await google.patchEvent(token.accessToken, token.calendarId, eventId, event);
       return true;
     } catch (e) {
-      console.error("[google-calendar] event create failed", e);
+      console.error("[google-calendar] event update failed", e);
+      return false;
+    }
+  }
+
+  static async deleteEvent(userId: string, eventId: string) {
+    if (!google.isConfigured()) return false;
+    try {
+      const token = await this.validToken(userId);
+      if (!token) return false;
+      await google.deleteEvent(token.accessToken, token.calendarId, eventId);
+      return true;
+    } catch (e) {
+      console.error("[google-calendar] event delete failed", e);
       return false;
     }
   }

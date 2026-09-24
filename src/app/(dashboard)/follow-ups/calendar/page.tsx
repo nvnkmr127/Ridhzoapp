@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { requireOrg } from "@/lib/rbac";
 import { db } from "@/db";
-import { followUps, leads } from "@/db/schema";
-import { and, eq, or, gte, lte, isNull } from "drizzle-orm";
+import { followUps, leads, meetings } from "@/db/schema";
+import { and, eq, or, gte, lte, isNull, ne } from "drizzle-orm";
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval,
   format, addMonths, subMonths, isSameMonth, isToday, parse,
@@ -36,10 +36,27 @@ export default async function FollowUpCalendarPage({ searchParams }: { searchPar
       ),
     );
 
-  const byDay = new Map<string, typeof rows>();
-  for (const r of rows) {
+  // Meetings show alongside follow-ups (purple) so the day's plan is in one place.
+  const meetingRows = await db
+    .select({ id: meetings.id, title: meetings.title, dueAt: meetings.startAt, status: meetings.status, leadId: meetings.leadId, leadName: leads.name })
+    .from(meetings)
+    .innerJoin(leads, eq(meetings.leadId, leads.id))
+    .where(
+      and(
+        eq(meetings.organizationId, organizationId),
+        or(eq(meetings.assigneeId, userId), eq(leads.ownerId, userId)),
+        isNull(leads.deletedAt),
+        ne(meetings.status, "cancelled"),
+        gte(meetings.startAt, gridStart),
+        lte(meetings.startAt, gridEnd),
+      ),
+    );
+
+  type Item = (typeof rows)[number] & { meeting?: boolean };
+  const byDay = new Map<string, Item[]>();
+  for (const r of [...rows, ...meetingRows.map((m) => ({ ...m, meeting: true }))] as Item[]) {
     const k = format(new Date(r.dueAt), KEY);
-    byDay.set(k, [...(byDay.get(k) ?? []), r]);
+    byDay.set(k, [...(byDay.get(k) ?? []), r].sort((a, b) => +new Date(a.dueAt) - +new Date(b.dueAt)));
   }
 
   const prev = format(subMonths(cursor, 1), "yyyy-MM");
@@ -51,6 +68,7 @@ export default async function FollowUpCalendarPage({ searchParams }: { searchPar
         <h1 className="text-2xl font-bold tracking-tight">{format(cursor, "MMMM yyyy")}</h1>
         <div className="flex items-center gap-2">
           <Link href="/follow-ups"><Button variant="outline" size="sm" className="gap-1"><List className="h-4 w-4" /> List</Button></Link>
+          <Link href="/meetings?view=calendar"><Button variant="outline" size="sm">Meetings</Button></Link>
           <Link href={`/follow-ups/calendar?month=${prev}`}><Button variant="ghost" size="icon" aria-label="Previous month"><ChevronLeft className="h-4 w-4" /></Button></Link>
           <Link href="/follow-ups/calendar"><Button variant="ghost" size="sm">Today</Button></Link>
           <Link href={`/follow-ups/calendar?month=${next}`}><Button variant="ghost" size="icon" aria-label="Next month"><ChevronRight className="h-4 w-4" /></Button></Link>
@@ -70,11 +88,11 @@ export default async function FollowUpCalendarPage({ searchParams }: { searchPar
                 {isToday(day) ? <span className="bg-secondary text-foreground rounded-full px-1.5 py-0.5">{format(day, "d")}</span> : format(day, "d")}
               </div>
               {items.map((it) => {
-                const overdue = it.status === "pending" && new Date(it.dueAt) < new Date();
-                const done = it.status === "completed";
+                const overdue = (it.status === "pending" || it.status === "scheduled") && new Date(it.dueAt) < new Date();
+                const done = it.status === "completed" || it.status === "no_show";
                 return (
                   <Link key={it.id} href={`/leads/${it.leadId}`}
-                    className={`block truncate rounded px-1.5 py-0.5 text-xs ${done ? "bg-muted text-muted-foreground line-through" : overdue ? "bg-muted text-foreground" : "bg-muted text-muted-foreground"}`}>
+                    className={`block truncate rounded px-1.5 py-0.5 text-xs ${it.meeting ? `bg-purple-500/10 text-purple-700 dark:text-purple-300${done ? " opacity-60" : ""}` : done ? "bg-muted text-muted-foreground line-through" : overdue ? "bg-muted text-foreground" : "bg-muted text-muted-foreground"}`}>
                     <LocalTime iso={it.dueAt} mode="time" /> {it.leadName} — {it.title}
                   </Link>
                 );

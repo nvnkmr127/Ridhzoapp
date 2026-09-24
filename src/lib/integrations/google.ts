@@ -63,22 +63,69 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenRes
   return res.json();
 }
 
-export async function insertEvent(accessToken: string, calendarId: string, event: {
-  summary: string; description?: string; start: Date; end: Date; attendeeEmail?: string;
-}) {
+export type CalendarEventInput = {
+  summary: string;
+  description?: string;
+  start: Date;
+  end: Date;
+  attendeeEmail?: string;
+  location?: string;
+  // Ask Google to attach a Meet link (returned as hangoutLink).
+  withMeet?: boolean;
+  // Idempotency key for the Meet create request (e.g. the meeting id).
+  requestId?: string;
+};
+
+function eventBody(event: CalendarEventInput) {
   const body: any = {
     summary: event.summary,
     description: event.description,
+    location: event.location,
     start: { dateTime: event.start.toISOString() },
     end: { dateTime: event.end.toISOString() },
   };
   if (event.attendeeEmail) body.attendees = [{ email: event.attendeeEmail }];
+  if (event.withMeet) {
+    body.conferenceData = {
+      createRequest: { requestId: event.requestId || crypto.randomUUID(), conferenceSolutionKey: { type: "hangoutsMeet" } },
+    };
+  }
+  return body;
+}
 
-  const res = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`, {
+function eventsUrl(calendarId: string, eventId?: string) {
+  const base = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
+  return eventId ? `${base}/${encodeURIComponent(eventId)}` : base;
+}
+
+export async function insertEvent(accessToken: string, calendarId: string, event: CalendarEventInput): Promise<{ id: string; hangoutLink?: string }> {
+  const res = await fetch(`${eventsUrl(calendarId)}?conferenceDataVersion=1`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(eventBody(event)),
   });
   if (!res.ok) throw new Error(`Google Calendar insert failed (${res.status}): ${await res.text()}`);
   return res.json();
+}
+
+// Partial update — only the fields given are sent (Meet is never re-requested on update).
+export async function patchEvent(accessToken: string, calendarId: string, eventId: string, event: CalendarEventInput) {
+  const res = await fetch(eventsUrl(calendarId, eventId), {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify(eventBody({ ...event, withMeet: false })),
+  });
+  if (!res.ok) throw new Error(`Google Calendar update failed (${res.status}): ${await res.text()}`);
+  return res.json();
+}
+
+export async function deleteEvent(accessToken: string, calendarId: string, eventId: string) {
+  const res = await fetch(eventsUrl(calendarId, eventId), {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  // 404/410 = already gone, which is what we wanted.
+  if (!res.ok && res.status !== 404 && res.status !== 410) {
+    throw new Error(`Google Calendar delete failed (${res.status}): ${await res.text()}`);
+  }
 }

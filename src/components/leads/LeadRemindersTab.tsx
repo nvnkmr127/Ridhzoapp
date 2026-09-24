@@ -3,7 +3,7 @@ import { SendFollowUpButton, isSendableFollowUp } from "@/components/leads/SendF
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Calendar, Clock, Plus, CheckCircle2, Circle, Trash2, Bell, Phone, Mail, Video, Pencil, MapPin, MessageSquare } from "lucide-react";
+import { Calendar, Clock, Plus, CheckCircle2, Circle, Trash2, Bell, Phone, Mail, Video, Pencil, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -209,8 +209,6 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
         return <Mail className="h-4 w-4 text-blue-500" />;
       case "meeting":
         return <Video className="h-4 w-4 text-purple-500" />;
-      case "site_visit":
-        return <MapPin className="h-4 w-4 text-rose-500" />;
       case "whatsapp":
         return <MessageSquare className="h-4 w-4 text-emerald-500" />;
       default:
@@ -227,7 +225,7 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h4 className="text-sm font-semibold text-foreground">Follow-ups</h4>
-          <p className="text-xs text-muted-foreground">Calls, meetings, site visits and messages to do for this lead</p>
+          <p className="text-xs text-muted-foreground">Calls, messages and tasks to do for this lead — book meetings from the Meetings tab</p>
         </div>
         {!showAdd && (
           <Button size="sm" onClick={() => setShowAdd(true)} className="gap-1.5 text-xs">
@@ -268,8 +266,6 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
                   <SelectItem value="followup">Follow-up</SelectItem>
                   <SelectItem value="call">Phone Call</SelectItem>
                   <SelectItem value="email">Email</SelectItem>
-                  <SelectItem value="meeting">Meeting</SelectItem>
-                  <SelectItem value="site_visit">Site visit</SelectItem>
                   <SelectItem value="whatsapp">WhatsApp</SelectItem>
                 </SelectContent>
               </Select>
@@ -486,8 +482,6 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
                     <SelectItem value="followup">Follow-up</SelectItem>
                     <SelectItem value="call">Phone Call</SelectItem>
                     <SelectItem value="email">Email</SelectItem>
-                    <SelectItem value="meeting">Meeting</SelectItem>
-                  <SelectItem value="site_visit">Site visit</SelectItem>
                   <SelectItem value="whatsapp">WhatsApp</SelectItem>
                   </SelectContent>
                 </Select>

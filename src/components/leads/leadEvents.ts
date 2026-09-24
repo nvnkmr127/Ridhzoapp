@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import type { MeetingView } from "@/domains/meetings/format";
 
 // Tiny in-page event bus for the lead profile, so the Next Best Action card can trigger actions that
 // live in other components (header call/follow-up, the tabs, the AI draft) without prop-drilling
@@ -8,6 +9,8 @@ import { useEffect } from "react";
 export type LeadUiAction =
   | { type: "call" }
   | { type: "followup" }
+  // Open the meeting dialog — new, or editing `meeting`.
+  | { type: "meeting"; meeting?: MeetingView }
   | { type: "edit" }
   // Open the in-app composer for a channel; `ai` also starts an AI draft.
   | { type: "compose"; channel: "whatsapp" | "email"; ai?: boolean }

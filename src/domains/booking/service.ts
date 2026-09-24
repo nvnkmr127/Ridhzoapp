@@ -1,20 +1,19 @@
 import { db } from "@/db";
-import { organizations, leads, activities } from "@/db/schema";
+import { organizations, leads } from "@/db/schema";
 import { and, eq, or } from "drizzle-orm";
 import { LeadService } from "@/domains/leads/service";
-import { NotificationService } from "@/domains/notifications/service";
-import { GoogleCalendarService } from "@/domains/integrations/googleCalendarService";
+import { MeetingService } from "@/domains/meetings/service";
 
 export class BookingService {
   // Public info for the booking page — just the org name, resolved by slug.
   static async getOrgBySlug(slug: string) {
-    const [org] = await db.select({ id: organizations.id, name: organizations.name }).from(organizations).where(eq(organizations.slug, slug)).limit(1);
+    const [org] = await db.select({ id: organizations.id, name: organizations.name, addressLine1: organizations.addressLine1, city: organizations.city }).from(organizations).where(eq(organizations.slug, slug)).limit(1);
     return org ?? null;
   }
 
-  // A prospect requests a meeting. Creates the lead (or reuses an existing match), records the
-  // request on the timeline, and sets the next follow-up. Queue-free so it works on the public path.
-  static async request(slug: string, input: { name: string; email?: string; phone?: string; when: Date; message?: string }) {
+  // A prospect requests a meeting. Creates the lead (or reuses an existing match) and books a meeting
+  // with the lead's owner — on their calendar (with a Meet link when online and Google is connected).
+  static async request(slug: string, input: { name: string; email?: string; phone?: string; when: Date; message?: string; mode?: "online" | "in_person" }) {
     const org = await this.getOrgBySlug(slug);
     if (!org) throw new Error("Unknown booking link");
 
@@ -40,27 +39,24 @@ export class BookingService {
       ownerId = lead.ownerId;
     }
 
-    await db.insert(activities).values({
-      leadId,
-      type: "meeting",
-      content: `Meeting requested for ${input.when.toLocaleString()}${input.message ? ` — "${input.message}"` : ""}`,
-    });
-    await db.update(leads).set({ nextFollowUpAt: input.when, updatedAt: new Date() }).where(eq(leads.id, leadId));
-
-    if (ownerId) {
-      await NotificationService.create({
-        userId: ownerId, type: "lead_assigned", leadId,
-        title: "New meeting request", body: `${input.name} requested a meeting for ${input.when.toLocaleString()}.`,
-      });
-      // Sync to the owner's Google Calendar if they've connected it (best-effort, 30-min slot).
-      void GoogleCalendarService.createEvent(ownerId, {
-        summary: `Meeting with ${input.name}`,
-        description: input.message,
-        start: input.when,
-        end: new Date(input.when.getTime() + 30 * 60 * 1000),
-        attendeeEmail: input.email,
-      });
-    }
+    const mode = input.mode ?? "online";
+    await MeetingService.create(
+      {
+        leadId,
+        mode,
+        title: `Meeting with ${input.name}`,
+        startAt: input.when,
+        durationMinutes: 30,
+        assigneeId: ownerId,
+        address: mode === "in_person" ? [org.addressLine1, org.city].filter(Boolean).join(", ") || null : null,
+        locationName: mode === "in_person" ? org.name : null,
+        autoMeet: mode === "online",
+        notes: input.message ? `Requested via booking page: "${input.message}"` : "Requested via booking page",
+        // The prospect sees "request sent"; the rep confirms from the lead once they've checked the slot.
+        notifyLead: false,
+      },
+      { userId: null, organizationId: org.id },
+    );
     return { ok: true };
   }
 }

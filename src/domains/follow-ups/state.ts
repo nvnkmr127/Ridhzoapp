@@ -1,9 +1,10 @@
 import { db } from "@/db";
-import { followUps, leads } from "@/db/schema";
+import { followUps, leads, meetings } from "@/db/schema";
 import { and, asc, eq, sql } from "drizzle-orm";
 
 // Single source of truth for the denormalized lead.next_follow_up_at column.
-// The lead's "next follow-up" is ALWAYS the soonest pending follow-up (or null when none remain).
+// The lead's "next follow-up" is ALWAYS the soonest pending follow-up or scheduled meeting (or null
+// when none remain).
 // Every path that creates, completes, cancels, deletes, reschedules or snoozes a follow-up MUST
 // call this so the lead card, leads list, dashboard, scoring and overdue queries stay in sync with
 // the follow_ups table. Before this existed, complete/cancel/delete/status-change left next_follow_up_at
@@ -15,10 +16,17 @@ export async function syncLeadFollowUpState(leadId: string): Promise<void> {
     .where(and(eq(followUps.leadId, leadId), eq(followUps.status, "pending")))
     .orderBy(asc(followUps.dueAt))
     .limit(1);
+  const [meeting] = await db
+    .select({ due: meetings.startAt })
+    .from(meetings)
+    .where(and(eq(meetings.leadId, leadId), eq(meetings.status, "scheduled")))
+    .orderBy(asc(meetings.startAt))
+    .limit(1);
+  const due = [next?.due, meeting?.due].filter((d): d is Date => !!d).sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
 
   await db
     .update(leads)
-    .set({ nextFollowUpAt: next?.due ?? null, updatedAt: new Date() })
+    .set({ nextFollowUpAt: due, updatedAt: new Date() })
     .where(eq(leads.id, leadId));
 }
 

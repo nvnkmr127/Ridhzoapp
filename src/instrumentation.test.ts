@@ -16,6 +16,10 @@ vi.mock("@/lib/jobs/workers/followUpReminderWorker", () => ({
   createFollowUpReminderWorker: vi.fn(),
   scheduleFollowUpReminderScan: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock("@/lib/jobs/workers/meetingReminderWorker", () => ({
+  createMeetingReminderWorker: vi.fn(),
+  scheduleMeetingReminderScan: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("@/lib/jobs/workers/sequenceWorker", () => ({
   createSequenceWorker: vi.fn(),
   scheduleSequenceScan: vi.fn().mockResolvedValue(undefined),

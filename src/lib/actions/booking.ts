@@ -14,6 +14,7 @@ const schema = z.object({
   phone: z.string().trim().max(50).optional().or(z.literal("")),
   when: z.coerce.date(),
   message: z.string().trim().max(1000).optional(),
+  mode: z.enum(["online", "in_person"]).optional(),
 });
 
 export async function requestMeetingAction(input: z.input<typeof schema>) {
@@ -43,6 +44,7 @@ export async function requestMeetingAction(input: z.input<typeof schema>) {
       phone: data.phone || undefined,
       when: data.when,
       message: data.message,
+      mode: data.mode,
     });
     return ok({ requested: true });
   } catch (e) {

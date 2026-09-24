@@ -1,7 +1,7 @@
 import { getOrganizationAction } from "@/lib/actions/organizations";
 import { GeneralSettingsForm } from "@/components/settings/GeneralSettingsForm";
 import Link from "next/link";
-import { Sliders, Database, MessageSquare, Users, ListPlus, KeyRound, ScrollText, CreditCard, Plug, Webhook, Mail, Sparkles, Share2 } from "lucide-react";
+import { Sliders, Database, MessageSquare, Users, ListPlus, KeyRound, ScrollText, CreditCard, Plug, Webhook, Mail, Sparkles, Share2, Store } from "lucide-react";
 
 export default async function SettingsPage() {
   const organization = await getOrganizationAction();
@@ -49,6 +49,13 @@ export default async function SettingsPage() {
           >
             <Users className="h-4 w-4" />
             Users & Roles
+          </Link>
+          <Link
+            href="/settings/meetings"
+            className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground dark:text-muted-foreground hover:bg-accent dark:hover:bg-accent"
+          >
+            <Store className="h-4 w-4" />
+            Meeting Locations
           </Link>
           <Link
             href="/settings/custom-fields"

@@ -41,6 +41,11 @@ import { SequenceService } from "@/domains/leads/sequenceService";
 import { LeadHeaderQuickActions } from "@/components/leads/LeadHeaderQuickActions";
 import { LeadRemindersTab } from "@/components/leads/LeadRemindersTab";
 import { LeadAttachmentsTab } from "@/components/leads/LeadAttachmentsTab";
+import { LeadMeetingsTab } from "@/components/meetings/LeadMeetingsTab";
+import { MeetingScheduler } from "@/components/meetings/MeetingScheduler";
+import { MeetingService } from "@/domains/meetings/service";
+import { GoogleCalendarService } from "@/domains/integrations/googleCalendarService";
+import { isConfigured as googleConfigured } from "@/lib/integrations/google";
 import { LocalTime } from "@/components/LocalTime";
 import { db } from "@/db";
 import { leads, leadAttachments, followUps, leadPipelineStages, users } from "@/db/schema";
@@ -100,6 +105,9 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     duplicateRows,
     source,
     usersList,
+    leadMeetings,
+    meetingLocations,
+    calendarConnected,
   ] = await Promise.all([
     ActivityService.getLeadActivities(id),
     WhatsAppService.listForLead(id),
@@ -147,6 +155,9 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       .where(and(eq(users.organizationId, organizationId), eq(users.isActive, true), isNull(users.deletedAt)))
       .then((rows) => rows.map((u) => ({ id: u.id, name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email })))
       .catch(() => []),
+    MeetingService.listForLead(id, organizationId).catch(() => []),
+    MeetingService.listLocations(organizationId).catch(() => []),
+    googleConfigured() ? GoogleCalendarService.isConnected(userId).catch(() => false) : Promise.resolve(false),
   ]);
 
   const durationMs = Date.now() - startMs;
@@ -357,6 +368,14 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
         </div>
 
         <LeadHeaderQuickActions lead={{ ...lead, phone: dialPhone ?? null }} />
+        <MeetingScheduler
+          lead={{ id: lead.id, name: lead.name, phone: dialPhone ?? null, email: lead.email }}
+          users={usersList}
+          locations={meetingLocations.map((l) => ({ id: l.id, name: l.name, address: l.address }))}
+          canAutoMeet={calendarConnected}
+          canManageLocations={isFieldAdmin}
+          defaultAssigneeId={lead.ownerId ?? userId}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-3">
@@ -504,6 +523,17 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                   ),
                 },
                 { value: "notes", label: `Notes (${notesCount})`, content: <LeadNotesTab leadId={lead.id} initialNotes={activities.filter((a) => a.type === "note")} /> },
+                {
+                  value: "meetings",
+                  label: `Meetings (${leadMeetings.filter((mt) => mt.status === "scheduled").length})`,
+                  content: (
+                    <LeadMeetingsTab
+                      lead={{ id: lead.id, name: lead.name, phone: dialPhone ?? null }}
+                      meetings={leadMeetings}
+                      userNames={Object.fromEntries(usersList.map((u) => [u.id, u.name]))}
+                    />
+                  ),
+                },
                 {
                   value: "reminders",
                   label: `Follow-ups (${reminders.length})`,

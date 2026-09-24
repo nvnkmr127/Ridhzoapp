@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Phone, Mail, MessageSquare, Calendar, Clock, Trash2, ChevronDown, MoreHorizontal } from "lucide-react";
+import { Phone, Mail, MessageSquare, Calendar, CalendarPlus, Clock, Trash2, ChevronDown, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,7 +11,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { EditLeadDialog } from "@/components/leads/EditLeadDialog";
 import { DeleteLeadButton } from "@/components/leads/DeleteLeadButton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { quickDispositionAction, updateLeadFollowUpAction, type QuickFollowUpKind } from "@/lib/actions/leads";
+import { quickDispositionAction, updateLeadFollowUpAction } from "@/lib/actions/leads";
 import { emitLeadAction, useLeadAction, type LeadUiAction } from "@/components/leads/leadEvents";
 import { useToast } from "@/hooks/use-toast";
 import { formatLocalDateTime, LocalTime } from "@/components/LocalTime";
@@ -82,7 +82,6 @@ export function LeadHeaderQuickActions({ lead }: LeadHeaderQuickActionsProps) {
   const [savingCall, setSavingCall] = useState(false);
   // After an answered call the dialog moves to a second step: what's the outcome?
   const [callStep, setCallStep] = useState<"outcome" | "disposition">("outcome");
-  const [kind, setKind] = useState<QuickFollowUpKind>("followup");
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const phoneClean = lead.phone ? lead.phone.replace(/[^0-9+]/g, "") : "";
@@ -94,13 +93,13 @@ export function LeadHeaderQuickActions({ lead }: LeadHeaderQuickActionsProps) {
   const handleSetFollowUp = async (targetDate: Date | null) => {
     setLoading(true);
     try {
-      const res = await updateLeadFollowUpAction(lead.id, targetDate ? targetDate.toISOString() : null, kind);
+      const res = await updateLeadFollowUpAction(lead.id, targetDate ? targetDate.toISOString() : null);
       if (!res.ok) {
         toast({ title: "Failed to update follow-up", description: res.message, variant: "destructive" });
         return;
       }
       toast({
-        title: targetDate ? `${kind === "meeting" ? "Meeting" : kind === "site_visit" ? "Site visit" : "Follow-up"} scheduled` : "Follow-up cleared",
+        title: targetDate ? "Follow-up scheduled" : "Follow-up cleared",
         description: targetDate ? `Due ${formatLocalDateTime(targetDate, "datetime")}` : undefined,
       });
       setReminderOpen(false);
@@ -183,8 +182,8 @@ export function LeadHeaderQuickActions({ lead }: LeadHeaderQuickActionsProps) {
 
   return (
     <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
-      {/* Contact actions: a 4-up grid of big tap targets on phones, a compact row on desktop. */}
-      <div className="grid grid-cols-4 gap-2 sm:flex sm:flex-wrap">
+      {/* Contact actions: a 5-up grid of big tap targets on phones, a compact row on desktop. */}
+      <div className="grid grid-cols-5 gap-1.5 sm:flex sm:flex-wrap sm:gap-2">
         {lead.phone ? (
           <Button variant="outline" size="sm" className={actionBtn} asChild>
             <a href={`tel:${phoneClean}`} onClick={() => setCallOpen(true)} title={`Call ${lead.phone}`}>
@@ -223,6 +222,12 @@ export function LeadHeaderQuickActions({ lead }: LeadHeaderQuickActionsProps) {
         >
           <Mail className={cn("h-4 w-4 sm:h-3.5 sm:w-3.5", lead.email && "text-blue-500")} />
           <span>Email</span>
+        </Button>
+
+        {/* Meeting: online, site visit, store visit or in person — opens the MeetingScheduler dialog. */}
+        <Button variant="outline" size="sm" className={actionBtn} title="Schedule a meeting or visit" onClick={() => emitLeadAction({ type: "meeting" })}>
+          <CalendarPlus className="h-4 w-4 sm:h-3.5 sm:w-3.5 text-purple-500" />
+          <span>Meeting</span>
         </Button>
 
         {/* Follow-up: the single place to schedule the next touch (the Follow-ups tab lists history). */}
@@ -268,23 +273,6 @@ export function LeadHeaderQuickActions({ lead }: LeadHeaderQuickActionsProps) {
               ) : (
                 "Schedule follow-up"
               )}
-            </div>
-            <div className="grid grid-cols-3 gap-1 px-1 pb-1" role="radiogroup" aria-label="Follow-up type">
-              {(["followup", "meeting", "site_visit"] as const).map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  role="radio"
-                  aria-checked={kind === k}
-                  onClick={() => setKind(k)}
-                  className={cn(
-                    "rounded-md border px-1.5 py-1 text-[11px] font-medium",
-                    kind === k ? "border-foreground bg-foreground text-background" : "border-border text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {k === "followup" ? "Follow-up" : k === "meeting" ? "Meeting" : "Site visit"}
-                </button>
-              ))}
             </div>
             {followUpPresets().map((p) => (
               <button

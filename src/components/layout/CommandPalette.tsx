@@ -6,13 +6,14 @@ import {
   CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem,
 } from "@/components/ui/command";
 import { searchUniversalAction, UniversalSearchResults } from "@/lib/actions/search";
-import { Search, Users, LayoutGrid, CalendarClock, Settings, User, Building2 } from "lucide-react";
+import { Search, Users, LayoutGrid, CalendarClock, CalendarCheck, Settings, User, Building2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 const NAV = [
   { label: "Leads", href: "/leads", icon: Users },
   { label: "Kanban", href: "/leads/kanban", icon: LayoutGrid },
   { label: "Follow-ups", href: "/follow-ups", icon: CalendarClock },
+  { label: "Meetings", href: "/meetings", icon: CalendarCheck },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 

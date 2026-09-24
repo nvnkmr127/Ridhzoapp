@@ -4,6 +4,7 @@ import {
   organizations,
   activities,
   followUps,
+  meetings,
   leadStatusHistory,
   leadTags,
   whatsappMessages,
@@ -15,7 +16,7 @@ import {
 import { and, eq, ne, or, isNull, asc, sql } from "drizzle-orm";
 
 // Child tables with a plain lead_id (no per-lead unique) that should follow the surviving lead.
-const REASSIGN = [activities, followUps, leadStatusHistory, whatsappMessages, notifications, leadAttachments, sharedLinks] as const;
+const REASSIGN = [activities, followUps, meetings, leadStatusHistory, whatsappMessages, notifications, leadAttachments, sharedLinks] as const;
 
 export class DedupService {
   // Groups of leads in the org that share a normalized email or phone. Cheap heuristic, good enough
