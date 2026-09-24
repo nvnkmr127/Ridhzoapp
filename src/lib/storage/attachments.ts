@@ -69,7 +69,14 @@ export async function saveAttachment(organizationId: string, fileName: string, d
   const key = `${randomUUID()}${ext}`;
   if (r2()) {
     const objectKey = `attachments/${organizationId}/${key}`;
-    const res = await r2Fetch(objectKey, { method: "PUT", body: new Uint8Array(data), headers: { "Content-Type": contentType } });
+    const res = await r2Fetch(objectKey, { 
+      method: "PUT", 
+      body: new Uint8Array(data), 
+      headers: { 
+        "Content-Type": contentType,
+        "Content-Length": data.byteLength.toString()
+      } 
+    });
     if (!res.ok) throw new Error(`R2 upload failed (${res.status})`);
     return `r2:${objectKey}`;
   }
