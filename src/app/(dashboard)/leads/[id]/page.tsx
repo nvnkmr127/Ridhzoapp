@@ -1,7 +1,5 @@
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, User, Phone, Mail, Building, Sparkles, Flame, Radio, SlidersHorizontal, Braces } from "lucide-react";
-import Link from "next/link";
+import { Phone, Mail, Building, Sparkles, Flame, Radio, SlidersHorizontal, Braces } from "lucide-react";
 import { LeadService } from "@/domains/leads/service";
 import { LeadSourceService } from "@/domains/leads/sourceService";
 import { NextBestActionService } from "@/domains/leads/nextBestActionService";
@@ -14,6 +12,8 @@ import { CustomFieldService } from "@/domains/customFields/service";
 import { ActivityService } from "@/domains/activities/service";
 import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
+import { ActivityTimeline } from "@/components/leads/ActivityTimeline";
+import { LeadBackButton, LeadPager } from "@/components/leads/LeadNav";
 import { LeadNotesTab } from "@/components/leads/LeadNotesTab";
 import { WhatsAppSendBox } from "@/components/leads/WhatsAppSendBox";
 import { EmailSendBox } from "@/components/leads/EmailSendBox";
@@ -25,7 +25,6 @@ import { LeadTags } from "@/components/leads/LeadTags";
 import { LeadCustomFields } from "@/components/leads/LeadCustomFields";
 import { TagService } from "@/domains/tags/service";
 import { LeadDuplicateBanner } from "@/components/leads/LeadDuplicateBanner";
-import { LeadFollowUpControl } from "@/components/leads/LeadFollowUpControl";
 import { LeadStageAndValueControl } from "@/components/leads/LeadStageAndValueControl";
 import { LeadSequencesCard } from "@/components/leads/LeadSequencesCard";
 import { LeadAiRecap } from "@/components/leads/LeadAiRecap";
@@ -38,7 +37,7 @@ import { LeadAttachmentsTab } from "@/components/leads/LeadAttachmentsTab";
 import { LocalTime } from "@/components/LocalTime";
 import { db } from "@/db";
 import { leads, leadAttachments, followUps, leadPipelineStages, users } from "@/db/schema";
-import { eq, and, ne, isNull, or, desc } from "drizzle-orm";
+import { eq, and, ne, isNull, or, desc, sql } from "drizzle-orm";
 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -73,10 +72,10 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   // Match what listCustomFieldsAction returns for this viewer (admin-only hidden from non-admins).
   const visibleCustomDefs = (isFieldAdmin ? allCustomDefs : allCustomDefs.filter((f) => !f.adminOnly)) as any;
 
-  const cleanEmail = lead.email?.trim() || undefined;
+  const cleanEmail = lead.email?.trim().toLowerCase() || undefined;
   const cleanPhone = lead.phone?.trim() || undefined;
   const dupConditions = [];
-  if (cleanEmail) dupConditions.push(eq(leads.email, cleanEmail));
+  if (cleanEmail) dupConditions.push(sql`lower(${leads.email}) = ${cleanEmail}`);
   if (cleanPhone) dupConditions.push(eq(leads.phone, cleanPhone));
 
   // 2. Fan out independent child reads directly without redundant auth/middleware wrappers.
@@ -128,6 +127,8 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               ne(leads.id, id),
               isNull(leads.deletedAt),
               or(...dupConditions),
+              // Only count duplicates this user can open — otherwise "Review" leads to an empty list.
+              isFieldAdmin ? undefined : eq(leads.ownerId, userId),
             ),
           )
           .catch(() => [])
@@ -236,15 +237,23 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       .join("")
       .toUpperCase() || "?";
 
+  const tabTrigger =
+    "shrink-0 rounded-none border-b-2 border-transparent -mb-px px-3 sm:px-4 py-3 text-sm font-medium text-muted-foreground data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none";
+
+  // Layout: two columns on desktop (sticky details left, conversation right). On phones the column
+  // wrappers become `display: contents`, so every card is a direct item of one stack and `order-*`
+  // puts what a rep needs first — next action, then the conversation — above the reference cards.
+  // `empty:hidden` drops wrappers of cards that render nothing, so they don't leave double gaps.
+  const m = (order: string) => `${order} lg:order-none empty:hidden`;
+
   return (
-    <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6">
-      {/* Duplicate Warning Banner */}
+    <div className="flex-1 space-y-5 p-3 pt-3 sm:space-y-6 sm:p-8 sm:pt-6">
       <LeadDuplicateBanner count={dupCount} searchQuery={lead.email || lead.phone || undefined} />
 
       {/* Buying signal — a recent content open is a hot moment to reach out. */}
       {recentOpen && (
-        <div className="rounded-2xl border border-orange-500/40 bg-orange-500/5 px-4 py-3 text-sm flex items-center gap-2.5 shadow-[inset_0_1px_0_0_hsl(0_0%_100%/0.05)]">
-          <Flame className="h-4 w-4 text-orange-500 shrink-0" />
+        <div className="flex items-start gap-2.5 rounded-2xl border border-orange-500/40 bg-orange-500/5 px-4 py-3 text-sm">
+          <Flame className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" />
           <span>
             <span className="font-semibold">Buying signal:</span> {lead.name?.split(" ")[0] || "This lead"} opened{" "}
             <span className="font-medium">&ldquo;{recentOpen.title}&rdquo;</span> {recentOpen.viewCount}× recently — reach out now while you&apos;re top of mind.
@@ -253,31 +262,46 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       )}
 
       {(lead.status === "lost" || lead.status === "unqualified") && lead.lostReason && (
-        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-sm shadow-[inset_0_1px_0_0_hsl(0_0%_100%/0.05)]">
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-sm">
           <span className="font-medium capitalize">{lead.status}</span>
           <span className="text-muted-foreground"> — reason: {lead.lostReason}</span>
         </div>
       )}
 
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-5">
-        <div className="flex items-center gap-3">
-          <Link href="/leads">
-            <Button variant="outline" size="icon" aria-label="Go back" className="h-9 w-9">
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-          </Link>
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border bg-secondary text-sm font-semibold text-secondary-foreground">
+      {/* Header: who, status, how to reach them, and the actions — all above the fold on a phone. */}
+      <div className="space-y-4 border-b pb-5">
+        <div className="flex items-start gap-3">
+          <LeadBackButton leadId={lead.id} />
+          <div className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border bg-secondary text-sm font-semibold text-secondary-foreground sm:flex">
             {initials}
           </div>
-          <div>
-            <div className="flex items-center gap-3">
-              <h2 className="text-2xl font-bold tracking-tight">{lead.name}</h2>
-              <Badge variant={lead.status === "new" ? "default" : "secondary"} className="capitalize">
-                {lead.status}
-              </Badge>
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <h2 className="break-words text-xl font-bold tracking-tight sm:text-2xl">{lead.name}</h2>
+              <LeadStatusControl leadId={lead.id} status={lead.status} className="h-8 w-auto min-w-[130px] text-xs" />
             </div>
-            <p className="text-xs text-muted-foreground mt-0.5">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+              {lead.phone && (
+                <span className="flex items-center gap-1.5 tabular-nums">
+                  <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+                  {lead.phone}
+                </span>
+              )}
+              {lead.email && (
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="break-all">{lead.email}</span>
+                </span>
+              )}
+              {lead.company && (
+                <span className="flex items-center gap-1.5">
+                  <Building className="h-3.5 w-3.5 text-muted-foreground" />
+                  {lead.company}
+                </span>
+              )}
+              {!lead.phone && !lead.email && <span className="text-muted-foreground">No phone or email yet — use Edit to add one.</span>}
+            </div>
+            <p className="text-xs text-muted-foreground">
               {lead.displayId != null && (
                 <>
                   <span className="font-medium tabular-nums text-foreground">Lead #{lead.displayId}</span>
@@ -285,280 +309,179 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 </>
               )}
               Created{" "}
-              {lead.createdAt ? (
-                <LocalTime iso={lead.createdAt} mode="date" fallback="recently" />
-              ) : (
-                "recently"
-              )}
+              {lead.createdAt ? <LocalTime iso={lead.createdAt} mode="date" fallback="recently" /> : "recently"}
             </p>
+          </div>
+          <LeadPager leadId={lead.id} />
+        </div>
+
+        <LeadHeaderQuickActions lead={lead} whatsappMode={whatsappMode} />
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-3">
+        {/* Left column (desktop): coaching + lead details */}
+        <div className="contents lg:col-span-1 lg:block lg:sticky lg:top-4 lg:max-h-[calc(100dvh-6rem)] lg:space-y-6 lg:overflow-y-auto lg:overscroll-contain lg:pb-6 lg:pr-2">
+          <div className={m("order-1")}>
+            <SectionCard icon={Sparkles} title="Next Best Action" className={nbaAccent}>
+              <div className="space-y-2">
+                <p className="text-base font-semibold leading-snug">{nba.label}</p>
+                <p className="text-sm text-muted-foreground">{nba.reason}</p>
+                <LeadAiRecap leadId={lead.id} />
+              </div>
+            </SectionCard>
+          </div>
+
+          <div className={m("order-5")}>
+            <LeadInsightsCard
+              score={lead.score}
+              customData={lead.customData}
+              leadInfo={{
+                status: lead.status,
+                phone: lead.phone,
+                email: lead.email,
+                company: lead.company,
+                lastContactedAt: lead.lastContactedAt,
+                nextFollowUpAt: lead.nextFollowUpAt,
+                activitiesCount: activities.length,
+                hasInboundMsg: waMessages.some((msg) => msg.direction === "inbound"),
+              }}
+            />
+          </div>
+
+          <div className={m("order-3")}>
+            <SectionCard icon={SlidersHorizontal} title="Lead Management">
+              <div className="space-y-4">
+                <div>
+                  <span className="mb-1.5 block text-xs text-muted-foreground">Assignee</span>
+                  <LeadAssignControl leadId={lead.id} ownerId={lead.ownerId} initialUsers={usersList} />
+                </div>
+                <div>
+                  <span className="mb-1.5 block text-xs text-muted-foreground">Tags</span>
+                  <LeadTags leadId={lead.id} initialTags={leadTags} />
+                </div>
+                <div className="border-t pt-4">
+                  <LeadStageAndValueControl
+                    leadId={lead.id}
+                    stageId={lead.stageId}
+                    expectedValue={lead.expectedValue}
+                    stages={stagesList}
+                    currency={org?.currency ?? undefined}
+                    locale={org?.locale ?? undefined}
+                  />
+                </div>
+              </div>
+            </SectionCard>
+          </div>
+
+          <div className={m("order-6")}>
+            <ShareContentCard leadId={lead.id} leadPhone={lead.phone} initialShares={shares} />
+          </div>
+
+          <div className={m("order-7")}>
+            <ReengagementPlanCard leadId={lead.id} organizationId={organizationId} />
+          </div>
+
+          <div className={m("order-8")}>
+            <SectionCard icon={Radio} title="Lead Source">
+              <div className="space-y-3 text-sm">
+                <div>
+                  <span className="block text-xs text-muted-foreground">Source</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium">{sourceName}</p>
+                    {sourceType && (
+                      <Badge variant="secondary" className="text-xs font-normal capitalize">
+                        {sourceType}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                {attribution.map(([label, value]) => (
+                  <div key={label}>
+                    <span className="block text-xs text-muted-foreground">{label}</span>
+                    <p className="break-words font-medium">{value}</p>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          </div>
+
+          <div className={m("order-9")}>
+            <SectionCard icon={Braces} title="Custom Attributes">
+              <LeadCustomFields leadId={lead.id} initialData={(lead.customData as Record<string, unknown>) ?? {}} initialDefs={visibleCustomDefs} />
+            </SectionCard>
           </div>
         </div>
 
-        {/* Quick Actions Header Toolbar */}
-        <LeadHeaderQuickActions lead={lead} />
-      </div>
+        {/* Right column (desktop): conversation & history */}
+        <div className="contents lg:col-span-2 lg:block lg:space-y-6">
+          <div className={m("order-2")}>
+            <div className="overflow-hidden rounded-2xl border border-border bg-card">
+              <Tabs defaultValue="activity" className="w-full">
+                <div className="overflow-x-auto border-b border-border px-2 sm:px-4">
+                  <TabsList className="h-auto justify-start gap-0.5 bg-transparent p-0 sm:gap-1">
+                    <TabsTrigger value="activity" className={tabTrigger}>
+                      Activity ({activities.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="whatsapp" className={tabTrigger}>
+                      WhatsApp ({waMessages.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="notes" className={tabTrigger}>
+                      Notes ({notesCount})
+                    </TabsTrigger>
+                    <TabsTrigger value="reminders" className={tabTrigger}>
+                      Follow-ups ({reminders.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="attachments" className={tabTrigger}>
+                      Files ({attachments.length})
+                    </TabsTrigger>
+                    <TabsTrigger value="emails" className={tabTrigger}>
+                      Email
+                    </TabsTrigger>
+                  </TabsList>
+                </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Lead Info & Attributes */}
-        <div className="lg:col-span-1 space-y-6 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-6rem)] lg:overflow-y-auto lg:pr-2 lg:pb-6 lg:overscroll-contain">
-          {/* Next Best Action — the coach prompt */}
-          <SectionCard icon={Sparkles} title="Next Best Action" className={nbaAccent}>
-            <div className="space-y-2">
-              <p className="text-base font-semibold leading-snug">{nba.label}</p>
-              <p className="text-sm text-muted-foreground">{nba.reason}</p>
-              <LeadAiRecap leadId={lead.id} />
+                <div className="p-4 sm:p-6">
+                  <TabsContent value="activity" className="mt-0">
+                    <ActivityTimeline activities={activities} />
+                  </TabsContent>
+
+                  <TabsContent value="whatsapp" className="mt-0 space-y-4">
+                    <WhatsAppThread messages={waMessages} />
+                    <WhatsAppSendBox
+                      leadId={lead.id}
+                      hasPhone={!!lead.phone}
+                      mode={whatsappMode}
+                      phone={lead.phone}
+                      leadName={lead.name}
+                      company={lead.company}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="notes" className="mt-0">
+                    <LeadNotesTab leadId={lead.id} initialNotes={activities.filter((a) => a.type === "note")} />
+                  </TabsContent>
+
+                  <TabsContent value="reminders" className="mt-0">
+                    <LeadRemindersTab leadId={lead.id} initialReminders={reminders} />
+                  </TabsContent>
+
+                  <TabsContent value="attachments" className="mt-0">
+                    <LeadAttachmentsTab leadId={lead.id} initialAttachments={attachments} />
+                  </TabsContent>
+
+                  <TabsContent value="emails" className="mt-0 space-y-4">
+                    <EmailSendBox leadId={lead.id} email={lead.email} />
+                  </TabsContent>
+                </div>
+              </Tabs>
             </div>
-          </SectionCard>
+          </div>
 
-          {/* Why this score + enrichment evidence — only renders when there's something to show */}
-          <LeadInsightsCard
-            score={lead.score}
-            customData={lead.customData}
-            leadInfo={{
-              status: lead.status,
-              phone: lead.phone,
-              email: lead.email,
-              company: lead.company,
-              lastContactedAt: lead.lastContactedAt,
-              nextFollowUpAt: lead.nextFollowUpAt,
-              activitiesCount: activities.length,
-              hasInboundMsg: waMessages.some((m) => m.direction === "inbound"),
-            }}
-          />
-
-          {/* Follow Up Reminder Widget */}
-          <LeadFollowUpControl leadId={lead.id} nextFollowUpAt={lead.nextFollowUpAt} />
-
-          {/* Share & track content — read receipts on what you send */}
-          <ShareContentCard leadId={lead.id} leadPhone={lead.phone} initialShares={shares} />
-
-          {/* Re-engagement cadence — only shows for cold leads */}
-          <ReengagementPlanCard leadId={lead.id} organizationId={organizationId} />
-
-          {/* Quick Controls Card */}
-          <SectionCard icon={SlidersHorizontal} title="Lead Management">
-            <div className="space-y-4">
-              <div>
-                <span className="text-xs text-muted-foreground block mb-1.5">Status</span>
-                <LeadStatusControl leadId={lead.id} status={lead.status} />
-              </div>
-
-              <div>
-                <span className="text-xs text-muted-foreground block mb-1.5">Assignee</span>
-                <LeadAssignControl leadId={lead.id} ownerId={lead.ownerId} initialUsers={usersList} />
-              </div>
-
-              <div>
-                <span className="text-xs text-muted-foreground block mb-1.5">Tags</span>
-                <LeadTags leadId={lead.id} initialTags={leadTags} />
-              </div>
-
-              {/* Stage & Opportunity Value */}
-              <div className="border-t pt-4">
-                <LeadStageAndValueControl
-                  leadId={lead.id}
-                  stageId={lead.stageId}
-                  expectedValue={lead.expectedValue}
-                  stages={stagesList}
-                  currency={org?.currency ?? undefined}
-                  locale={org?.locale ?? undefined}
-                />
-              </div>
-            </div>
-          </SectionCard>
-
-          {/* Lead Source & Attribution Card */}
-          <SectionCard icon={Radio} title="Lead Source">
-            <div className="space-y-3 text-sm">
-              <div>
-                <span className="text-xs text-muted-foreground block">Source</span>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="font-medium">{sourceName}</p>
-                  {sourceType && (
-                    <Badge variant="secondary" className="text-xs capitalize font-normal">
-                      {sourceType}
-                    </Badge>
-                  )}
-                </div>
-              </div>
-              {attribution.map(([label, value]) => (
-                <div key={label}>
-                  <span className="text-xs text-muted-foreground block">{label}</span>
-                  <p className="font-medium break-words">{value}</p>
-                </div>
-              ))}
-            </div>
-          </SectionCard>
-
-          {/* Contact Information Card */}
-          <SectionCard icon={User} title="Contact Info">
-            <div className="space-y-3.5 text-sm">
-              <div className="flex items-start gap-3">
-                <Mail className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <span className="text-xs text-muted-foreground block">Email</span>
-                  {lead.email ? (
-                    <a href={`mailto:${lead.email}`} className="font-medium truncate block text-primary hover:underline underline-offset-2">
-                      {lead.email}
-                    </a>
-                  ) : (
-                    <p className="font-medium truncate">—</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3">
-                <Phone className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <span className="text-xs text-muted-foreground block">Phone</span>
-                  {lead.phone ? (
-                    <div className="flex items-center gap-3">
-                      <a href={`tel:${lead.phone}`} className="font-medium truncate text-primary hover:underline underline-offset-2">
-                        {lead.phone}
-                      </a>
-                      <a
-                        href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, "")}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs text-green-600 dark:text-green-400 hover:underline underline-offset-2 shrink-0"
-                      >
-                        WhatsApp
-                      </a>
-                    </div>
-                  ) : (
-                    <p className="font-medium truncate">—</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3">
-                <Building className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <span className="text-xs text-muted-foreground block">Company</span>
-                  <p className="font-medium truncate">{lead.company || "—"}</p>
-                </div>
-              </div>
-            </div>
-          </SectionCard>
-
-          {/* Custom Fields Card */}
-          <SectionCard icon={Braces} title="Custom Attributes">
-            <LeadCustomFields leadId={lead.id} initialData={(lead.customData as Record<string, unknown>) ?? {}} initialDefs={visibleCustomDefs} />
-          </SectionCard>
-        </div>
-
-        {/* Right Column: Sequences & Activity/Messaging Tabs */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Automated Sequences Card */}
-          <LeadSequencesCard leadId={lead.id} availableSequences={availableSequences} initialEnrolled={enrolledSequences} />
-
-          {/* Tabs Container */}
-          <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-[inset_0_1px_0_0_hsl(0_0%_100%/0.05)]">
-            <Tabs defaultValue="activity" className="w-full">
-              <div className="border-b border-border px-4 overflow-x-auto">
-                <TabsList className="h-auto bg-transparent gap-1 p-0 justify-start">
-                  <TabsTrigger
-                    value="activity"
-                    className="rounded-none border-b-2 border-transparent -mb-px px-4 py-3 text-sm font-medium text-muted-foreground shrink-0 data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
-                  >
-                    Activity Log ({activities.length})
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="reminders"
-                    className="rounded-none border-b-2 border-transparent -mb-px px-4 py-3 text-sm font-medium text-muted-foreground shrink-0 data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
-                  >
-                    Follow-ups ({reminders.length})
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="attachments"
-                    className="rounded-none border-b-2 border-transparent -mb-px px-4 py-3 text-sm font-medium text-muted-foreground shrink-0 data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
-                  >
-                    Attachments ({attachments.length})
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="whatsapp"
-                    className="rounded-none border-b-2 border-transparent -mb-px px-4 py-3 text-sm font-medium text-muted-foreground shrink-0 data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
-                  >
-                    WhatsApp ({waMessages.length})
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="notes"
-                    className="rounded-none border-b-2 border-transparent -mb-px px-4 py-3 text-sm font-medium text-muted-foreground shrink-0 data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
-                  >
-                    Notes ({notesCount})
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="emails"
-                    className="rounded-none border-b-2 border-transparent -mb-px px-4 py-3 text-sm font-medium text-muted-foreground shrink-0 data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none"
-                  >
-                    Send Email
-                  </TabsTrigger>
-                </TabsList>
-              </div>
-
-              <div className="p-6">
-                <TabsContent value="activity" className="mt-0 space-y-4">
-                  {activities.length === 0 ? (
-                    <div className="text-center py-12 text-muted-foreground text-sm">
-                      No activity recorded for this lead yet.
-                    </div>
-                  ) : (
-                    <div className="relative pl-6 border-l border-border/60 space-y-6">
-                      {activities.map((activity) => (
-                        <div key={activity.id} className="relative group">
-                          <div className="absolute -left-[31px] top-1 h-2.5 w-2.5 rounded-full bg-border group-hover:bg-primary transition-colors" />
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                                {activity.type}
-                              </span>
-                              {activity.userName && (
-                                <span className="text-xs text-muted-foreground font-medium">
-                                  by {activity.userName}
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-xs text-muted-foreground">
-                              <LocalTime iso={activity.createdAt} mode="datetime" />
-                            </span>
-                          </div>
-                          <p className="text-sm font-medium text-foreground mt-1 whitespace-pre-wrap">
-                            {activity.content}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </TabsContent>
-
-                <TabsContent value="reminders" className="mt-0">
-                  <LeadRemindersTab leadId={lead.id} initialReminders={reminders} />
-                </TabsContent>
-
-                <TabsContent value="attachments" className="mt-0">
-                  <LeadAttachmentsTab leadId={lead.id} initialAttachments={attachments} />
-                </TabsContent>
-
-                <TabsContent value="whatsapp" className="mt-0 space-y-4">
-                  <WhatsAppThread messages={waMessages} />
-                  <WhatsAppSendBox leadId={lead.id} hasPhone={!!lead.phone} mode={whatsappMode} phone={lead.phone} />
-                </TabsContent>
-
-                <TabsContent value="emails" className="mt-0 space-y-4">
-                  <EmailSendBox leadId={lead.id} email={lead.email} />
-                </TabsContent>
-
-                <TabsContent value="notes" className="mt-0">
-                  <LeadNotesTab leadId={lead.id} initialNotes={activities.filter((a) => a.type === "note")} />
-                </TabsContent>
-              </div>
-            </Tabs>
+          <div className={m("order-4")}>
+            <LeadSequencesCard leadId={lead.id} availableSequences={availableSequences} initialEnrolled={enrolledSequences} />
           </div>
         </div>
       </div>
     </div>
   );
 }
-
-
-

@@ -7,6 +7,9 @@ import { sendWhatsAppAction, listTemplates } from "@/lib/actions/messaging"
 import { draftLeadReplyAction } from "@/lib/actions/ai"
 import { useToast } from "@/hooks/use-toast"
 import { MessageCircle, Sparkles } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { useLogContact } from "@/components/leads/useLogContact"
+import { buildDeepLink, renderTemplate } from "@/lib/messaging/deeplink"
 
 type Template = { id: string; name: string; body: string };
 
@@ -15,16 +18,22 @@ export function WhatsAppSendBox({
   hasPhone,
   mode = "bsp",
   phone = null,
+  leadName = "",
+  company = null,
 }: {
   leadId: string;
   hasPhone: boolean;
   mode?: "personal" | "bsp";
   phone?: string | null;
+  leadName?: string;
+  company?: string | null;
 }) {
   const { toast } = useToast();
+  const logContact = useLogContact(leadId);
   const [templates, setTemplates] = React.useState<Template[]>([]);
   const [body, setBody] = React.useState("");
   const [sending, setSending] = React.useState(false);
+  const router = useRouter();
   const [drafting, setDrafting] = React.useState(false);
 
   // Load WhatsApp templates once for the one-tap picker.
@@ -53,11 +62,14 @@ export function WhatsAppSendBox({
   async function send() {
     // Personal mode: open WhatsApp with the message prefilled to send from the rep's own
     // number (Ridhzo-style). No BSP, no 24h-window limits — the rep taps send in WhatsApp.
+    // Tokens are filled in here (the server only renders them for Business API sends), and the
+    // message is logged so it shows in the thread and counts as contact.
     if (mode === "personal") {
-      const digits = (phone ?? "").replace(/[^0-9]/g, "");
-      const href = digits.length >= 6 ? `https://wa.me/${digits}?text=${encodeURIComponent(body)}` : `https://wa.me/?text=${encodeURIComponent(body)}`;
-      window.open(href, "_blank", "noopener,noreferrer");
+      const lead = { name: leadName, phone, company };
+      const text = renderTemplate(body, lead);
+      window.open(buildDeepLink("whatsapp", lead, text) ?? `https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
       setBody("");
+      await logContact({ channel: "whatsapp", message: text }, "Opened in WhatsApp — logged on the lead");
       return;
     }
     setSending(true);
@@ -68,8 +80,9 @@ export function WhatsAppSendBox({
         toast({ variant: "destructive", title: "Not sent", description: res.message });
         return;
       }
-      toast({ title: "WhatsApp sent", description: "Message delivered via the Business API." });
+      toast({ title: "WhatsApp sent", description: "Sent via the WhatsApp Business API." });
       setBody("");
+      router.refresh();
     } catch {
       toast({ variant: "destructive", title: "Not sent", description: "We couldn't reach the server. Please try again." });
     } finally {
@@ -101,7 +114,7 @@ export function WhatsAppSendBox({
         value={body}
         onChange={(e) => setBody(e.target.value)}
       />
-      <div className="flex justify-between">
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
         <Button variant="outline" onClick={draft} disabled={drafting || sending} className="gap-2">
           <Sparkles className="h-4 w-4" />
           {drafting ? "Drafting…" : "Draft with AI"}

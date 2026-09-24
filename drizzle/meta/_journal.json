@@ -379,6 +379,13 @@
       "when": 1790217613165,
       "tag": "0053_lowercase_user_emails",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1790222121450,
+      "tag": "0054_lead_first_contacted_at",
+      "breakpoints": true
     }
   ]
 }

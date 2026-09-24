@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { followUps, leads } from "@/db/schema";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 
 // Single source of truth for the denormalized lead.next_follow_up_at column.
 // The lead's "next follow-up" is ALWAYS the soonest pending follow-up (or null when none remain).
@@ -28,6 +28,6 @@ export async function syncLeadFollowUpState(leadId: string): Promise<void> {
 export async function markLeadContacted(leadId: string, at: Date = new Date()): Promise<void> {
   await db
     .update(leads)
-    .set({ lastContactedAt: at, updatedAt: new Date() })
+    .set({ lastContactedAt: at, firstContactedAt: sql`coalesce(${leads.firstContactedAt}, ${at})`, updatedAt: new Date() })
     .where(eq(leads.id, leadId));
 }

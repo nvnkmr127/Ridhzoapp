@@ -66,6 +66,8 @@ export const leads = pgTable('leads', {
   customData: jsonb('custom_data').default({}),
   nextFollowUpAt: timestamp('next_follow_up_at'),
   lastContactedAt: timestamp('last_contacted_at'),
+  // Set once, on the first outreach — speed-to-lead/SLA measure THIS, not the latest touch.
+  firstContactedAt: timestamp('first_contacted_at'),
   escalatedAt: timestamp('escalated_at'), // set when SLA escalation fires; prevents re-alerting
   deletedAt: timestamp('deleted_at'), // recycle bin: soft-delete timestamp; auto-purged 30 days later
   deletedBy: uuid('deleted_by').references(() => users.id),

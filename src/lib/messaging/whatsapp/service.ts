@@ -4,6 +4,7 @@ import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { WatxioClient } from "./client";
 import { renderTemplate, type LeadLike } from "../deeplink";
 import { ActivityService } from "@/domains/activities/service";
+import { markLeadContacted } from "@/domains/follow-ups/state";
 
 export interface SendWhatsAppInput {
   leadId: string;
@@ -104,9 +105,7 @@ export const WhatsAppService = {
         .set({ status: result.status, providerMessageId: result.providerMessageId, updatedAt: new Date() })
         .where(eq(whatsappMessages.id, msg.id));
 
-      await db.update(leads)
-        .set({ lastContactedAt: new Date(), updatedAt: new Date() })
-        .where(eq(leads.id, input.leadId));
+      await markLeadContacted(input.leadId);
 
       await ActivityService.addActivity({
         leadId: input.leadId,

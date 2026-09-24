@@ -25,6 +25,7 @@ export class SlaAnalyticsService {
       id: string;
       createdAt: Date;
       lastContactedAt: Date | null;
+      firstContactedAt?: Date | null;
       status: string;
     }[]
   ): Promise<SlaMetrics> {
@@ -33,6 +34,7 @@ export class SlaAnalyticsService {
         id: leads.id,
         createdAt: leads.createdAt,
         lastContactedAt: leads.lastContactedAt,
+        firstContactedAt: leads.firstContactedAt,
         status: leads.status,
       })
       .from(leads)
@@ -59,9 +61,12 @@ export class SlaAnalyticsService {
     for (const lead of orgLeads) {
       const createdTime = new Date(lead.createdAt).getTime();
 
-      if (lead.lastContactedAt) {
+      // Response time is to the FIRST contact; fall back to last contact only for rows recorded
+      // before first_contacted_at existed.
+      const firstContact = lead.firstContactedAt ?? lead.lastContactedAt;
+      if (firstContact) {
         contactedCount++;
-        const contactTime = new Date(lead.lastContactedAt).getTime();
+        const contactTime = new Date(firstContact).getTime();
         const diffMinutes = Math.max(0, (contactTime - createdTime) / (1000 * 60));
         totalFirstContactMinutes += diffMinutes;
 

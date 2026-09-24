@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { saveLeadListContext } from "@/lib/leads/listContext";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -90,6 +91,11 @@ export function LeadsTable({
       listUsersAction().then(setUsers).catch(() => {});
     }
   }, [initialUsers]);
+
+  // Remember this list (order + filters) so a lead's profile can go back to it and step prev/next.
+  React.useEffect(() => {
+    saveLeadListContext({ ids: leads.map((l) => l.id), url: window.location.pathname + window.location.search });
+  }, [leads]);
 
   const [leadToDelete, setLeadToDelete] = React.useState<Lead | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);

@@ -41,4 +41,20 @@ describe("SlaAnalyticsService", () => {
     expect(metrics.slaBreachedCount).toBe(2);
     expect(metrics.avgFirstContactMinutes).toBe(25); // (10 + 40) / 2
   });
+
+  it("measures response time to the FIRST contact, not the latest follow-up", async () => {
+    const created = new Date("2026-01-01T10:00:00Z");
+    const metrics = await SlaAnalyticsService.getSlaMetrics("org-1", 15, [
+      {
+        id: "a",
+        createdAt: created,
+        firstContactedAt: new Date("2026-01-01T10:05:00Z"), // answered in 5 min
+        lastContactedAt: new Date("2026-01-11T10:00:00Z"), // followed up 10 days later
+        status: "active",
+      },
+    ]);
+    expect(metrics.avgFirstContactMinutes).toBe(5);
+    expect(metrics.slaCompliantCount).toBe(1);
+    expect(metrics.slaBreachedCount).toBe(0);
+  });
 });

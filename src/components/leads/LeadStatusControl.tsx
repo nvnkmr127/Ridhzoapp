@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
 import { changeLeadStatusAction } from "@/lib/actions/leads"
+import { cn } from "@/lib/utils"
 import { getTenantStatusSchemaAction } from "@/lib/actions/customStatuses"
 import type { CustomStatusItem } from "@/domains/leads/customStatusSchemaService"
 
@@ -32,7 +33,7 @@ function Dot({ color }: { color: string }) {
   return <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />;
 }
 
-export function LeadStatusControl({ leadId, status }: { leadId: string; status: string }) {
+export function LeadStatusControl({ leadId, status, className }: { leadId: string; status: string; className?: string }) {
   const router = useRouter();
   const { toast } = useToast();
   const [value, setValue] = React.useState(status);
@@ -108,7 +109,7 @@ export function LeadStatusControl({ leadId, status }: { leadId: string; status: 
   return (
     <>
       <Select value={value} onValueChange={change} disabled={busy}>
-        <SelectTrigger className="w-full">
+        <SelectTrigger className={cn("w-full", className)} aria-label="Lead status">
           <SelectValue placeholder="Select status">
             {current ? (
               <span className="flex items-center gap-2">

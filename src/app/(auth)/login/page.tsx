@@ -25,8 +25,8 @@ const DEV_EMAIL = process.env.NEXT_PUBLIC_DEV_LOGIN_EMAIL || "admin@acme.com";
 const DEV_PASSWORD = process.env.NEXT_PUBLIC_DEV_LOGIN_PASSWORD || "password123";
 
 const loginSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(1, "Password is required"),
+  email: z.string().trim().email("Enter a valid email address"),
+  password: z.string().min(1, "Enter your password"),
 });
 
 type LoginValues = z.infer<typeof loginSchema>;
@@ -323,7 +323,7 @@ export default function LoginPage() {
             <TabsContent value="email" className="space-y-4 pt-2">
               <form
                 onSubmit={form.handleSubmit(onSubmit, (errors) =>
-                  setError(summarizeFieldErrors(errors, { email: "Email", password: "Password" })),
+                  setError(summarizeFieldErrors(errors)),
                 )}
                 noValidate
                 className="space-y-4"

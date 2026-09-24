@@ -42,9 +42,9 @@ export function StatusMessage({ status, className }: { status: Status; className
 
 // react-hook-form's onInvalid handler → one top-of-form summary of what's wrong. Field-level messages
 // still render under each field; this makes sure the user sees there IS a problem without scrolling.
-export function summarizeFieldErrors(errors: Record<string, { message?: unknown } | undefined>, labels: Record<string, string>): string {
-  const problems = Object.entries(errors)
-    .filter(([, e]) => e?.message)
-    .map(([field, e]) => `${labels[field] ?? field}: ${String(e!.message)}`);
-  return problems.length === 1 ? problems[0] : `Please fix ${problems.length} fields — ${problems.join(" · ")}`;
+export function summarizeFieldErrors(errors: Record<string, { message?: unknown } | undefined>): string {
+  const problems = Object.values(errors)
+    .filter((e) => e?.message)
+    .map((e) => String(e!.message).replace(/\.?$/, "."));
+  return problems.length === 1 ? problems[0] : `Please fix ${problems.length} things: ${problems.join(" ")}`;
 }

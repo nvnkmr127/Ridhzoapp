@@ -23,9 +23,9 @@ import { COUNTRY_CODES } from "@/lib/countryCodes";
 
 const signupSchema = z.object({
   orgName: z.string().optional(),
-  firstName: z.string().min(1, "Your name is required"),
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(6, "At least 6 characters"),
+  firstName: z.string().trim().min(1, "Enter your name"),
+  email: z.string().trim().email("Enter a valid email address"),
+  password: z.string().min(6, "Password needs at least 6 characters"),
 });
 
 type SignupValues = z.infer<typeof signupSchema>;
@@ -110,7 +110,7 @@ export default function SignupPage() {
     setError(null);
 
     if (!phoneName.trim()) {
-      setError("Your name: please enter your name.");
+      setError("Enter your name.");
       return;
     }
 
@@ -351,7 +351,7 @@ export default function SignupPage() {
             <TabsContent value="email" className="space-y-4 pt-2">
               <form
                 onSubmit={form.handleSubmit(onEmailSubmit, (errors) =>
-                  setError(summarizeFieldErrors(errors, { orgName: "Business name", firstName: "Your name", email: "Email", password: "Password" })),
+                  setError(summarizeFieldErrors(errors)),
                 )}
                 noValidate
                 className="space-y-4"

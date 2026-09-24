@@ -124,9 +124,12 @@ export class AnalyticsService {
     // Speed-to-lead: the core metric for this product. Response time = first
     // contact minus lead creation. Median (not mean) so a single stale lead
     // contacted weeks later doesn't distort the number.
+    // (last_contacted_at only as a fallback for rows recorded before first_contacted_at existed)
     const responseSeconds = allLeads
-      .filter(l => l.lastContactedAt)
-      .map(l => (new Date(l.lastContactedAt as Date).getTime() - new Date(l.createdAt).getTime()) / 1000)
+      .flatMap(l => {
+        const first = l.firstContactedAt ?? l.lastContactedAt;
+        return first ? [(new Date(first).getTime() - new Date(l.createdAt).getTime()) / 1000] : [];
+      })
       .filter(s => s >= 0);
 
     const contacted = responseSeconds.length;

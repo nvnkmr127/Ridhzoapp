@@ -9,15 +9,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { listTemplates, sendWhatsAppAction, sendEmailAction } from "@/lib/actions/messaging";
 import { useToast } from "@/hooks/use-toast";
+import { useLogContact } from "@/components/leads/useLogContact";
+import { buildDeepLink, renderTemplate } from "@/lib/messaging/deeplink";
 
 interface QuickResponseDialogProps {
   leadId: string;
   leadName: string;
   email?: string | null;
   phone?: string | null;
+  whatsappMode?: "personal" | "bsp";
 }
 
-export function QuickResponseDialog({ leadId, leadName, email, phone }: QuickResponseDialogProps) {
+export function QuickResponseDialog({ leadId, leadName, email, phone, whatsappMode = "personal" }: QuickResponseDialogProps) {
+  const logContact = useLogContact(leadId);
   const [open, setOpen] = useState(false);
   const [channel, setChannel] = useState<"whatsapp" | "email">("whatsapp");
   const [templates, setTemplates] = useState<any[]>([]);
@@ -59,6 +63,18 @@ export function QuickResponseDialog({ leadId, leadName, email, phone }: QuickRes
       toast({ title: "Can't send", description: "This lead has no email address on file.", variant: "destructive" });
       return;
     }
+    // Personal mode: WhatsApp goes out from the rep's own number via wa.me (the Business API send
+    // refuses personal-mode orgs, which made this button always fail) — open it prefilled and log it.
+    if (channel === "whatsapp" && whatsappMode === "personal") {
+      const lead = { name: leadName, email, phone };
+      const text = renderTemplate(body, lead);
+      window.open(buildDeepLink("whatsapp", lead, text)!, "_blank", "noopener,noreferrer");
+      setOpen(false);
+      setBody("");
+      setSubject("");
+      await logContact({ channel: "whatsapp", message: text }, "Opened in WhatsApp — logged on the lead");
+      return;
+    }
     setSending(true);
     try {
       const res = channel === "whatsapp"
@@ -86,11 +102,11 @@ export function QuickResponseDialog({ leadId, leadName, email, phone }: QuickRes
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm" className="gap-2 font-medium">
-          <Send className="h-4 w-4" /> Send Quick Response
+        <Button size="sm" className="h-10 sm:h-9 gap-2 font-medium">
+          <Send className="h-4 w-4" /> Quick reply
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg">
             <Send className="h-5 w-5 text-primary" /> Send Quick Response
@@ -196,7 +212,7 @@ export function QuickResponseDialog({ leadId, leadName, email, phone }: QuickRes
             className="w-full gap-2"
           >
             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            Send {channel === "whatsapp" ? "WhatsApp" : "Email"} Now
+            {channel === "whatsapp" && whatsappMode === "personal" ? "Open in WhatsApp" : `Send ${channel === "whatsapp" ? "WhatsApp" : "Email"} now`}
           </Button>
         </div>
       </DialogContent>

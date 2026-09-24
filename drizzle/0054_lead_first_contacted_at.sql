@@ -1,0 +1,1 @@
+ALTER TABLE "leads" ADD COLUMN "first_contacted_at" timestamp;

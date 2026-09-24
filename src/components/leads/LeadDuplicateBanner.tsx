@@ -16,18 +16,19 @@ export function LeadDuplicateBanner({ count, searchQuery }: LeadDuplicateBannerP
     : `/leads/duplicates`;
 
   return (
-    <div className="flex items-center justify-between gap-4 p-3 px-4 rounded-lg bg-destructive/15 border border-destructive/30 text-destructive text-sm font-medium">
-      <div className="flex items-center gap-2">
-        <AlertTriangle className="h-4 w-4 shrink-0" />
+    <div className="flex flex-col gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-start gap-2 text-red-700 dark:text-red-200">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
         <span>
-          DUPLICATE CLIENTS FOUND ({count}) — Same email or phone exists in your leads.
+          <span className="font-semibold">Possible duplicate:</span> {count} other {count === 1 ? "lead has" : "leads have"} the same
+          email or phone.
         </span>
       </div>
       <Link
         href={targetUrl}
-        className="underline font-semibold hover:opacity-80 transition-opacity text-xs uppercase tracking-wide whitespace-nowrap"
+        className="shrink-0 whitespace-nowrap text-xs font-semibold text-red-700 underline underline-offset-2 hover:opacity-80 dark:text-red-200"
       >
-        View Details &rarr;
+        Review &amp; merge &rarr;
       </Link>
     </div>
   );
