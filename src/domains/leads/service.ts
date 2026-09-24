@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { leads, leadStatusHistory, leadTags, tags, activities, followUps, reminders, leadAttachments, notifications, whatsappMessages } from "@/db/schema";
+import { leads, leadPipelineStages, leadStatusHistory, leadTags, tags, activities, followUps, reminders, leadAttachments, notifications, whatsappMessages } from "@/db/schema";
 import {
   eq,
   ilike,
@@ -529,11 +529,16 @@ export class LeadService {
   // stays the authority on the final label; this just narrows what we score.
   static async listPriorityCandidates(organizationId: string, engagedIds: string[] = [], limit = 200, enforceOwnerId?: string) {
     const now = new Date();
-    const openStatuses = ["new", "active"];
+    // Resolve by status CATEGORY so tenants' custom open/in-progress statuses are included too.
+    const { CustomStatusSchemaService } = await import("./customStatusSchemaService");
+    const categories = await CustomStatusSchemaService.getStatusCategoryMap(organizationId);
+    const keysIn = (...cats: string[]) => [...categories].filter(([, c]) => cats.includes(c)).map(([k]) => k);
+    const openStatuses = keysIn("open", "in_progress");
+    const inProgress = keysIn("in_progress");
     const orConds = [
-      and(eq(leads.status, "new"), isNull(leads.lastContactedAt)),
+      and(inArray(leads.status, openStatuses), isNull(leads.lastContactedAt)),
       and(inArray(leads.status, openStatuses), isNotNull(leads.nextFollowUpAt), lt(leads.nextFollowUpAt, now)),
-      and(eq(leads.status, "active"), gte(leads.score, 70)),
+      and(inArray(leads.status, inProgress), gte(leads.score, 70)),
     ];
     if (engagedIds.length) orConds.push(inArray(leads.id, engagedIds));
 
@@ -700,6 +705,8 @@ export class LeadService {
       await db.update(followUps)
         .set({ status: "cancelled", updatedAt: new Date() })
         .where(and(eq(followUps.leadId, leadId), eq(followUps.status, "pending")));
+      // Keep the pipeline board honest: a Won lead shouldn't sit in "New Lead".
+      await this.moveToClosingStage(updatedLead, isWon ? "won" : "lost").catch(() => {});
     }
 
     const validChangedById = (changedById && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(changedById))
@@ -715,4 +722,30 @@ export class LeadService {
     eventBus.emit('lead.status_changed', { leadId, oldStatus: currentLead.status, newStatus, userId: validChangedById ?? undefined, source });
     return updatedLead;
   }
+
+  // Status and pipeline stage are separate fields. When a lead is won/lost, move it to the pipeline's
+  // matching stage ("Won", "Closed Won", "Lost"…) if the tenant has one — never invent a stage.
+  static async moveToClosingStage(lead: { id: string; organizationId: string | null; stageId: string | null }, kind: "won" | "lost") {
+    if (!lead.organizationId) return;
+    const all = await db
+      .select({ id: leadPipelineStages.id, name: leadPipelineStages.name, pipelineId: leadPipelineStages.pipelineId })
+      .from(leadPipelineStages)
+      .where(eq(leadPipelineStages.organizationId, lead.organizationId));
+    const current = all.find((st) => st.id === lead.stageId);
+    const candidates = current ? all.filter((st) => st.pipelineId === current.pipelineId) : all;
+    const target = matchClosingStage(candidates, kind);
+    if (target && target.id !== lead.stageId) {
+      await db.update(leads).set({ stageId: target.id, updatedAt: new Date() }).where(eq(leads.id, lead.id));
+    }
+  }
+}
+
+const CLOSING_STAGE = {
+  won: /\b(won|closed[\s-]*won|deal[\s-]*won|converted|booked|sold)\b/i,
+  lost: /\b(lost|closed[\s-]*lost|dropped|not[\s-]*interested|disqualified)\b/i,
+};
+
+/** Pick the stage whose name clearly means won/lost; null when the pipeline has none. */
+export function matchClosingStage<T extends { name: string }>(stages: T[], kind: "won" | "lost"): T | null {
+  return stages.find((st) => CLOSING_STAGE[kind].test(st.name)) ?? null;
 }

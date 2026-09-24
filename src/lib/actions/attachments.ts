@@ -1,12 +1,12 @@
 "use server";
 
+import { assertLeadAccess } from "@/lib/leads/access";
 import { db } from "@/db";
 import { leadAttachments } from "@/db/schema/activities";
 import { requireOrg, assertWritable } from "@/lib/rbac";
 import { eq, and, desc } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { ActivityService } from "@/domains/activities/service";
-import { assertLeadInOrg } from "@/domains/leads/ownership";
 import { z } from "zod";
 import { writeFile, mkdir, unlink } from "node:fs/promises";
 import path from "node:path";
@@ -42,7 +42,7 @@ export async function uploadAttachmentAction(formData: FormData) {
   }
 
   try {
-    await assertLeadInOrg(leadId, organizationId);
+    await assertLeadAccess(leadId, { userId, organizationId });
 
     const uploadsDir = path.join(process.cwd(), "public", "uploads", "attachments");
     await mkdir(uploadsDir, { recursive: true });
@@ -96,7 +96,7 @@ export async function addAttachmentAction(input: z.infer<typeof addAttachmentSch
   }
 
   try {
-    await assertLeadInOrg(parsed.data.leadId, organizationId);
+    await assertLeadAccess(parsed.data.leadId, { userId, organizationId });
 
     const [attachment] = await db
       .insert(leadAttachments)
@@ -126,8 +126,8 @@ export async function addAttachmentAction(input: z.infer<typeof addAttachmentSch
 }
 
 export async function getAttachmentsAction(leadId: string) {
-  const { organizationId } = await requireOrg();
-  await assertLeadInOrg(leadId, organizationId);
+  const { userId, organizationId } = await requireOrg();
+  await assertLeadAccess(leadId, { userId, organizationId });
 
   return db
     .select()
@@ -139,7 +139,7 @@ export async function getAttachmentsAction(leadId: string) {
 export async function deleteAttachmentAction(attachmentId: string, leadId: string) {
   const { userId, organizationId } = await assertWritable();
   try {
-    await assertLeadInOrg(leadId, organizationId);
+    await assertLeadAccess(leadId, { userId, organizationId });
 
     const [deleted] = await db
       .delete(leadAttachments)

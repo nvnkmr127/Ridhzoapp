@@ -1,3 +1,5 @@
+import type { StatusCategory } from "./customStatusSchemaService";
+
 export type ActionPriority = "high" | "medium" | "low";
 export type RecommendedActionType =
   | "send_template"
@@ -5,7 +7,9 @@ export type RecommendedActionType =
   | "reschedule_followup"
   | "qualify_lead"
   | "reengage_cold_lead"
-  | "close_deal";
+  | "close_deal"
+  | "try_whatsapp"
+  | "wait";
 
 export interface NextBestActionRecommendation {
   action: RecommendedActionType;
@@ -16,6 +20,8 @@ export interface NextBestActionRecommendation {
 
 export interface NextBestActionInput {
   status: string;
+  /** Category of the (possibly custom) status; derived from the base keys when omitted. */
+  statusCategory?: StatusCategory;
   lastContactedAt?: Date | null;
   nextFollowUpAt?: Date | null;
   score?: number;
@@ -23,18 +29,36 @@ export interface NextBestActionInput {
   email?: string | null;
   /** Recent open of shared content — a hot buying signal that trumps routine cadence. */
   recentContentOpen?: { title: string; count: number } | null;
+  /** Calls in a row that went unanswered since the lead last engaged. */
+  unansweredStreak?: number;
+}
+
+const BASE_CATEGORY: Record<string, StatusCategory> = {
+  new: "open",
+  active: "in_progress",
+  won: "won",
+  lost: "lost",
+  unqualified: "unqualified",
+};
+
+export function statusCategoryOf(status: string, explicit?: StatusCategory): StatusCategory {
+  return explicit ?? BASE_CATEGORY[status] ?? BASE_CATEGORY[status.toLowerCase()] ?? "open";
 }
 
 export class NextBestActionService {
   /**
    * Evaluates lead status and activity metrics to recommend the immediate Next Best Action.
+   * Works on the status CATEGORY, so tenants' custom statuses ("Site visit booked", "Closed – paid")
+   * get real advice instead of falling through to a generic default.
    */
   static getRecommendation(input: NextBestActionInput): NextBestActionRecommendation {
-    // Resolved leads (won/lost/unqualified) are not active opportunities — never recommend chasing them.
-    if (["won", "lost", "unqualified"].includes(input.status)) {
+    const category = statusCategoryOf(input.status, input.statusCategory);
+
+    // Resolved leads are not active opportunities — never recommend chasing them.
+    if (category === "won" || category === "lost" || category === "unqualified") {
       return {
-        action: "call_lead",
-        label: input.status === "won" ? "Deal won" : "Lead closed",
+        action: "wait",
+        label: category === "won" ? "Deal won" : "Lead closed",
         reason: "No action needed — lead is resolved.",
         priority: "low",
       };
@@ -44,6 +68,7 @@ export class NextBestActionService {
     const lastContactDays = input.lastContactedAt
       ? (now - new Date(input.lastContactedAt).getTime()) / (1000 * 60 * 60 * 24)
       : Infinity;
+    const followUpAt = input.nextFollowUpAt ? new Date(input.nextFollowUpAt).getTime() : null;
 
     // 0. Recent content open — the strongest buying signal, act while they're warm.
     if (input.recentContentOpen && input.recentContentOpen.count > 0) {
@@ -56,61 +81,88 @@ export class NextBestActionService {
       };
     }
 
-    // 1. New lead without initial contact
-    if (input.status === "new" && !input.lastContactedAt) {
+    // 1. Overdue follow-up (the rep planned this — it wins over the generic first-contact nudge)
+    if (followUpAt !== null && followUpAt < now) {
+      return {
+        action: "reschedule_followup",
+        label: "Follow-up overdue — reach out now",
+        reason: "The follow-up you planned has passed.",
+        priority: "high",
+      };
+    }
+
+    // 2. Never contacted
+    if (!input.lastContactedAt) {
       if (input.phone) {
         return {
           action: "send_template",
-          label: "Send Welcome WhatsApp Template",
-          reason: "New lead requires initial outreach within 24 hours.",
+          label: "Send a welcome message",
+          reason: "New lead with no contact yet — the first to reply usually wins it.",
           priority: "high",
         };
       }
       return {
         action: "qualify_lead",
-        label: "Complete Lead Details & Qualify",
-        reason: "Missing phone number for instant outreach.",
+        label: input.email ? "Email them — no phone on file" : "Add a phone number or email",
+        reason: input.email ? "No phone number, so email is the only way to reach this lead." : "There's no way to reach this lead yet.",
         priority: "high",
       };
     }
 
-    // 2. Overdue follow-up
-    if (input.nextFollowUpAt && new Date(input.nextFollowUpAt).getTime() < now) {
+    // 3. A follow-up is already planned — respect the rep's plan instead of nagging.
+    if (followUpAt !== null) {
       return {
-        action: "reschedule_followup",
-        label: "Overdue Follow-up: Call Lead Immediately",
-        reason: "Scheduled follow-up date has passed.",
-        priority: "high",
+        action: "wait",
+        label: "Follow-up planned",
+        reason: "Your next touch is scheduled — nothing to do until then.",
+        priority: "low",
       };
     }
 
-    // 3. Active lead requiring re-engagement
-    if (input.status === "active" && lastContactDays > 5) {
+    // 4. Calls going unanswered
+    const streak = input.unansweredStreak ?? 0;
+    if (streak >= 3 && input.phone) {
+      return {
+        action: "try_whatsapp",
+        label: "Try WhatsApp instead",
+        reason: `${streak} calls in a row went unanswered — a message may get through.`,
+        priority: "medium",
+      };
+    }
+    if (streak >= 1) {
+      return {
+        action: "call_lead",
+        label: "Call again",
+        reason: "The last call wasn't answered — try a different time of day, or schedule a retry.",
+        priority: category === "open" ? "high" : "medium",
+      };
+    }
+
+    // 5. Going cold
+    if (lastContactDays > 5) {
       return {
         action: "reengage_cold_lead",
-        label: "Send Re-engagement Message",
-        reason: Number.isFinite(lastContactDays)
-          ? `No activity recorded for ${Math.floor(lastContactDays)} days.`
-          : "No prior contact on record — reach out to re-engage.",
+        label: "Send a re-engagement message",
+        reason: `No contact for ${Math.floor(lastContactDays)} days.`,
         priority: "medium",
       };
     }
 
-    // 4. High-scoring lead ready to convert
-    if (input.status === "active" && (input.score ?? 0) >= 70) {
+    // 6. Hot lead ready to convert
+    if (category === "in_progress" && (input.score ?? 0) >= 70) {
       return {
         action: "close_deal",
-        label: "Schedule Proposal / Close Deal",
-        reason: "High engagement score (>= 70) indicates conversion readiness.",
+        label: "Book a meeting / send proposal",
+        reason: "Strong engagement (score 70+) — push for the next commitment.",
         priority: "high",
       };
     }
 
-    // 5. Default steady follow-up
+    // 7. Default
     return {
-      action: "call_lead",
-      label: "Routine Touchpoint Call",
-      reason: "Maintain active communication cycle.",
+      action: "reschedule_followup",
+      label: "Plan the next follow-up",
+      reason: "Recently in touch — set when you'll reach out next so this lead doesn't slip.",
       priority: "low",
     };
   }

@@ -10,6 +10,7 @@ import { ActivityService } from "@/domains/activities/service";
 import { ok, fail, actionFail } from "@/lib/actions/result";
 import { getActionableLead } from "@/lib/leads/access";
 import { markLeadContacted } from "@/domains/follow-ups/state";
+import { ScoringService } from "@/domains/leads/scoringService";
 
 export async function listTemplates(channel?: string) {
   const { organizationId } = await requireOrg();
@@ -197,8 +198,46 @@ export async function logLeadContactAction(input: z.infer<typeof logContactSchem
       });
     }
 
+    void ScoringService.updateLeadScore(leadId).catch(() => {});
     revalidatePath(`/leads/${leadId}`);
     revalidatePath("/");
+    return ok({ logged: true });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+// "They replied" — in personal WhatsApp mode Ridhzo can't see incoming messages, so the rep pastes
+// the lead's reply. It lands in the WhatsApp thread as inbound (so the AI and scoring see real
+// intent) and stops any running sequence, exactly like a Business API inbound message would.
+const logReplySchema = z.object({
+  leadId: z.string().uuid(),
+  channel: z.enum(["whatsapp", "email", "call"]).default("whatsapp"),
+  message: z.string().trim().min(1, "Paste or type what they said.").max(4000),
+});
+
+export async function logLeadReplyAction(input: z.infer<typeof logReplySchema>) {
+  const parsed = logReplySchema.safeParse(input);
+  if (!parsed.success) return fail("VALIDATION", parsed.error.issues[0]?.message ?? "Paste or type what they said.");
+  const { leadId, channel, message } = parsed.data;
+  try {
+    const access = await getActionableLead(leadId);
+    if (!access) return fail("NOT_FOUND", "This lead no longer exists or isn't assigned to you.");
+
+    if (channel === "whatsapp") {
+      await db.insert(whatsappMessages).values({ leadId, userId: access.userId, direction: "inbound", body: message, status: "read" });
+    }
+    await ActivityService.addActivity({
+      leadId,
+      userId: access.userId,
+      type: channel === "email" ? "email" : "message",
+      content: `Lead replied${channel === "whatsapp" ? " on WhatsApp" : channel === "email" ? " by email" : ""}: ${message}`,
+    });
+    const { SequenceService } = await import("@/domains/leads/sequenceService");
+    await SequenceService.stopForLead(leadId, "lead replied").catch(() => {});
+    void ScoringService.updateLeadScore(leadId).catch(() => {});
+
+    revalidatePath(`/leads/${leadId}`);
     return ok({ logged: true });
   } catch (e) {
     return actionFail(e);

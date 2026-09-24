@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { sendEmailAction } from "@/lib/actions/messaging";
 import { Mail } from "lucide-react";
+import { AiDraftControls } from "@/components/leads/AiDraftControls";
 
 export function EmailSendBox({ leadId, email }: { leadId: string; email: string | null }) {
   const { toast } = useToast();
@@ -36,6 +37,15 @@ export function EmailSendBox({ leadId, email }: { leadId: string; email: string 
   return (
     <div className="space-y-3">
       <div className="text-sm text-muted-foreground">To: <span className="font-medium text-muted-foreground">{email}</span></div>
+      <AiDraftControls
+        leadId={leadId}
+        channel="email"
+        onDraft={({ draft, subject: s }) => {
+          setBody(draft);
+          if (s) setSubject(s);
+        }}
+        disabled={sending}
+      />
       <Input placeholder="Subject" value={subject} onChange={(e) => setSubject(e.target.value)} />
       <textarea
         placeholder="Write your message…" value={body} onChange={(e) => setBody(e.target.value)} rows={6}

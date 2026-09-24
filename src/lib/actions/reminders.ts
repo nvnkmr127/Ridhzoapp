@@ -1,12 +1,12 @@
 "use server";
 
+import { assertLeadAccess } from "@/lib/leads/access";
 import { db } from "@/db";
 import { followUps } from "@/db/schema";
 import { requireOrg, assertWritable } from "@/lib/rbac";
 import { eq, and, desc } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { ActivityService } from "@/domains/activities/service";
-import { assertLeadInOrg } from "@/domains/leads/ownership";
 import { syncLeadFollowUpState, markLeadContacted } from "@/domains/follow-ups/state";
 import { z } from "zod";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
@@ -33,7 +33,7 @@ export async function createReminderAction(input: z.infer<typeof createReminderS
   }
 
   try {
-    await assertLeadInOrg(parsed.data.leadId, organizationId);
+    await assertLeadAccess(parsed.data.leadId, { userId, organizationId });
 
     const [reminder] = await db
       .insert(followUps)
@@ -89,7 +89,7 @@ export async function updateReminderAction(input: z.infer<typeof updateReminderS
   }
 
   try {
-    await assertLeadInOrg(parsed.data.leadId, organizationId);
+    await assertLeadAccess(parsed.data.leadId, { userId, organizationId });
 
     const [updated] = await db
       .update(followUps)
@@ -123,8 +123,8 @@ export async function updateReminderAction(input: z.infer<typeof updateReminderS
 }
 
 export async function getLeadRemindersAction(leadId: string) {
-  const { organizationId } = await requireOrg();
-  await assertLeadInOrg(leadId, organizationId);
+  const { userId, organizationId } = await requireOrg();
+  await assertLeadAccess(leadId, { userId, organizationId });
 
   return db
     .select()
@@ -135,7 +135,7 @@ export async function getLeadRemindersAction(leadId: string) {
 
 export async function toggleReminderStatusAction(reminderId: string, leadId: string, status: "pending" | "completed") {
   const { userId, organizationId } = await assertWritable();
-  await assertLeadInOrg(leadId, organizationId);
+  await assertLeadAccess(leadId, { userId, organizationId });
 
   const isCompleted = status === "completed";
 
@@ -172,7 +172,7 @@ export async function toggleReminderStatusAction(reminderId: string, leadId: str
 export async function deleteReminderAction(reminderId: string, leadId: string) {
   const { userId, organizationId } = await assertWritable();
   try {
-    await assertLeadInOrg(leadId, organizationId);
+    await assertLeadAccess(leadId, { userId, organizationId });
 
     const [deleted] = await db
       .delete(followUps)

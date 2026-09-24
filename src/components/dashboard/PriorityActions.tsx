@@ -36,10 +36,13 @@ export async function PriorityActions() {
     isAdmin ? undefined : userId
   );
 
+  const { CustomStatusSchemaService } = await import("@/domains/leads/customStatusSchemaService");
+  const categories = await CustomStatusSchemaService.getStatusCategoryMap(organizationId);
   const scored = data.map((l) => {
     const isEngaged = engaged.has(l.id);
     const nba = NextBestActionService.getRecommendation({
       status: l.status,
+      statusCategory: categories.get(l.status),
       score: l.score ?? 0,
       phone: l.phone,
       email: l.email,

@@ -1,5 +1,7 @@
 "use server";
 
+import { assertLeadAccess, filterAccessibleLeadIds } from "@/lib/leads/access";
+
 import { requireOrg, requirePermission } from "@/lib/rbac";
 import { revalidatePath } from "next/cache";
 import { CustomStatusSchemaService, StatusCategory } from "@/domains/leads/customStatusSchemaService";
@@ -68,7 +70,7 @@ export async function bulkUpdateLeadStatusAction(leadIds: string[], newStatus: s
   // follow-up cancellation) and custom-status categories apply — same path as single/bulk edits.
   let updated = 0;
   const updatedIds: string[] = [];
-  for (const id of leadIds) {
+  for (const id of await filterAccessibleLeadIds(leadIds, { userId, organizationId })) {
     try {
       const lead = await LeadService.changeStatus(id, newStatus, userId, organizationId);
       if (lead) { updated++; updatedIds.push(id); }
@@ -79,8 +81,9 @@ export async function bulkUpdateLeadStatusAction(leadIds: string[], newStatus: s
 }
 
 export async function getLeadStatusHistoryAction(leadId: string) {
-  const { organizationId } = await requireOrg();
+  const { userId, organizationId } = await requireOrg();
   if (!leadId) throw new Error("Lead ID required");
+  await assertLeadAccess(leadId, { userId, organizationId });
   return LeadStatusService.getStatusHistory(leadId, organizationId);
 }
 

@@ -1,10 +1,10 @@
 "use server";
 
+import { assertLeadAccess, filterAccessibleLeadIds } from "@/lib/leads/access";
 import { requireOrg, requirePermission, hasPermission, assertWritable } from "@/lib/rbac";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { LeadService } from "@/domains/leads/service";
-import { assertLeadInOrg } from "@/domains/leads/ownership";
 import { CustomFieldService } from "@/domains/customFields/service";
 import { AuditService } from "@/domains/audit/service";
 import { PlanService } from "@/domains/billing/planService";
@@ -103,6 +103,7 @@ export async function updateLeadAction(input: z.infer<typeof updateLeadSchema>) 
   };
 
   try {
+    await assertLeadAccess(id, { userId, organizationId });
     const expected = expectedUpdatedAt ? new Date(expectedUpdatedAt) : undefined;
     const lead = await LeadService.updateLead(id, cleanData, userId, organizationId, expected);
     if (!lead) return fail("NOT_FOUND", "This lead no longer exists or was moved.");
@@ -115,8 +116,9 @@ export async function updateLeadAction(input: z.infer<typeof updateLeadSchema>) 
 }
 
 export async function updateCustomDataAction(leadId: string, data: Record<string, unknown>) {
-  const { organizationId } = await requirePermission("leads.edit");
+  const { userId, organizationId } = await requirePermission("leads.edit");
   try {
+    await assertLeadAccess(leadId, { userId, organizationId });
     // Same server-side validation as create: enforce required/options/types and coerce values.
     const isAdmin = await hasPermission("settings.manage");
     const current = await LeadService.getLead(leadId, organizationId);
@@ -255,6 +257,7 @@ export async function emptyRecycleBinAction() {
 export async function changeLeadStatusAction(id: string, status: string, reason?: string) {
   const { userId, organizationId } = await requirePermission("leads.edit");
   try {
+    await assertLeadAccess(id, { userId, organizationId });
     const lead = await LeadService.changeStatus(id, status, userId, organizationId, reason);
     if (!lead) return fail("NOT_FOUND", "This lead no longer exists or was moved.");
     revalidatePath('/');
@@ -281,7 +284,12 @@ export async function bulkChangeLeadStatusAction(input: z.infer<typeof bulkChang
 
   let updated = 0;
   let failed = 0;
+  const allowed = new Set(await filterAccessibleLeadIds(parsed.data.leadIds, { userId, organizationId }));
   for (const id of parsed.data.leadIds) {
+    if (!allowed.has(id)) {
+      failed++;
+      continue;
+    }
     try {
       const lead = await LeadService.changeStatus(id, parsed.data.status, userId, organizationId);
       if (lead) updated++;
@@ -312,7 +320,7 @@ export async function addNoteAction(input: z.infer<typeof addNoteSchema>) {
 
   try {
     // The note attaches to a lead — make sure it's one this org owns.
-    await assertLeadInOrg(parsed.data.leadId, organizationId);
+    await assertLeadAccess(parsed.data.leadId, { userId, organizationId });
 
     const activity = await ActivityService.addActivity({
       leadId: parsed.data.leadId,
@@ -334,7 +342,7 @@ const deleteNoteSchema = z.object({
 });
 
 export async function deleteNoteAction(noteId: string, leadId: string) {
-  const { organizationId } = await assertWritable();
+  const { userId, organizationId } = await assertWritable();
 
   const parsed = deleteNoteSchema.safeParse({ noteId, leadId });
   if (!parsed.success) {
@@ -342,7 +350,7 @@ export async function deleteNoteAction(noteId: string, leadId: string) {
   }
 
   try {
-    await assertLeadInOrg(parsed.data.leadId, organizationId);
+    await assertLeadAccess(parsed.data.leadId, { userId, organizationId });
 
     const deleted = await ActivityService.deleteActivity(parsed.data.noteId, parsed.data.leadId);
     if (!deleted) {
@@ -363,7 +371,7 @@ const updateNoteSchema = z.object({
 });
 
 export async function updateNoteAction(input: z.infer<typeof updateNoteSchema>) {
-  const { organizationId } = await assertWritable();
+  const { userId, organizationId } = await assertWritable();
 
   const parsed = updateNoteSchema.safeParse(input);
   if (!parsed.success) {
@@ -371,7 +379,7 @@ export async function updateNoteAction(input: z.infer<typeof updateNoteSchema>) 
   }
 
   try {
-    await assertLeadInOrg(parsed.data.leadId, organizationId);
+    await assertLeadAccess(parsed.data.leadId, { userId, organizationId });
 
     const updated = await ActivityService.updateActivity(parsed.data.noteId, parsed.data.leadId, parsed.data.content);
     if (!updated) {
@@ -393,6 +401,7 @@ export const assignLeadAction = async (input: { leadId: string, ownerId: string 
   if (!input.ownerId && input.teamId == null) return fail("VALIDATION", "Choose a user or a team to assign to.");
 
   try {
+    await assertLeadAccess(input.leadId, { userId, organizationId });
     const { AssignmentService } = await import("@/domains/leads/assignmentService");
 
     const updatedLead = await AssignmentService.assignLead({
@@ -423,8 +432,10 @@ export const bulkAssignLeadAction = async (input: { leadIds: string[], ownerId: 
   try {
     const { AssignmentService } = await import("@/domains/leads/assignmentService");
 
+    const leadIds = await filterAccessibleLeadIds(input.leadIds, { userId, organizationId });
+    if (leadIds.length === 0) return fail("NOT_FOUND", "None of the selected leads are assigned to you.");
     const updatedLeads = await AssignmentService.bulkAssignLeads({
-      leadIds: input.leadIds,
+      leadIds,
       ownerId: input.ownerId,
       teamId: input.teamId,
       assignedById: userId,
@@ -456,9 +467,10 @@ export async function listStageLeadsAction(status: string, page: number = 1, lim
 
 export async function checkLeadDuplicatesAction(leadId: string) {
   try {
-    const { organizationId } = await requireOrg();
+    const { userId, organizationId } = await requireOrg();
     const lead = await LeadService.getLead(leadId, organizationId);
     if (!lead) return { count: 0 };
+    await assertLeadAccess(leadId, { userId, organizationId });
 
     const email = lead.email?.trim();
     const phone = lead.phone?.trim();
@@ -489,7 +501,18 @@ export async function checkLeadDuplicatesAction(leadId: string) {
   }
 }
 
-export async function updateLeadFollowUpAction(leadId: string, nextFollowUpAt: string | null) {
+// Quick follow-ups set from the lead header. Only THESE are rescheduled/cleared here — other pending
+// follow-ups (manual reminders, personal-mode sequence steps) are left alone. It used to grab the
+// newest pending follow-up of any kind, so scheduling a call could move a sequence's WhatsApp task,
+// and "Clear" cancelled every reminder on the lead.
+const QUICK_FOLLOW_UP = {
+  followup: "Follow-up",
+  meeting: "Meeting",
+  site_visit: "Site visit",
+} as const;
+export type QuickFollowUpKind = keyof typeof QUICK_FOLLOW_UP;
+
+export async function updateLeadFollowUpAction(leadId: string, nextFollowUpAt: string | null, kind: QuickFollowUpKind = "followup") {
   const { userId, organizationId } = await assertWritable();
 
   // Guard against an unparseable date string reaching `new Date(...)` → Invalid Date in the column.
@@ -502,9 +525,11 @@ export async function updateLeadFollowUpAction(leadId: string, nextFollowUpAt: s
   }
 
   try {
+    await assertLeadAccess(leadId, { userId, organizationId });
     const { db } = await import("@/db");
     const { leads, followUps } = await import("@/db/schema");
-    const { eq, and, desc } = await import("drizzle-orm");
+    const { eq, and, desc, inArray } = await import("drizzle-orm");
+    const quickTypes = Object.keys(QUICK_FOLLOW_UP);
 
     const [updated] = await db.update(leads)
       .set({ nextFollowUpAt: followUpDate, updatedAt: new Date() })
@@ -518,20 +543,21 @@ export async function updateLeadFollowUpAction(leadId: string, nextFollowUpAt: s
       const [existing] = await db
         .select()
         .from(followUps)
-        .where(and(eq(followUps.leadId, leadId), eq(followUps.status, "pending")))
+        .where(and(eq(followUps.leadId, leadId), eq(followUps.status, "pending"), inArray(followUps.type, quickTypes)))
         .orderBy(desc(followUps.createdAt))
         .limit(1);
 
+      const title = `${QUICK_FOLLOW_UP[kind]} with ${updated.name || "lead"}`;
       if (existing) {
         await db.update(followUps)
-          .set({ dueAt: followUpDate, updatedAt: new Date() })
+          .set({ dueAt: followUpDate, type: kind, title, updatedAt: new Date() })
           .where(eq(followUps.id, existing.id));
       } else {
         await db.insert(followUps).values({
           leadId,
           userId: updated.ownerId || userId,
-          type: "followup",
-          title: `Follow-up with ${updated.name || "lead"}`,
+          type: kind,
+          title,
           status: "pending",
           dueAt: followUpDate,
         });
@@ -539,7 +565,7 @@ export async function updateLeadFollowUpAction(leadId: string, nextFollowUpAt: s
     } else {
       await db.update(followUps)
         .set({ status: "cancelled", updatedAt: new Date() })
-        .where(and(eq(followUps.leadId, leadId), eq(followUps.status, "pending")));
+        .where(and(eq(followUps.leadId, leadId), eq(followUps.status, "pending"), inArray(followUps.type, quickTypes)));
     }
 
     // Normalize next_follow_up_at to the soonest pending follow-up (not just the date clicked).
@@ -559,7 +585,7 @@ export async function updateLeadFollowUpAction(leadId: string, nextFollowUpAt: s
 }
 
 export async function updateLeadStageAndValueAction(leadId: string, input: { stageId?: string | null; expectedValue?: string | null }) {
-  const { organizationId } = await assertWritable();
+  const { userId, organizationId } = await assertWritable();
 
   // Reject a non-numeric or negative opportunity value before it hits the numeric column.
   if (input.expectedValue) {
@@ -569,6 +595,7 @@ export async function updateLeadStageAndValueAction(leadId: string, input: { sta
   }
 
   try {
+    await assertLeadAccess(leadId, { userId, organizationId });
     const { db } = await import("@/db");
     const { leads } = await import("@/db/schema");
     const { eq, and } = await import("drizzle-orm");
@@ -586,6 +613,28 @@ export async function updateLeadStageAndValueAction(leadId: string, input: { sta
     revalidatePath(`/leads/${leadId}`);
     revalidatePath('/leads');
     return ok(updated);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+// One-tap outcome after a call that connected: "Interested" moves the lead into the workspace's
+// first in-progress status, "Not interested" into its first lost status (with that as the reason).
+// Resolved by status CATEGORY so it works with custom status names.
+export async function quickDispositionAction(leadId: string, outcome: "interested" | "not_interested") {
+  const { userId, organizationId } = await requirePermission("leads.edit");
+  try {
+    await assertLeadAccess(leadId, { userId, organizationId });
+    const { CustomStatusSchemaService } = await import("@/domains/leads/customStatusSchemaService");
+    const schema = await CustomStatusSchemaService.getTenantStatusSchema(organizationId);
+    const wanted = outcome === "interested" ? "in_progress" : "lost";
+    const target = [...schema].sort((a, b) => a.orderIndex - b.orderIndex).find((st) => st.category === wanted);
+    if (!target) return fail("VALIDATION", `Your workspace has no ${outcome === "interested" ? "in-progress" : "lost"} status to move this lead to.`);
+    const lead = await LeadService.changeStatus(leadId, target.key, userId, organizationId, outcome === "not_interested" ? "Not interested" : undefined);
+    if (!lead) return fail("NOT_FOUND", "This lead no longer exists or was moved.");
+    revalidatePath(`/leads/${leadId}`);
+    revalidatePath("/leads");
+    return ok({ status: target.key, label: target.label });
   } catch (e) {
     return actionFail(e);
   }

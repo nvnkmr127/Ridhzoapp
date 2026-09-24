@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { sequences, sequenceSteps, sequenceEnrollments, leads, organizations } from "@/db/schema";
 import { and, eq, lte, asc, sql, isNull } from "drizzle-orm";
 import { ActivityService } from "@/domains/activities/service";
+import { CustomStatusSchemaService } from "@/domains/leads/customStatusSchemaService";
 
 type SendWindow = { tz: string; start: number; end: number } | null;
 
@@ -316,10 +317,16 @@ export class SequenceService {
         .returning({ id: sequenceEnrollments.id });
       if (claimed.length === 0) continue; // someone else claimed it
 
-      // Skip (and stop) enrollments whose lead was soft-deleted (recycle bin / forward-only lead).
-      const [leadRow] = await db.select({ deletedAt: leads.deletedAt }).from(leads).where(eq(leads.id, enr.leadId)).limit(1);
+      // Skip (and stop) enrollments whose lead was soft-deleted (recycle bin / forward-only lead) or
+      // is already resolved — a safety net in case the status-change stop was missed.
+      const [leadRow] = await db.select({ deletedAt: leads.deletedAt, status: leads.status }).from(leads).where(eq(leads.id, enr.leadId)).limit(1);
       if (!leadRow || leadRow.deletedAt) {
         await db.update(sequenceEnrollments).set({ status: "stopped", nextRunAt: null }).where(eq(sequenceEnrollments.id, enr.id));
+        continue;
+      }
+      const category = await CustomStatusSchemaService.getStatusCategory(enr.organizationId, leadRow.status).catch(() => "open");
+      if (category === "won" || category === "lost" || category === "unqualified") {
+        await this.stopForLead(enr.leadId, `lead is ${leadRow.status}`);
         continue;
       }
 
@@ -391,8 +398,29 @@ export class SequenceService {
         await ActivityService.addActivity({ leadId, type: "email", content: `[sequence email] ${rendered.slice(0, 120)}` });
       } else {
         if (!lead.phone) return { sent: false, permanent: true, reason: "no phone number" };
-        const { WhatsAppService } = await import("@/lib/messaging/whatsapp/service");
         const waBody = attachmentUrl ? `${rendered}\n\n📎 ${label}: ${attachmentUrl}` : rendered;
+
+        // Personal WhatsApp mode can't send automatically (messages go from the rep's own number).
+        // Instead of silently skipping the step, hand it to the rep as a due follow-up with the
+        // message ready — they send it with one tap from the Follow-ups tab.
+        const [org] = lead.organizationId
+          ? await db.select({ mode: organizations.whatsappMode }).from(organizations).where(eq(organizations.id, lead.organizationId)).limit(1)
+          : [];
+        if (org?.mode !== "bsp") {
+          const { FollowUpService } = await import("@/domains/follow-ups/service");
+          await FollowUpService.createFollowUp({
+            leadId,
+            type: "WhatsApp",
+            title: "Send sequence message on WhatsApp",
+            description: waBody,
+            dueAt: new Date(),
+            userId: lead.ownerId ?? null,
+          });
+          await ActivityService.addActivity({ leadId, type: "note", content: "Sequence step ready to send from your WhatsApp — it's in Follow-ups." });
+          return { sent: true, permanent: false };
+        }
+
+        const { WhatsAppService } = await import("@/lib/messaging/whatsapp/service");
         await WhatsAppService.send({ leadId, body: waBody });
         await ActivityService.addActivity({ leadId, type: "whatsapp", content: `[sequence whatsapp] ${rendered.slice(0, 120)}` });
       }

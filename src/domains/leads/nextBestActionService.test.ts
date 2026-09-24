@@ -66,3 +66,37 @@ describe("NextBestActionService", () => {
     expect(rec.reason).toContain("Pricing brochure");
   });
 });
+
+describe("NextBestActionService — real-use cases", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it("treats custom statuses by category (closed custom status is not chased)", () => {
+    const rec = NextBestActionService.getRecommendation({ status: "closed_paid", statusCategory: "won", lastContactedAt: null, phone: "+1" });
+    expect(rec.label).toBe("Deal won");
+  });
+
+  it("gives an in-progress custom status real advice, not a generic default", () => {
+    const rec = NextBestActionService.getRecommendation({
+      status: "site_visit_booked",
+      statusCategory: "in_progress",
+      score: 80,
+      lastContactedAt: new Date(),
+    });
+    expect(rec.action).toBe("close_deal");
+  });
+
+  it("respects a follow-up the rep scheduled instead of nagging to re-engage", () => {
+    const rec = NextBestActionService.getRecommendation({
+      status: "active",
+      lastContactedAt: new Date(Date.now() - 10 * DAY),
+      nextFollowUpAt: new Date(Date.now() + 20 * DAY),
+    });
+    expect(rec.action).toBe("wait");
+  });
+
+  it("asks to call again after a missed call, then suggests WhatsApp after 3", () => {
+    const base = { status: "new", phone: "+1", lastContactedAt: new Date() };
+    expect(NextBestActionService.getRecommendation({ ...base, unansweredStreak: 1 })).toMatchObject({ action: "call_lead", priority: "high" });
+    expect(NextBestActionService.getRecommendation({ ...base, unansweredStreak: 3 }).action).toBe("try_whatsapp");
+  });
+});

@@ -147,20 +147,33 @@ eventBus.on('lead.assigned', async (p) => {
   }
 });
 
+async function statusCategoryForLead(leadId: string, status: string) {
+  const { db } = await import("@/db");
+  const { leads } = await import("@/db/schema");
+  const { eq } = await import("drizzle-orm");
+  const [row] = await db.select({ organizationId: leads.organizationId }).from(leads).where(eq(leads.id, leadId)).limit(1);
+  if (!row?.organizationId) return null;
+  const { CustomStatusSchemaService } = await import("@/domains/leads/customStatusSchemaService");
+  return CustomStatusSchemaService.getStatusCategory(row.organizationId, status).catch(() => null);
+}
+
 eventBus.on('lead.status_changed', async (p) => {
   dispatchTrigger('lead.status_changed', p);
   await ActivityService.addActivity({ leadId: p.leadId, userId: p.userId, type: 'note', content: `Status changed from ${p.oldStatus} to ${p.newStatus}.` });
   const { ScoringService } = await import("@/domains/leads/scoringService");
   void ScoringService.updateLeadScore(p.leadId).catch(() => {});
+  // Resolve by status CATEGORY so custom statuses ("Closed – paid", "Not interested") behave like
+  // won/lost — literal keys missed them, so their sequences kept messaging a decided lead.
+  const category = p.newStatus ? await statusCategoryForLead(p.leadId, p.newStatus) : null;
   // Stop any running drip once the lead is resolved — no more sequence messages after a decision.
-  if (p.newStatus && ['won', 'lost', 'unqualified'].includes(p.newStatus)) {
+  if (category === 'won' || category === 'lost' || category === 'unqualified') {
     const { SequenceService } = await import("@/domains/leads/sequenceService");
     await SequenceService.stopForLead(p.leadId, `lead marked ${p.newStatus}`).catch(() => {});
   }
   await fireLeadWebhook(p.leadId, 'lead.status_changed', { oldStatus: p.oldStatus, newStatus: p.newStatus });
   const { MetaCapiService } = await import("@/domains/leads/metaCapiService");
   // Meta CAPI: a won lead is the conversion worth optimising toward (hashed-PII event).
-  if (p.newStatus === 'won') {
+  if (category === 'won') {
     await MetaCapiService.track(p.leadId, 'Purchase');
   }
   // Conversion Leads postback: report the CRM status back to Meta by leadgen id, so ad delivery

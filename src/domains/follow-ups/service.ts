@@ -19,7 +19,7 @@ export class FollowUpService {
     title: string;
     description?: string;
     dueAt: Date;
-    userId: string;
+    userId: string | null; // null = unassigned (e.g. a sequence step on an unowned lead)
     organizationId?: string;
   }) {
     if (input.organizationId) await assertLeadInOrg(input.leadId, input.organizationId);

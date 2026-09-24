@@ -1,4 +1,5 @@
 "use client";
+import { SendFollowUpButton, isSendableFollowUp } from "@/components/leads/SendFollowUpButton";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -32,6 +33,8 @@ interface ReminderItem {
 interface LeadRemindersTabProps {
   leadId: string;
   initialReminders: ReminderItem[];
+  leadName?: string;
+  leadPhone?: string | null;
 }
 
 const formatForDateTimeLocal = (date: Date | string) => {
@@ -46,7 +49,7 @@ const formatForDateTimeLocal = (date: Date | string) => {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 };
 
-export function LeadRemindersTab({ leadId, initialReminders }: LeadRemindersTabProps) {
+export function LeadRemindersTab({ leadId, initialReminders, leadName = "", leadPhone = null }: LeadRemindersTabProps) {
   const router = useRouter();
   const [reminders, setReminders] = useState<ReminderItem[]>(initialReminders);
   const [showAdd, setShowAdd] = useState(false);
@@ -341,7 +344,23 @@ export function LeadRemindersTab({ leadId, initialReminders }: LeadRemindersTabP
                         )}
                       </div>
                       {reminder.description && (
-                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{reminder.description}</p>
+                        <p className={`text-xs text-muted-foreground mt-1 ${isSendableFollowUp(reminder) ? "whitespace-pre-wrap rounded-md bg-muted/60 p-2" : "line-clamp-2"}`}>
+                          {reminder.description}
+                        </p>
+                      )}
+                      {isSendableFollowUp(reminder) && (
+                        <div className="mt-2">
+                          <SendFollowUpButton
+                            followUpId={reminder.id}
+                            leadId={leadId}
+                            leadName={leadName}
+                            phone={leadPhone}
+                            message={reminder.description!}
+                            onDone={() =>
+                              setReminders((prev) => prev.map((r) => (r.id === reminder.id ? { ...r, status: "completed", completedAt: new Date() } : r)))
+                            }
+                          />
+                        </div>
                       )}
                       <div className="flex items-center gap-2 text-xs text-muted-foreground mt-2">
                         <Calendar className="h-3 w-3" />

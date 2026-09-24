@@ -4,6 +4,8 @@ import { followUps, leads } from "@/db/schema";
 import { eq, and, or, asc, isNull } from "drizzle-orm";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { FollowUpActions } from "@/components/leads/FollowUpActions";
+import { SendFollowUpButton, isSendableFollowUp } from "@/components/leads/SendFollowUpButton";
+import Link from "next/link";
 import { LocalTime } from "@/components/LocalTime";
 
 export default async function FollowUpsDashboard() {
@@ -67,18 +69,7 @@ export default async function FollowUpsDashboard() {
           <div className="bg-muted p-4 rounded-md space-y-2 border border-border">
             <h3 className="font-semibold text-foreground">Overdue</h3>
             {overdue.map((f) => (
-              <div key={f.followUp.id} className="flex justify-between items-center bg-card p-3 rounded border border-border">
-                <div>
-                  <p className="font-medium">{f.followUp.title} ({f.followUp.type})</p>
-                  <p className="text-sm text-muted-foreground">Lead: {f.lead.name}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-semibold text-foreground">
-                    <LocalTime iso={f.followUp.dueAt} mode="full" />
-                  </span>
-                  <FollowUpActions id={f.followUp.id} />
-                </div>
-              </div>
+              <FollowUpRow key={f.followUp.id} f={f} overdue />
             ))}
           </div>
         )}
@@ -87,18 +78,7 @@ export default async function FollowUpsDashboard() {
           <div className="bg-muted p-4 rounded-md space-y-2 border border-border">
             <h3 className="font-semibold text-foreground">Upcoming</h3>
             {upcoming.map((f) => (
-              <div key={f.followUp.id} className="flex justify-between items-center bg-card p-3 rounded border border-border">
-                <div>
-                  <p className="font-medium">{f.followUp.title} ({f.followUp.type})</p>
-                  <p className="text-sm text-muted-foreground">Lead: {f.lead.name}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm font-semibold text-muted-foreground">
-                    <LocalTime iso={f.followUp.dueAt} mode="full" />
-                  </span>
-                  <FollowUpActions id={f.followUp.id} />
-                </div>
-              </div>
+              <FollowUpRow key={f.followUp.id} f={f} />
             ))}
           </div>
         )}
@@ -106,6 +86,46 @@ export default async function FollowUpsDashboard() {
         {upcoming.length === 0 && overdue.length === 0 && (
           <p className="text-muted-foreground italic">No pending follow-ups.</p>
         )}
+      </div>
+    </div>
+  );
+}
+
+// One follow-up: what + who (linked), when, and actions. Stacks on phones. Follow-ups that carry a
+// ready WhatsApp message (e.g. personal-mode sequence steps) show it with a one-tap send.
+function FollowUpRow({
+  f,
+  overdue = false,
+}: {
+  f: {
+    followUp: { id: string; title: string; type: string; description: string | null; dueAt: Date };
+    lead: { id: string; name: string; phone: string | null };
+  };
+  overdue?: boolean;
+}) {
+  const sendable = isSendableFollowUp(f.followUp);
+  return (
+    <div className="flex flex-col gap-3 rounded border border-border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0 space-y-1">
+        <p className="font-medium">
+          {f.followUp.title} <span className="text-xs text-muted-foreground">({f.followUp.type})</span>
+        </p>
+        <p className="text-sm text-muted-foreground">
+          Lead:{" "}
+          <Link href={`/leads/${f.lead.id}`} className="text-foreground underline-offset-2 hover:underline">
+            {f.lead.name}
+          </Link>
+        </p>
+        {sendable && <p className="whitespace-pre-wrap rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">{f.followUp.description}</p>}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <span className={`text-sm font-semibold ${overdue ? "text-foreground" : "text-muted-foreground"}`}>
+          <LocalTime iso={f.followUp.dueAt} mode="full" />
+        </span>
+        {sendable && (
+          <SendFollowUpButton followUpId={f.followUp.id} leadId={f.lead.id} leadName={f.lead.name} phone={f.lead.phone} message={f.followUp.description!} />
+        )}
+        <FollowUpActions id={f.followUp.id} />
       </div>
     </div>
   );

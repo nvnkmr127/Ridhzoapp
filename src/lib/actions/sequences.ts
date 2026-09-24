@@ -1,5 +1,10 @@
 "use server";
 
+import { assertLeadAccess, filterAccessibleLeadIds } from "@/lib/leads/access";
+import { db } from "@/db";
+import { sequenceEnrollments } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
+
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireOrg, assertWritable } from "@/lib/rbac";
@@ -40,11 +45,13 @@ export async function listSequencesAction() {
   return SequenceService.list(organizationId);
 }
 
-export async function enrollLeadsAction(sequenceId: string, leadIds: string[]) {
-  const { organizationId } = await assertWritable();
+export async function enrollLeadsAction(sequenceId: string, requestedLeadIds: string[]) {
+  const { userId, organizationId } = await assertWritable();
   if (!sequenceId) return fail("VALIDATION", "Choose a sequence to enroll into.");
-  if (!leadIds?.length) return fail("VALIDATION", "Select at least one lead to enroll.");
+  if (!requestedLeadIds?.length) return fail("VALIDATION", "Select at least one lead to enroll.");
   try {
+    const leadIds = await filterAccessibleLeadIds(requestedLeadIds, { userId, organizationId });
+    if (leadIds.length === 0) return fail("NOT_FOUND", "None of the selected leads are assigned to you.");
     const res = await SequenceService.enroll(organizationId, sequenceId, leadIds);
     revalidatePath("/sequences");
     leadIds.forEach((id) => revalidatePath(`/leads/${id}`));
@@ -104,8 +111,15 @@ export async function deleteSequenceAction(sequenceId: string) {
 }
 
 export async function stopEnrollmentAction(enrollmentId: string, leadId?: string) {
-  const { organizationId } = await assertWritable();
+  const { userId, organizationId } = await assertWritable();
   try {
+    const [enr] = await db
+      .select({ leadId: sequenceEnrollments.leadId })
+      .from(sequenceEnrollments)
+      .where(and(eq(sequenceEnrollments.id, enrollmentId), eq(sequenceEnrollments.organizationId, organizationId)))
+      .limit(1);
+    if (!enr) return fail("NOT_FOUND", "This enrollment no longer exists.");
+    await assertLeadAccess(enr.leadId, { userId, organizationId });
     const res = await SequenceService.stop(organizationId, enrollmentId);
     if (leadId) revalidatePath(`/leads/${leadId}`);
     return ok(res);

@@ -1,5 +1,7 @@
 "use server";
 
+import { assertLeadAccess } from "@/lib/leads/access";
+
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireOrg, assertWritable } from "@/lib/rbac";
@@ -41,6 +43,7 @@ export async function createShareAction(data: unknown) {
   }
 
   try {
+    await assertLeadAccess(leadId, { userId, organizationId });
     const share = await ContentSharingService.createShare({
       organizationId,
       leadId,
@@ -58,6 +61,8 @@ export async function createShareAction(data: unknown) {
 }
 
 export async function listSharesAction(leadId: string) {
-  await requireOrg();
+  // Was only "logged in" — any user could list another tenant's shares for a lead id.
+  const { userId, organizationId } = await requireOrg();
+  await assertLeadAccess(leadId, { userId, organizationId });
   return ContentSharingService.listForLead(leadId);
 }

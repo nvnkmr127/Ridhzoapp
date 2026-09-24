@@ -4,9 +4,9 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { sendWhatsAppAction, listTemplates } from "@/lib/actions/messaging"
-import { draftLeadReplyAction } from "@/lib/actions/ai"
 import { useToast } from "@/hooks/use-toast"
-import { MessageCircle, Sparkles } from "lucide-react"
+import { MessageCircle } from "lucide-react"
+import { AiDraftControls } from "@/components/leads/AiDraftControls"
 import { useRouter } from "next/navigation"
 import { useLogContact } from "@/components/leads/useLogContact"
 import { buildDeepLink, renderTemplate } from "@/lib/messaging/deeplink"
@@ -34,7 +34,6 @@ export function WhatsAppSendBox({
   const [body, setBody] = React.useState("");
   const [sending, setSending] = React.useState(false);
   const router = useRouter();
-  const [drafting, setDrafting] = React.useState(false);
 
   // Load WhatsApp templates once for the one-tap picker.
   React.useEffect(() => {
@@ -44,19 +43,6 @@ export function WhatsAppSendBox({
   function pickTemplate(id: string) {
     const t = templates.find((x) => x.id === id);
     if (t) setBody(t.body);
-  }
-
-  async function draft() {
-    setDrafting(true);
-    try {
-      const { draft, ai } = await draftLeadReplyAction({ leadId });
-      setBody(draft);
-      toast({ title: ai ? "AI draft ready" : "Draft ready", description: "Review and edit before sending." });
-    } catch {
-      toast({ variant: "destructive", title: "Couldn't draft a message" });
-    } finally {
-      setDrafting(false);
-    }
   }
 
   async function send() {
@@ -115,10 +101,7 @@ export function WhatsAppSendBox({
         onChange={(e) => setBody(e.target.value)}
       />
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
-        <Button variant="outline" onClick={draft} disabled={drafting || sending} className="gap-2">
-          <Sparkles className="h-4 w-4" />
-          {drafting ? "Drafting…" : "Draft with AI"}
-        </Button>
+        <AiDraftControls leadId={leadId} channel="whatsapp" onDraft={({ draft }) => setBody(draft)} disabled={sending} />
         <Button onClick={send} disabled={sending || body.trim().length === 0} className="gap-2">
           <MessageCircle className="h-4 w-4" />
           {mode === "personal" ? "Open in WhatsApp" : sending ? "Sending…" : "Send WhatsApp"}

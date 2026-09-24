@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { saveLeadListContext } from "@/lib/leads/listContext";
+import type { StatusCategory } from "@/domains/leads/customStatusSchemaService";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -75,12 +76,12 @@ export function LeadsTable({
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
-  const [statusMap, setStatusMap] = React.useState<Map<string, { label: string; color: string }>>(new Map());
+  const [statusMap, setStatusMap] = React.useState<Map<string, { label: string; color: string; category?: StatusCategory }>>(new Map());
 
   // Load the tenant status schema once so status badges show their configured label + colour.
   React.useEffect(() => {
     getTenantStatusSchemaAction()
-      .then((s) => setStatusMap(new Map((s as any[]).map((x) => [x.key, { label: x.label, color: x.color }]))))
+      .then((s) => setStatusMap(new Map((s as any[]).map((x) => [x.key, { label: x.label, color: x.color, category: x.category }]))))
       .catch(() => {});
   }, []);
   const [users, setUsers] = React.useState<User[]>(initialUsers ?? []);
@@ -385,6 +386,7 @@ export function LeadsTable({
                   {(() => {
                     const nba = NextBestActionService.getRecommendation({
                       status: lead.status,
+                      statusCategory: statusMap.get(lead.status)?.category,
                       score: lead.score ?? 0,
                       phone: lead.phone,
                       email: lead.email,
