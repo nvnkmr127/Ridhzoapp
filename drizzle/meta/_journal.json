@@ -400,6 +400,13 @@
       "when": 1790236763655,
       "tag": "0056_meetings",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1790246884026,
+      "tag": "0057_meeting_whatsapp_templates",
+      "breakpoints": true
     }
   ]
 }

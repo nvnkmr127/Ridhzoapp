@@ -44,6 +44,7 @@ import { LeadAttachmentsTab } from "@/components/leads/LeadAttachmentsTab";
 import { LeadMeetingsTab } from "@/components/meetings/LeadMeetingsTab";
 import { MeetingScheduler } from "@/components/meetings/MeetingScheduler";
 import { MeetingService } from "@/domains/meetings/service";
+import { attendsMeetingWith } from "@/lib/leads/access";
 import { modeLabel } from "@/domains/meetings/format";
 import { GoogleCalendarService } from "@/domains/integrations/googleCalendarService";
 import { isConfigured as googleConfigured } from "@/lib/integrations/google";
@@ -69,7 +70,8 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   }
 
   const isFieldAdmin = await hasPermission("settings.manage");
-  if (!isFieldAdmin && lead.ownerId !== userId) {
+  // Owner, admins, and anyone assigned to a meeting with this lead (see lib/leads/access).
+  if (!isFieldAdmin && lead.ownerId !== userId && !(await attendsMeetingWith(id, userId))) {
     notFound();
   }
 

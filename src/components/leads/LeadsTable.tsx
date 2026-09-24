@@ -63,6 +63,7 @@ export function LeadsTable({
   totalPages = 1,
   customColumns = [],
   initialUsers,
+  nextMeetings = {},
 }: {
   leads: Lead[];
   page?: number;
@@ -71,6 +72,8 @@ export function LeadsTable({
   totalPages?: number;
   customColumns?: CustomColumn[];
   initialUsers?: User[];
+  /** Earliest scheduled meeting per lead id — lets the Next Best Action badge see meetings. */
+  nextMeetings?: Record<string, { startAt: Date | string; durationMinutes: number; label: string }>;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -392,6 +395,7 @@ export function LeadsTable({
                       email: lead.email,
                       lastContactedAt: lead.lastContactedAt ?? null,
                       nextFollowUpAt: lead.nextFollowUpAt ?? null,
+                      meeting: nextMeetings[lead.id] ?? null,
                     });
                     return (
                       <Badge variant={PRIORITY_VARIANT[nba.priority]} className="font-normal" title={nba.reason}>

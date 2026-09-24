@@ -13,6 +13,12 @@ function eventDiscriminator(eventType: string, p: EventPayload): string {
     case "lead.assigned": return p.ownerId ?? "";
     case "lead.stage_changed": return (p.changes?.stageId as string) ?? "";
     case "lead.tag_added": return (p.changes?.tagId as string) ?? "";
+    // Meeting triggers fire once per meeting (a reschedule once per new time).
+    case "meeting.rescheduled": return `${p.meetingId ?? ""}-${p.startAt ?? ""}`;
+    case "meeting.scheduled":
+    case "meeting.completed":
+    case "meeting.no_show":
+    case "meeting.cancelled": return p.meetingId ?? "";
     default: return "";
   }
 }
@@ -65,12 +71,13 @@ async function dispatchTrigger(eventType: string, payload: EventPayload) {
 import { ActivityService } from "@/domains/activities/service";
 import { NotificationService } from "@/domains/notifications/service";
 import { LeadService } from "@/domains/leads/service";
-import { WebhookEndpointService } from "@/domains/integrations/webhookEndpointService";
+import { WebhookEndpointService, type WebhookEventType } from "@/domains/integrations/webhookEndpointService";
+import { MEETING_EVENTS } from "./emitter";
 
 const isUuid = (str?: string) => !!str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
 // Fire an outbound webhook for a lead event to any org endpoint subscribed to it. Best-effort.
-async function fireLeadWebhook(leadId: string, event: "lead.created" | "lead.status_changed", extra: Record<string, any> = {}) {
+async function fireLeadWebhook(leadId: string, event: WebhookEventType, extra: Record<string, any> = {}) {
   const lead = await LeadService.getLeadById(leadId);
   if (!lead?.organizationId) return;
   await WebhookEndpointService.dispatch(lead.organizationId, event, {
@@ -132,6 +139,7 @@ eventBus.on('lead.assigned', async (p) => {
     }
   }
   const content = p.ownerId ? `Lead was assigned to ${ownerName ?? "team member"}.` : "Lead was unassigned.";
+  await fireLeadWebhook(p.leadId, 'lead.assigned', { ownerId: p.ownerId ?? null, ownerName: ownerName ?? null });
   await ActivityService.addActivity({ leadId: p.leadId, userId: isUuid(p.assignedById) ? p.assignedById : undefined, type: 'note', content });
 
   // The "New Lead Alert": ping the owner, unless they assigned it to themselves.
@@ -202,6 +210,23 @@ eventBus.on('follow_up.rescheduled', async (p) => {
   dispatchTrigger('follow_up.rescheduled', p);
   await ActivityService.addActivity({ leadId: p.leadId, userId: p.userId, type: 'note', content: `${p.type === 'task' ? 'Task' : 'Follow-up'} rescheduled: ${p.title}` });
 });
+
+// Meetings: automations + outbound webhooks. The meeting service already logs activity/notifies.
+for (const ev of MEETING_EVENTS) {
+  eventBus.on(ev, async (p) => {
+    dispatchTrigger(ev, p);
+    if (!p.meetingId) return;
+    const { MeetingService } = await import("@/domains/meetings/service");
+    const m = await MeetingService.getById(p.meetingId);
+    if (!m) return;
+    await fireLeadWebhook(p.leadId, ev, {
+      meeting: {
+        id: m.id, mode: m.mode, title: m.title, status: m.status, startAt: m.startAt.toISOString(), durationMinutes: m.durationMinutes,
+        locationName: m.locationName, address: m.address, mapUrl: m.mapUrl, meetingUrl: m.meetingUrl, assigneeId: m.assigneeId, outcome: m.outcome,
+      },
+    });
+  });
+}
 
 eventBus.on('task.completed', async (p) => {
   dispatchTrigger('task.completed', p);

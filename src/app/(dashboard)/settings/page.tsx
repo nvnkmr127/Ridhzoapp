@@ -55,7 +55,7 @@ export default async function SettingsPage() {
             className="flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground dark:text-muted-foreground hover:bg-accent dark:hover:bg-accent"
           >
             <Store className="h-4 w-4" />
-            Meeting Locations
+            Meetings
           </Link>
           <Link
             href="/settings/custom-fields"

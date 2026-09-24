@@ -3,6 +3,7 @@ import { z } from "zod";
 export const TriggerConfigSchema = z.object({
   type: z.enum([
     'lead.created',
+    'lead.updated',
     'lead.assigned',
     'lead.status_changed',
     'lead.stage_changed',
@@ -10,7 +11,12 @@ export const TriggerConfigSchema = z.object({
     'follow_up.scheduled',
     'follow_up.completed',
     'follow_up.overdue',
-    'task.completed'
+    'task.completed',
+    'meeting.scheduled',
+    'meeting.rescheduled',
+    'meeting.completed',
+    'meeting.no_show',
+    'meeting.cancelled',
   ]),
 });
 

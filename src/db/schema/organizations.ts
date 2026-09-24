@@ -45,6 +45,12 @@ export const organizations = pgTable('organizations', {
   // no BSP setup); 'bsp' = send through the WhatsApp Business API. Solos default to personal.
   whatsappMode: varchar('whatsapp_mode', { length: 10 }).default('personal').notNull(),
 
+  // Approved WhatsApp templates (Business API mode) for meeting messages outside the 24h window.
+  // Variables: {{1}} first name, {{2}} meeting type, {{3}} date & time, {{4}} place or join link.
+  meetingConfirmTemplate: varchar('meeting_confirm_template', { length: 255 }),
+  meetingReminderTemplate: varchar('meeting_reminder_template', { length: 255 }),
+  meetingTemplateLanguage: varchar('meeting_template_language', { length: 20 }).default('en_US').notNull(),
+
   // Billing (Razorpay). plan (above) is the source of truth for entitlements; these track the subscription.
   razorpayCustomerId: varchar('razorpay_customer_id', { length: 255 }),
   razorpaySubscriptionId: varchar('razorpay_subscription_id', { length: 255 }),

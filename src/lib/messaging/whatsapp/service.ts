@@ -14,6 +14,7 @@ export interface SendWhatsAppInput {
   // Approved template — required outside the window (e.g. first contact with a new lead).
   templateName?: string;
   variables?: string[]; // template {{1}},{{2}}... — values may contain lead tokens like {{first_name}}
+  languageCode?: string; // template language, default en_US
 }
 
 // A new lead has never messaged us, so we're outside the 24h window and must send a template.
@@ -98,8 +99,8 @@ export const WhatsAppService = {
 
     try {
       const result = useTemplate
-        ? await WatxioClient.sendTemplate(lead.phone, input.templateName!, renderedVars)
-        : await WatxioClient.sendText(lead.phone, renderedBody!);
+        ? await WatxioClient.sendTemplate(lead.phone, input.templateName!, renderedVars, input.languageCode, msg.id)
+        : await WatxioClient.sendText(lead.phone, renderedBody!, msg.id);
 
       await db.update(whatsappMessages)
         .set({ status: result.status, providerMessageId: result.providerMessageId, updatedAt: new Date() })

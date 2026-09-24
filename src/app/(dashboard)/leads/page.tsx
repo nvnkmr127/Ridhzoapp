@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { MeetingService } from "@/domains/meetings/service";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { SmartSegments } from "@/components/leads/SmartSegments";
@@ -186,6 +187,7 @@ export default async function LeadsPage({
             .filter((f) => f.showOnTable && !f.disabled && (isAdmin || !f.adminOnly))
             .map((f) => ({ key: f.key, label: f.label }))}
           initialUsers={usersList}
+          nextMeetings={await MeetingService.nextScheduledForLeads(visibleLeads.map((l: { id: string }) => l.id)).catch(() => ({}))}
         />
       )}
     </div>

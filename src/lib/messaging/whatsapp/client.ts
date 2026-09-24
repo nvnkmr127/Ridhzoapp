@@ -39,7 +39,8 @@ function config(): WatxioConfig {
   };
 }
 
-async function post(path: string, body: unknown): Promise<any> {
+// idempotencyKey → X-Idempotency-Key: a retried send with the same key isn't delivered twice.
+async function post(path: string, body: unknown, idempotencyKey?: string): Promise<any> {
   const { baseUrl, apiKey } = config();
   const url = `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
 
@@ -49,6 +50,7 @@ async function post(path: string, body: unknown): Promise<any> {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
       Accept: "application/json",
+      ...(idempotencyKey ? { "X-Idempotency-Key": idempotencyKey } : {}),
     },
     body: JSON.stringify(body),
   });
@@ -79,17 +81,19 @@ function pickResult(json: any): SendResult {
     (json?.success ? String(Date.now()) : undefined);
 
   if (!id) throw new Error(`Watxio: no message id in response ${JSON.stringify(json)}`);
-  return { providerMessageId: String(id), status: "sent" };
+  // Watxio answers 202 { status: "queued", message_id }; delivery receipts advance it later.
+  const status = (json?.status ?? json?.data?.status) === "queued" ? "queued" : "sent";
+  return { providerMessageId: String(id), status };
 }
 
 export const WatxioClient = {
   // Standard text message: POST /messages
-  async sendText(phone: string, body: string): Promise<SendResult> {
+  async sendText(phone: string, body: string, idempotencyKey?: string): Promise<SendResult> {
     const json = await post("/messages", {
       to: toRecipient(phone),
       type: "text",
       text: { body },
-    });
+    }, idempotencyKey);
     return pickResult(json);
   },
 
@@ -99,6 +103,7 @@ export const WatxioClient = {
     templateName: string,
     variables: string[] = [],
     languageCode = "en_US",
+    idempotencyKey?: string,
   ): Promise<SendResult> {
     const json = await post("/messages", {
       to: toRecipient(phone),
@@ -110,7 +115,7 @@ export const WatxioClient = {
           ? [{ type: "body", parameters: variables.map((v) => ({ type: "text", text: v })) }]
           : [],
       },
-    });
+    }, idempotencyKey);
     return pickResult(json);
   },
 };

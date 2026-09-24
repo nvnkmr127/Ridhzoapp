@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { googleCalendarLink, leadMessage } from "./format";
+import { googleCalendarLink, leadMessage, meetingTemplateVars } from "./format";
 
 const m = {
   mode: "site_visit",
@@ -32,5 +32,12 @@ describe("meeting format", () => {
     const url = new URL(googleCalendarLink(m));
     expect(url.searchParams.get("dates")).toBe("20261001T093000Z/20261001T103000Z");
     expect(url.searchParams.get("location")).toContain("Kokapet");
+  });
+
+  it("builds the four template variables, never empty", () => {
+    const vars = meetingTemplateVars({ ...m, mode: "online", meetingUrl: null }, { leadName: "Asha Rao", timeZone: "Asia/Kolkata" });
+    expect(vars[0]).toBe("Asha");
+    expect(vars[1]).toBe("online meeting");
+    expect(vars[3]).toBe("-");
   });
 });

@@ -18,6 +18,12 @@ import {
 const EVENT_TYPES: { key: string; label: string }[] = [
   { key: "lead.created", label: "Lead created" },
   { key: "lead.status_changed", label: "Status changed" },
+  { key: "lead.assigned", label: "Lead assigned" },
+  { key: "meeting.scheduled", label: "Meeting scheduled" },
+  { key: "meeting.rescheduled", label: "Meeting rescheduled" },
+  { key: "meeting.completed", label: "Meeting done" },
+  { key: "meeting.no_show", label: "Meeting no-show" },
+  { key: "meeting.cancelled", label: "Meeting cancelled" },
 ];
 
 type Endpoint = {

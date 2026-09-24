@@ -4,6 +4,7 @@ import { searchUniversalAction } from "./search";
 vi.mock("@/lib/rbac", () => ({
   requireOrg: vi.fn().mockResolvedValue({ organizationId: "org-1", userId: "user-1" }),
   isSuperAdmin: vi.fn().mockResolvedValue(false),
+  hasPermission: vi.fn().mockResolvedValue(true),
 }));
 
 const mockDb = vi.hoisted(() => ({

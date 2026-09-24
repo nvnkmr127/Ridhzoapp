@@ -87,6 +87,13 @@ export function googleCalendarLink(m: MeetingLike, details?: string) {
   return `https://calendar.google.com/calendar/render?${q.toString()}`;
 }
 
+// Approved-template variables: {{1}} first name, {{2}} meeting type, {{3}} date & time, {{4}} place
+// or join link. WhatsApp rejects empty template parameters, so blanks become "-".
+export function meetingTemplateVars(m: MeetingLike, ctx: { leadName: string; timeZone?: string; locale?: string }) {
+  const first = (ctx.leadName || "").trim().split(/\s+/)[0] || "there";
+  return [first, modeLabel(m.mode).toLowerCase(), formatMeetingTime(m.startAt, ctx.timeZone, ctx.locale), meetingWhere(m) || "-"];
+}
+
 type TextKind = "confirm" | "reschedule" | "reminder" | "cancel";
 
 // The message sent to the lead. Plain text so it works for WhatsApp and as the body of an email.

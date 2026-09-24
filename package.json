@@ -13,7 +13,8 @@
     "db:seed": "tsx -r dotenv/config src/db/seed.ts",
     "worker": "tsx -r dotenv/config src/worker.ts",
     "grant:superadmin": "tsx -r dotenv/config src/scripts/grant-super-admin.ts",
-    "backfill:enrichment": "tsx -r dotenv/config src/scripts/backfill-enrichment.ts"
+    "backfill:enrichment": "tsx -r dotenv/config src/scripts/backfill-enrichment.ts",
+    "db:baseline": "tsx -r dotenv/config src/scripts/baseline-migrations.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",

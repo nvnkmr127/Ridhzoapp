@@ -8,7 +8,7 @@ export const WEBHOOK_PAYLOAD_VERSION = "1";
 export interface WebhookEventPayload {
   version: string;
   eventId: string;
-  event: "lead.created" | "lead.status_changed" | "lead.hot_threshold" | "lead.stagnant_alert";
+  event: import("@/domains/integrations/webhookEndpointService").WebhookEventType | "lead.hot_threshold" | "lead.stagnant_alert";
   timestamp: string;
   organizationId: string;
   data: Record<string, any>;

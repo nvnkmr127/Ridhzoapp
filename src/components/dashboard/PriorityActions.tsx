@@ -38,6 +38,8 @@ export async function PriorityActions() {
 
   const { CustomStatusSchemaService } = await import("@/domains/leads/customStatusSchemaService");
   const categories = await CustomStatusSchemaService.getStatusCategoryMap(organizationId);
+  const { MeetingService } = await import("@/domains/meetings/service");
+  const nextMeetings = await MeetingService.nextScheduledForLeads(data.map((l) => l.id)).catch(() => ({} as Record<string, never>));
   const scored = data.map((l) => {
     const isEngaged = engaged.has(l.id);
     const nba = NextBestActionService.getRecommendation({
@@ -49,6 +51,7 @@ export async function PriorityActions() {
       lastContactedAt: l.lastContactedAt ?? null,
       nextFollowUpAt: l.nextFollowUpAt ?? null,
       recentContentOpen: isEngaged ? { title: "your shared content", count: 1 } : null,
+      meeting: nextMeetings[l.id] ?? null,
     });
     return { lead: l, nba, isEngaged };
   });

@@ -153,6 +153,11 @@ export function AutomationBuilder({
             <SelectItem value="lead.tag_added">Tag added to lead</SelectItem>
             <SelectItem value="follow_up.scheduled">Follow-up scheduled</SelectItem>
             <SelectItem value="follow_up.overdue">Follow-up overdue</SelectItem>
+            <SelectItem value="meeting.scheduled">Meeting / visit scheduled</SelectItem>
+            <SelectItem value="meeting.rescheduled">Meeting / visit rescheduled</SelectItem>
+            <SelectItem value="meeting.completed">Meeting / visit done</SelectItem>
+            <SelectItem value="meeting.no_show">Lead didn't show up</SelectItem>
+            <SelectItem value="meeting.cancelled">Meeting / visit cancelled</SelectItem>
           </SelectContent>
         </Select>
       </div>

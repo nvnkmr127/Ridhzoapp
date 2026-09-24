@@ -1,24 +1,27 @@
 import { db } from "@/db";
 import { meetings, meetingLocations, leads, users, organizations } from "@/db/schema";
-import { and, asc, desc, eq, gte, lte, or, isNull, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, or, isNull, inArray, type SQL } from "drizzle-orm";
 import { ActivityService } from "@/domains/activities/service";
 import { NotificationService } from "@/domains/notifications/service";
 import { GoogleCalendarService } from "@/domains/integrations/googleCalendarService";
 import { FollowUpService } from "@/domains/follow-ups/service";
 import { syncLeadFollowUpState, markLeadContacted } from "@/domains/follow-ups/state";
 import { sendEmail } from "@/lib/mail/mailer";
+import { eventBus, type MeetingEvent } from "@/lib/events/emitter";
 import {
   formatMeetingTime,
   googleCalendarLink,
   leadMessage,
   meetingEnd,
   meetingWhere,
+  meetingTemplateVars,
   modeLabel,
   type MeetingMode,
   type MeetingStatus,
 } from "./format";
 
 export type Meeting = typeof meetings.$inferSelect;
+export type NextMeeting = { startAt: Date; durationMinutes: number; label: string };
 
 export interface MeetingInput {
   leadId: string;
@@ -66,11 +69,19 @@ async function getUser(id: string | null | undefined) {
 
 async function getOrg(organizationId: string) {
   const [org] = await db
-    .select({ name: organizations.name, timezone: organizations.timezone, locale: organizations.locale, whatsappMode: organizations.whatsappMode })
+    .select({
+      name: organizations.name,
+      timezone: organizations.timezone,
+      locale: organizations.locale,
+      whatsappMode: organizations.whatsappMode,
+      confirmTemplate: organizations.meetingConfirmTemplate,
+      reminderTemplate: organizations.meetingReminderTemplate,
+      templateLanguage: organizations.meetingTemplateLanguage,
+    })
     .from(organizations)
     .where(eq(organizations.id, organizationId))
     .limit(1);
-  return org ?? { name: "us", timezone: "UTC", locale: "en", whatsappMode: "personal" };
+  return org ?? { name: "us", timezone: "UTC", locale: "en", whatsappMode: "personal", confirmTemplate: null, reminderTemplate: null, templateLanguage: "en_US" };
 }
 
 async function getLead(leadId: string, organizationId: string) {
@@ -102,6 +113,27 @@ export class MeetingService {
   static async get(id: string, organizationId: string) {
     const [m] = await db.select().from(meetings).where(this.scope(id, organizationId)).limit(1);
     return m ?? null;
+  }
+
+  // Internal (trusted) lookup by id — for event handlers/workers that already know the tenant.
+  static async getById(id: string) {
+    const [m] = await db.select().from(meetings).where(eq(meetings.id, id)).limit(1);
+    return m ?? null;
+  }
+
+  private static emit(event: MeetingEvent, m: Meeting, userId?: string | null) {
+    eventBus.emit(event, { leadId: m.leadId, userId: userId ?? undefined, meetingId: m.id, startAt: new Date(m.startAt).toISOString(), type: m.mode, title: m.title });
+  }
+
+  // Earliest still-scheduled meeting per lead, for Next Best Action on list views.
+  static async nextScheduledForLeads(leadIds: string[]): Promise<Record<string, NextMeeting>> {
+    if (leadIds.length === 0) return {};
+    const rows = await db
+      .selectDistinctOn([meetings.leadId], { leadId: meetings.leadId, startAt: meetings.startAt, durationMinutes: meetings.durationMinutes, mode: meetings.mode })
+      .from(meetings)
+      .where(and(inArray(meetings.leadId, leadIds), eq(meetings.status, "scheduled")))
+      .orderBy(meetings.leadId, asc(meetings.startAt));
+    return Object.fromEntries(rows.map((r) => [r.leadId, { startAt: r.startAt, durationMinutes: r.durationMinutes, label: modeLabel(r.mode) }]));
   }
 
   static async listForLead(leadId: string, organizationId: string) {
@@ -191,12 +223,22 @@ export class MeetingService {
     }
 
     if (org.whatsappMode === "bsp" && lead.phone) {
+      // Free text inside the 24h window; outside it, the org's approved template (if set up).
+      // Cancellations have no template — they go as free text or by the rep.
+      const templateName = kind === "reminder" ? org.reminderTemplate : kind === "cancel" ? null : org.confirmTemplate;
       try {
         const { WhatsAppService } = await import("@/lib/messaging/whatsapp/service");
-        await WhatsAppService.send({ leadId: m.leadId, userId: opts.userId, body: text });
+        await WhatsAppService.send({
+          leadId: m.leadId,
+          userId: opts.userId,
+          body: text,
+          templateName: templateName || undefined,
+          variables: templateName ? meetingTemplateVars(m, ctx) : undefined,
+          languageCode: org.templateLanguage,
+        });
         notice.whatsappSent = true;
       } catch {
-        // Outside the 24h window (needs a template) or not configured — rep sends it by hand.
+        // Outside the 24h window with no template, or not configured — rep sends it by hand.
       }
     }
 
@@ -257,11 +299,12 @@ export class MeetingService {
     }
 
     const notice = await this.notifyLead("confirm", meeting, { send: input.notifyLead !== false, userId: ctx.userId ?? undefined });
+    this.emit("meeting.scheduled", meeting, ctx.userId);
     return { meeting, notice };
   }
 
   // Edit time/place/assignee. A new time resets the reminder clock and moves the calendar event.
-  static async update(id: string, input: Omit<MeetingInput, "leadId">, ctx: { userId: string; organizationId: string }) {
+  static async update(id: string, input: Omit<MeetingInput, "leadId">, ctx: { userId: string | null; organizationId: string }) {
     const existing = await this.get(id, ctx.organizationId);
     if (!existing) return null;
     if (existing.status !== "scheduled") throw new MeetingError("Only scheduled meetings can be edited");
@@ -294,12 +337,13 @@ export class MeetingService {
     const org = await getOrg(ctx.organizationId);
     await ActivityService.addActivity({
       leadId: updated.leadId,
-      userId: ctx.userId,
+      userId: ctx.userId ?? undefined,
       type: "meeting",
       content: moved ? `${modeLabel(updated.mode)} rescheduled to ${formatMeetingTime(updated.startAt, org.timezone, org.locale)}` : `${modeLabel(updated.mode)} details updated`,
     });
 
-    const notice = await this.notifyLead(moved ? "reschedule" : "confirm", updated, { send: moved && input.notifyLead !== false, userId: ctx.userId });
+    const notice = await this.notifyLead(moved ? "reschedule" : "confirm", updated, { send: moved && input.notifyLead !== false, userId: ctx.userId ?? undefined });
+    if (moved) this.emit("meeting.rescheduled", updated, ctx.userId);
     return { meeting: updated, notice };
   }
 
@@ -307,7 +351,7 @@ export class MeetingService {
   static async setOutcome(
     id: string,
     input: { status: Exclude<MeetingStatus, "scheduled">; outcome?: string | null; nextFollowUpAt?: Date | null; notifyLead?: boolean },
-    ctx: { userId: string; organizationId: string },
+    ctx: { userId: string | null; organizationId: string },
   ) {
     const existing = await this.get(id, ctx.organizationId);
     if (!existing) return null;
@@ -328,7 +372,7 @@ export class MeetingService {
     const label = { completed: "done", no_show: "marked no-show", cancelled: "cancelled" }[input.status];
     await ActivityService.addActivity({
       leadId: updated.leadId,
-      userId: ctx.userId,
+      userId: ctx.userId ?? undefined,
       type: "meeting",
       content: `${modeLabel(updated.mode)} ${label}${input.outcome ? `\nOutcome: ${input.outcome}` : ""}`,
     });
@@ -346,13 +390,14 @@ export class MeetingService {
     }
     await syncLeadFollowUpState(updated.leadId);
 
+    this.emit(`meeting.${input.status}`, updated, ctx.userId);
     let notice: LeadNotice | null = null;
-    if (input.status === "cancelled") notice = await this.notifyLead("cancel", updated, { send: !!input.notifyLead, userId: ctx.userId });
+    if (input.status === "cancelled") notice = await this.notifyLead("cancel", updated, { send: !!input.notifyLead, userId: ctx.userId ?? undefined });
     return { meeting: updated, notice };
   }
 
   // Undo an outcome (e.g. marked done by mistake) — back to scheduled.
-  static async reopen(id: string, ctx: { userId: string; organizationId: string }) {
+  static async reopen(id: string, ctx: { userId: string | null; organizationId: string }) {
     const [updated] = await db.update(meetings)
       .set({ status: "scheduled", completedAt: null, updatedAt: new Date() })
       .where(this.scope(id, ctx.organizationId))
@@ -362,7 +407,7 @@ export class MeetingService {
   }
 
   // Field check-in: proves the rep reached the site/store. Coordinates are optional (GPS may be denied).
-  static async checkIn(id: string, coords: { lat: number; lng: number } | null, ctx: { userId: string; organizationId: string }) {
+  static async checkIn(id: string, coords: { lat: number; lng: number } | null, ctx: { userId: string | null; organizationId: string }) {
     const [updated] = await db.update(meetings)
       .set({ checkedInAt: new Date(), checkInLat: coords?.lat ?? null, checkInLng: coords?.lng ?? null, updatedAt: new Date() })
       .where(this.scope(id, ctx.organizationId))
@@ -370,7 +415,7 @@ export class MeetingService {
     if (!updated) return null;
     await ActivityService.addActivity({
       leadId: updated.leadId,
-      userId: ctx.userId,
+      userId: ctx.userId ?? undefined,
       type: "meeting",
       content: `Checked in for ${modeLabel(updated.mode).toLowerCase()}${coords ? ` — https://maps.google.com/?q=${coords.lat},${coords.lng}` : " (location not shared)"}`,
     });

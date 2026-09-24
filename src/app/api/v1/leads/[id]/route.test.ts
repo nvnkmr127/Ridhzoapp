@@ -22,7 +22,11 @@ function del() {
 const log = AuditService.log as unknown as ReturnType<typeof vi.fn>;
 
 describe("DELETE /api/v1/leads/[id] — A2", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // The route loads the lead first (tenant + ownership check) before deleting.
+    (LeadService.getLead as any).mockResolvedValue({ id: LEAD_ID, ownerId: "user-1" });
+  });
 
   it("writes a lead.delete audit entry, attributed to System, for a plain API key", async () => {
     (authorizeApiRequest as any).mockResolvedValue({ organizationId: "org-1" }); // no userId/roleId: API key
@@ -60,6 +64,7 @@ describe("DELETE /api/v1/leads/[id] — A2", () => {
 
   it("writes no audit entry when the lead didn't exist", async () => {
     (authorizeApiRequest as any).mockResolvedValue({ organizationId: "org-1" });
+    (LeadService.getLead as any).mockResolvedValue(undefined);
     (LeadService.deleteLead as any).mockResolvedValue(undefined);
 
     const res = await del();

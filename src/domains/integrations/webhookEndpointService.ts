@@ -11,6 +11,12 @@ import { WebhookDlqService } from "@/domains/leads/webhookDlqService";
 export const WEBHOOK_EVENT_TYPES = [
   "lead.created",
   "lead.status_changed",
+  "lead.assigned",
+  "meeting.scheduled",
+  "meeting.rescheduled",
+  "meeting.completed",
+  "meeting.no_show",
+  "meeting.cancelled",
 ] as const;
 
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];

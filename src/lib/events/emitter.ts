@@ -14,6 +14,8 @@ export type EventPayload = {
   title?: string;
   type?: string;
   source?: string; // e.g. 'automation' — used to stop automations from re-triggering automations
+  meetingId?: string;
+  startAt?: string; // ISO — meeting start
 };
 
 export interface SystemEvents {
@@ -28,7 +30,15 @@ export interface SystemEvents {
   'follow_up.rescheduled': (payload: EventPayload) => void;
   'follow_up.overdue': (payload: EventPayload) => void;
   'task.completed': (payload: EventPayload) => void;
+  'meeting.scheduled': (payload: EventPayload) => void;
+  'meeting.rescheduled': (payload: EventPayload) => void;
+  'meeting.completed': (payload: EventPayload) => void;
+  'meeting.no_show': (payload: EventPayload) => void;
+  'meeting.cancelled': (payload: EventPayload) => void;
 }
+
+export const MEETING_EVENTS = ['meeting.scheduled', 'meeting.rescheduled', 'meeting.completed', 'meeting.no_show', 'meeting.cancelled'] as const;
+export type MeetingEvent = (typeof MEETING_EVENTS)[number];
 
 class TypedEventEmitter extends EventEmitter {
   emit<K extends keyof SystemEvents>(eventName: K, ...args: Parameters<SystemEvents[K]>): boolean {
