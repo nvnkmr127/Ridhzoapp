@@ -31,6 +31,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return /^https?:\/\//i.test(a.fileUrl) ? NextResponse.redirect(a.fileUrl) : new NextResponse("Not found", { status: 404 });
   }
 
+  // If a public R2 domain is configured, redirect directly to it to save Vercel bandwidth
+  if (process.env.R2_PUBLIC_URL && a.fileUrl.startsWith("r2:")) {
+    const baseUrl = process.env.R2_PUBLIC_URL.replace(/\/$/, "");
+    const objectKey = a.fileUrl.slice(3);
+    return NextResponse.redirect(`${baseUrl}/${objectKey}`);
+  }
+
   const file = await openAttachment(a.fileUrl);
   if (!file) return new NextResponse("File is no longer available", { status: 410 });
 
