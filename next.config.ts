@@ -12,6 +12,12 @@ const nextConfig: NextConfig = {
   eslint: { ignoreDuringBuilds: true },
 
   serverExternalPackages: NODE_ONLY,
+  
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "25mb",
+    },
+  },
 
   webpack: (config, { isServer, nextRuntime }) => {
     config.resolve.alias = {
