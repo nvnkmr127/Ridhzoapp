@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { isActionable, isDueToSend, renderSummaryHtml, summarySubject, type DailySummaryStats } from "./dailySummaryService";
+import { isActionable, isDueToSend, milestoneFor, personalLine, renderSummaryHtml, summarySubject, type DailySummaryStats } from "./dailySummaryService";
 
-const empty: DailySummaryStats = { overdueFollowUps: 0, meetingsNeedOutcome: 0, meetingsToday: 0, newLeads: 0, uncontactedLeads: 0, unassignedLeads: 0, byRep: [] };
+const empty: DailySummaryStats = { overdueFollowUps: 0, meetingsNeedOutcome: 0, meetingsToday: 0, newLeads: 0, uncontactedLeads: 0, unassignedLeads: 0, byRep: [], people: [] };
 
 describe("daily summary", () => {
   it("sends once per org-local day, only in the 8–11 AM window", () => {
@@ -21,5 +21,18 @@ describe("daily summary", () => {
 
   it("names only non-zero counts in the subject", () => {
     expect(summarySubject("Acme", { ...empty, meetingsToday: 1, overdueFollowUps: 2 })).toBe("Today at Acme: 2 overdue follow-ups · 1 meeting today");
+  });
+
+  it("builds a personal morning line only when there's something to do", () => {
+    expect(personalLine({ overdue: 0, dueToday: 0, newLeads: 0 })).toBeNull();
+    expect(personalLine({ overdue: 1, dueToday: 3, newLeads: 2 })).toBe("3 follow-ups due today · 1 overdue · 2 new leads since yesterday");
+  });
+
+  it("sends the week-one recap on local day 7 and the trial warning the day before it ends", () => {
+    const created = new Date("2026-10-01T05:00:00Z"); // Oct 1 in Kolkata
+    expect(milestoneFor("2026-10-08", "Asia/Kolkata", created, null)).toBe("week_one");
+    expect(milestoneFor("2026-10-07", "Asia/Kolkata", created, null)).toBeNull();
+    const trialEnd = new Date("2026-10-15T05:00:00Z");
+    expect(milestoneFor("2026-10-14", "Asia/Kolkata", created, trialEnd)).toBe("trial_ends_tomorrow");
   });
 });

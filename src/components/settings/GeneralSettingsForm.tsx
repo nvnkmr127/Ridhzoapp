@@ -409,13 +409,14 @@ export function GeneralSettingsForm({ organization }: { organization?: Org | nul
             </p>
           </div>
           <div className="space-y-2 max-w-xs">
-            <Label htmlFor="dailySummary">Morning team summary</Label>
+            <Label htmlFor="dailySummary">Morning summary</Label>
             <NativeSelect id="dailySummary" value={f.dailySummary} onChange={(e) => set("dailySummary", e.target.value)}>
-              <option value="1">On — email admins at 8 AM</option>
-              <option value="0">Off</option>
+              <option value="1">On — everyone gets &quot;your day&quot; at 8 AM</option>
+              <option value="0">Off for the whole workspace</option>
             </NativeSelect>
             <p className="text-xs text-muted-foreground">
-              Overdue follow-ups, meetings without an outcome, today&apos;s meetings and new or unassigned leads — sent around 8 AM ({f.timezone || "UTC"}) on days there&apos;s something to act on.
+              Around 8 AM ({f.timezone || "UTC"}), on days there&apos;s something to act on: each person gets a push (and WhatsApp, if set up) with their follow-ups
+              and new leads; admins also get the team email. Also sends the week-one recap and the trial-ending reminder. Anyone can mute their own copy in Profile.
             </p>
           </div>
           <div className="space-y-2 pt-2 border-t border-border dark:border-border">

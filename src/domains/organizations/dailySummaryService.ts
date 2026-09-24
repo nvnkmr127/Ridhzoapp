@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { followUps, leads, meetings, organizations, roles, users } from "@/db/schema";
 import { and, count, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import { appUrl, sendEmail } from "@/lib/mail/mailer";
+import { HabitService, recapLine, type Recap } from "@/domains/organizations/habitService";
 
 // Morning team summary for workspace admins: what needs attention today. Sent once per org-local
 // day between 8 and 11 AM, only when something is actionable, to admins who haven't opted out of email.
@@ -14,6 +15,45 @@ export interface DailySummaryStats {
   uncontactedLeads: number;
   unassignedLeads: number;
   byRep: { name: string; overdue: number; needOutcome: number }[];
+  /** Per-user "your day" for the personal push / WhatsApp nudge. */
+  people: Person[];
+}
+
+export interface Person {
+  userId: string;
+  firstName: string | null;
+  phone: string | null;
+  optedOut: boolean;
+  overdue: number;
+  dueToday: number;
+  newLeads: number;
+}
+
+/** Pure: the personal morning line, or null when this person has nothing to do today. */
+export function personalLine(p: Pick<Person, "overdue" | "dueToday" | "newLeads">): string | null {
+  const parts = [
+    p.dueToday && `${plural(p.dueToday, "follow-up")} due today`,
+    p.overdue && `${p.overdue} overdue`,
+    p.newLeads && `${plural(p.newLeads, "new lead")} since yesterday`,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
+}
+
+export type Milestone = "week_one" | "trial_ends_tomorrow";
+
+const addDays = (ymd: string, n: number) => new Date(Date.parse(`${ymd}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
+/** Pure: which value recap (if any) today's morning run should also send. Local dates, org timezone. */
+export function milestoneFor(today: string, tz: string, createdAt: Date, trialEndsAt: Date | null): Milestone | null {
+  if (trialEndsAt && localClock(trialEndsAt, tz).date === addDays(today, 1)) return "trial_ends_tomorrow";
+  if (addDays(localClock(createdAt, tz).date, 7) === today) return "week_one";
+  return null;
+}
+
+export function milestoneCopy(m: Milestone, r: Recap) {
+  return m === "week_one"
+    ? { title: "🎉 Your first week with Ridhzo", body: recapLine(r) }
+    : { title: "⏳ Your Starter trial ends tomorrow", body: `So far: ${recapLine(r)}. Keep AI replies and automations running — upgrade in Settings → Billing.` };
 }
 
 const SEND_FROM_HOUR = 8;
@@ -86,7 +126,7 @@ export class DailySummaryService {
     const live = and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt));
     const meetingEnded = sql`${meetings.startAt} + ${meetings.durationMinutes} * interval '1 minute' < ${now.toISOString()}::timestamp`;
 
-    const [[overdue], [needOutcome], [today], [fresh], [uncontacted], [unassigned], repRows] = await Promise.all([
+    const [[overdue], [needOutcome], [today], [fresh], [uncontacted], [unassigned], repRows, peopleRows] = await Promise.all([
       db.select({ n: count() }).from(followUps).innerJoin(leads, eq(followUps.leadId, leads.id))
         .where(and(live, eq(followUps.status, "pending"), lt(followUps.dueAt, now))),
       db.select({ n: count() }).from(meetings).innerJoin(leads, eq(meetings.leadId, leads.id))
@@ -107,7 +147,28 @@ export class DailySummaryService {
               and m.start_at + m.duration_minutes * interval '1 minute' < ${now.toISOString()}::timestamp
               and m.start_at >= ${new Date(now.getTime() - 14 * 24 * H).toISOString()}::timestamp) as need_outcome
         from ${users} u where u.organization_id = ${organizationId} and u.is_active = true and u.deleted_at is null`),
+      db.execute(sql`
+        select u.id, u.first_name, u.phone, coalesce(jsonb_exists(u.email_opt_out, 'daily_summary'), false) as opted_out,
+          (select count(*)::int from ${followUps} f join ${leads} l on l.id = f.lead_id
+            where f.user_id = u.id and f.status = 'pending' and l.deleted_at is null
+              and f.due_at < ${now.toISOString()}::timestamp) as overdue,
+          (select count(*)::int from ${followUps} f join ${leads} l on l.id = f.lead_id
+            where f.user_id = u.id and f.status = 'pending' and l.deleted_at is null
+              and f.due_at >= ${now.toISOString()}::timestamp and f.due_at < ${new Date(now.getTime() + 16 * H).toISOString()}::timestamp) as due_today,
+          (select count(*)::int from ${leads} l where l.owner_id = u.id and l.deleted_at is null
+              and l.created_at >= ${new Date(now.getTime() - 24 * H).toISOString()}::timestamp) as new_leads
+        from ${users} u where u.organization_id = ${organizationId} and u.is_active = true and u.deleted_at is null`),
     ]);
+
+    const people: Person[] = [...(peopleRows as unknown as Record<string, unknown>[])].map((r) => ({
+      userId: String(r.id),
+      firstName: (r.first_name as string | null) ?? null,
+      phone: (r.phone as string | null) ?? null,
+      optedOut: Boolean(r.opted_out),
+      overdue: Number(r.overdue),
+      dueToday: Number(r.due_today),
+      newLeads: Number(r.new_leads),
+    }));
 
     const byRep = [...(repRows as unknown as { name: string; overdue: number; need_outcome: number }[])]
       .map((r) => ({ name: r.name, overdue: Number(r.overdue), needOutcome: Number(r.need_outcome) }))
@@ -122,6 +183,7 @@ export class DailySummaryService {
       uncontactedLeads: uncontacted.n,
       unassignedLeads: unassigned.n,
       byRep,
+      people,
     };
   }
 
@@ -139,7 +201,10 @@ export class DailySummaryService {
   /** Hourly: send to every org that's in its morning window and hasn't had today's summary. */
   static async runDue(now = new Date()) {
     const orgs = await db
-      .select({ id: organizations.id, name: organizations.name, timezone: organizations.timezone, sentOn: organizations.dailySummarySentOn })
+      .select({
+        id: organizations.id, name: organizations.name, timezone: organizations.timezone, sentOn: organizations.dailySummarySentOn,
+        createdAt: organizations.createdAt, trialEndsAt: organizations.trialEndsAt,
+      })
       .from(organizations)
       .where(and(eq(organizations.dailySummary, 1), isNull(organizations.suspendedAt)));
 
@@ -155,8 +220,13 @@ export class DailySummaryService {
         .returning({ id: organizations.id });
       if (!claimed) continue;
       try {
+        // Day-7 recap / trial-ends-tomorrow go out even on a quiet day — they're the proof of value.
+        const milestone = milestoneFor(today, org.timezone, org.createdAt, org.trialEndsAt);
+        if (milestone) await this.sendMilestone(org.id, milestone, org.createdAt);
+
         const stats = await this.stats(org.id, now);
         if (!isActionable(stats)) continue;
+        await this.nudgePeople(stats.people, today);
         const html = renderSummaryHtml(org.name, stats);
         for (const to of await this.adminEmails(org.id)) {
           await sendEmail({ to, subject: summarySubject(org.name, stats), html }, org.id);
@@ -167,5 +237,32 @@ export class DailySummaryService {
       }
     }
     return { sent };
+  }
+
+  private static async sendMilestone(organizationId: string, milestone: Milestone, since: Date) {
+    const { NotificationService } = await import("@/domains/notifications/service");
+    const { title, body } = milestoneCopy(milestone, await HabitService.recap(organizationId, since));
+    await NotificationService.notifyOrgAdmins(organizationId, { type: milestone, title, body });
+    const html = `<div style="font-family:sans-serif;font-size:14px;line-height:1.5"><p><b>${esc(title)}</b></p><p>${esc(body)}</p>
+<p><a href="${appUrl(milestone === "week_one" ? "/" : "/settings/billing")}">${milestone === "week_one" ? "Open your dashboard" : "Keep Starter"}</a></p></div>`;
+    for (const to of await this.adminEmails(organizationId)) await sendEmail({ to, subject: title, html }, organizationId);
+  }
+
+  // "Your day" push to each person with something to do, plus WhatsApp to their own phone when a
+  // Ridhzo-number template is configured (WATXIO_DAILY_SUMMARY_TEMPLATE, variables: [name, line]).
+  // Business-initiated WhatsApp needs an approved template, so there's no plain-text fallback.
+  private static async nudgePeople(people: Person[], today: string) {
+    const { NotificationService } = await import("@/domains/notifications/service");
+    const template = process.env.WATXIO_DAILY_SUMMARY_TEMPLATE;
+    const { WatxioClient, isConfigured } = await import("@/lib/messaging/whatsapp/client");
+    for (const p of people) {
+      const line = personalLine(p);
+      if (!line || p.optedOut) continue;
+      await NotificationService.create({ userId: p.userId, type: "daily_summary", title: `☀️ Good morning${p.firstName ? `, ${p.firstName}` : ""}`, body: line });
+      if (template && p.phone && isConfigured()) {
+        await WatxioClient.sendTemplate(p.phone, template, [p.firstName || "there", line], process.env.WATXIO_TEMPLATE_LANG || "en_US", `daily-${p.userId}-${today}`)
+          .catch((e) => console.warn(`[daily-summary] WhatsApp to ${p.userId} failed`, e?.message || e));
+      }
+    }
   }
 }

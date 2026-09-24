@@ -17,7 +17,9 @@ import { Users } from "lucide-react";
 import { AnalyticsService, AnalyticsFilters } from "@/lib/analytics/service";
 import { SlaAnalyticsService } from "@/domains/leads/slaAnalyticsService";
 import { ContentSharingService } from "@/domains/leads/contentSharingService";
-import { Timer, Eye } from "lucide-react";
+import { Timer, Eye, PartyPopper } from "lucide-react";
+import { HabitService, recapLine, shortMinutes } from "@/domains/organizations/habitService";
+import { OrgService } from "@/domains/organizations/service";
 
 // Setup checklist state for the dashboard's GettingStarted card, read from real data.
 async function getSetupProgress(organizationId: string, totalLeads: number) {
@@ -56,14 +58,21 @@ export default async function ExecutiveDashboardPage({
     dateRange: (typeof params.range === "string" ? params.range : "all") as any,
   };
 
-  const [leadsBySource, pipelineDistribution, leadsByOwner, recentActivity, sla, content] = await Promise.all([
+  const [leadsBySource, pipelineDistribution, leadsByOwner, recentActivity, sla, content, speed, org] = await Promise.all([
     AnalyticsService.getLeadsBySource(filters),
     AnalyticsService.getPipelineDistribution(filters),
     AnalyticsService.getLeadsByOwner(filters),
     AnalyticsService.getRecentActivity(filters),
     SlaAnalyticsService.getSlaMetrics(organizationId),
     ContentSharingService.orgEngagementStats(organizationId),
+    HabitService.speedBenchmark(organizationId),
+    OrgService.getOrganization(organizationId),
   ]);
+
+  // First two weeks (the trial): show what Ridhzo already did for them — proof before the trial ends.
+  const ageDays = org ? Math.floor((Date.now() - new Date(org.createdAt).getTime()) / 86_400_000) : 99;
+  const recap = ageDays >= 1 && ageDays < 15 && org ? await HabitService.recap(organizationId, new Date(org.createdAt)) : null;
+  const inTrial = !!org?.trialEndsAt && new Date(org.trialEndsAt).getTime() > Date.now();
 
   const slaOnTrack = sla.complianceRatePercentage >= 80;
   const isAdmin = await hasPermission("settings.manage");
@@ -109,6 +118,23 @@ export default async function ExecutiveDashboardPage({
       {/* Keep the setup guide up through the first few leads (it's dismissible once they're rolling). */}
       {progress && <GettingStarted progress={progress} />}
 
+      {recap && recap.leads > 0 && (
+        <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <PartyPopper className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+            <div>
+              <p className="font-medium">Your first {ageDays} day{ageDays === 1 ? "" : "s"} with Ridhzo</p>
+              <p className="text-sm text-muted-foreground">{recapLine(recap)}</p>
+            </div>
+          </div>
+          {inTrial && (
+            <Button asChild size="sm" className="shrink-0">
+              <Link href="/settings/billing">Keep it going after your trial</Link>
+            </Button>
+          )}
+        </div>
+      )}
+
       <div className="space-y-6">
         <div className="rounded-2xl border bg-card p-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
@@ -121,6 +147,12 @@ export default async function ExecutiveDashboardPage({
               <p className="text-xs text-muted-foreground">
                 First-to-respond wins the deal — {sla.contactedLeads} of {sla.totalLeads} leads contacted.
               </p>
+              {speed.medianMinutes != null && (
+                <p className="mt-1 text-xs font-medium text-emerald-600">
+                  ⚡ Typical reply in {shortMinutes(speed.medianMinutes)} (30 days)
+                  {speed.fasterThan != null && speed.fasterThan >= 50 && ` — faster than ${speed.fasterThan}% of businesses on Ridhzo`}
+                </p>
+              )}
             </div>
           </div>
           <div>
