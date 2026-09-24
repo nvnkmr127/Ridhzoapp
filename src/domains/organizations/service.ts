@@ -126,6 +126,7 @@ export class OrgService {
       autoMergeDuplicates: number;
       sequenceWindowStart: number | null;
       sequenceWindowEnd: number | null;
+      dailySummary: number;
     }>,
     expectedUpdatedAt?: Date,
   ) {

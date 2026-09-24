@@ -1,5 +1,5 @@
 {
-  "id": "6287ac7a-7d5e-4cf2-b877-d6cff76d618e",
+  "id": "58ea02f5-3dff-4ed1-847d-fc72577aaa5b",
   "prevId": "83a5f5eb-fb5b-47fb-8c49-2a9367680e7d",
   "version": "7",
   "dialect": "postgresql",
@@ -179,6 +179,19 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'en_US'"
+        },
+        "daily_summary": {
+          "name": "daily_summary",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "daily_summary_sent_on": {
+          "name": "daily_summary_sent_on",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": false
         },
         "razorpay_customer_id": {
           "name": "razorpay_customer_id",

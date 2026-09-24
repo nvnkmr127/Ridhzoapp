@@ -42,6 +42,8 @@ export interface LeadExtras {
   messages?: { direction: string; body: string | null; createdAt: Date | null }[];
   contentOpens?: { title: string; viewCount: number }[];
   unansweredStreak?: number;
+  /** When the lead tends to reply / pick up (lib: domains/leads/bestContactTime). */
+  bestContactTime?: string | null;
   /** Upcoming and recent meetings (newest first). */
   meetings?: { mode: string; title: string; startAt: Date; durationMinutes: number; status: string; where: string; outcome: string | null }[];
 }
@@ -95,6 +97,7 @@ export function buildLeadContext(lead: LeadLike, activities: ActivityLike[], ext
     `Next follow-up: ${fmtDate(lead.nextFollowUpAt)}`,
   );
   if (extras.unansweredStreak) lines.push(`Unanswered calls in a row: ${extras.unansweredStreak}`);
+  if (extras.bestContactTime) lines.push(`Usually responds: ${extras.bestContactTime}`);
   if (nextScheduled) {
     lines.push(`Upcoming meeting: ${nextScheduled.title} on ${new Date(nextScheduled.startAt).toISOString().slice(0, 16).replace("T", " ")} UTC (${nextScheduled.durationMinutes} min)`);
   }

@@ -9,6 +9,8 @@ import { CustomStatusSchemaService } from "@/domains/leads/customStatusSchemaSer
 import { LeadSourceService } from "@/domains/leads/sourceService";
 import { ScoringService } from "@/domains/leads/scoringService";
 import { MeetingService } from "@/domains/meetings/service";
+import { bestContactWindow } from "@/domains/leads/bestContactTime";
+import { getOrgFormat } from "@/lib/format.server";
 import { meetingWhere, modeLabel } from "@/domains/meetings/format";
 import { formAnswers } from "@/lib/leads/formAnswers";
 import type { LeadExtras, LeadLike } from "@/lib/ai/leadBrief";
@@ -56,7 +58,17 @@ export async function loadLeadAiContext(lead: LoadableLead, organizationId: stri
   const labels = Object.fromEntries((defs as { key: string; label: string }[]).map((d) => [d.key, d.label]));
   const campaign = [cd.meta_campaign_name, cd.utm_campaign, cd.campaign].find((v) => typeof v === "string" && v) as string | undefined;
 
+  const tz = (await getOrgFormat(organizationId).catch(() => null))?.timezone ?? "UTC";
+  const window = bestContactWindow(
+    [
+      ...messages.filter((m) => m.direction === "inbound" && m.createdAt).map((m) => new Date(m.createdAt!)),
+      ...activities.filter((a) => a.type === "call" && /Called — Answered/.test(a.content ?? "")).map((a) => new Date(a.createdAt)),
+    ],
+    tz,
+  );
+
   const extras: LeadExtras = {
+    bestContactTime: window ? `${window.label.toLowerCase()}${window.days ? ` on ${window.days}` : ""}` : null,
     statusLabel: status?.label,
     statusCategory: status?.category,
     stageName: stage,

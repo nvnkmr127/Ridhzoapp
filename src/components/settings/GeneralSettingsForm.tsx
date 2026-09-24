@@ -32,6 +32,7 @@ type Org = {
   requiredLeadFields?: string[] | null;
   slaHours?: number | null;
   whatsappMode?: string | null;
+  dailySummary?: number | null;
   sequenceWindowStart?: number | null;
   sequenceWindowEnd?: number | null;
   updatedAt?: string | Date | null;
@@ -128,6 +129,7 @@ export function GeneralSettingsForm({ organization }: { organization?: Org | nul
     country: organization?.country ?? "",
     slaHours: organization?.slaHours != null ? String(organization.slaHours) : "",
     whatsappMode: organization?.whatsappMode ?? "personal",
+    dailySummary: organization?.dailySummary === 0 ? "0" : "1",
     sequenceWindowStart: organization?.sequenceWindowStart != null ? String(organization.sequenceWindowStart) : "",
     sequenceWindowEnd: organization?.sequenceWindowEnd != null ? String(organization.sequenceWindowEnd) : "",
   });
@@ -202,6 +204,7 @@ export function GeneralSettingsForm({ organization }: { organization?: Org | nul
         ...f,
         name: f.name.trim(),
         whatsappMode: f.whatsappMode === "bsp" ? "bsp" : "personal",
+        dailySummary: f.dailySummary === "0" ? 0 : 1,
         slaHours: f.slaHours === "" ? null : Number(f.slaHours),
         sequenceWindowStart: f.sequenceWindowStart === "" ? null : Number(f.sequenceWindowStart),
         sequenceWindowEnd: f.sequenceWindowEnd === "" ? null : Number(f.sequenceWindowEnd),
@@ -403,6 +406,16 @@ export function GeneralSettingsForm({ organization }: { organization?: Org | nul
             </NativeSelect>
             <p className="text-xs text-muted-foreground">
               Personal opens WhatsApp with the message ready to send from your own number. Business API sends directly and needs BSP setup.
+            </p>
+          </div>
+          <div className="space-y-2 max-w-xs">
+            <Label htmlFor="dailySummary">Morning team summary</Label>
+            <NativeSelect id="dailySummary" value={f.dailySummary} onChange={(e) => set("dailySummary", e.target.value)}>
+              <option value="1">On — email admins at 8 AM</option>
+              <option value="0">Off</option>
+            </NativeSelect>
+            <p className="text-xs text-muted-foreground">
+              Overdue follow-ups, meetings without an outcome, today&apos;s meetings and new or unassigned leads — sent around 8 AM ({f.timezone || "UTC"}) on days there&apos;s something to act on.
             </p>
           </div>
           <div className="space-y-2 pt-2 border-t border-border dark:border-border">

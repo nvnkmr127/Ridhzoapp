@@ -156,7 +156,7 @@ export function AutomationBuilder({
             <SelectItem value="meeting.scheduled">Meeting / visit scheduled</SelectItem>
             <SelectItem value="meeting.rescheduled">Meeting / visit rescheduled</SelectItem>
             <SelectItem value="meeting.completed">Meeting / visit done</SelectItem>
-            <SelectItem value="meeting.no_show">Lead didn't show up</SelectItem>
+            <SelectItem value="meeting.no_show">Lead didn&apos;t show up</SelectItem>
             <SelectItem value="meeting.cancelled">Meeting / visit cancelled</SelectItem>
           </SelectContent>
         </Select>

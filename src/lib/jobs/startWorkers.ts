@@ -31,6 +31,10 @@ export async function startWorkers(): Promise<void> {
   createMeetingReminderWorker();
   await scheduleMeetingReminderScan();
 
+  const { createDailySummaryWorker, scheduleDailySummaryScan } = await import("@/lib/jobs/workers/dailySummaryWorker");
+  createDailySummaryWorker();
+  await scheduleDailySummaryScan();
+
   const { createEscalationWorker, scheduleEscalationScan } = await import("@/lib/jobs/workers/escalationWorker");
   createEscalationWorker();
   await scheduleEscalationScan();

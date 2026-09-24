@@ -51,6 +51,11 @@ export const organizations = pgTable('organizations', {
   meetingReminderTemplate: varchar('meeting_reminder_template', { length: 255 }),
   meetingTemplateLanguage: varchar('meeting_template_language', { length: 20 }).default('en_US').notNull(),
 
+  // Morning team summary email to admins (overdue follow-ups, meetings without outcome, new leads…).
+  // 1 = on. dailySummarySentOn = the org-local date it last went out, so it sends once per day.
+  dailySummary: integer('daily_summary').default(1).notNull(),
+  dailySummarySentOn: varchar('daily_summary_sent_on', { length: 10 }),
+
   // Billing (Razorpay). plan (above) is the source of truth for entitlements; these track the subscription.
   razorpayCustomerId: varchar('razorpay_customer_id', { length: 255 }),
   razorpaySubscriptionId: varchar('razorpay_subscription_id', { length: 255 }),

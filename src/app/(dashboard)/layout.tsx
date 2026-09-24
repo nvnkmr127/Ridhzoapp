@@ -6,6 +6,9 @@ import { SystemBroadcastBanner } from "@/components/platform/SystemBroadcastBann
 import { PaymentGraceBanner } from "@/components/billing/PaymentGraceBanner";
 import { FloatingAssistant } from "@/components/assistant/FloatingAssistant";
 import { SignupAttribution } from "@/components/layout/SignupAttribution";
+import { TimezoneBanner } from "@/components/settings/TimezoneBanner";
+import { hasPermission } from "@/lib/rbac";
+import { getOrgFormat } from "@/lib/format.server";
 import { isSuperAdmin, requireOrg } from "@/lib/rbac";
 import { PlatformConfigService } from "@/domains/platform/configService";
 import { PlanService } from "@/domains/billing/planService";
@@ -53,6 +56,8 @@ export default async function DashboardLayout({
     ? (billingInfo.status === "locked" || billingInfo.status === "free" ? "free" : billingInfo.plan)
     : undefined;
   const usageStats = await PlanService.getUsageStats(organizationId, effectivePlan);
+  // Admins of a workspace still on the default UTC get a one-click "use my timezone" banner.
+  const showTzBanner = (await getOrgFormat(organizationId)).timezone === "UTC" && (await hasPermission("settings.manage"));
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background text-foreground">
@@ -62,6 +67,7 @@ export default async function DashboardLayout({
         <PaymentGraceBanner billingInfo={billingInfo} />
         <ImpersonationBanner />
         <InstallPwaBanner />
+        {showTzBanner && <TimezoneBanner />}
         <Header isSuperAdmin={superAdmin} organizationId={organizationId} usageStats={usageStats} />
         <main className="flex-1 overflow-y-auto">
           {children}

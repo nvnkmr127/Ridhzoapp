@@ -22,9 +22,15 @@ describe("lead access rule", () => {
   });
 
   it("blocks a rep from a colleague's lead (reported as not found)", async () => {
-    rows.mockReturnValue([{ ownerId: "colleague" }]);
+    rows.mockReturnValueOnce([{ ownerId: "colleague" }]).mockReturnValueOnce([]); // lead, then: no meeting of theirs
     isAdmin.mockResolvedValue(false);
     await expect(assertLeadAccess("l1", ctx)).rejects.toThrow("Lead not found");
+  });
+
+  it("lets someone assigned to a meeting with the lead act on it", async () => {
+    rows.mockReturnValueOnce([{ ownerId: "colleague" }]).mockReturnValueOnce([{ id: "m1" }]);
+    isAdmin.mockResolvedValue(false);
+    await expect(assertLeadAccess("l1", ctx)).resolves.toBeUndefined();
   });
 
   it("lets admins act on any lead in the workspace", async () => {

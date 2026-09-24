@@ -66,6 +66,8 @@ const updateOrgSchema = z.object({
   sequenceWindowEnd: z.coerce.number().int().min(1).max(24).nullish().transform((v) => (v == null || Number.isNaN(v) ? null : v)),
   // WhatsApp send mode: personal (wa.me one-tap) or bsp (Business API).
   whatsappMode: z.enum(["personal", "bsp"]).default("personal"),
+  // Morning team summary email to admins: 1 on, 0 off.
+  dailySummary: z.coerce.number().int().min(0).max(1).optional(),
   // "name" is always required; keep only known fields and force-include name.
   requiredLeadFields: z
     .array(z.enum(LEAD_FIELDS))
@@ -85,7 +87,7 @@ export async function getOrganizationAction() {
 // aiContext, or PII like phone/address that doesn't need to be replayed into the audit trail).
 const SETTINGS_VALUE_FIELDS = [
   "timezone", "locale", "currency", "dateFormat", "slaHours", "whatsappMode",
-  "requiredLeadFields", "sequenceWindowStart", "sequenceWindowEnd",
+  "requiredLeadFields", "sequenceWindowStart", "sequenceWindowEnd", "dailySummary",
 ] as const;
 
 export async function updateOrganizationAction(input: z.input<typeof updateOrgSchema>) {
@@ -117,6 +119,30 @@ export async function updateOrganizationAction(input: z.input<typeof updateOrgSc
     }
     revalidatePath("/settings");
     return ok(updated);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+// One-click fix for workspaces still on the default UTC (set from the admin's browser timezone).
+export async function setWorkspaceTimezoneAction(timeZone: string) {
+  const { organizationId, userId } = await requirePermission("settings.manage");
+  const tz = String(timeZone ?? "").trim();
+  try {
+    if (!tz || tz.length > 64) throw new Error("invalid");
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+  } catch {
+    return fail("VALIDATION", "That timezone isn't recognised.");
+  }
+  try {
+    const before = await OrgService.getOrganization(organizationId);
+    await OrgService.updateOrganization(organizationId, { timezone: tz });
+    await AuditService.log({
+      organizationId, userId, action: "org.settings_update", entityType: "organization", entityId: organizationId,
+      metadata: { changedFields: ["timezone"], values: { timezone: { old: before?.timezone ?? null, new: tz } } },
+    });
+    revalidatePath("/", "layout");
+    return ok({ timezone: tz });
   } catch (e) {
     return actionFail(e);
   }

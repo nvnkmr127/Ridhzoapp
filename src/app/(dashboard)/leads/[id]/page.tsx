@@ -1,4 +1,6 @@
-import { Phone, Mail, Building, Sparkles, Flame, Radio, SlidersHorizontal, Braces, ClipboardList } from "lucide-react";
+import { Phone, Mail, Building, Sparkles, Flame, Radio, SlidersHorizontal, Braces, ClipboardList, Clock } from "lucide-react";
+import { bestContactWindow } from "@/domains/leads/bestContactTime";
+import { getOrgFormat } from "@/lib/format.server";
 import { CustomStatusSchemaService } from "@/domains/leads/customStatusSchemaService";
 import { ScoringService } from "@/domains/leads/scoringService";
 import { formAnswers } from "@/lib/leads/formAnswers";
@@ -233,6 +235,14 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   const dialPhone = normalizePhone(lead.phone, await orgDialCode(organizationId)) ?? null;
   const stageName = stagesList.find((st) => st.id === lead.stageId)?.name ?? null;
   const callStats = ScoringService.callStats(activities);
+  // When this lead replies / picks up — shown as a "best time to reach them" hint.
+  const contactWindow = bestContactWindow(
+    [
+      ...waMessages.filter((msg) => msg.direction === "inbound").map((msg) => new Date(msg.createdAt)),
+      ...activities.filter((a) => a.type === "call" && /Called — Answered/.test(a.content ?? "")).map((a) => new Date(a.createdAt)),
+    ],
+    (await getOrgFormat(organizationId)).timezone,
+  );
   const callCount = activities.filter((a) => a.type === "call").length;
   const inboundCount = waMessages.filter((msg) => msg.direction === "inbound").length;
   const outboundCount = waMessages.length - inboundCount;
@@ -396,6 +406,13 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               <div className="space-y-2">
                 <p className="text-base font-semibold leading-snug">{nba.label}</p>
                 <p className="text-sm text-muted-foreground">{nba.reason}</p>
+                {contactWindow && nba.action !== "wait" && (
+                  <p className="text-xs text-muted-foreground">
+                    <Clock className="mr-1 inline h-3.5 w-3.5 align-[-2px]" />
+                    Best time to reach them: <span className="font-medium text-foreground">{contactWindow.label.toLowerCase()}</span>
+                    {contactWindow.days ? ` on ${contactWindow.days}` : ""} · from {contactWindow.count} of {contactWindow.total} replies/answered calls
+                  </p>
+                )}
                 <NbaActions action={nba.action} hasPhone={!!lead.phone} hasEmail={!!lead.email} />
                 <LeadAiRecap
                   leadId={lead.id}
