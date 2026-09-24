@@ -177,7 +177,7 @@ export function QuickAddLeadDrawer({
 
   return (
     <Drawer
-      direction="left"
+      direction="right"
       shouldScaleBackground={false}
       open={open}
       onOpenChange={(v) => { setOpen(v); if (!v) { setServerError(null); form.reset(); } }}
@@ -185,8 +185,9 @@ export function QuickAddLeadDrawer({
       <DrawerTrigger asChild>
         {children || <Button variant="outline">Quick Add</Button>}
       </DrawerTrigger>
-      {/* Slides in from the left: 30% of the screen on desktop (never narrower than a usable form), full width on phones. */}
-      <DrawerContent side="left" className="w-full sm:w-[30vw] sm:min-w-[380px]">
+      {/* Floats in from the right with a gap around it: 30% of the screen on desktop (never narrower
+          than a usable form); on phones it spans the width minus the side gaps. */}
+      <DrawerContent side="right" className="left-3 sm:left-auto sm:w-[30vw] sm:min-w-[380px]">
         <div className="h-full w-full overflow-y-auto">
           <DrawerHeader>
             <DrawerTitle>Quick Add Lead</DrawerTitle>

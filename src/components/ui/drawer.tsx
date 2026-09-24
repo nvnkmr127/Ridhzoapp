@@ -37,20 +37,22 @@ DrawerOverlay.displayName = DrawerPrimitive.Overlay.displayName
 const DrawerContent = React.forwardRef<
   React.ElementRef<typeof DrawerPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Content> & {
-    /** Match the Drawer's `direction`. "left" = full-height panel sliding in from the left edge. */
-    side?: "bottom" | "left"
+    /** Match the Drawer's `direction`. "right" = a floating panel, inset from the edges, sliding in from the right. */
+    side?: "bottom" | "right"
   }
->(({ className, children, side = "bottom", ...props }, ref) => (
+>(({ className, children, side = "bottom", style, ...props }, ref) => (
   <DrawerPortal>
     <DrawerOverlay />
     <DrawerPrimitive.Content
       ref={ref}
       className={cn(
-        side === "left"
-          ? "fixed inset-y-0 left-0 z-50 flex h-full flex-col rounded-r-[10px] border-r bg-background outline-none"
+        side === "right"
+          ? "fixed inset-y-3 right-3 z-50 flex flex-col overflow-hidden rounded-2xl border bg-background shadow-2xl outline-none"
           : "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-[10px] border bg-background",
         className
       )}
+      // Slide the panel's width PLUS the 12px gap, so no sliver shows at the edge when closed.
+      style={side === "right" ? ({ "--initial-transform": "calc(100% + 12px)", ...style } as React.CSSProperties) : style}
       {...props}
     >
       {side === "bottom" && <div className="mx-auto mt-4 h-2 w-[100px] rounded-full bg-muted" />}
