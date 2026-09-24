@@ -25,9 +25,10 @@ interface LeadSequencesCardProps {
   leadId: string;
   availableSequences?: SequenceOption[];
   initialEnrolled?: EnrolledSequence[];
+  whatsappMode?: "personal" | "bsp";
 }
 
-export function LeadSequencesCard({ leadId, availableSequences = [], initialEnrolled = [] }: LeadSequencesCardProps) {
+export function LeadSequencesCard({ leadId, availableSequences = [], initialEnrolled = [], whatsappMode = "personal" }: LeadSequencesCardProps) {
   const [enrolled, setEnrolled] = useState<EnrolledSequence[]>(initialEnrolled);
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
@@ -64,6 +65,11 @@ export function LeadSequencesCard({ leadId, availableSequences = [], initialEnro
     <SectionCard
       icon={GitFork}
       title="Sequences"
+      description={
+        whatsappMode === "personal"
+          ? "WhatsApp steps arrive in Follow-ups with the message ready — you send them from your WhatsApp. Emails send automatically. Stops when the lead replies or is closed."
+          : "Sends automatically. Stops when the lead replies or is closed."
+      }
       action={
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>

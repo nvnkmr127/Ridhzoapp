@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Phone, Mail, MessageSquare, Calendar, Clock, Trash2, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,8 @@ import { QuickResponseDialog } from "@/components/leads/QuickResponseDialog";
 import { EditLeadDialog } from "@/components/leads/EditLeadDialog";
 import { DeleteLeadButton } from "@/components/leads/DeleteLeadButton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { updateLeadFollowUpAction } from "@/lib/actions/leads";
+import { quickDispositionAction, updateLeadFollowUpAction, type QuickFollowUpKind } from "@/lib/actions/leads";
+import { useLeadAction, type LeadUiAction } from "@/components/leads/leadEvents";
 import { useToast } from "@/hooks/use-toast";
 import { formatLocalDateTime, LocalTime } from "@/components/LocalTime";
 import { useLogContact } from "@/components/leads/useLogContact";
@@ -80,6 +81,9 @@ export function LeadHeaderQuickActions({ lead, whatsappMode = "personal" }: Lead
   const [callOpen, setCallOpen] = useState(false);
   const [callNote, setCallNote] = useState("");
   const [savingCall, setSavingCall] = useState(false);
+  // After an answered call the dialog moves to a second step: what's the outcome?
+  const [callStep, setCallStep] = useState<"outcome" | "disposition">("outcome");
+  const [kind, setKind] = useState<QuickFollowUpKind>("followup");
 
   const phoneClean = lead.phone ? lead.phone.replace(/[^0-9+]/g, "") : "";
   const waUrl = phoneClean ? `https://wa.me/${phoneClean.replace("+", "")}` : "";
@@ -90,13 +94,13 @@ export function LeadHeaderQuickActions({ lead, whatsappMode = "personal" }: Lead
   const handleSetFollowUp = async (targetDate: Date | null) => {
     setLoading(true);
     try {
-      const res = await updateLeadFollowUpAction(lead.id, targetDate ? targetDate.toISOString() : null);
+      const res = await updateLeadFollowUpAction(lead.id, targetDate ? targetDate.toISOString() : null, kind);
       if (!res.ok) {
         toast({ title: "Failed to update follow-up", description: res.message, variant: "destructive" });
         return;
       }
       toast({
-        title: targetDate ? "Follow-up scheduled" : "Follow-up cleared",
+        title: targetDate ? `${kind === "meeting" ? "Meeting" : kind === "site_visit" ? "Site visit" : "Follow-up"} scheduled` : "Follow-up cleared",
         description: targetDate ? `Due ${formatLocalDateTime(targetDate, "datetime")}` : undefined,
       });
       setReminderOpen(false);
@@ -126,13 +130,56 @@ export function LeadHeaderQuickActions({ lead, whatsappMode = "personal" }: Lead
     setSavingCall(true);
     const done = await logContact({ channel: "call", outcome, note: callNote || undefined }, "Call logged");
     setSavingCall(false);
-    if (done) {
-      setCallOpen(false);
-      setCallNote("");
-      // A call that didn't connect almost always needs a retry — offer to schedule it right away.
-      if (outcome === "no_answer" || outcome === "busy") setReminderOpen(true);
+    if (!done) return;
+    setCallNote("");
+    if (outcome === "answered") {
+      setCallStep("disposition");
+      return;
+    }
+    closeCall();
+    // A call that didn't connect almost always needs a retry — offer to schedule it right away.
+    if (outcome === "no_answer" || outcome === "busy") setReminderOpen(true);
+  };
+
+  const closeCall = () => {
+    setCallOpen(false);
+    setCallStep("outcome");
+  };
+
+  const dispose = async (outcome: "interested" | "not_interested") => {
+    setSavingCall(true);
+    try {
+      const res = await quickDispositionAction(lead.id, outcome);
+      if (!res.ok) {
+        toast({ variant: "destructive", title: "Status not changed", description: res.message });
+        return;
+      }
+      toast({ title: `Marked ${res.data.label}` });
+      closeCall();
+      if (outcome === "interested") setReminderOpen(true); // interested → plan the next step now
+      router.refresh();
+    } catch {
+      toast({ variant: "destructive", title: "Status not changed", description: "We couldn't reach the server. Please try again." });
+    } finally {
+      setSavingCall(false);
     }
   };
+
+  // One-tap actions from the Next Best Action card.
+  const onLeadAction = useCallback(
+    (a: LeadUiAction) => {
+      if (a.type === "call" && phoneClean) {
+        window.location.href = `tel:${phoneClean}`;
+        setCallOpen(true);
+      } else if (a.type === "followup") {
+        setReminderOpen(true);
+      } else if (a.type === "edit") {
+        document.querySelector<HTMLElement>("[data-edit-lead-trigger]")?.click();
+      }
+    },
+    [phoneClean],
+  );
+  useLeadAction(onLeadAction);
 
   return (
     <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
@@ -222,6 +269,23 @@ export function LeadHeaderQuickActions({ lead, whatsappMode = "personal" }: Lead
                 "Schedule follow-up"
               )}
             </div>
+            <div className="grid grid-cols-3 gap-1 px-1 pb-1" role="radiogroup" aria-label="Follow-up type">
+              {(["followup", "meeting", "site_visit"] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  role="radio"
+                  aria-checked={kind === k}
+                  onClick={() => setKind(k)}
+                  className={cn(
+                    "rounded-md border px-1.5 py-1 text-[11px] font-medium",
+                    kind === k ? "border-foreground bg-foreground text-background" : "border-border text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {k === "followup" ? "Follow-up" : k === "meeting" ? "Meeting" : "Site visit"}
+                </button>
+              ))}
+            </div>
             {followUpPresets().map((p) => (
               <button
                 key={p.label}
@@ -270,33 +334,61 @@ export function LeadHeaderQuickActions({ lead, whatsappMode = "personal" }: Lead
       </div>
 
       {/* After tapping Call: capture how it went so the attempt is on record. */}
-      <Dialog open={callOpen} onOpenChange={(o) => !savingCall && setCallOpen(o)}>
+      <Dialog open={callOpen} onOpenChange={(o) => !savingCall && (o ? setCallOpen(true) : closeCall())}>
         <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>How did the call go?</DialogTitle>
-            <DialogDescription>Log it so your follow-ups and response times stay accurate.</DialogDescription>
-          </DialogHeader>
-          <Textarea
-            value={callNote}
-            onChange={(e) => setCallNote(e.target.value)}
-            placeholder="Optional note — e.g. interested, call back after 5 PM"
-            className="min-h-[72px]"
-          />
-          <div className="grid grid-cols-2 gap-2">
-            {CALL_OUTCOMES.map((o) => (
-              <Button key={o.key} variant={o.key === "answered" ? "default" : "outline"} disabled={savingCall} onClick={() => saveCall(o.key)}>
-                {o.label}
-              </Button>
-            ))}
-          </div>
-          <button
-            type="button"
-            className="text-xs text-muted-foreground underline hover:text-foreground"
-            onClick={() => setCallOpen(false)}
-            disabled={savingCall}
-          >
-            I didn&apos;t call — don&apos;t log anything
-          </button>
+          {callStep === "outcome" ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>How did the call go?</DialogTitle>
+                <DialogDescription>Log it so your follow-ups and response times stay accurate.</DialogDescription>
+              </DialogHeader>
+              <Textarea
+                value={callNote}
+                onChange={(e) => setCallNote(e.target.value)}
+                placeholder="Optional note — e.g. wants 2BHK under 80L, call back after 5 PM"
+                className="min-h-[72px]"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                {CALL_OUTCOMES.map((o) => (
+                  <Button key={o.key} variant={o.key === "answered" ? "default" : "outline"} disabled={savingCall} onClick={() => saveCall(o.key)}>
+                    {o.label}
+                  </Button>
+                ))}
+              </div>
+              <button
+                type="button"
+                className="text-xs text-muted-foreground underline hover:text-foreground"
+                onClick={closeCall}
+                disabled={savingCall}
+              >
+                I didn&apos;t call — don&apos;t log anything
+              </button>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>Call logged — what&apos;s next?</DialogTitle>
+                <DialogDescription>Update the lead in one tap, or skip.</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-2">
+                <Button disabled={savingCall} onClick={() => dispose("interested")}>Interested — move forward</Button>
+                <Button variant="outline" disabled={savingCall} onClick={() => dispose("not_interested")}>Not interested — close lead</Button>
+                <Button
+                  variant="outline"
+                  disabled={savingCall}
+                  onClick={() => {
+                    closeCall();
+                    setReminderOpen(true);
+                  }}
+                >
+                  Call back later — schedule it
+                </Button>
+              </div>
+              <button type="button" className="text-xs text-muted-foreground underline hover:text-foreground" onClick={closeCall} disabled={savingCall}>
+                Skip
+              </button>
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </div>

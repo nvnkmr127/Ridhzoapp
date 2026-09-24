@@ -76,8 +76,11 @@ export function LeadStageAndValueControl({
       {/* Lead Stage Selector */}
       <div>
         <label className="text-xs text-muted-foreground block mb-1 font-semibold uppercase tracking-wider">
-          Lead Stage
+          Pipeline stage
         </label>
+        <p className="mb-1.5 text-[11px] text-muted-foreground">
+          Where the deal is on your pipeline board. Status (at the top) says if the lead is open, won or lost.
+        </p>
         <Select value={currentStage} onValueChange={handleStageChange} disabled={loading}>
           <SelectTrigger className="w-full h-9">
             <div className="flex items-center gap-2">

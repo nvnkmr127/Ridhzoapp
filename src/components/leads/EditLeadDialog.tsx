@@ -105,7 +105,7 @@ export function EditLeadDialog({ lead }: EditLeadDialogProps) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2">
+        <Button variant="outline" size="sm" className="gap-2" data-edit-lead-trigger>
           <Pencil className="h-4 w-4" /> Edit
         </Button>
       </DialogTrigger>

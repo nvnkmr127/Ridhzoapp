@@ -5,6 +5,7 @@ import { Sparkles, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { draftLeadReplyAction } from "@/lib/actions/ai";
 import { useToast } from "@/hooks/use-toast";
+import { useLeadAction, type LeadUiAction } from "@/components/leads/leadEvents";
 
 const TONES = [
   { key: "friendly", label: "Friendly" },
@@ -69,6 +70,17 @@ export function AiDraftControls({
       setDrafting(false);
     }
   }
+
+  // "Write … with AI" from the Next Best Action card lands here once this tab is showing.
+  const draftRef = React.useRef(draft);
+  draftRef.current = draft;
+  const onLeadAction = React.useCallback(
+    (a: LeadUiAction) => {
+      if (a.type === "ai-draft" && a.channel === channel) draftRef.current();
+    },
+    [channel],
+  );
+  useLeadAction(onLeadAction);
 
   const selectCls = "h-9 rounded-md border border-input bg-background px-2 text-xs";
   return (

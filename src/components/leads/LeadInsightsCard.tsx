@@ -15,8 +15,9 @@ export function LeadInsightsCard({ score, customData, leadInfo }: LeadInsightsCa
   let factors = Array.isArray(sf?.factors) ? sf!.factors! : [];
   let displayScore = sf?.score ?? score ?? 0;
 
-  // Fallback: If no saved factors in customData, compute score breakdown on the fly
-  if (factors.length === 0 && leadInfo) {
+  // Prefer a live breakdown from current data — the saved one can be stale (or from an older
+  // scoring model) until the next recalculation.
+  if (leadInfo) {
     const computed = ScoringService.breakdown(leadInfo);
     displayScore = computed.score;
     factors = computed.factors;
@@ -43,8 +44,8 @@ export function LeadInsightsCard({ score, customData, leadInfo }: LeadInsightsCa
               {factors.map((f, i) => (
                 <li key={i} className="flex items-center justify-between gap-3 text-sm">
                   <span className="text-muted-foreground">{f.label}</span>
-                  <span className="font-medium tabular-nums text-emerald-600 dark:text-emerald-400">
-                    +{f.points}
+                  <span className={`font-medium tabular-nums ${f.points < 0 ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400"}`}>
+                    {f.points > 0 ? "+" : ""}{f.points}
                   </span>
                 </li>
               ))}

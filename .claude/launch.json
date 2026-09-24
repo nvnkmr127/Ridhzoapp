@@ -1,6 +1,23 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "privyr-dev", "runtimeExecutable": "npm", "runtimeArgs": ["run", "dev"], "port": 3000 }
+    {
+      "name": "privyr-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "ridhzo-local",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /private/tmp/claude-501/-Users-naveenadicharla-Documents-ridhzo/7d18ae7e-8d11-4f8a-9722-d547581603b1/scratchpad/app && env DATABASE_URL=postgresql://postgres@localhost:5544/ridhzo RESEND_API_KEY= REDIS_URL= NEXTAUTH_URL=http://localhost:3001 npx next dev -p 3001"
+      ],
+      "port": 3001
+    }
   ]
 }

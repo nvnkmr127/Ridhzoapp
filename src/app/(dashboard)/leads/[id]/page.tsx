@@ -1,5 +1,10 @@
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Phone, Mail, Building, Sparkles, Flame, Radio, SlidersHorizontal, Braces } from "lucide-react";
+import { Phone, Mail, Building, Sparkles, Flame, Radio, SlidersHorizontal, Braces, ClipboardList } from "lucide-react";
+import { CustomStatusSchemaService } from "@/domains/leads/customStatusSchemaService";
+import { ScoringService } from "@/domains/leads/scoringService";
+import { formAnswers } from "@/lib/leads/formAnswers";
+import { NbaActions } from "@/components/leads/NbaActions";
+import { LeadWorkspaceTabs } from "@/components/leads/LeadWorkspaceTabs";
+import { LogReplyBox } from "@/components/leads/LogReplyBox";
 import { LeadService } from "@/domains/leads/service";
 import { LeadSourceService } from "@/domains/leads/sourceService";
 import { NextBestActionService } from "@/domains/leads/nextBestActionService";
@@ -205,6 +210,15 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   }
   const whatsappMode: "personal" | "bsp" = org?.whatsappMode === "bsp" ? "bsp" : "personal";
 
+  // Status by CATEGORY so custom statuses get the same coaching/banners as the built-in ones.
+  const statusCategory = await CustomStatusSchemaService.getStatusCategory(organizationId, lead.status).catch(() => undefined);
+  const callStats = ScoringService.callStats(activities);
+  const callCount = activities.filter((a) => a.type === "call").length;
+  const inboundCount = waMessages.filter((msg) => msg.direction === "inbound").length;
+  const outboundCount = waMessages.length - inboundCount;
+  const answers = formAnswers(cd, Object.fromEntries(allCustomDefs.map((d) => [d.key, d.label])));
+  const savedRecap = (cd._aiRecap as { text?: string; at?: string } | undefined) ?? null;
+
   // A content open in the last 3 days is a hot buying signal — surface it to the coach.
   const RECENT_OPEN_MS = 3 * 24 * 60 * 60 * 1000;
   const recentOpen = shares
@@ -219,6 +233,8 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     lastContactedAt: lead.lastContactedAt,
     nextFollowUpAt: lead.nextFollowUpAt,
     recentContentOpen: recentOpen ? { title: recentOpen.title, count: recentOpen.viewCount } : null,
+    statusCategory,
+    unansweredStreak: callStats.unansweredStreak,
   });
   const nbaAccent =
     nba.priority === "high"
@@ -236,9 +252,6 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       .slice(0, 2)
       .join("")
       .toUpperCase() || "?";
-
-  const tabTrigger =
-    "shrink-0 rounded-none border-b-2 border-transparent -mb-px px-3 sm:px-4 py-3 text-sm font-medium text-muted-foreground data-[state=active]:border-foreground data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none";
 
   // Layout: two columns on desktop (sticky details left, conversation right). On phones the column
   // wrappers become `display: contents`, so every card is a direct item of one stack and `order-*`
@@ -261,7 +274,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
         </div>
       )}
 
-      {(lead.status === "lost" || lead.status === "unqualified") && lead.lostReason && (
+      {(statusCategory === "lost" || statusCategory === "unqualified") && lead.lostReason && (
         <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 px-4 py-2.5 text-sm">
           <span className="font-medium capitalize">{lead.status}</span>
           <span className="text-muted-foreground"> — reason: {lead.lostReason}</span>
@@ -301,6 +314,23 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               )}
               {!lead.phone && !lead.email && <span className="text-muted-foreground">No phone or email yet — use Edit to add one.</span>}
             </div>
+            {(callCount > 0 || waMessages.length > 0) && (
+              <p className="text-xs text-muted-foreground">
+                {[
+                  callCount > 0 && `${callCount} call${callCount === 1 ? "" : "s"}${callStats.answeredCalls ? ` · ${callStats.answeredCalls} answered` : ""}`,
+                  outboundCount > 0 && `${outboundCount} message${outboundCount === 1 ? "" : "s"} sent`,
+                  inboundCount > 0 && `${inboundCount} repl${inboundCount === 1 ? "y" : "ies"}`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+                {lead.lastContactedAt && (
+                  <>
+                    {" · last contact "}
+                    <LocalTime iso={lead.lastContactedAt} mode="shortDate" />
+                  </>
+                )}
+              </p>
+            )}
             <p className="text-xs text-muted-foreground">
               {lead.displayId != null && (
                 <>
@@ -326,12 +356,32 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               <div className="space-y-2">
                 <p className="text-base font-semibold leading-snug">{nba.label}</p>
                 <p className="text-sm text-muted-foreground">{nba.reason}</p>
-                <LeadAiRecap leadId={lead.id} />
+                <NbaActions action={nba.action} hasPhone={!!lead.phone} hasEmail={!!lead.email} />
+                <LeadAiRecap
+                  leadId={lead.id}
+                  initial={savedRecap?.text ? { text: savedRecap.text, at: savedRecap.at } : null}
+                  autoRun={answers.length > 0 && activities.length === 0}
+                />
               </div>
             </SectionCard>
           </div>
 
-          <div className={m("order-5")}>
+          {answers.length > 0 && (
+            <div className={m("order-2")}>
+              <SectionCard icon={ClipboardList} title="Lead's answers" description="What they told you in the form">
+                <dl className="space-y-2.5 text-sm">
+                  {answers.map((a) => (
+                    <div key={a.key}>
+                      <dt className="text-xs text-muted-foreground">{a.label}</dt>
+                      <dd className="whitespace-pre-wrap break-words font-medium">{a.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </SectionCard>
+            </div>
+          )}
+
+          <div className={m("order-6")}>
             <LeadInsightsCard
               score={lead.score}
               customData={lead.customData}
@@ -342,13 +392,16 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 company: lead.company,
                 lastContactedAt: lead.lastContactedAt,
                 nextFollowUpAt: lead.nextFollowUpAt,
-                activitiesCount: activities.length,
-                hasInboundMsg: waMessages.some((msg) => msg.direction === "inbound"),
+                statusCategory,
+                hasInboundMsg: inboundCount > 0,
+                contentViews: shares.reduce((n, sh) => n + sh.viewCount, 0),
+                hasFormAnswers: answers.length > 0,
+                ...callStats,
               }}
             />
           </div>
 
-          <div className={m("order-3")}>
+          <div className={m("order-4")}>
             <SectionCard icon={SlidersHorizontal} title="Lead Management">
               <div className="space-y-4">
                 <div>
@@ -373,15 +426,15 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             </SectionCard>
           </div>
 
-          <div className={m("order-6")}>
+          <div className={m("order-7")}>
             <ShareContentCard leadId={lead.id} leadPhone={lead.phone} initialShares={shares} />
           </div>
 
-          <div className={m("order-7")}>
+          <div className={m("order-8")}>
             <ReengagementPlanCard leadId={lead.id} organizationId={organizationId} />
           </div>
 
-          <div className={m("order-8")}>
+          <div className={m("order-9")}>
             <SectionCard icon={Radio} title="Lead Source">
               <div className="space-y-3 text-sm">
                 <div>
@@ -405,7 +458,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             </SectionCard>
           </div>
 
-          <div className={m("order-9")}>
+          <div className={m("order-10")}>
             <SectionCard icon={Braces} title="Custom Attributes">
               <LeadCustomFields leadId={lead.id} initialData={(lead.customData as Record<string, unknown>) ?? {}} initialDefs={visibleCustomDefs} />
             </SectionCard>
@@ -414,71 +467,43 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
 
         {/* Right column (desktop): conversation & history */}
         <div className="contents lg:col-span-2 lg:block lg:space-y-6">
-          <div className={m("order-2")}>
-            <div className="overflow-hidden rounded-2xl border border-border bg-card">
-              <Tabs defaultValue="activity" className="w-full">
-                <div className="overflow-x-auto border-b border-border px-2 sm:px-4">
-                  <TabsList className="h-auto justify-start gap-0.5 bg-transparent p-0 sm:gap-1">
-                    <TabsTrigger value="activity" className={tabTrigger}>
-                      Activity ({activities.length})
-                    </TabsTrigger>
-                    <TabsTrigger value="whatsapp" className={tabTrigger}>
-                      WhatsApp ({waMessages.length})
-                    </TabsTrigger>
-                    <TabsTrigger value="notes" className={tabTrigger}>
-                      Notes ({notesCount})
-                    </TabsTrigger>
-                    <TabsTrigger value="reminders" className={tabTrigger}>
-                      Follow-ups ({reminders.length})
-                    </TabsTrigger>
-                    <TabsTrigger value="attachments" className={tabTrigger}>
-                      Files ({attachments.length})
-                    </TabsTrigger>
-                    <TabsTrigger value="emails" className={tabTrigger}>
-                      Email
-                    </TabsTrigger>
-                  </TabsList>
-                </div>
-
-                <div className="p-4 sm:p-6">
-                  <TabsContent value="activity" className="mt-0">
-                    <ActivityTimeline activities={activities} />
-                  </TabsContent>
-
-                  <TabsContent value="whatsapp" className="mt-0 space-y-4">
-                    <WhatsAppThread messages={waMessages} />
-                    <WhatsAppSendBox
-                      leadId={lead.id}
-                      hasPhone={!!lead.phone}
-                      mode={whatsappMode}
-                      phone={lead.phone}
-                      leadName={lead.name}
-                      company={lead.company}
-                    />
-                  </TabsContent>
-
-                  <TabsContent value="notes" className="mt-0">
-                    <LeadNotesTab leadId={lead.id} initialNotes={activities.filter((a) => a.type === "note")} />
-                  </TabsContent>
-
-                  <TabsContent value="reminders" className="mt-0">
-                    <LeadRemindersTab leadId={lead.id} initialReminders={reminders} />
-                  </TabsContent>
-
-                  <TabsContent value="attachments" className="mt-0">
-                    <LeadAttachmentsTab leadId={lead.id} initialAttachments={attachments} />
-                  </TabsContent>
-
-                  <TabsContent value="emails" className="mt-0 space-y-4">
-                    <EmailSendBox leadId={lead.id} email={lead.email} />
-                  </TabsContent>
-                </div>
-              </Tabs>
-            </div>
+          <div className={m("order-3")}>
+            <LeadWorkspaceTabs
+              defaultValue="activity"
+              tabs={[
+                { value: "activity", label: `Activity (${activities.length})`, content: <ActivityTimeline activities={activities} /> },
+                {
+                  value: "whatsapp",
+                  label: `WhatsApp (${waMessages.length})`,
+                  content: (
+                    <>
+                      <WhatsAppThread messages={waMessages} />
+                      {whatsappMode === "personal" && lead.phone && <LogReplyBox leadId={lead.id} />}
+                      <WhatsAppSendBox
+                        leadId={lead.id}
+                        hasPhone={!!lead.phone}
+                        mode={whatsappMode}
+                        phone={lead.phone}
+                        leadName={lead.name}
+                        company={lead.company}
+                      />
+                    </>
+                  ),
+                },
+                { value: "notes", label: `Notes (${notesCount})`, content: <LeadNotesTab leadId={lead.id} initialNotes={activities.filter((a) => a.type === "note")} /> },
+                {
+                  value: "reminders",
+                  label: `Follow-ups (${reminders.length})`,
+                  content: <LeadRemindersTab leadId={lead.id} initialReminders={reminders} leadName={lead.name} leadPhone={lead.phone} />,
+                },
+                { value: "attachments", label: `Files (${attachments.length})`, content: <LeadAttachmentsTab leadId={lead.id} initialAttachments={attachments} /> },
+                { value: "emails", label: "Email", content: <EmailSendBox leadId={lead.id} email={lead.email} /> },
+              ]}
+            />
           </div>
 
-          <div className={m("order-4")}>
-            <LeadSequencesCard leadId={lead.id} availableSequences={availableSequences} initialEnrolled={enrolledSequences} />
+          <div className={m("order-5")}>
+            <LeadSequencesCard leadId={lead.id} availableSequences={availableSequences} initialEnrolled={enrolledSequences} whatsappMode={whatsappMode} />
           </div>
         </div>
       </div>
