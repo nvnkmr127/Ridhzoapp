@@ -46,7 +46,7 @@ function draftSystem(channel: "whatsapp" | "email", tone: keyof typeof TONES, la
 
 export async function draftLeadReplyAction(
   data: unknown,
-): Promise<{ draft: string; subject?: string; ai: boolean }> {
+): Promise<{ draft: string; subject?: string; ai: boolean; outOfCredits?: boolean }> {
   const { leadId, channel, tone, language } = draftSchema.parse(data);
   const access = await getActionableLead(leadId);
   if (!access) throw new Error("Lead not found");
@@ -59,7 +59,8 @@ export async function draftLeadReplyAction(
       : { draft: `Hi ${firstName}, just following up — do you have any questions I can help with? Happy to jump on a quick call whenever suits you.` };
 
   // Graceful fallback when AI isn't configured — still useful, just not generated.
-  if (!aiEnabled() || !(await PlanService.aiAllowed(organizationId))) return { ...fallback, ai: false };
+  if (!aiEnabled()) return { ...fallback, ai: false };
+  if (!(await PlanService.useAiCredit(organizationId))) return { ...fallback, ai: false, outOfCredits: true };
 
   const [{ activities, extras }, org] = await Promise.all([
     loadLeadAiContext(lead, organizationId),
@@ -67,7 +68,10 @@ export async function draftLeadReplyAction(
   ]);
   const prompt = `${buildLeadContext(lead, activities, extras)}\n\nWrite the next ${channel === "email" ? "email" : "WhatsApp message"} to send this lead.`;
   const raw = await generateText(`${businessPreamble(org)}\n\n${draftSystem(channel, tone, language)}`, prompt);
-  if (!raw) return { ...fallback, ai: false };
+  if (!raw) {
+    await PlanService.refundAiCredit(organizationId);
+    return { ...fallback, ai: false };
+  }
 
   if (channel === "email") {
     const m = raw.match(/^\s*Subject:\s*(.+)\n+([\s\S]*)$/i);
@@ -86,7 +90,7 @@ type RecapCache = { text: string; at: string; sig: string };
 // changes (new activity/message/status/stage/answers), so opening the page again costs no AI call.
 export async function summarizeLeadAction(
   data: unknown,
-): Promise<{ summary: string; ai: boolean; generatedAt?: string; cached?: boolean }> {
+): Promise<{ summary: string; ai: boolean; generatedAt?: string; cached?: boolean; outOfCredits?: boolean }> {
   const { leadId, refresh } = z.object({ leadId: z.guid(), refresh: z.boolean().optional() }).parse(data);
   const access = await getActionableLead(leadId);
   if (!access) throw new Error("Lead not found");
@@ -100,9 +104,11 @@ export async function summarizeLeadAction(
 
   // Brand-new leads with form answers are exactly when a recap helps most — only skip the AI when
   // there's genuinely nothing to read.
-  if (!aiEnabled() || !hasAiWorthyContext(activities, extras) || !(await PlanService.aiAllowed(organizationId))) {
+  const outOfCredits = aiEnabled() && hasAiWorthyContext(activities, extras) && !(await PlanService.useAiCredit(organizationId));
+  if (!aiEnabled() || !hasAiWorthyContext(activities, extras) || outOfCredits) {
     const last = activities[0];
     return {
+      outOfCredits,
       summary: last
         ? `Last touch: ${last.type}${last.content ? ` — ${last.content}` : ""}. Status is ${extras.statusLabel ?? lead.status}.`
         : `New lead with no activity yet — reach out to make first contact.`,
@@ -112,7 +118,10 @@ export async function summarizeLeadAction(
 
   const org = await OrgService.getOrganization(organizationId);
   const summary = await generateText(`${businessPreamble(org)}\n\n${RECAP_SYSTEM}`, buildLeadContext(lead, activities, extras), 200);
-  if (!summary) return { summary: `Status is ${extras.statusLabel ?? lead.status}. Review recent activity and follow up.`, ai: false };
+  if (!summary) {
+    await PlanService.refundAiCredit(organizationId);
+    return { summary: `Status is ${extras.statusLabel ?? lead.status}. Review recent activity and follow up.`, ai: false };
+  }
 
   const at = new Date().toISOString();
   // jsonb_set so this can't clobber a concurrent customData write (e.g. score recalculation).
@@ -179,20 +188,23 @@ function buildContextualSequence(goal: string): GeneratedSequenceStep[] {
 }
 
 // AI sequence generator — turns a plain-English goal into ready-to-edit sequence steps.
-export async function generateSequenceAction(goal: string): Promise<{ steps: GeneratedSequenceStep[]; ai: boolean }> {
+export async function generateSequenceAction(goal: string): Promise<{ steps: GeneratedSequenceStep[]; ai: boolean; outOfCredits?: boolean }> {
   const { organizationId } = await requireOrg();
-  if (!(await PlanService.aiAllowed(organizationId))) throw new Error("AI needs a Starter or Unlimited plan.");
   const clean = String(goal || "").slice(0, 500).trim();
   const contextual = buildContextualSequence(clean);
 
   if (!clean || !aiEnabled()) {
     return { steps: contextual, ai: false };
   }
+  if (!(await PlanService.useAiCredit(organizationId))) return { steps: contextual, ai: false, outOfCredits: true };
 
   try {
     const org = await OrgService.getOrganization(organizationId);
     const raw = await generateText(`${businessPreamble(org)}\n\n${SEQ_SYSTEM}`, `Goal: ${clean}\nAudience: sales leads.`, 800);
-    if (!raw) return { steps: contextual, ai: false };
+    if (!raw) {
+      await PlanService.refundAiCredit(organizationId);
+      return { steps: contextual, ai: false };
+    }
 
     const jsonStart = raw.indexOf("[");
     const jsonEnd = raw.lastIndexOf("]");

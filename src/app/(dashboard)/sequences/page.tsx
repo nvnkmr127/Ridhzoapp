@@ -57,7 +57,7 @@ export default async function SequencesPage() {
                       <p className="flex items-center gap-3 text-xs text-muted-foreground no-underline">
                         <span className="flex items-center gap-1"><Layers className="h-3.5 w-3.5" /> {s.stepCount} steps</span>
                         <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> {s.activeEnrollments} active</span>
-                        {runnable && !runnable.has(s.id) && <span className="text-amber-600">Paused — Free plan allows 2</span>}
+                        {runnable && !runnable.has(s.id) && <span className="text-amber-600">Paused — over your plan limit</span>}
                       </p>
                     </Link>
                     {canManage && <SequenceRowActions id={s.id} name={s.name} isActive={s.isActive} />}

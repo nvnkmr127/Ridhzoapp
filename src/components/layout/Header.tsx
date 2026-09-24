@@ -26,6 +26,7 @@ type UsageStats = {
   plan: string;
   seats: { current: number; max: number };
   leads: { current: number; max: number };
+  aiCredits: { current: number; max: number };
 };
 
 export function Header({
@@ -132,6 +133,15 @@ export function Header({
                   </div>
                   <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
                     <div className="h-full bg-primary" style={{ width: `${Math.min(100, (usageStats.leads.current / (usageStats.leads.max === Infinity ? 1 : usageStats.leads.max)) * 100)}%` }} />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium">AI credits (month)</span>
+                    <span className="text-muted-foreground">{usageStats.aiCredits.current} / {usageStats.aiCredits.max}</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
+                    <div className="h-full bg-primary" style={{ width: `${Math.min(100, (usageStats.aiCredits.current / usageStats.aiCredits.max) * 100)}%` }} />
                   </div>
                 </div>
                 {usageStats.plan !== "unlimited" && usageStats.plan !== "business" && (

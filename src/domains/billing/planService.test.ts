@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { PlanService } from "./planService";
 import { db } from "@/db";
 
-vi.mock("@/db", () => ({ db: { select: vi.fn() } }));
+vi.mock("@/db", () => ({ db: { select: vi.fn(), update: vi.fn() } }));
 
 // db.select is called: (1) plan lookup, (2) user count, (3) invitation count.
 function queueResults(results: any[][]) {
@@ -54,21 +54,28 @@ describe("PlanService free-plan gates", () => {
     await expect(PlanService.assertCanAdd("org", "sources")).rejects.toThrow(/1 lead sources/);
   });
 
-  it("allows the 2nd sequence on free", async () => {
-    queueResults([[{ plan: "free" }], [{ n: 1 }]]);
+  it("allows the first sequence on free", async () => {
+    queueResults([[{ plan: "free" }], [{ n: 0 }]]);
     await expect(PlanService.assertCanAdd("org", "sequences")).resolves.toBeUndefined();
   });
 
-  it("never counts on paid plans", async () => {
-    queueResults([[{ plan: "starter", planStatus: "active" }]]);
+  it("never counts on the Unlimited plan", async () => {
+    queueResults([[{ plan: "unlimited", planStatus: "active" }]]);
     await expect(PlanService.assertCanAdd("org", "automations")).resolves.toBeUndefined();
   });
 
-  it("AI is off on free and on for paid", async () => {
+  it("background AI tagging is off on free and on for paid", async () => {
     queueResults([[{ plan: "free" }]]);
-    expect(await PlanService.aiAllowed("org")).toBe(false);
+    expect(await PlanService.aiAutoTagAllowed("org")).toBe(false);
     queueResults([[{ plan: "starter", planStatus: "active" }]]);
-    expect(await PlanService.aiAllowed("org")).toBe(true);
+    expect(await PlanService.aiAutoTagAllowed("org")).toBe(true);
+  });
+
+  it("starts new signups on a 14-day Starter trial", async () => {
+    const { signupTrial } = await import("./planService");
+    const t = signupTrial();
+    expect(t.plan).toBe("starter");
+    expect(Math.round((t.trialEndsAt.getTime() - Date.now()) / 86_400_000)).toBe(14);
   });
 
   it("counts every new Facebook Page being connected at once", async () => {
@@ -98,5 +105,32 @@ describe("PlanService.runnableIds", () => {
     }));
     const ids = await PlanService.runnableIds("org", "automations");
     expect([...ids!]).toEqual(["a", "b"]);
+  });
+});
+
+describe("PlanService AI credits", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  function mockUpdate(returned: any[]) {
+    (db.update as any).mockImplementation(() => ({
+      set: () => ({ where: () => ({ returning: () => Promise.resolve(returned) }) }),
+    }));
+  }
+
+  it("spends a credit when the guarded update matches", async () => {
+    queueResults([[{ plan: "free" }]]);
+    mockUpdate([{ id: "org" }]);
+    expect(await PlanService.useAiCredit("org")).toBe(true);
+  });
+
+  it("reports out of credits when the cap guard blocks the update", async () => {
+    queueResults([[{ plan: "free" }]]);
+    mockUpdate([]);
+    expect(await PlanService.useAiCredit("org")).toBe(false);
+  });
+
+  it("counts last month's usage as zero", async () => {
+    queueResults([[{ plan: "free" }], [{ used: 15, period: "1999-01" }]]);
+    expect(await PlanService.aiCredits("org")).toEqual({ used: 0, max: 15 });
   });
 });

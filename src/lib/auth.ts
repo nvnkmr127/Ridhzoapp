@@ -114,6 +114,7 @@ export const authOptions: NextAuthOptions = {
 
         if (!existingUser) {
           const { OrgService, slugify } = await import("@/domains/organizations/service");
+          const { signupTrial } = await import("@/domains/billing/planService");
           const adminRole = await OrgService.ensureSystemRoles();
           const cleanDigits = phone.replace(/[^0-9]/g, "");
           const baseName = credentials?.name?.trim() || `User ${cleanDigits.slice(-4)}`;
@@ -124,7 +125,7 @@ export const authOptions: NextAuthOptions = {
 
           const [newOrg] = await db
             .insert(organizations)
-            .values({ name: workspaceName, slug })
+            .values({ name: workspaceName, slug, ...signupTrial() })
             .returning();
 
           const nameParts = baseName.split(/\s+/);
@@ -270,6 +271,7 @@ export const authOptions: NextAuthOptions = {
 
         if (!existingUser) {
           const { OrgService, slugify } = await import("@/domains/organizations/service");
+          const { signupTrial } = await import("@/domains/billing/planService");
           const adminRole = await OrgService.ensureSystemRoles();
           const baseName = user.name || email.split("@")[0] || "My";
           const orgName = `${baseName}'s Workspace`;
@@ -278,7 +280,7 @@ export const authOptions: NextAuthOptions = {
 
           const [newOrg] = await db
             .insert(organizations)
-            .values({ name: orgName, slug })
+            .values({ name: orgName, slug, ...signupTrial() })
             .returning();
 
           const nameParts = (user.name || "").trim().split(/\s+/);

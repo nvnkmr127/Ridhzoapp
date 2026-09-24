@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { PLAN_LIMITS } from "./planService";
 import { organizations, users, roles } from "@/db/schema";
 import { eq, desc, and, isNotNull, lte, ne } from "drizzle-orm";
 import { PlatformConfigService } from "@/domains/platform/configService";
@@ -540,14 +541,14 @@ export class BillingLifecycleService {
         if (owner?.email) {
           await sendEmail({
             to: owner.email,
-            subject: `Your ${org.plan} trial for ${org.name} has ended`,
+            subject: `Your Ridhzo trial for ${org.name} has ended — your leads are safe`,
             html: `
               <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
-                <h2 style="color: #4b5563; margin-top: 0;">Trial Period Concluded</h2>
+                <h2 style="color: #4b5563; margin-top: 0;">Your free trial has ended</h2>
                 <p>Hello ${owner.firstName || "there"},</p>
-                <p>Your trial for the <strong>${org.plan}</strong> plan on <strong>${org.name}</strong> has concluded.</p>
-                <p>Your workspace has automatically reverted to the <strong>Free</strong> tier. All your existing customer data, leads, and automations remain completely safe.</p>
-                <p>To upgrade back to Pro or Business and restore advanced limits, visit your billing settings at any time.</p>
+                <p>Your <strong>${org.plan}</strong> trial on <strong>${org.name}</strong> is over, so the workspace is now on the <strong>Free</strong> plan. All your leads and follow-ups are safe.</p>
+                <p>On Free you get ${PLAN_LIMITS.free.aiCredits} AI credits a month, ${PLAN_LIMITS.free.automations} automations, ${PLAN_LIMITS.free.sequences} sequence and ${PLAN_LIMITS.free.sources} lead source. Anything above that is paused, not deleted.</p>
+                <p>Keep everything running for ${PLAN_LIMITS.starter.price.replace(" / mo", "")} a month: <a href="${appUrl("/settings/billing")}">upgrade to Starter</a>.</p>
               </div>
             `,
           });

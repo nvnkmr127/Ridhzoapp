@@ -86,7 +86,7 @@ function newId(): string {
 
 export function AiAssistant({ currentLeadId, storageKey }: { currentLeadId?: string; storageKey?: string } = {}) {
   const { toast } = useToast();
-  const { aiAllowed, openUpgrade } = usePlan();
+  const { openUpgrade } = usePlan();
   const suggestions = currentLeadId ? LEAD_SUGGESTIONS : SUGGESTIONS;
   const [turns, setTurns] = React.useState<Turn[]>([]);
   const [input, setInput] = React.useState("");
@@ -153,6 +153,13 @@ export function AiAssistant({ currentLeadId, storageKey }: { currentLeadId?: str
     setTurns(withUser);
     try {
       const res = await runAgentAction(msg, history, leadId);
+      if (res.outOfCredits) {
+        // Put the question back so it isn't lost, and offer the upgrade.
+        setTurns(turns);
+        setInput(msg);
+        openUpgrade();
+        return;
+      }
       if (!res.enabled) setAiOff(true);
       const withReply: Turn[] = [...withUser, { role: "assistant", content: res.text || "(no reply)", proposals: res.proposals }];
       setTurns(withReply);
@@ -213,16 +220,6 @@ export function AiAssistant({ currentLeadId, storageKey }: { currentLeadId?: str
       return next;
     });
     if (activeId === id) newChat();
-  }
-
-  if (!aiAllowed) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-        <Sparkles className="h-8 w-8 text-primary" />
-        <p className="max-w-xs text-sm text-muted-foreground">The AI assistant is available on the Starter and Unlimited plans.</p>
-        <Button onClick={() => openUpgrade()}>Upgrade to use AI</Button>
-      </div>
-    );
   }
 
   return (

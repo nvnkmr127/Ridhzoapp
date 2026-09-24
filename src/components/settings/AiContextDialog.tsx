@@ -43,7 +43,7 @@ export function AiContextDialog({
   children: React.ReactNode;
 }) {
   const { toast } = useToast();
-  const { aiAllowed, openUpgrade } = usePlan();
+  const { openUpgrade } = usePlan();
   const [open, setOpen] = React.useState(false);
   const [text, setText] = React.useState(initial);
   const [busy, setBusy] = React.useState<null | "upload" | "improve" | "save">(null);
@@ -80,12 +80,12 @@ export function AiContextDialog({
   }
 
   async function improve() {
-    if (!aiAllowed) return openUpgrade();
     if (!text.trim()) return;
     setBusy("improve");
     try {
       const res = await improveAiContextAction({ draft: text });
       if (!res.ok) {
+        if (res.code === "LIMIT") return openUpgrade(res.message);
         toast({ variant: "destructive", title: "Improve failed", description: res.message });
         return;
       }

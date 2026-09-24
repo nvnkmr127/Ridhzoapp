@@ -421,6 +421,13 @@
       "when": 1790266098311,
       "tag": "0059_follow_up_overdue_marker",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1790269503706,
+      "tag": "0060_ai_credits",
+      "breakpoints": true
     }
   ]
 }

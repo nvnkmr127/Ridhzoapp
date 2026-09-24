@@ -20,8 +20,8 @@ export class InboundIntentService {
   static async classifyAndTag(leadId: string, body: string, organizationId?: string): Promise<void> {
     if (!aiEnabled() || !body.trim() || !organizationId) return;
     try {
-      // Paid-only; without an org we can't check the plan, so skip.
-      if (!(await PlanService.aiAllowed(organizationId))) return;
+      // Paid plans only — on Free it would silently spend the workspace's AI credits.
+      if (!(await PlanService.aiAutoTagAllowed(organizationId))) return;
       // Ground the classifier in the tenant's business so "interested" is judged against what they
       // actually sell.
       const org = await OrgService.getOrganization(organizationId);

@@ -208,7 +208,7 @@ export class SequenceService {
     const { PlanService } = await import("@/domains/billing/planService");
     const runnable = await PlanService.runnableIds(organizationId, "sequences");
     if (runnable && !runnable.has(sequenceId)) {
-      throw new Error("This sequence is paused on the Free plan (2 sequences max). Upgrade to Starter or Unlimited to use it.");
+      throw new Error("This sequence is paused because it's over your plan limit. Upgrade your plan to use it.");
     }
     const steps = await db.select().from(sequenceSteps).where(eq(sequenceSteps.sequenceId, sequenceId)).orderBy(asc(sequenceSteps.stepIndex));
     if (steps.length === 0) throw new Error("Sequence has no steps");

@@ -40,7 +40,7 @@ export class BillingService {
   static async setPlanManually(organizationId: string, plan: string) {
     if (plan !== "free" && !PAID_PLANS.includes(plan)) throw new Error("Unknown plan");
     await db.update(organizations)
-      .set({ plan, planStatus: "active", razorpaySubscriptionId: null, currentPeriodEnd: null })
+      .set({ plan, planStatus: "active", razorpaySubscriptionId: null, currentPeriodEnd: null, trialEndsAt: null })
       .where(eq(organizations.id, organizationId));
   }
 
@@ -48,7 +48,7 @@ export class BillingService {
   static async activate(organizationId: string, plan: string, subscriptionId: string) {
     if (!PAID_PLANS.includes(plan)) throw new Error("Unknown plan");
     await db.update(organizations)
-      .set({ plan, planStatus: "active", razorpaySubscriptionId: subscriptionId })
+      .set({ plan, planStatus: "active", razorpaySubscriptionId: subscriptionId, trialEndsAt: null }) // paid → trial over, never auto-downgrade
       .where(eq(organizations.id, organizationId));
     const { BillingLifecycleService } = await import("./lifecycleService");
     await BillingLifecycleService.handlePaymentSuccess(organizationId);
@@ -93,7 +93,7 @@ export class BillingService {
       case "subscription.resumed": {
         newStatus = "active";
         await db.update(organizations)
-          .set({ planStatus: "active", ...(periodEnd ? { currentPeriodEnd: periodEnd } : {}) })
+          .set({ planStatus: "active", trialEndsAt: null, ...(periodEnd ? { currentPeriodEnd: periodEnd } : {}) })
           .where(eq(organizations.id, org.id));
         const { BillingLifecycleService } = await import("./lifecycleService");
         await BillingLifecycleService.handlePaymentSuccess(org.id);

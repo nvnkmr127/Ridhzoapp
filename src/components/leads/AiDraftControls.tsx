@@ -32,7 +32,7 @@ export function AiDraftControls({
   disabled?: boolean;
 }) {
   const { toast } = useToast();
-  const { aiAllowed, openUpgrade } = usePlan();
+  const { openUpgrade } = usePlan();
   const [tone, setTone] = React.useState<Tone>("friendly");
   const [language, setLanguage] = React.useState("auto");
   const [drafting, setDrafting] = React.useState(false);
@@ -57,10 +57,10 @@ export function AiDraftControls({
   };
 
   async function draft() {
-    if (!aiAllowed) return openUpgrade();
     setDrafting(true);
     try {
       const res = await draftLeadReplyAction({ leadId, channel, tone, language });
+      if (res.outOfCredits) return openUpgrade();
       onDraft(res);
       setDrafted(true);
       toast({

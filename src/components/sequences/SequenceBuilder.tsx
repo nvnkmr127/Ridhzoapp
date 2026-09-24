@@ -20,7 +20,7 @@ const BLANK: Step = { dayOffset: 0, channel: "whatsapp", body: "", attachmentUrl
 export function SequenceBuilder({ initial }: { initial?: { id: string; name: string; description?: string; steps: Step[] } }) {
   const router = useRouter();
   const { toast } = useToast();
-  const { aiAllowed, openUpgrade } = usePlan();
+  const { openUpgrade } = usePlan();
   const [name, setName] = React.useState(initial?.name ?? "");
   const [description, setDescription] = React.useState(initial?.description ?? "");
   const [goal, setGoal] = React.useState("");
@@ -33,7 +33,6 @@ export function SequenceBuilder({ initial }: { initial?: { id: string; name: str
   }
 
   async function generate() {
-    if (!aiAllowed) return openUpgrade();
     const cleanGoal = goal.trim();
     if (!cleanGoal) {
       toast({
@@ -46,7 +45,8 @@ export function SequenceBuilder({ initial }: { initial?: { id: string; name: str
 
     setGenerating(true);
     try {
-      const { steps: gen, ai } = await generateSequenceAction(cleanGoal);
+      const { steps: gen, ai, outOfCredits } = await generateSequenceAction(cleanGoal);
+      if (outOfCredits) return openUpgrade();
       if (gen && gen.length > 0) {
         setSteps(gen);
         if (!name.trim()) setName(cleanGoal.slice(0, 60));

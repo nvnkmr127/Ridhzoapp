@@ -34,6 +34,7 @@ export interface AgentResult {
   proposals: AgentProposal[];
   steps: number;
   enabled: boolean;
+  outOfCredits?: boolean;
 }
 
 interface AgentContext {

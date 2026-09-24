@@ -56,7 +56,7 @@ export function AutomationCard({ id, name, isActive, overPlan = false }: { id: s
       <div>
         <h3 className="font-medium">{name}</h3>
         <Badge variant={active && !overPlan ? "default" : "secondary"} className="mt-1 font-normal">
-          {overPlan ? "Paused — Free plan allows 2" : active ? "Active" : "Inactive"}
+          {overPlan ? "Paused — over your plan limit" : active ? "Active" : "Inactive"}
         </Badge>
       </div>
       <div className="flex items-center gap-1">

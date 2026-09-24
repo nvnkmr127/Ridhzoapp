@@ -13,8 +13,10 @@ vi.mock("@/domains/organizations/service", () => ({
   },
 }));
 
-const aiAllowed = vi.fn().mockResolvedValue(true);
-vi.mock("@/domains/billing/planService", () => ({ PlanService: { aiAllowed: () => aiAllowed() } }));
+const useAiCredit = vi.fn().mockResolvedValue(true);
+vi.mock("@/domains/billing/planService", () => ({
+  PlanService: { useAiCredit: () => useAiCredit(), refundAiCredit: vi.fn() },
+}));
 
 describe("generateSequenceAction", () => {
   beforeEach(() => {
@@ -40,8 +42,14 @@ describe("generateSequenceAction", () => {
     expect(res.steps.some((s) => s.body.toLowerCase().includes("hiring logistics"))).toBe(true);
   });
 
-  it("refuses on the free plan", async () => {
-    aiAllowed.mockResolvedValueOnce(false);
-    await expect(generateSequenceAction("anything")).rejects.toThrow(/Starter or Unlimited/);
+  it("flags out-of-credits instead of calling the model", async () => {
+    const prev = process.env.AI_GATEWAY_API_KEY;
+    process.env.AI_GATEWAY_API_KEY = "test-key-long-enough";
+    useAiCredit.mockResolvedValueOnce(false);
+    const res = await generateSequenceAction("follow up on pricing");
+    process.env.AI_GATEWAY_API_KEY = prev;
+    expect(res.outOfCredits).toBe(true);
+    expect(res.ai).toBe(false);
+    expect(res.steps.length).toBeGreaterThan(0);
   });
 });

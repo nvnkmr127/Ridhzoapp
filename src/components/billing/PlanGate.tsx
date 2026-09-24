@@ -5,19 +5,31 @@ import Link from "next/link";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import type { PlanLimits } from "@/domains/billing/planService";
 
-type PlanCtx = { aiAllowed: boolean; openUpgrade: (reason?: string) => void };
+type PlanCtx = { paid: boolean; openUpgrade: (reason?: string) => void };
 
-const Ctx = React.createContext<PlanCtx>({ aiAllowed: true, openUpgrade: () => {} });
+const Ctx = React.createContext<PlanCtx>({ paid: true, openUpgrade: () => {} });
 
-export const AI_UPGRADE_REASON = "AI features — reply drafts, lead recaps, the assistant and AI sequences — are available on the Starter and Unlimited plans.";
+export const AI_CREDITS_REASON = "You've used all your AI credits for this month. Upgrade to keep drafting replies, recaps and sequences with AI.";
 
-// Mounted once in the dashboard layout. Free-plan clicks on a paid feature (or a LIMIT error from a
-// server action) call openUpgrade(), which shows one shared "subscribe" dialog.
-export function PlanProvider({ aiAllowed, prices, children }: { aiAllowed: boolean; prices: { starter: string; unlimited: string }; children: React.ReactNode }) {
+const n = (v: number) => (v === Infinity ? "Unlimited" : v.toLocaleString("en-IN"));
+
+// Mounted once in the dashboard layout. A paid-feature click, an out-of-credits AI call or a LIMIT
+// error from a server action calls openUpgrade(), which shows one shared "subscribe" dialog.
+export function PlanProvider({
+  paid,
+  plans,
+  children,
+}: {
+  paid: boolean;
+  plans: { starter: PlanLimits; unlimited: PlanLimits };
+  children: React.ReactNode;
+}) {
   const [reason, setReason] = React.useState<string | null>(null);
-  const openUpgrade = React.useCallback((r?: string) => setReason(r || AI_UPGRADE_REASON), []);
-  const value = React.useMemo(() => ({ aiAllowed, openUpgrade }), [aiAllowed, openUpgrade]);
+  const openUpgrade = React.useCallback((r?: string) => setReason(r || AI_CREDITS_REASON), []);
+  const value = React.useMemo(() => ({ paid, openUpgrade }), [paid, openUpgrade]);
+  const { starter: s, unlimited: u } = plans;
 
   return (
     <Ctx.Provider value={value}>
@@ -31,9 +43,15 @@ export function PlanProvider({ aiAllowed, prices, children }: { aiAllowed: boole
             <DialogTitle>Upgrade to unlock this</DialogTitle>
             <DialogDescription>{reason}</DialogDescription>
           </DialogHeader>
-          <ul className="space-y-1 text-sm text-muted-foreground">
-            <li><span className="font-medium text-foreground">Starter · {prices.starter}</span> — AI features, unlimited automations, sequences &amp; lead sources, 3 seats</li>
-            <li><span className="font-medium text-foreground">Unlimited · {prices.unlimited}</span> — everything, unlimited leads &amp; seats</li>
+          <ul className="space-y-2 text-sm text-muted-foreground">
+            <li>
+              <span className="font-medium text-foreground">Starter · {s.price}</span> — {n(s.aiCredits)} AI credits/month,{" "}
+              {n(s.leads)} leads, {n(s.automations)} automations, {n(s.sequences)} sequences, {n(s.sources)} lead sources, {n(s.seats)} users
+            </li>
+            <li>
+              <span className="font-medium text-foreground">Unlimited · {u.price}</span> — {n(u.aiCredits)} AI credits/month, unlimited
+              leads, users, automations &amp; sources
+            </li>
           </ul>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setReason(null)}>Not now</Button>

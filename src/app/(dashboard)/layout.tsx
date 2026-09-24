@@ -63,12 +63,12 @@ export default async function DashboardLayout({
   const showTzBanner = (await getOrgFormat(organizationId)).timezone === "UTC" && canAdmin;
 
   return (
-    <PlanProvider aiAllowed={limitsFor(usageStats.plan).ai} prices={{ starter: PLAN_LIMITS.starter.price, unlimited: PLAN_LIMITS.unlimited.price }}>
+    <PlanProvider paid={limitsFor(usageStats.plan) !== PLAN_LIMITS.free} plans={{ starter: PLAN_LIMITS.starter, unlimited: PLAN_LIMITS.unlimited }}>
     <div className="flex h-dvh overflow-hidden bg-background text-foreground">
       <Sidebar isSuperAdmin={superAdmin} plan={usageStats?.plan} allowed={allowed} />
       <div className="flex flex-col flex-1 overflow-hidden">
         <SystemBroadcastBanner currentOrg={{ id: organizationId, plan: usageStats?.plan ?? effectivePlan ?? "free" }} />
-        <PaymentGraceBanner billingInfo={billingInfo} />
+        <PaymentGraceBanner billingInfo={billingInfo} leads={usageStats.leads} />
         <ImpersonationBanner />
         <InstallPwaBanner />
         {showTzBanner && <TimezoneBanner />}

@@ -7,7 +7,9 @@ import { useToast } from "@/hooks/use-toast";
 import { startSubscriptionAction, verifySubscriptionAction, cancelSubscriptionAction, setPlanManuallyAction } from "@/lib/actions/billing";
 import { Check } from "lucide-react";
 
-type Limits = Record<string, { seats: number; leads: number; automations: number; sequences: number; sources: number; ai: boolean; price?: string; description?: string }>;
+import type { PlanLimits } from "@/domains/billing/planService";
+
+type Limits = Record<string, PlanLimits>;
 
 declare global {
   interface Window { Razorpay?: any }
@@ -163,7 +165,9 @@ export function BillingManager({
                 <li className="flex items-center gap-2"><Check className="h-4 w-4 text-muted-foreground" /> {fmt(l.automations)} automations</li>
                 <li className="flex items-center gap-2"><Check className="h-4 w-4 text-muted-foreground" /> {fmt(l.sequences)} sequences</li>
                 <li className="flex items-center gap-2"><Check className="h-4 w-4 text-muted-foreground" /> {fmt(l.sources)} lead {l.sources === 1 ? "source" : "sources"}</li>
-                <li className={`flex items-center gap-2 ${l.ai ? "" : "line-through opacity-60"}`}><Check className="h-4 w-4 text-muted-foreground" /> AI features</li>
+                <li className="flex items-center gap-2"><Check className="h-4 w-4 text-muted-foreground" /> {fmt(l.aiCredits)} AI credits / month</li>
+                <li className="flex items-center gap-2"><Check className="h-4 w-4 text-muted-foreground" /> {l.aiAutoTag ? "AI tags hot replies automatically" : "Manual AI only"}</li>
+                <li className="flex items-center gap-2"><Check className="h-4 w-4 text-muted-foreground" /> {l.branding ? "“Powered by Ridhzo” on forms" : "Your brand only on forms"}</li>
               </ul>
               {isCurrent ? (
                 <Button className="w-full" disabled variant="secondary">Current plan</Button>

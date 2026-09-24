@@ -24,15 +24,19 @@ export function LeadAiRecap({ leadId, initial, autoRun = false }: { leadId: stri
   const [recap, setRecap] = React.useState<Recap | null>(initial ?? null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const { aiAllowed, openUpgrade } = usePlan();
+  const { paid, openUpgrade } = usePlan();
 
+  // `auto` = the on-open run for a fresh lead; out of credits there stays quiet (no popup on page load).
   const run = React.useCallback(
-    async (refresh = false) => {
-      if (!aiAllowed) return openUpgrade();
+    async (refresh = false, auto = false) => {
       setLoading(true);
       setError(null);
       try {
         const res = await summarizeLeadAction({ leadId, refresh });
+        if (res.outOfCredits) {
+          if (!auto) openUpgrade();
+          return;
+        }
         setRecap({ text: res.summary, at: res.generatedAt });
       } catch {
         setError("Couldn't generate a recap right now. Try again in a moment.");
@@ -40,12 +44,13 @@ export function LeadAiRecap({ leadId, initial, autoRun = false }: { leadId: stri
         setLoading(false);
       }
     },
-    [leadId, aiAllowed, openUpgrade],
+    [leadId, openUpgrade],
   );
 
+  // Free workspaces don't auto-spend credits on page open — they tap "AI recap" when they want one.
   React.useEffect(() => {
-    if (autoRun && !initial && aiAllowed) run();
-  }, [autoRun, initial, aiAllowed, run]);
+    if (autoRun && !initial && paid) run(false, true);
+  }, [autoRun, initial, paid, run]);
 
   if (recap) {
     return (

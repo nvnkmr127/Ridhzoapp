@@ -66,15 +66,20 @@ Use ONLY what the notes say — never invent offerings, prices, guarantees, or c
 // Rewrites the tenant's raw notes into a clean, structured business profile using the AI Gateway.
 export async function improveAiContextAction(input: z.infer<typeof improveSchema>) {
   const { organizationId } = await requireOrg();
-  if (!(await PlanService.aiAllowed(organizationId))) return fail("LIMIT", "AI needs a Starter or Unlimited plan.");
   const parsed = improveSchema.safeParse(input);
   if (!parsed.success) return fail("VALIDATION", "Text is too long to improve.");
   const clean = parsed.data.draft.trim();
   if (!clean) return fail("VALIDATION", "Add some text first, then improve it.");
   if (!aiEnabled()) return fail("SERVER", "AI isn't configured on this environment.");
+  if (!(await PlanService.useAiCredit(organizationId))) {
+    return fail("LIMIT", "You've used all your AI credits for this month. Upgrade for more.");
+  }
 
   const improved = await generateText(IMPROVE_SYSTEM, clean, 500);
-  if (!improved) return fail("SERVER", "Couldn't improve the text right now — try again.");
+  if (!improved) {
+    await PlanService.refundAiCredit(organizationId);
+    return fail("SERVER", "Couldn't improve the text right now — try again.");
+  }
   return ok({ improved: improved.slice(0, 4000) });
 }
 

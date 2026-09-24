@@ -13,9 +13,6 @@ export async function runAgentAction(
   currentLeadId?: string,
 ): Promise<AgentResult> {
   const { organizationId, userId } = await requireOrg();
-  if (!(await PlanService.aiAllowed(organizationId))) {
-    return { text: "The AI assistant is available on the Starter and Unlimited plans.", proposals: [], steps: 0, enabled: false };
-  }
   const trimmed = message.trim();
   if (!trimmed) return { text: "Ask me something about your leads.", proposals: [], steps: 0, enabled: true };
   // Only accept a canonical uuid as lead context; anything else is ignored (org scope guards it too).
@@ -25,5 +22,8 @@ export async function runAgentAction(
   // constraints ("audience is investors", "keep it formal") set the tone for the whole thread and
   // would otherwise fall out of a plain tail window in a long conversation.
   const capped = capHistory(history, 20);
+  if (!(await PlanService.useAiCredit(organizationId))) {
+    return { text: "You've used all your AI credits for this month.", proposals: [], steps: 0, enabled: true, outOfCredits: true };
+  }
   return runLeadAgent({ organizationId, userId }, trimmed, capped, leadId);
 }

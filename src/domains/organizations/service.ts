@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { signupTrial } from "@/domains/billing/planService";
 import { organizations, users, roles } from "@/db/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
@@ -60,7 +61,7 @@ export class OrgService {
       const [existing] = await tx.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
       if (existing) throw new Error("An account with that email already exists");
 
-      const [org] = await tx.insert(organizations).values({ name: input.orgName, slug }).returning();
+      const [org] = await tx.insert(organizations).values({ name: input.orgName, slug, ...signupTrial() }).returning();
 
       await tx.insert(users).values({
         organizationId: org.id,
