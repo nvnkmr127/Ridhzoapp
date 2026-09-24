@@ -3,7 +3,7 @@ import { z } from "zod";
 import { authorizeApiRequest } from "@/lib/apiAuth";
 import { FollowUpService } from "@/domains/follow-ups/service";
 
-const idSchema = z.string().uuid();
+const idSchema = z.guid();
 
 const schema = z.object({
   action: z.enum(["complete", "cancel", "reschedule"]),

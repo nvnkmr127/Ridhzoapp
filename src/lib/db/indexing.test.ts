@@ -111,17 +111,19 @@ describe('Database Schema & Indexing Integration', () => {
 
     it('should support tenant-scoped analytics aggregation queries', async () => {
       const { db } = await import('@/db');
-      const mockLeads = [
-        { status: 'new', expectedValue: '500' },
-        { status: 'active', expectedValue: '1500' },
-        { status: 'won', expectedValue: '3000' },
+      // Aggregated per status in SQL, scoped by the org's WHERE.
+      const byStatus = [
+        { status: 'new', n: 1, value: 500 },
+        { status: 'active', n: 1, value: 1500 },
+        { status: 'won', n: 1, value: 3000 },
       ];
-
       const queryChain = {
-        where: vi.fn().mockResolvedValue(mockLeads),
-        then: (resolve: any) => resolve(mockLeads),
+        // Awaited directly (status-category lookup) → []; .groupBy (lead KPIs) → per-status rows.
+        where: vi.fn().mockReturnValue({ groupBy: vi.fn().mockResolvedValue(byStatus), then: (r: any) => r([]) }),
+        then: (resolve: any) => resolve([]),
       };
       ((db as any).from as any).mockReturnValue(queryChain);
+      (db as any).execute = vi.fn().mockResolvedValue([{ contacted: 0, median: null, within5: 0 }]);
 
       const metrics = await AnalyticsService.getLeadMetrics({ organizationId: 'org-tenant-analytics' });
 

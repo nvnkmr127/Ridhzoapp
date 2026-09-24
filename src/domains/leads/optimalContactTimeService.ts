@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { activities, leads } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, or, like } from "drizzle-orm";
+import { zonedParts } from "@/lib/tz";
 
 export interface HourlyDistribution {
   hour: number;
@@ -25,14 +26,29 @@ const DAYS_MAP = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frida
 
 export class OptimalContactTimeService {
   /**
-   * Analyzes activity timestamps to identify optimal outreach hours and days for maximum conversion.
+   * When do leads actually ENGAGE — reply on WhatsApp or pick up a call — by hour and weekday in the
+   * workspace timezone. (Previously every activity counted, including system notes, in server UTC.)
    */
-  static async getOptimalContactTimes(organizationId: string): Promise<OptimalContactTimeMetrics> {
+  static async getOptimalContactTimes(organizationId: string, timeZone?: string): Promise<OptimalContactTimeMetrics> {
+    let tz = timeZone;
+    if (!tz) {
+      const { getOrgFormat } = await import("@/lib/format.server");
+      tz = (await getOrgFormat(organizationId).catch(() => null))?.timezone ?? "UTC";
+    }
     const actRows = await db
       .select({ createdAt: activities.createdAt })
       .from(activities)
       .innerJoin(leads, eq(activities.leadId, leads.id))
-      .where(eq(leads.organizationId, organizationId));
+      .where(
+        and(
+          eq(leads.organizationId, organizationId),
+          or(
+            and(eq(activities.type, "call"), like(activities.content, "Called — Answered%")),
+            and(eq(activities.type, "message"), like(activities.content, "[whatsapp ← lead]%")),
+            like(activities.content, "Lead replied%"), // replies reps log from personal WhatsApp / email
+          ),
+        ),
+      );
 
     if (actRows.length === 0) {
       return {
@@ -48,9 +64,9 @@ export class OptimalContactTimeService {
     const daysCounts = new Array(7).fill(0);
 
     for (const act of actRows) {
-      const date = new Date(act.createdAt);
-      hoursCounts[date.getHours()]++;
-      daysCounts[date.getDay()]++;
+      const p = zonedParts(new Date(act.createdAt), tz);
+      hoursCounts[p.hour]++;
+      daysCounts[p.weekday]++;
     }
 
     const totalTouchpointsAnalyzed = actRows.length;

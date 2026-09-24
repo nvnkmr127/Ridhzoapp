@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { dayKey, startOfZonedDay, zonedTimeToUtc } from "@/lib/tz";
 import { activities, users, leads } from "@/db/schema";
 import { and, eq, gte, lt, count } from "drizzle-orm";
 
@@ -29,16 +30,19 @@ export class ActivityDigestService {
     let endOfDay: Date;
     let dateFormatted: string;
 
+    // A day is the WORKSPACE's calendar day, not the (UTC) server's.
+    const { getOrgFormat } = await import("@/lib/format.server");
+    const tz = (await getOrgFormat(organizationId).catch(() => null))?.timezone ?? "UTC";
     if (targetDateStr && /^\d{4}-\d{2}-\d{2}$/.test(targetDateStr)) {
       const [y, m, d] = targetDateStr.split("-").map(Number);
-      startOfDay = new Date(y, m - 1, d, 0, 0, 0, 0);
-      endOfDay = new Date(y, m - 1, d, 23, 59, 59, 999);
+      startOfDay = zonedTimeToUtc(y, m, d, 0, 0, tz);
+      endOfDay = new Date(zonedTimeToUtc(y, m, d + 1, 0, 0, tz).getTime() - 1);
       dateFormatted = targetDateStr;
     } else {
       const now = new Date();
-      startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-      endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-      dateFormatted = startOfDay.toISOString().split("T")[0];
+      startOfDay = startOfZonedDay(now, tz);
+      endOfDay = new Date(startOfZonedDay(now, tz, 1).getTime() - 1);
+      dateFormatted = dayKey(now, tz);
     }
 
     // Fetch org users

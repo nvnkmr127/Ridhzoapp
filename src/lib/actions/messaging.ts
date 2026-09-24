@@ -42,7 +42,7 @@ export async function createTemplateAction(input: z.infer<typeof createSchema>) 
   }
 }
 
-const updateSchema = createSchema.extend({ id: z.string().uuid() });
+const updateSchema = createSchema.extend({ id: z.guid() });
 
 export async function updateTemplateAction(input: z.infer<typeof updateSchema>) {
   const { organizationId } = await requirePermission("templates.manage");
@@ -101,7 +101,7 @@ export async function sendWhatsAppAction(input: {
 
 // Send an email to a lead and log it on the timeline. Uses the shared mailer (dev-safe).
 const emailSchema = z.object({
-  leadId: z.string().uuid(),
+  leadId: z.guid(),
   subject: z.string().min(1).max(255),
   body: z.string().min(1),
 });
@@ -149,7 +149,7 @@ const CALL_OUTCOMES = {
 } as const;
 
 const logContactSchema = z.object({
-  leadId: z.string().uuid(),
+  leadId: z.guid(),
   channel: z.enum(["call", "whatsapp", "email"]),
   outcome: z.enum(["answered", "no_answer", "busy", "wrong_number"]).optional(),
   note: z.string().trim().max(2000).optional(),
@@ -211,7 +211,7 @@ export async function logLeadContactAction(input: z.infer<typeof logContactSchem
 // the lead's reply. It lands in the WhatsApp thread as inbound (so the AI and scoring see real
 // intent) and stops any running sequence, exactly like a Business API inbound message would.
 const logReplySchema = z.object({
-  leadId: z.string().uuid(),
+  leadId: z.guid(),
   channel: z.enum(["whatsapp", "email", "call"]).default("whatsapp"),
   message: z.string().trim().min(1, "Paste or type what they said.").max(4000),
 });

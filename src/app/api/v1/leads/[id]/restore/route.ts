@@ -5,7 +5,7 @@ import { LeadService } from "@/domains/leads/service";
 import { AuditService } from "@/domains/audit/service";
 import { hasPermissionForRoleId } from "@/lib/rbac";
 
-const idSchema = z.string().uuid();
+const idSchema = z.guid();
 
 // Restore a soft-deleted lead from the recycle bin.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

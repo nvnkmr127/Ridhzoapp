@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { AnalyticsService } from './service';
+import { AnalyticsService, summarizeLeadMetrics } from './service';
 
 // Mock DB
 vi.mock('@/db', () => ({
@@ -15,72 +15,43 @@ vi.mock('@/db', () => ({
 }));
 
 describe('AnalyticsService Calculations', () => {
-  it('should correctly calculate lead metrics', async () => {
-    const mockLeads = [
-      { status: 'new', expectedValue: '0' },
-      { status: 'active', expectedValue: '1000' },
-      { status: 'active', expectedValue: '2000' },
-      { status: 'won', expectedValue: '5000' },
-      { status: 'lost', expectedValue: '1000' },
-      { status: 'unqualified', expectedValue: '0' },
-    ];
+  // Lead KPIs are aggregated in SQL; the maths lives in the pure summarizeLeadMetrics.
+  const cat = (st: string | null) => ({ new: 'open', active: 'in_progress', won: 'won', lost: 'lost', unqualified: 'unqualified' } as Record<string, string>)[st ?? ''] ?? 'open';
+  const noResp = { contacted: 0, median: null, within5: 0 };
 
-    const { db } = await import('@/db');
-    const queryChain = {
-      where: vi.fn().mockResolvedValue(mockLeads),
-      then: (resolve: any) => resolve(mockLeads)
-    };
-    ((db as any).from as any).mockReturnValue(queryChain);
-
-    const metrics = await AnalyticsService.getLeadMetrics({ organizationId: 'org-A' });
-
+  it('should correctly calculate lead metrics', () => {
+    const metrics = summarizeLeadMetrics(
+      [
+        { status: 'new', n: 1, value: 0 },
+        { status: 'active', n: 2, value: 3000 },
+        { status: 'won', n: 1, value: 5000 },
+        { status: 'lost', n: 1, value: 1000 },
+        { status: 'unqualified', n: 1, value: 0 },
+      ],
+      noResp,
+      cat,
+    );
     expect(metrics.total).toBe(6);
     expect(metrics.newLeads).toBe(1);
     expect(metrics.qualified).toBe(3); // 2 active + 1 won
     expect(metrics.unqualified).toBe(1);
     expect(metrics.won).toBe(1);
     expect(metrics.lost).toBe(1);
-    
-    // Win rate = Won / (Won + Lost + Unqualified) = 1 / 3 ≈ 33.3%
+    // Win rate = Won / (Won + Lost + Unqualified) = 1 / 3
     expect(metrics.conversionRate).toBeCloseTo(33.333, 2);
-    
-    // Active leads expected value sum = 1000 + 2000 = 3000
     expect(metrics.pipelineValue).toBe(3000);
-    
-    // Won leads expected value sum = 5000
     expect(metrics.expectedRevenue).toBe(5000);
   });
 
-  it('should handle zero division for conversion rate safely', async () => {
-    const mockLeads = [
-      { status: 'new', expectedValue: '0' },
-      { status: 'active', expectedValue: '1000' },
-    ];
-
-    const { db } = await import('@/db');
-    const queryChain = {
-      where: vi.fn().mockResolvedValue(mockLeads),
-      then: (resolve: any) => resolve(mockLeads)
-    };
-    ((db as any).from as any).mockReturnValue(queryChain);
-
-    const metrics = await AnalyticsService.getLeadMetrics({ organizationId: 'org-A' });
-
+  it('should handle zero division for conversion rate safely', () => {
+    const metrics = summarizeLeadMetrics([{ status: 'new', n: 1, value: 0 }, { status: 'active', n: 1, value: 1000 }], noResp, cat);
     expect(metrics.won).toBe(0);
     expect(metrics.lost).toBe(0);
     expect(metrics.conversionRate).toBe(0);
   });
 
-  it('should handle empty organization with clean zero metrics', async () => {
-    const { db } = await import('@/db');
-    const queryChain = {
-      where: vi.fn().mockResolvedValue([]),
-      then: (resolve: any) => resolve([])
-    };
-    ((db as any).from as any).mockReturnValue(queryChain);
-
-    const metrics = await AnalyticsService.getLeadMetrics({ organizationId: 'org-empty' });
-
+  it('should handle empty organization with clean zero metrics', () => {
+    const metrics = summarizeLeadMetrics([], noResp, cat);
     expect(metrics.total).toBe(0);
     expect(metrics.conversionRate).toBe(0);
     expect(metrics.pipelineValue).toBe(0);
@@ -89,35 +60,16 @@ describe('AnalyticsService Calculations', () => {
     expect(metrics.contactRate).toBe(0);
   });
 
-  it('should compute speed-to-lead metrics (median response, <5min rate, contact rate)', async () => {
-    const base = new Date('2026-01-01T00:00:00Z').getTime();
-    const at = (ms: number) => new Date(base + ms);
-    const mockLeads = [
-      // contacted after 60s -> within 5 min
-      { status: 'active', expectedValue: '0', createdAt: at(0), lastContactedAt: at(60_000) },
-      // contacted after 240s -> within 5 min
-      { status: 'active', expectedValue: '0', createdAt: at(0), lastContactedAt: at(240_000) },
-      // contacted after 600s -> outside 5 min
-      { status: 'won', expectedValue: '0', createdAt: at(0), lastContactedAt: at(600_000) },
-      // never contacted -> excluded from response time, counts against rates
-      { status: 'new', expectedValue: '0', createdAt: at(0), lastContactedAt: null },
-    ];
-
-    const { db } = await import('@/db');
-    const queryChain = {
-      where: vi.fn().mockResolvedValue(mockLeads),
-      then: (resolve: any) => resolve(mockLeads),
-    };
-    ((db as any).from as any).mockReturnValue(queryChain);
-
-    const metrics = await AnalyticsService.getLeadMetrics({ organizationId: 'org-A' });
-
+  it('should compute speed-to-lead metrics (median response, <5min rate, contact rate)', () => {
+    // 4 leads; 3 contacted after 60s, 240s, 600s → median 240, 2 within 5 min
+    const metrics = summarizeLeadMetrics(
+      [{ status: 'active', n: 2, value: 0 }, { status: 'won', n: 1, value: 0 }, { status: 'new', n: 1, value: 0 }],
+      { contacted: 3, median: 240, within5: 2 },
+      cat,
+    );
     expect(metrics.contacted).toBe(3);
-    // 3 of 4 leads ever contacted
     expect(metrics.contactRate).toBe(75);
-    // median of [60, 240, 600] = 240
     expect(metrics.medianResponseSeconds).toBe(240);
-    // 2 of 4 total leads contacted within 5 min = 50%
     expect(metrics.within5MinRate).toBe(50);
   });
 

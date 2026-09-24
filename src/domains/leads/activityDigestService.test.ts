@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { ActivityDigestService } from "./activityDigestService";
 
+vi.mock("@/lib/format.server", () => ({ getOrgFormat: vi.fn().mockResolvedValue({ timezone: "UTC" }) }));
+
 vi.mock("@/db", () => ({
   db: {
     select: vi.fn(() => ({

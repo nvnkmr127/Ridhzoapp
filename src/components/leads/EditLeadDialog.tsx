@@ -20,7 +20,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Pencil } from "lucide-react"
 
 const formSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   name: z.string().trim().min(1, "Name is required").max(255, "Name cannot exceed 255 characters"),
   email: z.string().email("Invalid email address").optional().or(z.literal("")),
   phone: z.string().max(50, "Phone number too long").optional().or(z.literal("")),

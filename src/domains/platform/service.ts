@@ -1123,6 +1123,9 @@ export class PlatformService {
       };
     }
 
+    // Attachment files live outside Postgres (R2/local) — note them now, delete after the wipe commits.
+    const orgFiles = await db.select({ ref: leadAttachments.fileUrl }).from(leadAttachments).where(eq(leadAttachments.organizationId, organizationId));
+
     // Step 1: Wipe all relational tenant records in a strict transaction
     await db.transaction(async (tx) => {
       const orgLeads = await tx
@@ -1191,6 +1194,12 @@ export class PlatformService {
       // 7. Organization primary row
       await tx.delete(organizations).where(eq(organizations.id, organizationId));
     });
+
+    // The wipe committed — now remove the stored attachment files (best-effort, never blocks).
+    if (orgFiles.length) {
+      const { deleteAttachment } = await import("@/lib/storage/attachments");
+      await Promise.all(orgFiles.map((f) => deleteAttachment(f.ref)));
+    }
 
     // Step 2: Clean up platform configuration maps
     try {

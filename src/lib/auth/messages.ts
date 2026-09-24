@@ -5,6 +5,8 @@ export function authErrorMessage(code: string | null | undefined, fallback: stri
   switch (code) {
     case "OTP_LOCKED":
       return "Too many wrong attempts. Tap Resend to get a new code.";
+    case "RATE_LIMITED":
+      return "Too many login attempts. Please wait 15 minutes, or reset your password.";
     case "ACCOUNT_DISABLED":
       return "Your account has been deactivated. Ask your workspace admin to reactivate it.";
     case "ACCOUNT_SUSPENDED":

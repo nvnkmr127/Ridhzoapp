@@ -2,13 +2,17 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { ContentSharingService } from "@/domains/leads/contentSharingService";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
 // Public, unauthenticated branded page. Opening it records the view (read receipt) and
 // shows the lead an auto-personalized page with the sender's branding + a CTA to the content.
 export default async function SharedContentPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const ua = (await headers()).get("user-agent") ?? undefined;
-  const page = await ContentSharingService.openPage(slug, ua);
+  // A signed-in teammate checking the link isn't the lead opening it.
+  const session = await getServerSession(authOptions).catch(() => null);
+  const page = await ContentSharingService.openPage(slug, ua, { viewerOrgId: session?.user?.organizationId ?? null });
 
   if (!page) notFound();
 

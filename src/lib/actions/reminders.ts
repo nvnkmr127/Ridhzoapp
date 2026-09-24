@@ -12,7 +12,7 @@ import { z } from "zod";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
 
 const createReminderSchema = z.object({
-  leadId: z.string().uuid(),
+  leadId: z.guid(),
   title: z.string().min(1, "Title is required"),
   description: z.string().optional(),
   type: z.string().default("followup"),
@@ -67,8 +67,8 @@ export async function createReminderAction(input: z.infer<typeof createReminderS
 }
 
 const updateReminderSchema = z.object({
-  reminderId: z.string().uuid(),
-  leadId: z.string().uuid(),
+  reminderId: z.guid(),
+  leadId: z.guid(),
   title: z.string().min(1, "Title is required"),
   description: z.string().optional(),
   type: z.string().default("followup"),

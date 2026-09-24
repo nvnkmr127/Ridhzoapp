@@ -7,7 +7,7 @@ import { ActivityService } from "@/domains/activities/service";
 import { ok, fail, actionFail } from "@/lib/actions/result";
 
 const schema = z.object({
-  leadIds: z.array(z.string().uuid()).min(1).max(500),
+  leadIds: z.array(z.guid()).min(1).max(500),
   body: z.string().min(1).max(2000),
 });
 

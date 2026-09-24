@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { leads, activities, whatsappMessages, sharedLinks } from "@/db/schema";
-import { and, eq, sum } from "drizzle-orm";
+import { and, eq, isNull, sql, sum } from "drizzle-orm";
 import type { StatusCategory } from "./customStatusSchemaService";
 
 export interface LeadScoreInput {
@@ -150,11 +150,21 @@ export class ScoringService {
       ...this.callStats([...acts].reverse()),
     });
 
-    // Persist the number for sorting/filtering, and the "why" alongside it as evidence.
-    const customData = { ...((lead.customData as Record<string, unknown>) ?? {}) };
-    customData._scoreFactors = { score, factors, computedAt: new Date().toISOString() };
+    // Nothing changed → no write (the nightly pass used to rewrite every lead and bump updatedAt).
+    const prev = (lead.customData as { _scoreFactors?: { score?: number; factors?: unknown } } | null)?._scoreFactors;
+    if (lead.score === score && prev?.score === score && JSON.stringify(prev?.factors) === JSON.stringify(factors)) return score;
 
-    await db.update(leads).set({ score, customData, updatedAt: new Date() }).where(eq(leads.id, leadId));
+    // Persist the number for sorting/filtering, and the "why" alongside it as evidence. jsonb_set
+    // touches only _scoreFactors, so a concurrent customData write (AI recap, custom fields) survives.
+    const evidence = JSON.stringify({ score, factors, computedAt: new Date().toISOString() });
+    await db
+      .update(leads)
+      .set({
+        score,
+        customData: sql`jsonb_set(coalesce(${leads.customData}, '{}'::jsonb), '{_scoreFactors}', ${evidence}::jsonb)`,
+        ...(lead.score !== score ? { updatedAt: new Date() } : {}),
+      })
+      .where(eq(leads.id, leadId));
     return score;
   }
 
@@ -162,15 +172,24 @@ export class ScoringService {
    * Recalculates scores for all leads (or scoped to an organization) to process recency decay.
    */
   static async recalculateAllScores(organizationId?: string): Promise<number> {
-    const query = organizationId
-      ? db.select({ id: leads.id }).from(leads).where(eq(leads.organizationId, organizationId))
-      : db.select({ id: leads.id }).from(leads);
+    const live = isNull(leads.deletedAt); // recycle-bin leads don't need scoring
+    const allLeads = await db
+      .select({ id: leads.id })
+      .from(leads)
+      .where(organizationId ? and(eq(leads.organizationId, organizationId), live) : live);
 
-    const allLeads = await query;
+    // ponytail: 8 leads in parallel (each is ~4 small queries); move to per-org jobs if one pass gets too long.
+    const CONCURRENCY = 8;
     let updated = 0;
-    for (const lead of allLeads) {
-      await this.updateLeadScore(lead.id);
-      updated++;
+    for (let i = 0; i < allLeads.length; i += CONCURRENCY) {
+      await Promise.all(
+        allLeads.slice(i, i + CONCURRENCY).map((l) =>
+          this.updateLeadScore(l.id).then(
+            () => void updated++,
+            (e) => console.error(`[score] lead ${l.id} failed`, (e as Error)?.message),
+          ),
+        ),
+      );
     }
     return updated;
   }

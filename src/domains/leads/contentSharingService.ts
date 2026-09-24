@@ -173,12 +173,18 @@ export class ContentSharingService {
    * Notifies the link owner and logs an activity so reps see who's actually interested.
    * Returns null if the slug is unknown.
    *
-   * ponytail: counts raw opens — link-scanner prefetches (WhatsApp/email bots) can inflate
-   * the count. Add bot-UA filtering / first-open dedup if the numbers prove noisy.
+   * Not counted (page still renders): link-preview/scanner bots — WhatsApp fetches the link the
+   * moment a rep sends it — the workspace's own team (a rep checking their link), and a refresh
+   * within a minute of the last counted open.
    */
-  static async openPage(slug: string, userAgent?: string): Promise<SharedPageData | null> {
+  static async openPage(slug: string, userAgent?: string, opts: { viewerOrgId?: string | null } = {}): Promise<SharedPageData | null> {
     const [link] = await db.select().from(sharedLinks).where(eq(sharedLinks.slug, slug)).limit(1);
     if (!link) return null;
+
+    const recentlyCounted = link.lastViewedAt && Date.now() - new Date(link.lastViewedAt).getTime() < 60_000;
+    if (isPreviewBot(userAgent) || opts.viewerOrgId === link.organizationId || recentlyCounted) {
+      return this.pageData(link);
+    }
 
     await db.insert(sharedLinkViews).values({ sharedLinkId: link.id, userAgent: userAgent?.slice(0, 500) });
     await db
@@ -187,22 +193,8 @@ export class ContentSharingService {
       .where(eq(sharedLinks.id, link.id));
 
     const nextCount = link.viewCount + 1;
-    const [lead] = await db.select({ name: leads.name }).from(leads).where(eq(leads.id, link.leadId)).limit(1);
-    const [owner] = link.ownerId
-      ? await db
-          .select({ firstName: users.firstName, lastName: users.lastName })
-          .from(users)
-          .where(eq(users.id, link.ownerId))
-          .limit(1)
-      : [undefined];
-    const ownerName = owner ? [owner.firstName, owner.lastName].filter(Boolean).join(" ").trim() || null : null;
-    const [org] = await db
-      .select({ name: organizations.name })
-      .from(organizations)
-      .where(eq(organizations.id, link.organizationId))
-      .limit(1);
-    const leadName = lead?.name ?? "there";
-
+    const page = await this.pageData(link);
+    const leadName = page.leadName;
     // Surface the engagement signal: who opened what, and how many times.
     void ActivityService.addActivity({
       leadId: link.leadId,
@@ -221,14 +213,34 @@ export class ContentSharingService {
       });
     }
 
+    return page;
+  }
+
+  private static async pageData(link: typeof sharedLinks.$inferSelect): Promise<SharedPageData> {
+    const [[lead], [owner], [org]] = await Promise.all([
+      db.select({ name: leads.name }).from(leads).where(eq(leads.id, link.leadId)).limit(1),
+      link.ownerId
+        ? db.select({ firstName: users.firstName, lastName: users.lastName }).from(users).where(eq(users.id, link.ownerId)).limit(1)
+        : Promise.resolve([undefined]),
+      db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, link.organizationId)).limit(1),
+    ]);
+    const ownerName = owner ? [owner.firstName, owner.lastName].filter(Boolean).join(" ").trim() || null : null;
     return {
       title: link.title,
       targetUrl: link.targetUrl,
       bodyText: link.bodyText,
       imageUrl: link.imageUrl,
-      leadName,
+      leadName: lead?.name ?? "there",
       ownerName,
       orgName: org?.name ?? null,
     };
   }
+}
+
+// Link unfurlers, mail scanners and HTTP clients — they fetch a shared link without a person reading
+// it. Kept to fetcher signatures only: in-app browsers (LinkedIn, Outlook, Instagram…) are real people.
+const BOT_UA = /bot\b|bot\/|crawl|spider|slurp|facebookexternalhit|facebookcatalog|^whatsapp|whatsapp\/|skypeuripreview|embedly|vkshare|microsoft office existence|google-read-aloud|headlesschrome|python-requests|curl\/|wget\/|go-http-client|okhttp|axios\/|node-fetch|undici|postmanruntime|proofpoint|mimecast|barracuda|safelinks/i;
+
+export function isPreviewBot(userAgent?: string | null) {
+  return !userAgent || BOT_UA.test(userAgent);
 }

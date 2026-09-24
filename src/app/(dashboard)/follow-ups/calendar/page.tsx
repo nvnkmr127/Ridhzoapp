@@ -5,11 +5,13 @@ import { followUps, leads, meetings } from "@/db/schema";
 import { and, eq, or, gte, lte, isNull, ne } from "drizzle-orm";
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval,
-  format, addMonths, subMonths, isSameMonth, isToday, parse,
+  format, addMonths, subMonths, isSameMonth, parse,
 } from "date-fns";
 import { ChevronLeft, ChevronRight, List } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LocalTime } from "@/components/LocalTime";
+import { getOrgFormat } from "@/lib/format.server";
+import { dayKey } from "@/lib/tz";
 
 const KEY = "yyyy-MM-dd";
 
@@ -21,6 +23,12 @@ export default async function FollowUpCalendarPage({ searchParams }: { searchPar
   const gridStart = startOfWeek(startOfMonth(cursor));
   const gridEnd = endOfWeek(endOfMonth(cursor));
   const days = eachDayOfInterval({ start: gridStart, end: gridEnd });
+  // Items are placed on the WORKSPACE's calendar day; fetch a day either side of the (UTC) grid.
+  const { timezone } = await getOrgFormat(organizationId);
+  const DAY = 24 * 60 * 60 * 1000;
+  const from = new Date(gridStart.getTime() - DAY);
+  const to = new Date(gridEnd.getTime() + 2 * DAY);
+  const todayKey = dayKey(new Date(), timezone);
 
   const rows = await db
     .select({ id: followUps.id, title: followUps.title, dueAt: followUps.dueAt, status: followUps.status, leadId: followUps.leadId, leadName: leads.name })
@@ -31,8 +39,8 @@ export default async function FollowUpCalendarPage({ searchParams }: { searchPar
         eq(leads.organizationId, organizationId),
         or(eq(followUps.userId, userId), eq(leads.ownerId, userId)),
         isNull(leads.deletedAt),
-        gte(followUps.dueAt, gridStart),
-        lte(followUps.dueAt, gridEnd),
+        gte(followUps.dueAt, from),
+        lte(followUps.dueAt, to),
       ),
     );
 
@@ -47,15 +55,15 @@ export default async function FollowUpCalendarPage({ searchParams }: { searchPar
         or(eq(meetings.assigneeId, userId), eq(leads.ownerId, userId)),
         isNull(leads.deletedAt),
         ne(meetings.status, "cancelled"),
-        gte(meetings.startAt, gridStart),
-        lte(meetings.startAt, gridEnd),
+        gte(meetings.startAt, from),
+        lte(meetings.startAt, to),
       ),
     );
 
   type Item = (typeof rows)[number] & { meeting?: boolean };
   const byDay = new Map<string, Item[]>();
   for (const r of [...rows, ...meetingRows.map((m) => ({ ...m, meeting: true }))] as Item[]) {
-    const k = format(new Date(r.dueAt), KEY);
+    const k = dayKey(new Date(r.dueAt), timezone);
     byDay.set(k, [...(byDay.get(k) ?? []), r].sort((a, b) => +new Date(a.dueAt) - +new Date(b.dueAt)));
   }
 
@@ -84,8 +92,8 @@ export default async function FollowUpCalendarPage({ searchParams }: { searchPar
           const dim = !isSameMonth(day, cursor);
           return (
             <div key={day.toISOString()} className={`bg-card min-h-24 p-1.5 space-y-1 ${dim ? "opacity-40" : ""}`}>
-              <div className={`text-xs font-medium ${isToday(day) ? "text-muted-foreground" : "text-muted-foreground"}`}>
-                {isToday(day) ? <span className="bg-secondary text-foreground rounded-full px-1.5 py-0.5">{format(day, "d")}</span> : format(day, "d")}
+              <div className={"text-xs font-medium text-muted-foreground"}>
+                {format(day, KEY) === todayKey ? <span className="bg-secondary text-foreground rounded-full px-1.5 py-0.5">{format(day, "d")}</span> : format(day, "d")}
               </div>
               {items.map((it) => {
                 const overdue = (it.status === "pending" || it.status === "scheduled") && new Date(it.dueAt) < new Date();

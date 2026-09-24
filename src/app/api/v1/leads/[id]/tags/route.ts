@@ -4,7 +4,7 @@ import { authorizeApiRequest } from "@/lib/apiAuth";
 import { TagService } from "@/domains/tags/service";
 import { assertLeadInOrg } from "@/domains/leads/ownership";
 
-const idSchema = z.string().uuid();
+const idSchema = z.guid();
 
 // List this lead's tags.
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -50,7 +50,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!idSchema.safeParse(id).success) return NextResponse.json({ error: "Invalid lead ID" }, { status: 400 });
 
   const body = await req.json().catch(() => null);
-  const parsed = z.object({ tagId: z.string().uuid() }).safeParse(body);
+  const parsed = z.object({ tagId: z.guid() }).safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "A tagId is required" }, { status: 422 });
 
   try {

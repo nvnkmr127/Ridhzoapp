@@ -38,7 +38,7 @@ export const ConditionGroupSchema: z.ZodType<any> = z.lazy(() => z.object({
 export const ActionConfigSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('assign_lead'),
-    userId: z.string().uuid(),
+    userId: z.guid(),
   }),
   z.object({
     type: z.literal('change_status'),
@@ -49,14 +49,14 @@ export const ActionConfigSchema = z.discriminatedUnion('type', [
     title: z.string().min(1),
     description: z.string().optional(),
     dueAt: z.string(), // ISO String
-    userId: z.string().uuid().optional(),
+    userId: z.guid().optional(),
   }),
   z.object({
     type: z.literal('schedule_follow_up'),
     title: z.string().min(1),
     description: z.string().optional(),
     dueAt: z.string(), // ISO String
-    userId: z.string().uuid().optional(),
+    userId: z.guid().optional(),
   }),
   z.object({
     type: z.literal('add_note'),

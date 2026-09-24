@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/lib/events/handlers", () => ({}));
-vi.mock("@/lib/jobs/workers/reminderWorker", () => ({ reminderWorker: {} }));
 vi.mock("@/lib/jobs/workers/automationWorker", () => ({ automationWorker: {} }));
 vi.mock("@/lib/jobs/workers/ingestionWorker", () => ({ ingestionWorker: {} }));
 vi.mock("@/lib/jobs/workers/escalationWorker", () => ({

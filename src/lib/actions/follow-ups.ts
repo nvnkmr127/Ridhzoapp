@@ -18,12 +18,12 @@ async function assertFollowUpAccess(id: string, ctx: { userId: string; organizat
 }
 
 const followUpSchema = z.object({
-  leadId: z.string().uuid(),
+  leadId: z.guid(),
   type: z.enum(["Call", "WhatsApp", "Email", "Task", "Note", "Custom"]),
   title: z.string().min(1, "Title is required").max(255),
   description: z.string().optional(),
   dueAt: z.coerce.date(),
-  userId: z.string().uuid().optional(), // Can assign to someone else, default to self
+  userId: z.guid().optional(), // Can assign to someone else, default to self
 });
 
 export async function createFollowUp(input: z.infer<typeof followUpSchema>) {

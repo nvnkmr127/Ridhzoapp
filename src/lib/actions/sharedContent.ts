@@ -9,7 +9,7 @@ import { ContentSharingService } from "@/domains/leads/contentSharingService";
 import { ok, fail, actionFail } from "@/lib/actions/result";
 
 const createSchema = z.object({
-  leadId: z.string().uuid(),
+  leadId: z.guid(),
   title: z.string().min(1).max(255),
   targetUrl: z.string().max(2048).optional(),
   bodyText: z.string().max(5000).optional(),

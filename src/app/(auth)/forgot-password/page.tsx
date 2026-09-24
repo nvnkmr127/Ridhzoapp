@@ -16,12 +16,10 @@ export default function ForgotPasswordPage() {
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Only "no account with this email" should offer signup — not network or server failures.
-  const [notFound, setNotFound] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setNotFound(false);
     if (!email || !email.includes("@")) {
       setError("Please enter a valid email address.");
       return;
@@ -32,7 +30,6 @@ export default function ForgotPasswordPage() {
       const res = await requestPasswordResetAction({ email });
       if (!res.ok) {
         setError(res.message || "We couldn't send the reset link. Please try again.");
-        setNotFound(res.code === "NOT_FOUND");
         return;
       }
       setSubmitted(true);
@@ -66,11 +63,6 @@ export default function ForgotPasswordPage() {
           {error && (
             <div className="space-y-2">
               <StatusMessage status={{ kind: "error", text: error }} />
-              {notFound && (
-                <Button asChild variant="outline" size="sm" className="w-full">
-                  <Link href="/signup">Create a new account</Link>
-                </Button>
-              )}
             </div>
           )}
 
@@ -78,10 +70,11 @@ export default function ForgotPasswordPage() {
             <div className="space-y-4 text-center">
               <StatusMessage
                 className="text-left"
-                status={{ kind: "success", text: `Reset link sent to ${email}. It's valid for 1 hour — check your inbox.` }}
+                status={{ kind: "success", text: `If ${email} has a Ridhzo account, we've sent a reset link. It's valid for 1 hour.` }}
               />
               <p className="text-xs text-muted-foreground">
-                Don&apos;t see the email? Check your spam folder or wait a couple of minutes.
+                Don&apos;t see it? Check spam or wait a couple of minutes. Signed up with WhatsApp? Log in with WhatsApp OTP instead —
+                or <Link href="/signup" className="underline">create an account</Link>.
               </p>
               <Button asChild variant="outline" className="w-full">
                 <Link href="/login">Back to log in</Link>

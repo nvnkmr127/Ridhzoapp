@@ -11,7 +11,7 @@ import { ok, fail, actionFail } from "@/lib/actions/result";
 const IMPERSONATE_COOKIE = "impersonate_org";
 const IMPERSONATE_READONLY_COOKIE = "impersonate_readonly";
 
-// Validate ids the way Postgres does — any 8-4-4-4-12 hex string. z.string().uuid() enforces RFC
+// Validate ids the way Postgres does — any 8-4-4-4-12 hex string. z.guid() enforces RFC
 // 4122 version/variant bits and so REJECTS valid Postgres uuids used as sentinels/seeds (the nil
 // platform org "0000…0000" and seed orgs like "0000…0002"), which made "Open tenant" fail with
 // "Invalid organization" for those tenants. guid() matches the database.

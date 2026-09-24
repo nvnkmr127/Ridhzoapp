@@ -9,7 +9,7 @@ import { ActivityService } from "@/domains/activities/service";
 import { AuditService } from "@/domains/audit/service";
 import { hasPermissionForRoleId } from "@/lib/rbac";
 
-const idSchema = z.string().uuid();
+const idSchema = z.guid();
 
 // Lead detail: lead + activity timeline + this lead's follow-ups.
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -54,7 +54,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 const patchSchema = z
   .object({
     status: z.string().min(1).optional(),
-    ownerId: z.string().uuid().nullable().optional(),
+    ownerId: z.guid().nullable().optional(),
     // Contact-field edits (used by the mobile "Edit lead" screen).
     name: z.string().min(1).max(255).optional(),
     email: z.string().email().optional().or(z.literal("")),

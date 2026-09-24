@@ -167,7 +167,7 @@ export async function connectFacebookPagesAction(pageIds: z.infer<typeof faceboo
 }
 
 const formFilterSchema = z.object({
-  sourceId: z.string().uuid(),
+  sourceId: z.guid(),
   formFilter: z.array(z.string()).optional(),
   // id → name, so the source card can show which forms are selected without a Graph round-trip.
   formNames: z.record(z.string(), z.string()).optional(),
@@ -330,7 +330,7 @@ export async function listSourceLeadFieldsAction(sourceId: string) {
 }
 
 const fieldMappingSchema = z.object({
-  sourceId: z.string().uuid(),
+  sourceId: z.guid(),
   fieldMappings: z.array(z.object({
     facebookFieldKey: z.string().min(1),
     targetField: z.enum(["name", "email", "phone", "expectedValue", "customData"]),

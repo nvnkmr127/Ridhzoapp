@@ -14,12 +14,14 @@ describe("LeadService.purgeExpired audit — A6", () => {
     vi.clearAllMocks();
     // First select: purgeExpired's own "what's expired" query, across two different orgs.
     // Second select: the followUps lookup inside hardDeleteLeads (empty → skips the reminders delete).
+    // Third select: the attachment files to purge from storage (none here).
     (db.select as any)
       .mockReturnValueOnce({ from: () => ({ where: () => Promise.resolve([
         { id: "lead-1", organizationId: "org-a" },
         { id: "lead-2", organizationId: "org-a" },
         { id: "lead-3", organizationId: "org-b" },
       ]) }) })
+      .mockReturnValueOnce({ from: () => ({ where: () => Promise.resolve([]) }) })
       .mockReturnValueOnce({ from: () => ({ where: () => Promise.resolve([]) }) });
 
     const whereResult = { returning: vi.fn().mockResolvedValue([{ id: "lead-1" }, { id: "lead-2" }, { id: "lead-3" }]) };

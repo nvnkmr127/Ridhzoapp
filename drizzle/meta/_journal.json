@@ -407,6 +407,13 @@
       "when": 1790247217833,
       "tag": "0057_org_meeting_templates_daily_summary",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1790248789728,
+      "tag": "0058_lead_search_trgm_indexes",
+      "breakpoints": true
     }
   ]
 }

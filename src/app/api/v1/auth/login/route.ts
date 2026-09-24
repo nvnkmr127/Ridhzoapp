@@ -13,6 +13,12 @@ const schema = z.object({ email: z.string().email(), password: z.string().min(1)
 export async function POST(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for") || "unknown";
   const limit = await RateLimiter.checkLimit(`auth:login:${ip}`, 10, 60);
+  // Per-account guard too (shared with the web login), so rotating IPs can't brute-force one user.
+  const peek = await req.clone().json().catch(() => null);
+  const emailKey = typeof peek?.email === "string" ? peek.email.trim().toLowerCase() : "";
+  if (limit.success && emailKey && !(await RateLimiter.checkLimit(`auth:login:email:${emailKey}`, 8, 15 * 60)).success) {
+    return NextResponse.json({ error: "Too many login attempts for this account. Please wait 15 minutes." }, { status: 429 });
+  }
   if (!limit.success) {
     return NextResponse.json(
       { error: "Too many login attempts. Please wait a minute before trying again." },

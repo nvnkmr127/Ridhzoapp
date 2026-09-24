@@ -15,7 +15,7 @@ import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
 
 const inviteSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
-  roleId: z.string().uuid().nullable().optional(),
+  roleId: z.guid().nullable().optional(),
 });
 
 export async function inviteUserAction(input: z.infer<typeof inviteSchema>) {

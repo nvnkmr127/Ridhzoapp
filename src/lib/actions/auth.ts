@@ -10,6 +10,8 @@ import { OrgService } from "@/domains/organizations/service";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
 import { sendEmail, appUrl } from "@/lib/mail/mailer";
 import { requireOrg } from "@/lib/rbac";
+import { RateLimiter } from "@/lib/rate-limit";
+import { headers } from "next/headers";
 import type { StoredAttribution } from "@/lib/tracking/utm";
 import { isPlaceholderEmail } from "@/lib/auth/googleLink";
 
@@ -105,6 +107,16 @@ export async function requestPasswordResetAction(input: { email: string }) {
   }
   const email = parsed.data.email.trim().toLowerCase();
 
+  // Same answer whether or not the account exists (no email enumeration), and throttled per email
+  // and per IP so the form can't be used to flood someone's inbox.
+  const ip = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const [byEmail, byIp] = await Promise.all([
+    RateLimiter.checkLimit(`auth:reset:email:${email}`, 3, 60 * 60),
+    RateLimiter.checkLimit(`auth:reset:ip:${ip}`, 10, 60 * 60),
+  ]);
+  if (!byIp.success) return fail("RATE_LIMIT", "Too many reset requests. Please try again in an hour.");
+  if (!byEmail.success) return ok({ sent: true });
+
   try {
     const [user] = await db
       .select({ id: users.id, firstName: users.firstName, email: users.email })
@@ -112,12 +124,7 @@ export async function requestPasswordResetAction(input: { email: string }) {
       .where(and(eq(users.email, email), isNull(users.deletedAt)))
       .limit(1);
 
-    if (!user) {
-      return fail(
-        "NOT_FOUND",
-        "We don't have an account with this email. If you signed up with WhatsApp, log in with WhatsApp OTP instead. Otherwise check for typos or sign up."
-      );
-    }
+    if (!user) return ok({ sent: true });
 
     const rawToken = crypto.randomBytes(32).toString("hex");
     const tokenHash = hashToken(rawToken);
@@ -135,7 +142,8 @@ export async function requestPasswordResetAction(input: { email: string }) {
     });
 
     const resetLink = appUrl(`/reset-password/${rawToken}`);
-    const greeting = user.firstName ? `Hi ${user.firstName},` : "Hello,";
+    const safeName = (user.firstName ?? "").replace(/[&<>"']/g, "");
+    const greeting = safeName ? `Hi ${safeName},` : "Hello,";
 
     await sendEmail({
       to: email,

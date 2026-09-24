@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { leads, followUps, leadSources, users, teams, activities } from "@/db/schema";
-import { eq, and, gte, lte, desc, isNull } from "drizzle-orm";
+import { eq, and, gte, lte, desc, isNull, sql } from "drizzle-orm";
+import { startOfZonedDay, startOfZonedMonth } from "@/lib/tz";
 
 export interface AnalyticsFilters {
   organizationId: string;
@@ -9,58 +10,80 @@ export interface AnalyticsFilters {
   dateRange?: "today" | "yesterday" | "7d" | "30d" | "this_month" | "last_month" | "all";
   startDate?: Date;
   endDate?: Date;
+  /** Workspace timezone for "today"/"this month" bounds. Resolved from the org when omitted. */
+  timeZone?: string;
 }
 
-function median(values: number[]): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+/**
+ * Pure: KPI numbers from per-status totals + response-time stats. Win rate = won out of all resolved
+ * leads (unqualified counts as a loss, otherwise disqualifying a lead would flatter the rate).
+ * Speed-to-lead uses the MEDIAN first-response time so one lead contacted weeks later doesn't skew it.
+ */
+export function summarizeLeadMetrics(
+  byStatus: { status: string | null; n: number; value: number }[],
+  resp: { contacted: number; median: number | null; within5: number },
+  catOf: (status: string | null) => string,
+) {
+  const sum = (cat: string, f: "n" | "value") => byStatus.filter((r) => catOf(r.status) === cat).reduce((a, r) => a + r[f], 0);
+  const total = byStatus.reduce((a, r) => a + r.n, 0);
+  const newLeads = sum("open", "n");
+  const activeLeads = sum("in_progress", "n");
+  const won = sum("won", "n");
+  const lost = sum("lost", "n");
+  const unqualified = sum("unqualified", "n");
+  const closed = won + lost + unqualified;
+  return {
+    total,
+    newLeads,
+    activeLeads,
+    qualified: activeLeads + won,
+    unqualified,
+    won,
+    lost,
+    conversionRate: closed > 0 ? (won / closed) * 100 : 0,
+    pipelineValue: sum("in_progress", "value"),
+    expectedRevenue: sum("won", "value"),
+    contacted: resp.contacted,
+    contactRate: total > 0 ? (resp.contacted / total) * 100 : 0,
+    medianResponseSeconds: resp.median ?? 0,
+    within5MinRate: total > 0 ? (resp.within5 / total) * 100 : 0,
+  };
 }
 
 export class AnalyticsService {
+  // "Today", "this month" etc. are the WORKSPACE's calendar days — the server runs in UTC, which
+  // put an Indian team's "today" 5½ hours off.
   private static getDateRangeBounds(filters: AnalyticsFilters): { start?: Date; end?: Date } {
     if (filters.startDate || filters.endDate) {
       return { start: filters.startDate, end: filters.endDate };
     }
-    if (!filters.dateRange || filters.dateRange === "all") {
-      return {};
-    }
-
+    if (!filters.dateRange || filters.dateRange === "all") return {};
+    const tz = filters.timeZone || "UTC";
     const now = new Date();
-    const start = new Date(now);
-    const end = new Date(now);
-
+    const DAY = 24 * 60 * 60 * 1000;
     switch (filters.dateRange) {
       case "today":
-        start.setHours(0, 0, 0, 0);
-        break;
+        return { start: startOfZonedDay(now, tz), end: now };
       case "yesterday":
-        start.setDate(now.getDate() - 1);
-        start.setHours(0, 0, 0, 0);
-        end.setDate(now.getDate() - 1);
-        end.setHours(23, 59, 59, 999);
-        break;
+        return { start: startOfZonedDay(now, tz, -1), end: new Date(startOfZonedDay(now, tz).getTime() - 1) };
       case "7d":
-        start.setDate(now.getDate() - 7);
-        break;
+        return { start: new Date(now.getTime() - 7 * DAY), end: now };
       case "30d":
-        start.setDate(now.getDate() - 30);
-        break;
+        return { start: new Date(now.getTime() - 30 * DAY), end: now };
       case "this_month":
-        start.setDate(1);
-        start.setHours(0, 0, 0, 0);
-        break;
+        return { start: startOfZonedMonth(now, tz), end: now };
       case "last_month":
-        start.setMonth(now.getMonth() - 1);
-        start.setDate(1);
-        start.setHours(0, 0, 0, 0);
-        end.setDate(0);
-        end.setHours(23, 59, 59, 999);
-        break;
+        return { start: startOfZonedMonth(now, tz, -1), end: new Date(startOfZonedMonth(now, tz).getTime() - 1) };
+      default:
+        return {};
     }
+  }
 
-    return { start, end };
+  private static async withTz(filters: AnalyticsFilters): Promise<AnalyticsFilters> {
+    if (filters.timeZone || !filters.organizationId) return filters;
+    const { getOrgFormat } = await import("@/lib/format.server");
+    const { timezone } = await getOrgFormat(filters.organizationId).catch(() => ({ timezone: "UTC" }));
+    return { ...filters, timeZone: timezone };
   }
 
   private static buildLeadConditions(filters: AnalyticsFilters) {
@@ -88,79 +111,45 @@ export class AnalyticsService {
    * Retrieves high-level KPI metrics for leads.
    */
   static async getLeadMetrics(filters: AnalyticsFilters) {
+    filters = await this.withTz(filters);
     const conditions = this.buildLeadConditions(filters);
     const where = conditions.length > 0 ? and(...conditions) : undefined;
     
-    const allLeads = await db.select().from(leads).where(where);
+    // Aggregated in Postgres (was: load every lead row just to count them).
+    const [byStatus, respRows] = await Promise.all([
+      db
+        .select({ status: leads.status, n: sql<number>`count(*)::int`, value: sql<number>`coalesce(sum(${leads.expectedValue}), 0)::float` })
+        .from(leads)
+        .where(where)
+        .groupBy(leads.status),
+      db.execute<{ contacted: number; median: number | null; within5: number }>(sql`
+        select count(*)::int as contacted,
+               percentile_cont(0.5) within group (order by secs) as median,
+               (count(*) filter (where secs <= 300))::int as within5
+        from (
+          select extract(epoch from coalesce(${leads.firstContactedAt}, ${leads.lastContactedAt}) - ${leads.createdAt}) as secs
+          from ${leads} where ${where}
+        ) t
+        where secs >= 0`),
+    ]);
 
-    // Resolve each lead's CATEGORY via the tenant status schema so custom statuses (e.g. a "closed_won"
-    // in the won category) are counted correctly. Base keys map to their own category, so behaviour is
-    // unchanged for tenants that never customise.
+    // Resolve each status's CATEGORY via the tenant status schema so custom statuses (e.g. a "closed_won"
+    // in the won category) are counted correctly.
     const { CustomStatusSchemaService } = await import("@/domains/leads/customStatusSchemaService");
     const catMap = await CustomStatusSchemaService.getStatusCategoryMap(filters.organizationId);
-    const catOf = (s: string | null) => catMap.get(s ?? "") ?? "open";
-
-    const total = allLeads.length;
-    const newLeads = allLeads.filter(l => catOf(l.status) === 'open').length;
-    const activeLeads = allLeads.filter(l => catOf(l.status) === 'in_progress').length;
-    const won = allLeads.filter(l => catOf(l.status) === 'won').length;
-    const lost = allLeads.filter(l => catOf(l.status) === 'lost').length;
-    const unqualified = allLeads.filter(l => catOf(l.status) === 'unqualified').length;
-    const qualified = activeLeads + won;
-    
-    // Win rate = won out of all resolved leads. Unqualified counts as a loss, otherwise disqualifying
-    // a lead would flatter the rate (1 won / 0 lost showed a misleading 100%).
-    const closed = won + lost + unqualified;
-    const conversionRate = closed > 0 ? (won / closed) * 100 : 0;
-    
-    const pipelineValue = allLeads
-      .filter(l => catOf(l.status) === 'in_progress')
-      .reduce((sum, l) => sum + Number(l.expectedValue || 0), 0);
-
-    const expectedRevenue = allLeads
-      .filter(l => catOf(l.status) === 'won')
-      .reduce((sum, l) => sum + Number(l.expectedValue || 0), 0);
-
-    // Speed-to-lead: the core metric for this product. Response time = first
-    // contact minus lead creation. Median (not mean) so a single stale lead
-    // contacted weeks later doesn't distort the number.
-    // (last_contacted_at only as a fallback for rows recorded before first_contacted_at existed)
-    const responseSeconds = allLeads
-      .flatMap(l => {
-        const first = l.firstContactedAt ?? l.lastContactedAt;
-        return first ? [(new Date(first).getTime() - new Date(l.createdAt).getTime()) / 1000] : [];
-      })
-      .filter(s => s >= 0);
-
-    const contacted = responseSeconds.length;
-    const contactRate = total > 0 ? (contacted / total) * 100 : 0;
-    const medianResponseSeconds = median(responseSeconds);
-    const within5MinRate = total > 0
-      ? (responseSeconds.filter(s => s <= 300).length / total) * 100
-      : 0;
-
-    return {
-      total,
-      newLeads,
-      activeLeads,
-      qualified,
-      unqualified,
-      won,
-      lost,
-      conversionRate,
-      pipelineValue,
-      expectedRevenue,
-      contacted,
-      contactRate,
-      medianResponseSeconds,
-      within5MinRate
-    };
+    const resp = (respRows as unknown as { contacted: number; median: number | null; within5: number }[])[0];
+    return summarizeLeadMetrics(
+      byStatus.map((r) => ({ status: r.status, n: Number(r.n), value: Number(r.value) })),
+      { contacted: Number(resp?.contacted ?? 0), median: resp?.median == null ? null : Number(resp.median), within5: Number(resp?.within5 ?? 0) },
+      (st) => catMap.get(st ?? "") ?? "open",
+    );
   }
 
   /**
    * Retrieves follow-up specific metrics.
    */
   static async getFollowUpMetrics(filters: AnalyticsFilters) {
+    filters = await this.withTz(filters);
     const conditions = [eq(leads.organizationId, filters.organizationId), isNull(leads.deletedAt)];
     if (filters.ownerId) {
       conditions.push(eq(followUps.userId, filters.ownerId));
@@ -178,10 +167,8 @@ export class AnalyticsService {
     
     const allFollowUps = rows.map(r => r.followUp);
     const now = new Date();
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
-    const endOfToday = new Date(now);
-    endOfToday.setHours(23, 59, 59, 999);
+    const startOfToday = startOfZonedDay(now, filters.timeZone || "UTC");
+    const endOfToday = new Date(startOfZonedDay(now, filters.timeZone || "UTC", 1).getTime() - 1);
     
     const total = allFollowUps.length;
     const completed = allFollowUps.filter(f => f.status === 'completed').length;
@@ -205,6 +192,7 @@ export class AnalyticsService {
    * Aggregates leads grouped by lead source name.
    */
   static async getLeadsBySource(filters: AnalyticsFilters) {
+    filters = await this.withTz(filters);
     const conditions = this.buildLeadConditions(filters);
     const rows = await db
       .select({
@@ -239,6 +227,7 @@ export class AnalyticsService {
    * Backward-compatibility alias for getLeadsBySource.
    */
   static async getRevenueBySource(filters: AnalyticsFilters) {
+    filters = await this.withTz(filters);
     const rows = await this.getLeadsBySource(filters);
     return rows.map(r => ({ name: r.name, total: r.totalValue || r.count }));
   }
@@ -247,6 +236,7 @@ export class AnalyticsService {
    * Aggregates lead counts by pipeline stage.
    */
   static async getPipelineDistribution(filters: AnalyticsFilters) {
+    filters = await this.withTz(filters);
     const conditions = this.buildLeadConditions(filters);
     const rows = await db
       .select({ status: leads.status })
@@ -286,6 +276,7 @@ export class AnalyticsService {
    * Aggregates lead counts grouped by lead owner.
    */
   static async getLeadsByOwner(filters: AnalyticsFilters) {
+    filters = await this.withTz(filters);
     const conditions = this.buildLeadConditions(filters);
     const rows = await db
       .select({
@@ -323,6 +314,7 @@ export class AnalyticsService {
    * Aggregates lead counts grouped by team.
    */
   static async getLeadsByTeam(filters: AnalyticsFilters) {
+    filters = await this.withTz(filters);
     const conditions = this.buildLeadConditions(filters);
     const rows = await db
       .select({
@@ -353,6 +345,7 @@ export class AnalyticsService {
    * Retrieves recent timeline activity feed for the organization.
    */
   static async getRecentActivity(filters: AnalyticsFilters) {
+    filters = await this.withTz(filters);
     const conditions = [eq(leads.organizationId, filters.organizationId)];
     const { start, end } = this.getDateRangeBounds(filters);
     if (start) conditions.push(gte(activities.createdAt, start));

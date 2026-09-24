@@ -259,6 +259,7 @@ export function LeadAttachmentsTab({ leadId, initialAttachments }: LeadAttachmen
 
           <input
             type="file"
+            accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.heic,.txt,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.mp3,.m4a,.mp4,.mov"
             ref={fileInputRef}
             onChange={handleFileSelect}
             className="hidden"
@@ -413,7 +414,9 @@ export function LeadAttachmentsTab({ leadId, initialAttachments }: LeadAttachmen
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {attachments.map((file) => {
             const sizeStr = formatFileSize(file.fileSize);
-            const isUploaded = file.fileUrl.startsWith("/uploads/");
+            // Uploaded files and links both open through the access-checked route (never the raw path).
+            const isUploaded = !/^https?:\/\//i.test(file.fileUrl);
+            const openHref = `/api/attachments/${file.id}`;
             return (
               <div
                 key={file.id}
@@ -423,10 +426,9 @@ export function LeadAttachmentsTab({ leadId, initialAttachments }: LeadAttachmen
                   {getFileIcon(file.fileName, file.fileType)}
                   <div className="min-w-0 flex-1">
                     <a
-                      href={file.fileUrl}
+                      href={openHref}
                       target="_blank"
                       rel="noopener noreferrer"
-                      download={isUploaded ? file.fileName : undefined}
                       className="font-medium text-sm text-foreground hover:underline truncate block"
                     >
                       {file.fileName}
@@ -441,10 +443,9 @@ export function LeadAttachmentsTab({ leadId, initialAttachments }: LeadAttachmen
                 <div className="flex items-center gap-1 shrink-0 ml-2">
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" asChild>
                     <a
-                      href={file.fileUrl}
+                      href={isUploaded ? `${openHref}?download=1` : openHref}
                       target="_blank"
                       rel="noopener noreferrer"
-                      download={isUploaded ? file.fileName : undefined}
                       title={isUploaded ? "Download Document" : "Open Link"}
                     >
                       {isUploaded ? <Download className="h-4 w-4" /> : <ExternalLink className="h-4 w-4" />}

@@ -49,7 +49,7 @@ export async function createCustomFieldAction(input: z.infer<typeof createSchema
 }
 
 const updateSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   label: z.string().trim().min(1).max(100).optional(),
   required: z.boolean().optional(),
   options: z.array(z.string().trim().min(1)).optional(),

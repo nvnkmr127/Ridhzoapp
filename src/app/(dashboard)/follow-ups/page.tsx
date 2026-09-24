@@ -3,7 +3,9 @@ import { normalizePhone } from "@/lib/leads/normalize";
 import { orgDialCode } from "@/lib/leads/orgDialCode";
 import { db } from "@/db";
 import { followUps, leads } from "@/db/schema";
-import { eq, and, or, asc, isNull } from "drizzle-orm";
+import { eq, and, or, asc, isNull, count } from "drizzle-orm";
+import { getOrgFormat } from "@/lib/format.server";
+import { dayKey } from "@/lib/tz";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { FollowUpActions } from "@/components/leads/FollowUpActions";
 import { SendFollowUpButton, isSendableFollowUp } from "@/components/leads/SendFollowUpButton";
@@ -14,31 +16,34 @@ export default async function FollowUpsDashboard() {
   const { userId, organizationId } = await requireOrg();
   const dialCode = await orgDialCode(organizationId);
   
-  // Fetch follow-ups for the user
-  const userFollowUps = await db
-    .select({
-      followUp: followUps,
-      lead: leads,
-    })
-    .from(followUps)
-    .innerJoin(leads, eq(followUps.leadId, leads.id))
-    .where(
-      and(
-        eq(leads.organizationId, organizationId),
-        or(eq(followUps.userId, userId), eq(leads.ownerId, userId)),
-        isNull(leads.deletedAt),
-      ),
-    )
-    .orderBy(asc(followUps.dueAt));
+  const mine = and(
+    eq(leads.organizationId, organizationId),
+    or(eq(followUps.userId, userId), eq(leads.ownerId, userId)),
+    isNull(leads.deletedAt),
+  );
+  // Only PENDING rows are listed; completed ones are just counted (they used to be loaded in full,
+  // growing forever). "Today" is the workspace's day, not the UTC server's.
+  const [userFollowUps, [{ completedCount }], { timezone }] = await Promise.all([
+    db
+      .select({ followUp: followUps, lead: leads })
+      .from(followUps)
+      .innerJoin(leads, eq(followUps.leadId, leads.id))
+      .where(and(mine, eq(followUps.status, "pending")))
+      .orderBy(asc(followUps.dueAt))
+      .limit(500),
+    db.select({ completedCount: count() }).from(followUps).innerJoin(leads, eq(followUps.leadId, leads.id)).where(and(mine, eq(followUps.status, "completed"))),
+    getOrgFormat(organizationId),
+  ]);
 
   const now = new Date();
   
   // Basic grouping
   const overdue = userFollowUps.filter(f => f.followUp.status === 'pending' && new Date(f.followUp.dueAt) < now);
-  const completed = userFollowUps.filter(f => f.followUp.status === 'completed');
+  const completed = { length: completedCount };
   const upcoming = userFollowUps.filter(f => f.followUp.status === 'pending' && new Date(f.followUp.dueAt) >= now);
   // Anything pending that falls on today's date — including items already past their time today.
-  const dueToday = userFollowUps.filter(f => f.followUp.status === 'pending' && new Date(f.followUp.dueAt).toDateString() === now.toDateString());
+  const today = dayKey(now, timezone);
+  const dueToday = userFollowUps.filter(f => f.followUp.status === 'pending' && dayKey(new Date(f.followUp.dueAt), timezone) === today);
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl mx-auto space-y-6">

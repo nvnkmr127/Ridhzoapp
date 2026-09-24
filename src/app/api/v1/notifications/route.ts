@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ data: rows, unread });
 }
 
-const schema = z.object({ ids: z.array(z.string().uuid()).optional() });
+const schema = z.object({ ids: z.array(z.guid()).optional() });
 
 // Mark notifications read (specific ids, or all of the user's when omitted).
 export async function PATCH(req: NextRequest) {

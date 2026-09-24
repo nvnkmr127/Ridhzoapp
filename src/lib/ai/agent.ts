@@ -133,7 +133,7 @@ export async function runLeadAgent(
 
     get_lead: tool({
       description: "Full detail for one lead by id, including recent activity timeline.",
-      inputSchema: z.object({ leadId: z.string().uuid() }),
+      inputSchema: z.object({ leadId: z.guid() }),
       execute: async ({ leadId }) => {
         if (!(await canAccess(leadId))) return { error: "Lead not found." };
         const lead = await LeadService.getLead(leadId, ctx.organizationId);
@@ -146,7 +146,7 @@ export async function runLeadAgent(
 
     change_lead_status: tool({
       description: "Change a lead's status (reversible). Use one of the workspace's valid status keys listed in the instructions.",
-      inputSchema: z.object({ leadId: z.string().uuid(), status: z.string(), reason: z.string().optional() }),
+      inputSchema: z.object({ leadId: z.guid(), status: z.string(), reason: z.string().optional() }),
       execute: async ({ leadId, status, reason }) => {
         const r = await changeLeadStatusAction(leadId, status, reason);
         return "ok" in r && r.ok ? { ok: true } : { error: (r as { message?: string }).message ?? "failed" };
@@ -155,7 +155,7 @@ export async function runLeadAgent(
 
     add_tag: tool({
       description: "Add a tag to a lead (reversible).",
-      inputSchema: z.object({ leadId: z.string().uuid(), tag: z.string().min(1) }),
+      inputSchema: z.object({ leadId: z.guid(), tag: z.string().min(1) }),
       execute: async ({ leadId, tag }) => {
         try {
           await addTagAction(leadId, tag);
@@ -168,7 +168,7 @@ export async function runLeadAgent(
 
     set_reminder: tool({
       description: "Set a follow-up reminder on a lead. dueAt is an ISO datetime.",
-      inputSchema: z.object({ leadId: z.string().uuid(), title: z.string().min(1), dueAt: z.string(), description: z.string().optional() }),
+      inputSchema: z.object({ leadId: z.guid(), title: z.string().min(1), dueAt: z.string(), description: z.string().optional() }),
       execute: async ({ leadId, title, dueAt, description }) => {
         const r = await createReminderAction({ leadId, title, dueAt, description, type: "followup" });
         return "ok" in r && r.ok ? { ok: true } : { error: (r as { message?: string }).message ?? "failed" };
@@ -181,7 +181,7 @@ export async function runLeadAgent(
         "store_visit (uses the workspace's first saved store unless an address is given) or in_person (needs address). " +
         "Books it on the team's calendar but does NOT message the lead — a confirmation draft is queued for the rep to approve.",
       inputSchema: z.object({
-        leadId: z.string().uuid(),
+        leadId: z.guid(),
         mode: z.enum(MEETING_MODE_KEYS as [string, ...string[]]),
         startAt: z.string().describe("ISO datetime with UTC offset"),
         durationMinutes: z.number().int().min(5).max(480).default(30),
@@ -214,7 +214,7 @@ export async function runLeadAgent(
 
     assign_lead: tool({
       description: "Assign/reassign a lead to a user by their id (reversible).",
-      inputSchema: z.object({ leadId: z.string().uuid(), ownerId: z.string().uuid() }),
+      inputSchema: z.object({ leadId: z.guid(), ownerId: z.guid() }),
       execute: async ({ leadId, ownerId }) => {
         const r = await assignLeadAction({ leadId, ownerId, teamId: null });
         return "ok" in r && r.ok ? { ok: true } : { error: (r as { message?: string }).message ?? "failed" };
@@ -224,7 +224,7 @@ export async function runLeadAgent(
     propose_message: tool({
       description: "Queue a drafted outbound message to a lead for HUMAN APPROVAL. This does NOT send. Use for any WhatsApp/email you want the rep to send.",
       inputSchema: z.object({
-        leadId: z.string().uuid(),
+        leadId: z.guid(),
         channel: z.enum(["whatsapp", "email"]).default("whatsapp"),
         body: z.string().min(1),
       }),

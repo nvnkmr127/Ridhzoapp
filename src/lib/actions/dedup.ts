@@ -28,7 +28,7 @@ export async function setAutoMergeAction(enabled: boolean) {
   }
 }
 
-const mergeSchema = z.object({ primaryId: z.string().uuid(), duplicateId: z.string().uuid() });
+const mergeSchema = z.object({ primaryId: z.guid(), duplicateId: z.guid() });
 
 export async function mergeLeadsAction(input: z.infer<typeof mergeSchema>) {
   const { organizationId, userId } = await requirePermission("leads.merge");

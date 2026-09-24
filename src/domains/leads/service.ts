@@ -620,7 +620,13 @@ export class LeadService {
     const fu = await db.select({ id: followUps.id }).from(followUps).where(inArray(followUps.leadId, leadIds));
     if (fu.length) await db.delete(reminders).where(inArray(reminders.followUpId, fu.map((f) => f.id)));
     await db.delete(followUps).where(inArray(followUps.leadId, leadIds));
+    const files = await db.select({ ref: leadAttachments.fileUrl }).from(leadAttachments).where(inArray(leadAttachments.leadId, leadIds));
     await db.delete(leadAttachments).where(inArray(leadAttachments.leadId, leadIds));
+    // Purge the stored files too (R2/local) — otherwise a purged lead's documents live on in the bucket.
+    if (files.length) {
+      const { deleteAttachment } = await import("@/lib/storage/attachments");
+      await Promise.all(files.map((f) => deleteAttachment(f.ref)));
+    }
     await db.delete(leadStatusHistory).where(inArray(leadStatusHistory.leadId, leadIds));
     await db.delete(leadTags).where(inArray(leadTags.leadId, leadIds));
     await db.delete(notifications).where(inArray(notifications.leadId, leadIds));

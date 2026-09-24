@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/use-toast"
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form"
 
 const formSchema = z.object({
-  leadId: z.string().uuid(),
+  leadId: z.guid(),
   content: z.string().trim().min(1, "Note cannot be empty").max(10000, "Note cannot exceed 10,000 characters"),
 });
 

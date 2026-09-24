@@ -19,7 +19,7 @@ const conditionSchema = z.object({
 
 const ruleSchema = z.object({
   name: z.string().trim().max(120).nullable(),
-  sourceId: z.string().uuid().nullable(),
+  sourceId: z.guid().nullable(),
   conditions: z.object({
     type: z.enum(["AND", "OR"]),
     conditions: z.array(conditionSchema).max(10),
@@ -33,7 +33,7 @@ const ruleSchema = z.object({
     if (r.channel === "email" && !z.string().email().safeParse(r.value).success) {
       ctx.addIssue({ code: "custom", message: `"${r.value}" isn't a valid email`, path: ["recipients", i, "value"] });
     }
-    if (r.channel === "in_app" && !z.string().uuid().safeParse(r.value).success) {
+    if (r.channel === "in_app" && !z.guid().safeParse(r.value).success) {
       ctx.addIssue({ code: "custom", message: "Pick a valid team member", path: ["recipients", i, "value"] });
     }
   });

@@ -29,6 +29,7 @@ import { users, organizations } from "@/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { cookies } from "next/headers";
+import { RateLimiter } from "@/lib/rate-limit";
 import { GOOGLE_LINK_COOKIE, PHONE_EMAIL_DOMAIN, isPlaceholderEmail, readGoogleLinkToken } from "@/lib/auth/googleLink";
 
 async function consumeGoogleLinkCookie(): Promise<string | null> {
@@ -175,7 +176,7 @@ export const authOptions: NextAuthOptions = {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         const parsed = z
           .object({
             email: z.string().trim().email(),
@@ -187,6 +188,15 @@ export const authOptions: NextAuthOptions = {
 
         const email = parsed.data.email.trim().toLowerCase();
         const { password } = parsed.data;
+
+        // Brute-force guard: per account and per client IP, before touching bcrypt.
+        const fwd = (req?.headers as Record<string, string | undefined> | undefined)?.["x-forwarded-for"];
+        const ip = (Array.isArray(fwd) ? fwd[0] : fwd)?.split(",")[0]?.trim() || "unknown";
+        const [byEmail, byIp] = await Promise.all([
+          RateLimiter.checkLimit(`auth:login:email:${email}`, 8, 15 * 60),
+          RateLimiter.checkLimit(`auth:login:ip:${ip}`, 40, 15 * 60),
+        ]);
+        if (!byEmail.success || !byIp.success) throw new Error("RATE_LIMITED");
 
         const [user] = await db
           .select()

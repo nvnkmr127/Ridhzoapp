@@ -8,16 +8,17 @@ import { eq, and, desc } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { ActivityService } from "@/domains/activities/service";
 import { z } from "zod";
-import { writeFile, mkdir, unlink } from "node:fs/promises";
-import path from "node:path";
+import { contentTypeFor, deleteAttachment, saveAttachment, ALLOWED_TYPES } from "@/lib/storage/attachments";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25 MB max
 
 const addAttachmentSchema = z.object({
-  leadId: z.string().uuid(),
+  leadId: z.guid(),
   fileName: z.string().min(1, "File name is required"),
-  fileUrl: z.string().min(1, "Valid URL or file path is required"),
+  // An external link only (uploads go through uploadAttachmentAction). http(s) only — a
+  // `javascript:` URL here would run code when a teammate clicks the attachment.
+  fileUrl: z.string().trim().url("Enter a valid link").refine((v) => /^https?:\/\//i.test(v), "Link must start with http:// or https://"),
   fileSize: z.number().optional(),
   fileType: z.string().optional(),
 });
@@ -44,21 +45,14 @@ export async function uploadAttachmentAction(formData: FormData) {
   try {
     await assertLeadAccess(leadId, { userId, organizationId });
 
-    const uploadsDir = path.join(process.cwd(), "public", "uploads", "attachments");
-    await mkdir(uploadsDir, { recursive: true });
-
-    const ext = path.extname(file.name) || "";
-    const sanitizedBase = path.basename(file.name, ext).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 50);
-    const uniqueFileName = `${Date.now()}-${sanitizedBase || "file"}${ext}`;
-    const filePath = path.join(uploadsDir, uniqueFileName);
-
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await writeFile(filePath, buffer);
-
-    const fileUrl = `/uploads/attachments/${uniqueFileName}`;
+    const contentType = contentTypeFor(file.name);
+    if (!contentType) {
+      return fail("VALIDATION", `This file type isn't supported. Allowed: ${Object.keys(ALLOWED_TYPES).join(", ")}.`);
+    }
+    const fileUrl = await saveAttachment(organizationId, file.name, Buffer.from(await file.arrayBuffer()), contentType);
     const fileName = (customFileName?.trim() || file.name || "attachment").slice(0, 255);
     const fileSize = file.size;
-    const fileType = file.type || "application/octet-stream";
+    const fileType = contentType;
 
     const [attachment] = await db
       .insert(leadAttachments)
@@ -154,12 +148,7 @@ export async function deleteAttachmentAction(attachmentId: string, leadId: strin
 
     if (!deleted) return fail("NOT_FOUND", "This attachment was already removed.");
 
-    if (deleted.fileUrl.startsWith("/uploads/attachments/")) {
-      try {
-        const localPath = path.join(process.cwd(), "public", deleted.fileUrl);
-        await unlink(localPath).catch(() => {});
-      } catch {}
-    }
+    await deleteAttachment(deleted.fileUrl);
 
     await ActivityService.addActivity({
       leadId,

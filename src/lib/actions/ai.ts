@@ -18,7 +18,7 @@ const TONES = {
 } as const;
 
 const draftSchema = z.object({
-  leadId: z.string().uuid(),
+  leadId: z.guid(),
   channel: z.enum(["whatsapp", "email"]).default("whatsapp"),
   tone: z.enum(["friendly", "professional", "short"]).default("friendly"),
   // Free text so any language works ("Hindi", "Hinglish", "Tamil"…); "auto" = match the lead.
@@ -86,7 +86,7 @@ type RecapCache = { text: string; at: string; sig: string };
 export async function summarizeLeadAction(
   data: unknown,
 ): Promise<{ summary: string; ai: boolean; generatedAt?: string; cached?: boolean }> {
-  const { leadId, refresh } = z.object({ leadId: z.string().uuid(), refresh: z.boolean().optional() }).parse(data);
+  const { leadId, refresh } = z.object({ leadId: z.guid(), refresh: z.boolean().optional() }).parse(data);
   const access = await getActionableLead(leadId);
   if (!access) throw new Error("Lead not found");
   const { lead, organizationId } = access;

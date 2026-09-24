@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { zonedParts, zonedTimeToUtc } from "@/lib/tz";
 import { leads } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 
@@ -46,12 +47,11 @@ export class ReengagementCadenceService {
 
     const daysInactive = Math.max(0, Math.floor((now - refTime) / (1000 * 60 * 60 * 24)));
 
-    const createStepDate = (offsetDays: number) => {
-      const d = new Date();
-      d.setDate(d.getDate() + offsetDays);
-      d.setHours(10, 0, 0, 0); // 10:00 AM optimal send time
-      return d;
-    };
+    // 10:00 AM in the WORKSPACE's timezone (the server runs in UTC — 10 AM UTC is 3:30 PM in India).
+    const { getOrgFormat } = await import("@/lib/format.server");
+    const tz = (await getOrgFormat(organizationId).catch(() => null))?.timezone ?? "UTC";
+    const today = zonedParts(new Date(), tz);
+    const createStepDate = (offsetDays: number) => zonedTimeToUtc(today.year, today.month, today.day + offsetDays, 10, 0, tz);
 
     const recommendedCadence: CadenceStep[] = [
       {
