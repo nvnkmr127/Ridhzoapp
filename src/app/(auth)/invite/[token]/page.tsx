@@ -1,5 +1,6 @@
 import { InvitationService } from "@/domains/invitations/service";
 import { AcceptInviteForm } from "@/components/auth/AcceptInviteForm";
+import { StatusMessage } from "@/components/ui/status-message";
 
 export default async function AcceptInvitePage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -15,7 +16,9 @@ export default async function AcceptInvitePage({ params }: { params: Promise<{ t
         {invite ? (
           <AcceptInviteForm token={token} email={invite.email} />
         ) : (
-          <div className="text-sm text-foreground">This invitation is invalid or has expired. Ask an admin to send a new one.</div>
+          <StatusMessage
+            status={{ kind: "error", text: "This invitation is invalid, already used, or has expired. Ask your workspace admin to send a new one." }}
+          />
         )}
       </div>
     </div>

@@ -12,15 +12,17 @@ import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertCircle } from "lucide-react";
+import { StatusMessage, summarizeFieldErrors, type Status } from "@/components/ui/status-message";
+import { authErrorMessage } from "@/lib/auth/messages";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useState, useEffect } from "react";
 import { signupAction, sendWhatsAppOtpAction } from "@/lib/actions/auth";
 import { captureAttribution, getStoredAttribution } from "@/lib/tracking/utm";
+import { useCooldown } from "@/hooks/use-cooldown";
+import { COUNTRY_CODES } from "@/lib/countryCodes";
 
 const signupSchema = z.object({
-  orgName: z.string().min(1, "Workspace name is required"),
+  orgName: z.string().optional(),
   firstName: z.string().min(1, "Your name is required"),
   email: z.string().email("Invalid email address"),
   password: z.string().min(6, "At least 6 characters"),
@@ -28,13 +30,14 @@ const signupSchema = z.object({
 
 type SignupValues = z.infer<typeof signupSchema>;
 
-// Common dial codes for the signup phone field, so non-India users aren't stuck on +91. The list is
-// short by design; a user on any other country can still paste a full +<code> number.
-const COUNTRY_CODES = ["+91", "+1", "+44", "+61", "+971", "+65", "+27", "+234", "+92", "+880", "+94", "+64", "+49", "+33", "+55"];
 
 export default function SignupPage() {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<Status>(null);
+  const setError = (text: string | null) => setStatus(text ? { kind: "error", text } : null);
+  const setSuccess = (text: string) => setStatus({ kind: "success", text });
+  // Keeps buttons locked after success while the dashboard loads, so nobody double-submits.
+  const [redirecting, setRedirecting] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
   useEffect(() => {
@@ -50,6 +53,7 @@ export default function SignupPage() {
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [phoneLoading, setPhoneLoading] = useState(false);
+  const [resendIn, setResendIn] = useCooldown();
 
   const form = useForm<SignupValues>({
     resolver: zodResolver(signupSchema),
@@ -62,13 +66,19 @@ export default function SignupPage() {
       const attribution = getStoredAttribution() ?? undefined;
       const res = await signupAction({ ...data, attribution });
       if (!res.ok) {
+        // Put field-specific problems (e.g. "email already registered") under the field itself too.
+        for (const [field, message] of Object.entries(res.fieldErrors ?? {})) {
+          if (field in data) form.setError(field as keyof SignupValues, { message });
+        }
         setError(res.message);
         return;
       }
     } catch {
-      setError("We couldn't reach the server. Please try again.");
+      setError("We couldn't reach the server. Check your connection and try again.");
       return;
     }
+    setRedirecting(true);
+    setSuccess("Workspace created. Signing you in…");
     // Sign in immediately so the new session carries the org.
     const result = await signIn("credentials", {
       redirect: false,
@@ -76,9 +86,11 @@ export default function SignupPage() {
       password: data.password,
     });
     if (result?.error) {
-      router.push("/login");
+      // Account exists but the auto sign-in didn't go through — say so rather than silently bouncing.
+      router.push("/login?notice=account-created");
     } else {
-      router.push("/leads");
+      setSuccess("Workspace created. Opening your dashboard…");
+      router.push("/");
     }
   };
 
@@ -86,9 +98,9 @@ export default function SignupPage() {
     setError(null);
     setGoogleLoading(true);
     try {
-      await signIn("google", { callbackUrl: "/leads" });
+      await signIn("google", { callbackUrl: "/" });
     } catch {
-      setError("Could not initiate Google sign up.");
+      setError("Couldn't open Google sign-up. Check your connection and try again.");
       setGoogleLoading(false);
     }
   };
@@ -98,7 +110,7 @@ export default function SignupPage() {
     setError(null);
 
     if (!phoneName.trim()) {
-      setError("Please enter your name.");
+      setError("Your name: please enter your name.");
       return;
     }
 
@@ -120,9 +132,11 @@ export default function SignupPage() {
         return;
       }
       setOtpSent(true);
+      setResendIn(45);
+      setSuccess(`Code sent to WhatsApp on ${formatted}. It's valid for 5 minutes.`);
     } catch (err: any) {
       console.error("[phone-signup] sendOtp error:", err);
-      setError(err?.message || "Failed to send WhatsApp OTP. Please verify your phone number.");
+      setError("We couldn't send the code. Check your connection and try again.");
     } finally {
       setPhoneLoading(false);
     }
@@ -150,13 +164,15 @@ export default function SignupPage() {
       });
 
       if (result?.error) {
-        setError("Invalid or expired OTP. Please try again.");
+        setError(authErrorMessage(result.error, "That code is wrong or has expired. Check WhatsApp and try again, or tap Resend."));
       } else {
-        router.push("/leads");
+        setRedirecting(true);
+        setSuccess("Workspace created. Opening your dashboard…");
+        router.push("/");
       }
     } catch (err: any) {
       console.error("[phone-signup] verifyOtp error:", err);
-      setError(err?.message || "Invalid or expired OTP. Please try again.");
+      setError("We couldn't reach the server. Check your connection and try again.");
     } finally {
       setPhoneLoading(false);
     }
@@ -180,12 +196,7 @@ export default function SignupPage() {
           <p className="text-sm text-muted-foreground">Start closing leads faster with Ridhzo</p>
         </CardHeader>
         <CardContent className="space-y-4">
-          {error && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
+          <StatusMessage status={status} />
 
           {/* Google One-Click Sign Up */}
           <Button
@@ -230,16 +241,19 @@ export default function SignupPage() {
               <TabsTrigger value="phone">WhatsApp OTP</TabsTrigger>
               <TabsTrigger value="email">Email</TabsTrigger>
             </TabsList>
+            <p className="pt-2 text-center text-xs text-muted-foreground">
+              Remember which option you pick — you&apos;ll log in the same way next time.
+            </p>
 
             {/* WhatsApp OTP Tab */}
             <TabsContent value="phone" className="space-y-4 pt-2">
               {!otpSent ? (
                 <form onSubmit={handleSendOtp} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="signup-phone-org">Workspace name</Label>
+                    <Label htmlFor="signup-phone-org">Business name <span className="text-muted-foreground font-normal">(optional)</span></Label>
                     <Input
                       id="signup-phone-org"
-                      placeholder="Acme Real Estate (optional)"
+                      placeholder="Acme Real Estate"
                       value={phoneOrgName}
                       onChange={(e) => setPhoneOrgName(e.target.value)}
                     />
@@ -252,7 +266,6 @@ export default function SignupPage() {
                       placeholder="Jane Doe"
                       value={phoneName}
                       onChange={(e) => setPhoneName(e.target.value)}
-                      required
                     />
                   </div>
 
@@ -274,7 +287,6 @@ export default function SignupPage() {
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
                         className="rounded-l-none"
-                        required
                       />
                     </div>
                     <p className="text-xs text-muted-foreground">
@@ -293,10 +305,12 @@ export default function SignupPage() {
                     <Input
                       id="signup-otp"
                       type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
                       maxLength={6}
                       placeholder="123456"
                       value={otp}
-                      onChange={(e) => setOtp(e.target.value)}
+                      onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
                       className="text-center tracking-widest text-lg font-bold"
                       autoFocus
                     />
@@ -305,11 +319,11 @@ export default function SignupPage() {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          disabled={phoneLoading}
+                          disabled={phoneLoading || resendIn > 0}
                           onClick={handleSendOtp}
-                          className="underline hover:text-foreground"
+                          className="underline hover:text-foreground disabled:no-underline disabled:opacity-60"
                         >
-                          Resend
+                          {resendIn > 0 ? `Resend in ${resendIn}s` : "Resend"}
                         </button>
                         <span>·</span>
                         <button
@@ -326,8 +340,8 @@ export default function SignupPage() {
                     </div>
                   </div>
 
-                  <Button type="submit" className="w-full" disabled={phoneLoading}>
-                    {phoneLoading ? "Creating…" : "Create workspace"}
+                  <Button type="submit" className="w-full" disabled={phoneLoading || redirecting}>
+                    {phoneLoading ? "Verifying…" : redirecting ? "Opening dashboard…" : "Create workspace"}
                   </Button>
                 </form>
               )}
@@ -335,10 +349,16 @@ export default function SignupPage() {
 
             {/* Email Tab */}
             <TabsContent value="email" className="space-y-4 pt-2">
-              <form onSubmit={form.handleSubmit(onEmailSubmit)} className="space-y-4">
+              <form
+                onSubmit={form.handleSubmit(onEmailSubmit, (errors) =>
+                  setError(summarizeFieldErrors(errors, { orgName: "Business name", firstName: "Your name", email: "Email", password: "Password" })),
+                )}
+                noValidate
+                className="space-y-4"
+              >
                 <div className="space-y-2">
-                  <Label htmlFor="orgName">Workspace name</Label>
-                  <Input id="orgName" placeholder="Acme Sales" {...form.register("orgName")} />
+                  <Label htmlFor="orgName">Business name <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                  <Input id="orgName" placeholder="Acme Real Estate" {...form.register("orgName")} />
                   {form.formState.errors.orgName && (
                     <p className="text-sm text-destructive">{form.formState.errors.orgName.message}</p>
                   )}
@@ -353,7 +373,7 @@ export default function SignupPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="email">Work email</Label>
+                  <Label htmlFor="email">Email</Label>
                   <Input id="email" type="email" placeholder="m@example.com" {...form.register("email")} />
                   {form.formState.errors.email && (
                     <p className="text-sm text-destructive">{form.formState.errors.email.message}</p>
@@ -370,8 +390,8 @@ export default function SignupPage() {
                   )}
                 </div>
 
-                <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
-                  {form.formState.isSubmitting ? "Creating…" : "Create workspace"}
+                <Button type="submit" className="w-full" disabled={form.formState.isSubmitting || redirecting}>
+                  {redirecting ? "Opening dashboard…" : form.formState.isSubmitting ? "Creating…" : "Create workspace"}
                 </Button>
               </form>
             </TabsContent>

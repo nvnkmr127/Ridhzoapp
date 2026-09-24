@@ -6,11 +6,26 @@ import { RecentActivityFeed } from "@/components/dashboard/RecentActivityFeed";
 import { PriorityActions } from "@/components/dashboard/PriorityActions";
 import { GettingStarted } from "@/components/dashboard/GettingStarted";
 import { DashboardDateFilter } from "@/components/dashboard/DashboardDateFilter";
-import { requireOrg } from "@/lib/rbac";
+import { requireOrg, hasPermission } from "@/lib/rbac";
+import { db } from "@/db";
+import { automations, leadSources } from "@/db/schema";
+import { and, count, eq } from "drizzle-orm";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
+import { Users } from "lucide-react";
 import { AnalyticsService, AnalyticsFilters } from "@/lib/analytics/service";
 import { SlaAnalyticsService } from "@/domains/leads/slaAnalyticsService";
 import { ContentSharingService } from "@/domains/leads/contentSharingService";
 import { Timer, Eye } from "lucide-react";
+
+// Setup checklist state for the dashboard's GettingStarted card, read from real data.
+async function getSetupProgress(organizationId: string, totalLeads: number) {
+  const [[sources], [autos]] = await Promise.all([
+    db.select({ n: count() }).from(leadSources).where(and(eq(leadSources.organizationId, organizationId), eq(leadSources.isActive, 1))),
+    db.select({ n: count() }).from(automations).where(and(eq(automations.organizationId, organizationId), eq(automations.isActive, true))),
+  ]);
+  return { source: sources.n > 0, lead: totalLeads > 0, automation: autos.n > 0 };
+}
 
 function formatMinutes(mins: number): string {
   if (mins <= 0) return "—";
@@ -47,6 +62,35 @@ export default async function ExecutiveDashboardPage({
   ]);
 
   const slaOnTrack = sla.complianceRatePercentage >= 80;
+  const isAdmin = await hasPermission("settings.manage");
+  const progress = isAdmin && sla.totalLeads < 5 ? await getSetupProgress(organizationId, sla.totalLeads) : null;
+
+  // Brand-new workspace: a wall of zeros and empty charts reads as broken. Show the setup steps (or,
+  // for invited members, what to expect) until the first lead arrives.
+  if (sla.totalLeads === 0) {
+    return (
+      <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">Welcome to Ridhzo</h2>
+          <p className="text-sm text-muted-foreground">Your dashboard fills in as leads come in.</p>
+        </div>
+        {progress ? (
+          <GettingStarted progress={progress} dismissible={false} />
+        ) : (
+          <EmptyState
+            icon={<Users className="h-10 w-10 text-muted-foreground" />}
+            title="No leads yet"
+            description="Leads assigned to you will show up here. You can also add one yourself."
+            action={
+              <Link href="/leads">
+                <Button>Go to leads</Button>
+              </Link>
+            }
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6">
@@ -59,7 +103,7 @@ export default async function ExecutiveDashboardPage({
       </div>
 
       {/* Keep the setup guide up through the first few leads (it's dismissible once they're rolling). */}
-      {sla.totalLeads < 5 && <GettingStarted />}
+      {progress && <GettingStarted progress={progress} />}
 
       <div className="space-y-6">
         <div className="rounded-2xl border bg-card p-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

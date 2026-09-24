@@ -56,14 +56,15 @@ export class OrgService {
     }
 
     return db.transaction(async (tx) => {
-      const [existing] = await tx.select({ id: users.id }).from(users).where(eq(users.email, input.email)).limit(1);
+      const email = input.email.trim().toLowerCase();
+      const [existing] = await tx.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
       if (existing) throw new Error("An account with that email already exists");
 
       const [org] = await tx.insert(organizations).values({ name: input.orgName, slug }).returning();
 
       await tx.insert(users).values({
         organizationId: org.id,
-        email: input.email,
+        email,
         passwordHash,
         firstName: firstName || null,
         lastName: lastName || null,

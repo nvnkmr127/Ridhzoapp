@@ -5,6 +5,7 @@ import { ImpersonationBanner } from "@/components/platform/ImpersonationBanner";
 import { SystemBroadcastBanner } from "@/components/platform/SystemBroadcastBanner";
 import { PaymentGraceBanner } from "@/components/billing/PaymentGraceBanner";
 import { FloatingAssistant } from "@/components/assistant/FloatingAssistant";
+import { SignupAttribution } from "@/components/layout/SignupAttribution";
 import { isSuperAdmin, requireOrg } from "@/lib/rbac";
 import { PlatformConfigService } from "@/domains/platform/configService";
 import { PlanService } from "@/domains/billing/planService";
@@ -67,6 +68,7 @@ export default async function DashboardLayout({
         </main>
       </div>
       <FloatingAssistant storageKey={userId} />
+      <SignupAttribution userId={userId} />
     </div>
   );
 }

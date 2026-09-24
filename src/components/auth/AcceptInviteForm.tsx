@@ -6,12 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
+import { StatusMessage, type Status } from "@/components/ui/status-message";
 import { acceptInvitationAction } from "@/lib/actions/invitations";
 
 export function AcceptInviteForm({ token, email }: { token: string; email: string }) {
   const router = useRouter();
-  const { toast } = useToast();
+  // Inline rather than a toast: toasts vanish, and on success the user is sent to /login anyway.
+  const [status, setStatus] = React.useState<Status>(null);
   const [firstName, setFirstName] = React.useState("");
   const [lastName, setLastName] = React.useState("");
   const [password, setPassword] = React.useState("");
@@ -19,18 +20,22 @@ export function AcceptInviteForm({ token, email }: { token: string; email: strin
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (password.length < 6) return;
+    setStatus(null);
+    if (password.length < 6) {
+      setStatus({ kind: "error", text: "Password must be at least 6 characters." });
+      return;
+    }
     setSaving(true);
     try {
       const res = await acceptInvitationAction({ token, password, firstName: firstName || undefined, lastName: lastName || undefined });
       if (!res.ok) {
-        toast({ variant: "destructive", title: "Could not accept invite", description: res.message });
+        setStatus({ kind: "error", text: res.message || "We couldn't accept this invite. Please try again." });
         return;
       }
-      toast({ title: "Account created", description: "You can now sign in." });
-      router.push("/login");
+      setStatus({ kind: "success", text: "Account created. Taking you to log in…" });
+      router.push("/login?notice=invite-accepted");
     } catch {
-      toast({ variant: "destructive", title: "Could not accept invite", description: "We couldn't reach the server. Please try again." });
+      setStatus({ kind: "error", text: "We couldn't reach the server. Check your connection and try again." });
     } finally {
       setSaving(false);
     }
@@ -38,6 +43,7 @@ export function AcceptInviteForm({ token, email }: { token: string; email: strin
 
   return (
     <form onSubmit={submit} className="space-y-4">
+      <StatusMessage status={status} />
       <div className="space-y-1">
         <Label>Email</Label>
         <div className="text-sm bg-muted rounded-md px-3 py-2 text-muted-foreground">{email}</div>
@@ -50,7 +56,7 @@ export function AcceptInviteForm({ token, email }: { token: string; email: strin
         <Label htmlFor="pw">Choose a password</Label>
         <PasswordInput id="pw" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min 6 characters" required />
       </div>
-      <Button type="submit" className="w-full" disabled={saving || password.length < 6}>
+      <Button type="submit" className="w-full" disabled={saving || status?.kind === "success"}>
         {saving ? "Creating account…" : "Accept invitation"}
       </Button>
     </form>

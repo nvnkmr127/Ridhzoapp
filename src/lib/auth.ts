@@ -26,8 +26,21 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { db } from "@/db";
 import { users, organizations } from "@/db/schema";
-import { and, eq, isNull, gt, desc } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
+import { cookies } from "next/headers";
+import { GOOGLE_LINK_COOKIE, PHONE_EMAIL_DOMAIN, isPlaceholderEmail, readGoogleLinkToken } from "@/lib/auth/googleLink";
+
+async function consumeGoogleLinkCookie(): Promise<string | null> {
+  try {
+    const jar = await cookies();
+    const userId = readGoogleLinkToken(jar.get(GOOGLE_LINK_COOKIE)?.value);
+    if (jar.get(GOOGLE_LINK_COOKIE)) jar.delete(GOOGLE_LINK_COOKIE);
+    return userId;
+  } catch {
+    return null; // not in a request scope
+  }
+}
 
 // How long a session stays valid without re-authenticating (NextAuth's own JWT default — made
 // explicit here rather than left implicit).
@@ -71,38 +84,12 @@ export const authOptions: NextAuthOptions = {
 
         // 1. WhatsApp OTP via Watxio
         if (credentials?.otp) {
-          const otp = credentials.otp.trim();
-          const otpHash = crypto.createHash("sha256").update(otp).digest("hex");
-          const { phoneOtps } = await import("@/db/schema/system");
-
-          const [record] = await db
-            .select()
-            .from(phoneOtps)
-            .where(
-              and(
-                eq(phoneOtps.phone, phone),
-                isNull(phoneOtps.usedAt),
-                gt(phoneOtps.expiresAt, new Date())
-              )
-            )
-            .orderBy(desc(phoneOtps.createdAt))
-            .limit(1);
-
-          if (record && record.attempts < 5 && record.otpHash === otpHash) {
-            await db
-              .update(phoneOtps)
-              .set({ usedAt: new Date() })
-              .where(eq(phoneOtps.id, record.id));
-            verified = true;
-          } else if (record) {
-            await db
-              .update(phoneOtps)
-              .set({ attempts: record.attempts + 1 })
-              .where(eq(phoneOtps.id, record.id));
-            return null;
-          } else {
-            return null;
-          }
+          const { verifyPhoneOtp } = await import("@/lib/auth/phoneOtp");
+          const result = await verifyPhoneOtp(phone, credentials.otp);
+          // Surfaced to the client as result.error so it can say "request a new code" instead of "invalid".
+          if (result === "locked") throw new Error("OTP_LOCKED");
+          if (result !== "ok") return null;
+          verified = true;
         }
         // 2. Legacy fallback: Firebase ID Token
         else if (credentials?.idToken) {
@@ -132,7 +119,7 @@ export const authOptions: NextAuthOptions = {
           const workspaceName = credentials?.orgName?.trim() || `${baseName}'s Workspace`;
           const slug = `${slugify(workspaceName)}-${Math.random().toString(36).slice(2, 7)}`;
           const randomPasswordHash = await bcrypt.hash(crypto.randomUUID(), 10);
-          const syntheticEmail = `${cleanDigits}@phone.ridhzo.com`;
+          const syntheticEmail = `${cleanDigits}${PHONE_EMAIL_DOMAIN}`;
 
           const [newOrg] = await db
             .insert(organizations)
@@ -160,12 +147,15 @@ export const authOptions: NextAuthOptions = {
           existingUser = created;
         }
 
-        if (!existingUser || !existingUser.isActive) return null;
+        if (!existingUser) return null;
+        // Identity is proven at this point, so it's safe to say why sign-in is refused (surfaced as
+        // result.error on the client instead of a misleading "invalid code").
+        if (!existingUser.isActive) throw new Error("ACCOUNT_DISABLED");
 
         if (existingUser.organizationId && !existingUser.isSuperAdmin) {
           const { OrgService } = await import("@/domains/organizations/service");
           const isSuspended = await OrgService.isSuspended(existingUser.organizationId);
-          if (isSuspended) return null;
+          if (isSuspended) throw new Error("ACCOUNT_SUSPENDED");
         }
 
         return {
@@ -188,25 +178,28 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         const parsed = z
           .object({
-            email: z.string().email(),
+            email: z.string().trim().email(),
             password: z.string().min(1),
           })
           .safeParse(credentials);
 
         if (!parsed.success) return null;
 
-        const { email, password } = parsed.data;
+        const email = parsed.data.email.trim().toLowerCase();
+        const { password } = parsed.data;
 
         const [user] = await db
           .select()
           .from(users)
-          .where(eq(users.email, email))
+          .where(and(eq(users.email, email), isNull(users.deletedAt)))
           .limit(1);
 
-        if (!user || !user.isActive) return null;
+        if (!user) return null;
 
         const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
         if (!isPasswordValid) return null;
+        // Only after the password checks out, so these never reveal whether an email is registered.
+        if (!user.isActive) throw new Error("ACCOUNT_DISABLED");
 
         // Block sign-in for a suspended org (super-admins are exempt — they operate cross-tenant).
         if (user.organizationId && !user.isSuperAdmin) {
@@ -215,7 +208,7 @@ export const authOptions: NextAuthOptions = {
             .from(organizations)
             .where(eq(organizations.id, user.organizationId))
             .limit(1);
-          if (org?.suspendedAt) return null;
+          if (org?.suspendedAt) throw new Error("ACCOUNT_SUSPENDED");
         }
 
         return {
@@ -241,6 +234,29 @@ export const authOptions: NextAuthOptions = {
           .from(users)
           .where(and(eq(users.email, email), isNull(users.deletedAt)))
           .limit(1);
+
+        // "Connect Google" from Profile: attach this Google email to the logged-in user rather than
+        // signing in as / creating someone else.
+        const linkUserId = await consumeGoogleLinkCookie();
+        if (linkUserId) {
+          if (existingUser && existingUser.id !== linkUserId) return "/profile?link=google-taken";
+          if (!existingUser) {
+            const [linkUser] = await db
+              .select()
+              .from(users)
+              .where(and(eq(users.id, linkUserId), isNull(users.deletedAt)))
+              .limit(1);
+            if (!linkUser) return false;
+            // Only a phone-only account (placeholder email) can take a Google email; a real email is
+            // already its Google login.
+            if (!isPlaceholderEmail(linkUser.email)) return "/profile?link=google-mismatch";
+            [existingUser] = await db
+              .update(users)
+              .set({ email, updatedAt: new Date() })
+              .where(eq(users.id, linkUser.id))
+              .returning();
+          }
+        }
 
         if (!existingUser) {
           const { OrgService, slugify } = await import("@/domains/organizations/service");
@@ -275,12 +291,12 @@ export const authOptions: NextAuthOptions = {
           existingUser = created;
         }
 
-        if (!existingUser.isActive) return false;
+        if (!existingUser.isActive) return "/login?error=ACCOUNT_DISABLED";
 
         if (existingUser.organizationId && !existingUser.isSuperAdmin) {
           const { OrgService } = await import("@/domains/organizations/service");
           const isSuspended = await OrgService.isSuspended(existingUser.organizationId);
-          if (isSuspended) return false;
+          if (isSuspended) return "/login?error=ACCOUNT_SUSPENDED";
         }
 
         user.id = existingUser.id;
@@ -405,5 +421,8 @@ export const authOptions: NextAuthOptions = {
   },
   pages: {
     signIn: "/login",
+    // Failed Google/OAuth sign-ins land back on the login form (with ?error=) instead of NextAuth's
+    // bare built-in error page.
+    error: "/login",
   },
 };

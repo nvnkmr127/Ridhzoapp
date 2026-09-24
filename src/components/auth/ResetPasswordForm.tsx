@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
-import { Alert } from "@/components/ui/alert";
+import { StatusMessage } from "@/components/ui/status-message";
 import { resetPasswordAction } from "@/lib/actions/auth";
 
 export function ResetPasswordForm({ token, email }: { token: string; email: string }) {
@@ -36,12 +36,12 @@ export function ResetPasswordForm({ token, email }: { token: string; email: stri
     try {
       const res = await resetPasswordAction({ token, password });
       if (!res.ok) {
-        setError(res.message || "Failed to reset password.");
+        setError(res.message || "We couldn't update your password. Please try again.");
         return;
       }
       setSuccess(true);
       setTimeout(() => {
-        router.push("/login");
+        router.push("/login?notice=password-reset");
       }, 2500);
     } catch {
       setError("We couldn't reach the server. Please try again.");
@@ -53,9 +53,7 @@ export function ResetPasswordForm({ token, email }: { token: string; email: stri
   if (success) {
     return (
       <div className="space-y-4 text-center">
-        <div className="rounded-lg bg-green-50 dark:bg-green-950/40 p-4 border border-green-200 dark:border-green-800 text-sm text-green-800 dark:text-green-200">
-          Your password has been successfully reset! Redirecting to login…
-        </div>
+        <StatusMessage className="text-left" status={{ kind: "success", text: "Password updated. Taking you to log in…" }} />
         <Button asChild className="w-full">
           <Link href="/login">Log in now</Link>
         </Button>
@@ -65,7 +63,7 @@ export function ResetPasswordForm({ token, email }: { token: string; email: stri
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {error && <Alert variant="destructive">{error}</Alert>}
+      <StatusMessage status={error ? { kind: "error", text: error } : null} />
 
       <div className="space-y-1">
         <Label>Account</Label>

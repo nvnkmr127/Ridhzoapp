@@ -4,6 +4,7 @@ import { verifyResetTokenAction } from "@/lib/actions/auth";
 import { ResetPasswordForm } from "@/components/auth/ResetPasswordForm";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { StatusMessage } from "@/components/ui/status-message";
 
 export default async function ResetPasswordPage({
   params,
@@ -37,9 +38,10 @@ export default async function ResetPasswordPage({
             <ResetPasswordForm token={token} email={result.email} />
           ) : (
             <div className="space-y-4 text-center">
-              <div className="rounded-lg bg-red-50 dark:bg-red-950/40 p-4 border border-red-200 dark:border-red-800 text-sm text-red-800 dark:text-red-200">
-                This password reset link is invalid or has expired.
-              </div>
+              <StatusMessage
+                className="text-left"
+                status={{ kind: "error", text: "This reset link is invalid, already used, or older than 1 hour. Request a new one below." }}
+              />
               <Button asChild className="w-full">
                 <Link href="/forgot-password">Request a new reset link</Link>
               </Button>

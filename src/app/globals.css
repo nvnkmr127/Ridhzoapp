@@ -43,6 +43,9 @@
 
   --destructive: 0 0% 17%;        /* monochrome; intent carried by icon + confirm, not hue */
   --destructive-foreground: 0 0% 98%;
+  /* The one exception to monochrome: error TEXT must be readable. --destructive is a dark fill for
+     buttons, so text-destructive rendered 17% gray on a 4-7% black page — errors were invisible. */
+  --destructive-text: 0 84% 72%;
 
   --border: 0 0% 16%;
   --input: 0 0% 16%;
@@ -88,3 +91,14 @@ input[type="datetime-local"],
 input[type="time"] {
   color-scheme: dark;
 }
+
+/* StatusMessage: re-plays whenever a new outcome is shown, so a repeated error is still noticed. */
+@keyframes status-flash {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+.status-flash { animation: status-flash 0.25s ease-out; }
+@media (prefers-reduced-motion: reduce) { .status-flash { animation: none; } }
+
+/* Error copy (form field errors etc.) uses the readable red, not the dark button fill. */
+.text-destructive { color: hsl(var(--destructive-text)); }

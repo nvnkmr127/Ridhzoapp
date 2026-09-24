@@ -71,12 +71,24 @@ describe("sendWhatsAppOtpAction", () => {
   });
 
   it("generates and stores OTP when valid and unrate-limited", async () => {
-    // signup -> skips user lookup
+    // user lookup -> number not registered yet
+    mockLimit.mockResolvedValueOnce([]);
     // recent otp check -> no recent otp
     mockLimit.mockResolvedValueOnce([]);
 
     const res = await sendWhatsAppOtpAction({ phone: "+919876543210", purpose: "signup" });
     expect(res.ok).toBe(true);
     expect(mockInsert).toHaveBeenCalled();
+  });
+
+  it("tells signup users to log in when the number is already registered", async () => {
+    mockLimit.mockResolvedValueOnce([{ id: "u1" }]);
+
+    const res = await sendWhatsAppOtpAction({ phone: "+919876543210", purpose: "signup" });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.message).toMatch(/log in/i);
+    }
+    expect(mockInsert).not.toHaveBeenCalled();
   });
 });

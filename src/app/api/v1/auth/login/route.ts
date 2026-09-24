@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { signMobileToken } from "@/lib/mobileAuth";
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid email or password format" }, { status: 422 });
   }
 
-  const [user] = await db.select().from(users).where(eq(users.email, parsed.data.email)).limit(1);
+  const [user] = await db.select().from(users).where(and(eq(users.email, parsed.data.email.trim().toLowerCase()), isNull(users.deletedAt))).limit(1);
   // Same generic error whether the email is unknown or the password is wrong — don't leak which.
   if (!user || !user.isActive || !user.organizationId) {
     return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });

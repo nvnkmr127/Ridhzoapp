@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { SmartSegments } from "@/components/leads/SmartSegments";
-import { Users, Plus, Upload, FilterX, Kanban, Flame, Trash2 } from "lucide-react";
+import { Users, Plus, Upload, FilterX, Kanban, Flame, Trash2, Network } from "lucide-react";
 import Link from "next/link";
 import { LeadService } from "@/domains/leads/service";
 import { SavedViewService } from "@/domains/savedViews/service";
@@ -150,14 +150,28 @@ export default async function LeadsPage({
         ) : (
           <EmptyState
             icon={<Users className="h-10 w-10 text-muted-foreground" />}
-            title="No leads found"
-            description="Get started by creating a new lead manually or importing from a CSV."
+            title="No leads yet"
+            description="Connect Facebook ads or your website so new leads land here automatically — or add one by hand to try it out."
             action={
-              <LeadImportWizard>
-                <Button variant="outline">
-                  <Upload className="mr-2 h-4 w-4" /> Import Leads
-                </Button>
-              </LeadImportWizard>
+              <div className="flex flex-wrap justify-center gap-2">
+                {isAdmin && (
+                  <Link href="/settings/sources">
+                    <Button>
+                      <Network className="mr-2 h-4 w-4" /> Connect lead source
+                    </Button>
+                  </Link>
+                )}
+                <QuickAddLeadDrawer organizationId={organizationId}>
+                  <Button variant="outline">
+                    <Plus className="mr-2 h-4 w-4" /> Add Lead
+                  </Button>
+                </QuickAddLeadDrawer>
+                <LeadImportWizard>
+                  <Button variant="outline">
+                    <Upload className="mr-2 h-4 w-4" /> Import CSV
+                  </Button>
+                </LeadImportWizard>
+              </div>
             }
           />
         )

@@ -4,14 +4,17 @@ import { z } from "zod";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { db } from "@/db";
-import { users, passwordResets, phoneOtps } from "@/db/schema";
+import { users, organizations, passwordResets, phoneOtps } from "@/db/schema";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { OrgService } from "@/domains/organizations/service";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
 import { sendEmail, appUrl } from "@/lib/mail/mailer";
+import { requireOrg } from "@/lib/rbac";
+import type { StoredAttribution } from "@/lib/tracking/utm";
+import { isPlaceholderEmail } from "@/lib/auth/googleLink";
 
 const signupSchema = z.object({
-  orgName: z.string().min(1, "Workspace name is required").max(255),
+  orgName: z.string().max(255).optional(),
   firstName: z.string().max(255).optional(),
   email: z.string().email("Enter a valid email"),
   password: z.string().min(6, "Password must be at least 6 characters"),
@@ -38,10 +41,12 @@ export async function signupAction(input: z.infer<typeof signupSchema>) {
   if (!parsed.success) {
     return fail("VALIDATION", "Please check the highlighted fields and try again.", zodFieldErrors(parsed.error));
   }
-  const data = parsed.data;
+  const data = { ...parsed.data, email: parsed.data.email.trim().toLowerCase() };
+  // Business name is optional; fall back to "<name>'s Workspace" like the Google/phone flows.
+  const orgName = data.orgName?.trim() || `${data.firstName?.trim() || data.email.split("@")[0]}'s Workspace`;
   try {
     const created = await OrgService.createWithOwner({
-      orgName: data.orgName,
+      orgName,
       email: data.email,
       password: data.password,
       firstName: data.firstName,
@@ -65,7 +70,7 @@ export async function signupAction(input: z.infer<typeof signupSchema>) {
           eventName: "CompleteRegistration",
           email: data.email,
           orgId: created.organizationId,
-          orgName: data.orgName,
+          orgName,
           fbp: data.attribution?.fbp,
           fbc: data.attribution?.fbc,
           eventSourceUrl: data.attribution?.landingPage,
@@ -110,7 +115,7 @@ export async function requestPasswordResetAction(input: { email: string }) {
     if (!user) {
       return fail(
         "NOT_FOUND",
-        "We don't have an account with this email address. Please check for typos or sign up."
+        "We don't have an account with this email. If you signed up with WhatsApp, log in with WhatsApp OTP instead. Otherwise check for typos or sign up."
       );
     }
 
@@ -175,7 +180,7 @@ export async function checkPhoneExistsAction(phone: string) {
 
 const sendOtpSchema = z.object({
   phone: z.string().min(10, "Please enter a valid phone number"),
-  purpose: z.enum(["login", "signup"]).default("login"),
+  purpose: z.enum(["login", "signup", "link"]).default("login"),
 });
 
 // Generates and delivers a 6-digit verification OTP over WhatsApp via Watxio
@@ -187,19 +192,23 @@ export async function sendWhatsAppOtpAction(input: z.infer<typeof sendOtpSchema>
   const clean = parsed.data.phone.trim();
   const formatted = clean.startsWith("+") ? clean : `+91${clean.replace(/^0+/, "")}`;
 
-  if (parsed.data.purpose === "login") {
-    const [existing] = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(and(eq(users.phone, formatted), isNull(users.deletedAt)))
-      .limit(1);
+  const [existing] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.phone, formatted), isNull(users.deletedAt)))
+    .limit(1);
 
-    if (!existing) {
-      return fail(
-        "NOT_FOUND",
-        "We don't have an account with this mobile number. Please click 'Create workspace' to sign up."
-      );
-    }
+  if (parsed.data.purpose === "login" && !existing) {
+    return fail(
+      "NOT_FOUND",
+      "We don't have an account with this mobile number. Check the country code, or sign up to create one."
+    );
+  }
+  if (parsed.data.purpose === "signup" && existing) {
+    return fail("CONFLICT", "This number already has an account. Log in instead.");
+  }
+  if (parsed.data.purpose === "link" && existing) {
+    return fail("CONFLICT", "This number is already used by another Ridhzo account.");
   }
 
   // Rate limit: 45s between OTP requests to prevent spamming
@@ -260,7 +269,10 @@ export async function sendWhatsAppOtpAction(input: z.infer<typeof sendOtpSchema>
       }
     } catch (err: any) {
       console.error("[watxio-otp] Failed to dispatch WhatsApp OTP:", err);
-      return fail("SERVER", `Failed to send WhatsApp message: ${err?.message || "Watxio error"}`);
+      return fail(
+        "SERVER",
+        "We couldn't send the code on WhatsApp. Make sure this number uses WhatsApp, or sign up with Google or email instead."
+      );
     }
   } else {
     // Unconfigured / dev fallback: log code for local testing
@@ -343,4 +355,44 @@ export async function resetPasswordAction(input: z.infer<typeof resetPasswordSch
     console.error("[password-reset] error resetting password:", err);
     return actionFail(err);
   }
+}
+
+// Google and WhatsApp signups can't carry attribution through signupAction, so the dashboard calls
+// this once after landing. Only records for a user+org created in the last 30 minutes that has no
+// attribution yet, so invited members, old accounts and email signups (already recorded) are skipped.
+export async function recordSignupAttributionAction(input: StoredAttribution) {
+  const parsed = signupSchema.shape.attribution.safeParse(input);
+  const attribution = parsed.success ? parsed.data : undefined;
+  if (!attribution) return ok({ recorded: false });
+  const { userId, organizationId } = await requireOrg();
+  if (!organizationId) return ok({ recorded: false });
+  const cutoff = new Date(Date.now() - 30 * 60 * 1000);
+  const [row] = await db
+    .select({ email: users.email, phone: users.phone, orgName: organizations.name })
+    .from(users)
+    .innerJoin(organizations, eq(organizations.id, users.organizationId))
+    .where(and(eq(users.id, userId), eq(users.organizationId, organizationId), gt(users.createdAt, cutoff), gt(organizations.createdAt, cutoff)))
+    .limit(1);
+  if (!row) return ok({ recorded: false });
+
+  const { PlatformAttributionService } = await import("@/domains/platform/attributionService");
+  if (await PlatformAttributionService.getAttribution(organizationId)) return ok({ recorded: false });
+  await PlatformAttributionService.recordAttribution(organizationId, attribution);
+
+  try {
+    const { MetaCapiService } = await import("@/domains/platform/capiService");
+    await MetaCapiService.sendEvent({
+      eventName: "CompleteRegistration",
+      email: isPlaceholderEmail(row.email) ? undefined : row.email,
+      phone: row.phone ?? undefined,
+      orgId: organizationId,
+      orgName: row.orgName,
+      fbp: attribution.fbp,
+      fbc: attribution.fbc,
+      eventSourceUrl: attribution.landingPage,
+    });
+  } catch (err) {
+    console.warn("[recordSignupAttributionAction] failed to dispatch Meta CAPI event", err);
+  }
+  return ok({ recorded: true });
 }

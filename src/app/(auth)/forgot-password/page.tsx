@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Alert } from "@/components/ui/alert";
+import { StatusMessage } from "@/components/ui/status-message";
 import { requestPasswordResetAction } from "@/lib/actions/auth";
 
 export default function ForgotPasswordPage() {
@@ -15,10 +15,13 @@ export default function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Only "no account with this email" should offer signup — not network or server failures.
+  const [notFound, setNotFound] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setNotFound(false);
     if (!email || !email.includes("@")) {
       setError("Please enter a valid email address.");
       return;
@@ -28,12 +31,13 @@ export default function ForgotPasswordPage() {
     try {
       const res = await requestPasswordResetAction({ email });
       if (!res.ok) {
-        setError(res.message || "Failed to request password reset.");
+        setError(res.message || "We couldn't send the reset link. Please try again.");
+        setNotFound(res.code === "NOT_FOUND");
         return;
       }
       setSubmitted(true);
     } catch {
-      setError("Failed to connect to server. Please try again.");
+      setError("We couldn't reach the server. Check your connection and try again.");
     } finally {
       setLoading(false);
     }
@@ -61,18 +65,21 @@ export default function ForgotPasswordPage() {
         <CardContent className="space-y-4">
           {error && (
             <div className="space-y-2">
-              <Alert variant="destructive">{error}</Alert>
-              <Button asChild variant="outline" size="sm" className="w-full">
-                <Link href="/signup">Create a new account</Link>
-              </Button>
+              <StatusMessage status={{ kind: "error", text: error }} />
+              {notFound && (
+                <Button asChild variant="outline" size="sm" className="w-full">
+                  <Link href="/signup">Create a new account</Link>
+                </Button>
+              )}
             </div>
           )}
 
           {submitted ? (
             <div className="space-y-4 text-center">
-              <div className="rounded-lg bg-green-50 dark:bg-green-950/40 p-4 border border-green-200 dark:border-green-800 text-sm text-green-800 dark:text-green-200 leading-relaxed">
-                We have sent instructions to reset your password to <span className="font-semibold">{email}</span>. Please check your inbox.
-              </div>
+              <StatusMessage
+                className="text-left"
+                status={{ kind: "success", text: `Reset link sent to ${email}. It's valid for 1 hour — check your inbox.` }}
+              />
               <p className="text-xs text-muted-foreground">
                 Don&apos;t see the email? Check your spam folder or wait a couple of minutes.
               </p>

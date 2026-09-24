@@ -12,11 +12,13 @@ import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertCircle } from "lucide-react";
+import { StatusMessage, summarizeFieldErrors, type Status } from "@/components/ui/status-message";
+import { authErrorMessage, LOGIN_NOTICES } from "@/lib/auth/messages";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useEffect, useState } from "react";
 import { sendWhatsAppOtpAction } from "@/lib/actions/auth";
+import { useCooldown } from "@/hooks/use-cooldown";
+import { COUNTRY_CODES } from "@/lib/countryCodes";
 
 const DEV = process.env.NODE_ENV === "development";
 const DEV_EMAIL = process.env.NEXT_PUBLIC_DEV_LOGIN_EMAIL || "admin@acme.com";
@@ -31,11 +33,28 @@ type LoginValues = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const router = useRouter();
-  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<Status>(null);
+  const setError = (text: string | null) => setStatus(text ? { kind: "error", text } : null);
+  const setSuccess = (text: string) => setStatus({ kind: "success", text });
+  // Keeps buttons locked after success while the dashboard loads, so nobody double-submits.
+  const [redirecting, setRedirecting] = useState(false);
+
+  // Outcomes of flows that end on this page: failed Google sign-in (?error=, from NextAuth) or a
+  // finished invite / password reset / signup (?notice=).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const err = params.get("error");
+    const notice = params.get("notice");
+    if (err) setError(authErrorMessage(err, "Sign-in didn't work. Please try again."));
+    else if (notice && LOGIN_NOTICES[notice]) setSuccess(LOGIN_NOTICES[notice]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [googleLoading, setGoogleLoading] = useState(false);
 
   // Phone OTP state
   const [phone, setPhone] = useState("");
+  const [countryCode, setCountryCode] = useState("+91");
+  const [resendIn, setResendIn] = useCooldown();
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [phoneLoading, setPhoneLoading] = useState(false);
@@ -55,12 +74,14 @@ export default function LoginPage() {
       });
 
       if (result?.error) {
-        setError("Invalid email or password. Please try again.");
+        setError(authErrorMessage(result.error, "Wrong email or password. If you signed up with Google or WhatsApp, use that option instead."));
       } else {
+        setRedirecting(true);
+        setSuccess("Logged in. Opening your dashboard…");
         router.push("/");
       }
     } catch {
-      setError("An unexpected error occurred. Please try again.");
+      setError("We couldn't reach the server. Check your connection and try again.");
     }
   };
 
@@ -70,7 +91,7 @@ export default function LoginPage() {
     try {
       await signIn("google", { callbackUrl: "/" });
     } catch {
-      setError("Could not initiate Google sign in.");
+      setError("Couldn't open Google sign-in. Check your connection and try again.");
       setGoogleLoading(false);
     }
   };
@@ -79,14 +100,14 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     const clean = phone.trim();
-    if (!clean || clean.length < 10) {
-      setError("Please enter a valid 10-digit mobile number.");
+    if (!clean || clean.replace(/\D/g, "").length < 6) {
+      setError("Please enter a valid mobile number.");
       return;
     }
 
     const formatted = clean.startsWith("+")
       ? clean
-      : `+91${clean.replace(/^0+/, "")}`;
+      : `${countryCode}${clean.replace(/^0+/, "")}`;
 
     setPhoneLoading(true);
     try {
@@ -96,9 +117,11 @@ export default function LoginPage() {
         return;
       }
       setOtpSent(true);
+      setResendIn(45);
+      setSuccess(`Code sent to WhatsApp on ${formatted}. It's valid for 5 minutes.`);
     } catch (err: any) {
       console.error("[phone-login] sendOtp error:", err);
-      setError(err?.message || "Failed to send WhatsApp OTP. Please check your number.");
+      setError("We couldn't send the code. Check your connection and try again.");
     } finally {
       setPhoneLoading(false);
     }
@@ -113,7 +136,7 @@ export default function LoginPage() {
     }
 
     const clean = phone.trim();
-    const formatted = clean.startsWith("+") ? clean : `+91${clean.replace(/^0+/, "")}`;
+    const formatted = clean.startsWith("+") ? clean : `${countryCode}${clean.replace(/^0+/, "")}`;
 
     setPhoneLoading(true);
     try {
@@ -124,13 +147,15 @@ export default function LoginPage() {
       });
 
       if (result?.error) {
-        setError("Invalid or expired OTP. Please try again.");
+        setError(authErrorMessage(result.error, "That code is wrong or has expired. Check WhatsApp and try again, or tap Resend."));
       } else {
+        setRedirecting(true);
+        setSuccess("Verified. Opening your dashboard…");
         router.push("/");
       }
     } catch (err: any) {
       console.error("[phone-login] verifyOtp error:", err);
-      setError(err?.message || "Invalid or expired OTP. Please try again.");
+      setError("We couldn't reach the server. Check your connection and try again.");
     } finally {
       setPhoneLoading(false);
     }
@@ -166,12 +191,7 @@ export default function LoginPage() {
           <p className="text-sm text-muted-foreground">Sign in to your Ridhzo account</p>
         </CardHeader>
         <CardContent className="space-y-4">
-          {error && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
+          <StatusMessage status={status} />
 
           {/* Google One-Click Login */}
           <Button
@@ -224,9 +244,14 @@ export default function LoginPage() {
                   <div className="space-y-2">
                     <Label htmlFor="phone">Mobile Number</Label>
                     <div className="flex">
-                      <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-muted-foreground text-sm">
-                        +91
-                      </span>
+                      <select
+                        aria-label="Country code"
+                        value={countryCode}
+                        onChange={(e) => setCountryCode(e.target.value)}
+                        className="rounded-l-md border border-r-0 border-input bg-muted text-muted-foreground text-sm px-2 focus:outline-none"
+                      >
+                        {COUNTRY_CODES.map((c) => <option key={c} value={c}>{c}</option>)}
+                      </select>
                       <Input
                         id="phone"
                         type="tel"
@@ -252,10 +277,12 @@ export default function LoginPage() {
                     <Input
                       id="otp"
                       type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
                       maxLength={6}
                       placeholder="123456"
                       value={otp}
-                      onChange={(e) => setOtp(e.target.value)}
+                      onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
                       className="text-center tracking-widest text-lg font-bold"
                       autoFocus
                     />
@@ -264,11 +291,11 @@ export default function LoginPage() {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          disabled={phoneLoading}
+                          disabled={phoneLoading || resendIn > 0}
                           onClick={handleSendOtp}
-                          className="underline hover:text-foreground"
+                          className="underline hover:text-foreground disabled:no-underline disabled:opacity-60"
                         >
-                          Resend
+                          {resendIn > 0 ? `Resend in ${resendIn}s` : "Resend"}
                         </button>
                         <span>·</span>
                         <button
@@ -285,8 +312,8 @@ export default function LoginPage() {
                     </div>
                   </div>
 
-                  <Button type="submit" className="w-full" disabled={phoneLoading}>
-                    {phoneLoading ? "Verifying…" : "Verify & Log in"}
+                  <Button type="submit" className="w-full" disabled={phoneLoading || redirecting}>
+                    {phoneLoading ? "Verifying…" : redirecting ? "Opening dashboard…" : "Verify & log in"}
                   </Button>
                 </form>
               )}
@@ -294,7 +321,13 @@ export default function LoginPage() {
 
             {/* Email + Password Tab */}
             <TabsContent value="email" className="space-y-4 pt-2">
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <form
+                onSubmit={form.handleSubmit(onSubmit, (errors) =>
+                  setError(summarizeFieldErrors(errors, { email: "Email", password: "Password" })),
+                )}
+                noValidate
+                className="space-y-4"
+              >
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
                   <Input
@@ -327,8 +360,8 @@ export default function LoginPage() {
                   )}
                 </div>
 
-                <Button type="submit" className="w-full" disabled={form.formState.isSubmitting}>
-                  {form.formState.isSubmitting ? "Logging in..." : "Login"}
+                <Button type="submit" className="w-full" disabled={form.formState.isSubmitting || redirecting}>
+                  {redirecting ? "Opening dashboard…" : form.formState.isSubmitting ? "Logging in…" : "Log in"}
                 </Button>
               </form>
             </TabsContent>
