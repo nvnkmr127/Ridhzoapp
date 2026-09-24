@@ -3,6 +3,7 @@
 import { requireOrg } from "@/lib/rbac";
 import { runLeadAgent, type AgentResult } from "@/lib/ai/agent";
 import { capHistory } from "@/lib/ai/history";
+import { PlanService } from "@/domains/billing/planService";
 
 // One turn of the CRM assistant. Tenant + identity come from the session (requireOrg), never the
 // client — the agent's tools are bound to these server-side. History is the prior turns for context.
@@ -12,6 +13,9 @@ export async function runAgentAction(
   currentLeadId?: string,
 ): Promise<AgentResult> {
   const { organizationId, userId } = await requireOrg();
+  if (!(await PlanService.aiAllowed(organizationId))) {
+    return { text: "The AI assistant is available on the Starter and Unlimited plans.", proposals: [], steps: 0, enabled: false };
+  }
   const trimmed = message.trim();
   if (!trimmed) return { text: "Ask me something about your leads.", proposals: [], steps: 0, enabled: true };
   // Only accept a canonical uuid as lead context; anything else is ignored (org scope guards it too).

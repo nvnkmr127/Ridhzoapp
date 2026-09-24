@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { startSubscriptionAction, verifySubscriptionAction, cancelSubscriptionAction, setPlanManuallyAction } from "@/lib/actions/billing";
 import { Check } from "lucide-react";
 
-type Limits = Record<string, { seats: number; leads: number; price?: string; description?: string }>;
+type Limits = Record<string, { seats: number; leads: number; automations: number; sequences: number; sources: number; ai: boolean; price?: string; description?: string }>;
 
 declare global {
   interface Window { Razorpay?: any }
@@ -160,6 +160,10 @@ export function BillingManager({
               <ul className="text-sm text-muted-foreground space-y-1">
                 <li className="flex items-center gap-2"><Check className="h-4 w-4 text-muted-foreground" /> {fmt(l.seats)} seats</li>
                 <li className="flex items-center gap-2"><Check className="h-4 w-4 text-muted-foreground" /> {fmt(l.leads)} leads</li>
+                <li className="flex items-center gap-2"><Check className="h-4 w-4 text-muted-foreground" /> {fmt(l.automations)} automations</li>
+                <li className="flex items-center gap-2"><Check className="h-4 w-4 text-muted-foreground" /> {fmt(l.sequences)} sequences</li>
+                <li className="flex items-center gap-2"><Check className="h-4 w-4 text-muted-foreground" /> {fmt(l.sources)} lead {l.sources === 1 ? "source" : "sources"}</li>
+                <li className={`flex items-center gap-2 ${l.ai ? "" : "line-through opacity-60"}`}><Check className="h-4 w-4 text-muted-foreground" /> AI features</li>
               </ul>
               {isCurrent ? (
                 <Button className="w-full" disabled variant="secondary">Current plan</Button>

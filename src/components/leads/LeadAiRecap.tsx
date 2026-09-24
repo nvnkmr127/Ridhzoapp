@@ -4,6 +4,7 @@ import * as React from "react";
 import { Sparkles, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { summarizeLeadAction } from "@/lib/actions/ai";
+import { usePlan } from "@/components/billing/PlanGate";
 
 type Recap = { text: string; at?: string };
 
@@ -23,9 +24,11 @@ export function LeadAiRecap({ leadId, initial, autoRun = false }: { leadId: stri
   const [recap, setRecap] = React.useState<Recap | null>(initial ?? null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const { aiAllowed, openUpgrade } = usePlan();
 
   const run = React.useCallback(
     async (refresh = false) => {
+      if (!aiAllowed) return openUpgrade();
       setLoading(true);
       setError(null);
       try {
@@ -37,12 +40,12 @@ export function LeadAiRecap({ leadId, initial, autoRun = false }: { leadId: stri
         setLoading(false);
       }
     },
-    [leadId],
+    [leadId, aiAllowed, openUpgrade],
   );
 
   React.useEffect(() => {
-    if (autoRun && !initial) run();
-  }, [autoRun, initial, run]);
+    if (autoRun && !initial && aiAllowed) run();
+  }, [autoRun, initial, aiAllowed, run]);
 
   if (recap) {
     return (

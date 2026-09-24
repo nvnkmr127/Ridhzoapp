@@ -1,24 +1,37 @@
 import { db } from "@/db";
-import { users, leads, invitations, organizations } from "@/db/schema";
+import { users, leads, invitations, organizations, automations, sequences, leadSources } from "@/db/schema";
 import { and, count, eq, gt, isNull } from "drizzle-orm";
 import { PlatformConfigService } from "@/domains/platform/configService";
 
 // Per-plan ceilings. Infinity = unlimited. Enforcement lives here; charging (Stripe) is separate
 // and needs external keys — the plan column is set by that flow, which isn't wired yet.
-export const PLAN_LIMITS: Record<string, { seats: number; leads: number; price: string; description: string }> = {
-  free: { seats: 1, leads: 100, price: "₹0", description: "For individuals evaluating Ridhzo" },
-  starter: { seats: 3, leads: 5_000, price: "₹249 / mo", description: "For solo agents & growing teams" },
-  unlimited: { seats: Infinity, leads: Infinity, price: "₹449 / mo", description: "Unlimited leads, seats & full access" },
+export type PlanLimits = {
+  seats: number; leads: number; automations: number; sequences: number; sources: number; ai: boolean;
+  price: string; description: string;
+};
+export const PLAN_LIMITS: Record<string, PlanLimits> = {
+  free: { seats: 1, leads: 100, automations: 2, sequences: 2, sources: 1, ai: false, price: "₹0", description: "For individuals evaluating Ridhzo" },
+  starter: { seats: 3, leads: 5_000, automations: Infinity, sequences: Infinity, sources: Infinity, ai: true, price: "₹249 / mo", description: "For solo agents & growing teams" },
+  unlimited: { seats: Infinity, leads: Infinity, automations: Infinity, sequences: Infinity, sources: Infinity, ai: true, price: "₹449 / mo", description: "Unlimited leads, seats & full access" },
 };
 
-function limitsFor(plan: string) {
+// Countable per-org resources capped by plan. Counts every row (active or paused) so pausing
+// one can't be used to create more.
+const COUNTED = {
+  automations: { table: automations, org: automations.organizationId, label: "automations" },
+  sequences: { table: sequences, org: sequences.organizationId, label: "sequences" },
+  sources: { table: leadSources, org: leadSources.organizationId, label: "lead sources" },
+} as const;
+export type CountedResource = keyof typeof COUNTED;
+
+export function limitsFor(plan: string) {
   if (plan === "pro") return PLAN_LIMITS.starter;
   if (plan === "business") return PLAN_LIMITS.unlimited;
   return PLAN_LIMITS[plan] ?? PLAN_LIMITS.free;
 }
 
 export class PlanService {
-  private static async plan(organizationId: string) {
+  static async plan(organizationId: string) {
     try {
       const res = await db
         .select({ plan: organizations.plan, planStatus: organizations.planStatus })
@@ -95,6 +108,22 @@ export class PlanService {
     if (stats.leads.max === Infinity) return;
     if (stats.leads.current >= stats.leads.max) {
       throw new Error(`Your plan allows ${stats.leads.max} leads. Upgrade to add more.`);
+    }
+  }
+
+  // AI (drafts, recaps, assistant, sequence generation, intent tagging) is paid-only.
+  static async aiAllowed(organizationId: string) {
+    return limitsFor(await this.plan(organizationId)).ai;
+  }
+
+  // Message contains "plan" so actionFail maps it to code LIMIT → the UI opens the upgrade dialog.
+  static async assertCanAdd(organizationId: string, resource: CountedResource) {
+    const max = limitsFor(await this.plan(organizationId))[resource];
+    if (max === Infinity) return;
+    const { table, org, label } = COUNTED[resource];
+    const [row] = await db.select({ n: count() }).from(table).where(eq(org, organizationId));
+    if (Number(row?.n ?? 0) >= max) {
+      throw new Error(`The Free plan allows ${max} ${label}. Upgrade to Starter or Unlimited to add more.`);
     }
   }
 }

@@ -7,6 +7,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { usePlan } from "@/components/billing/PlanGate";
 import { Sparkles, Upload, FileText, Loader2 } from "lucide-react";
 import { extractDocTextAction, improveAiContextAction, saveAiContextAction } from "@/lib/actions/aiContext";
 
@@ -42,6 +43,7 @@ export function AiContextDialog({
   children: React.ReactNode;
 }) {
   const { toast } = useToast();
+  const { aiAllowed, openUpgrade } = usePlan();
   const [open, setOpen] = React.useState(false);
   const [text, setText] = React.useState(initial);
   const [busy, setBusy] = React.useState<null | "upload" | "improve" | "save">(null);
@@ -78,6 +80,7 @@ export function AiContextDialog({
   }
 
   async function improve() {
+    if (!aiAllowed) return openUpgrade();
     if (!text.trim()) return;
     setBusy("improve");
     try {

@@ -40,3 +40,34 @@ describe("PlanService.assertCanAddSeat", () => {
     await expect(PlanService.assertCanAddSeat("org")).rejects.toThrow(/1 seats/);
   });
 });
+
+describe("PlanService free-plan gates", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("blocks a 3rd automation on free, with a LIMIT-mapped message", async () => {
+    queueResults([[{ plan: "free" }], [{ n: 2 }]]);
+    await expect(PlanService.assertCanAdd("org", "automations")).rejects.toThrow(/Free plan allows 2 automations/);
+  });
+
+  it("blocks a 2nd lead source on free", async () => {
+    queueResults([[{ plan: "free" }], [{ n: 1 }]]);
+    await expect(PlanService.assertCanAdd("org", "sources")).rejects.toThrow(/1 lead sources/);
+  });
+
+  it("allows the 2nd sequence on free", async () => {
+    queueResults([[{ plan: "free" }], [{ n: 1 }]]);
+    await expect(PlanService.assertCanAdd("org", "sequences")).resolves.toBeUndefined();
+  });
+
+  it("never counts on paid plans", async () => {
+    queueResults([[{ plan: "starter", planStatus: "active" }]]);
+    await expect(PlanService.assertCanAdd("org", "automations")).resolves.toBeUndefined();
+  });
+
+  it("AI is off on free and on for paid", async () => {
+    queueResults([[{ plan: "free" }]]);
+    expect(await PlanService.aiAllowed("org")).toBe(false);
+    queueResults([[{ plan: "starter", planStatus: "active" }]]);
+    expect(await PlanService.aiAllowed("org")).toBe(true);
+  });
+});

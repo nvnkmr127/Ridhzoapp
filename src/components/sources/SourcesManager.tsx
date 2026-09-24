@@ -4,6 +4,7 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { usePlan } from "@/components/billing/PlanGate";
 import {
   createSourceAction,
   toggleSourceAction,
@@ -478,6 +479,7 @@ export function SourcesManager({
   leadCounts?: Record<string, { total: number; new: number; deleted: number }>;
 }) {
   const { toast } = useToast();
+  const { openUpgrade } = usePlan();
   const [sources, setSources] = React.useState<Source[]>(initialSources);
   React.useEffect(() => setSources(initialSources), [initialSources]);
   const [connectingId, setConnectingId] = React.useState<string | null>(null);
@@ -575,6 +577,7 @@ export function SourcesManager({
     try {
       const res = await connectFacebookPagesAction(selectedPageIds);
       if (!res.ok) {
+        if (res.code === "LIMIT") return openUpgrade(res.message);
         toast({
           variant: "destructive",
           title: "Connection failed",
@@ -893,6 +896,7 @@ export function SourcesManager({
           type: platform.typeKey as any,
         });
         if (!res.ok) {
+          if (res.code === "LIMIT") return openUpgrade(res.message);
           toast({ variant: "destructive", title: `Failed to connect ${platform.name}`, description: res.message });
           return;
         }
@@ -916,6 +920,7 @@ export function SourcesManager({
     try {
       const res = await createSourceAction({ name, type: "webform" as any });
       if (!res.ok) {
+        if (res.code === "LIMIT") return openUpgrade(res.message);
         toast({ variant: "destructive", title: "Couldn't create form", description: res.message });
         return;
       }

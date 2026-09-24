@@ -44,6 +44,8 @@ export class LeadSourceService {
     if (!data.organizationId) {
       throw new Error("organizationId is required to create a lead source");
     }
+    const { PlanService } = await import("@/domains/billing/planService");
+    await PlanService.assertCanAdd(data.organizationId, "sources");
     const webhookSecret = crypto.randomBytes(32).toString("hex");
     
     const [source] = await db.insert(leadSources).values({

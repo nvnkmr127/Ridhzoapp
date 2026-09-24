@@ -34,6 +34,8 @@ export async function createAutomation(data: unknown) {
   try {
     const { BillingLifecycleService } = await import("@/domains/billing/lifecycleService");
     await BillingLifecycleService.assertFeatureAccess(organizationId, "Automations");
+    const { PlanService } = await import("@/domains/billing/planService");
+    await PlanService.assertCanAdd(organizationId, "automations");
 
     const newAutomation = await db.transaction(async (tx) => {
     const [created] = await tx.insert(automations).values({

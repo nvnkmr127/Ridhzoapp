@@ -13,6 +13,9 @@ vi.mock("@/domains/organizations/service", () => ({
   },
 }));
 
+const aiAllowed = vi.fn().mockResolvedValue(true);
+vi.mock("@/domains/billing/planService", () => ({ PlanService: { aiAllowed: () => aiAllowed() } }));
+
 describe("generateSequenceAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -35,5 +38,10 @@ describe("generateSequenceAction", () => {
     const res = await generateSequenceAction("hiring logistics");
     expect(res.steps.length).toBeGreaterThan(0);
     expect(res.steps.some((s) => s.body.toLowerCase().includes("hiring logistics"))).toBe(true);
+  });
+
+  it("refuses on the free plan", async () => {
+    aiAllowed.mockResolvedValueOnce(false);
+    await expect(generateSequenceAction("anything")).rejects.toThrow(/Starter or Unlimited/);
   });
 });

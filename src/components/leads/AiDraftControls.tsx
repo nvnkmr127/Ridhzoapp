@@ -5,6 +5,7 @@ import { Sparkles, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { draftLeadReplyAction } from "@/lib/actions/ai";
 import { useToast } from "@/hooks/use-toast";
+import { usePlan } from "@/components/billing/PlanGate";
 import { useLeadAction, type LeadUiAction } from "@/components/leads/leadEvents";
 
 const TONES = [
@@ -31,6 +32,7 @@ export function AiDraftControls({
   disabled?: boolean;
 }) {
   const { toast } = useToast();
+  const { aiAllowed, openUpgrade } = usePlan();
   const [tone, setTone] = React.useState<Tone>("friendly");
   const [language, setLanguage] = React.useState("auto");
   const [drafting, setDrafting] = React.useState(false);
@@ -55,6 +57,7 @@ export function AiDraftControls({
   };
 
   async function draft() {
+    if (!aiAllowed) return openUpgrade();
     setDrafting(true);
     try {
       const res = await draftLeadReplyAction({ leadId, channel, tone, language });

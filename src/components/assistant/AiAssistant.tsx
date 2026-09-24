@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { runAgentAction } from "@/lib/actions/agent";
+import { usePlan } from "@/components/billing/PlanGate";
 import { sendWhatsAppAction, sendEmailAction } from "@/lib/actions/messaging";
 import { Bot, User, Send, Check, X, Loader2, Sparkles, History, Plus, MessageSquare, Trash2 } from "lucide-react";
 import type { AgentProposal } from "@/lib/ai/agent";
@@ -85,6 +86,7 @@ function newId(): string {
 
 export function AiAssistant({ currentLeadId, storageKey }: { currentLeadId?: string; storageKey?: string } = {}) {
   const { toast } = useToast();
+  const { aiAllowed, openUpgrade } = usePlan();
   const suggestions = currentLeadId ? LEAD_SUGGESTIONS : SUGGESTIONS;
   const [turns, setTurns] = React.useState<Turn[]>([]);
   const [input, setInput] = React.useState("");
@@ -211,6 +213,16 @@ export function AiAssistant({ currentLeadId, storageKey }: { currentLeadId?: str
       return next;
     });
     if (activeId === id) newChat();
+  }
+
+  if (!aiAllowed) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+        <Sparkles className="h-8 w-8 text-primary" />
+        <p className="max-w-xs text-sm text-muted-foreground">The AI assistant is available on the Starter and Unlimited plans.</p>
+        <Button onClick={() => openUpgrade()}>Upgrade to use AI</Button>
+      </div>
+    );
   }
 
   return (

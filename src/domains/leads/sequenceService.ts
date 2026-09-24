@@ -52,6 +52,8 @@ export class SequenceService {
   static async create(organizationId: string, name: string, steps: SequenceStepInput[], description?: string | null) {
     const { BillingLifecycleService } = await import("@/domains/billing/lifecycleService");
     await BillingLifecycleService.assertFeatureAccess(organizationId, "Sequences");
+    const { PlanService } = await import("@/domains/billing/planService");
+    await PlanService.assertCanAdd(organizationId, "sequences");
 
     const [seq] = await db.insert(sequences).values({ organizationId, name, description: description ?? null }).returning();
     if (steps.length) {

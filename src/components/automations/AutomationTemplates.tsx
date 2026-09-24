@@ -5,12 +5,14 @@ import { useRouter } from "next/navigation";
 import { Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { usePlan } from "@/components/billing/PlanGate";
 import { createAutomationFromTemplate } from "@/lib/actions/automations";
 import { AUTOMATION_TEMPLATES, type AutomationTemplateId } from "@/lib/automation/templates";
 
 export function AutomationTemplates() {
   const router = useRouter();
   const { toast } = useToast();
+  const { openUpgrade } = usePlan();
   const [pending, setPending] = React.useState<AutomationTemplateId | null>(null);
 
   async function use(id: AutomationTemplateId) {
@@ -18,6 +20,7 @@ export function AutomationTemplates() {
     try {
       const res = await createAutomationFromTemplate(id);
       if (!res.ok) {
+        if (res.code === "LIMIT") return openUpgrade(res.message);
         toast({ variant: "destructive", title: "Couldn't create automation", description: res.message });
         return;
       }

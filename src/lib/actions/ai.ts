@@ -10,6 +10,7 @@ import { db } from "@/db";
 import { leads } from "@/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { OrgService } from "@/domains/organizations/service";
+import { PlanService } from "@/domains/billing/planService";
 
 const TONES = {
   friendly: "warm and friendly, like a helpful person — not salesy",
@@ -58,7 +59,7 @@ export async function draftLeadReplyAction(
       : { draft: `Hi ${firstName}, just following up — do you have any questions I can help with? Happy to jump on a quick call whenever suits you.` };
 
   // Graceful fallback when AI isn't configured — still useful, just not generated.
-  if (!aiEnabled()) return { ...fallback, ai: false };
+  if (!aiEnabled() || !(await PlanService.aiAllowed(organizationId))) return { ...fallback, ai: false };
 
   const [{ activities, extras }, org] = await Promise.all([
     loadLeadAiContext(lead, organizationId),
@@ -99,7 +100,7 @@ export async function summarizeLeadAction(
 
   // Brand-new leads with form answers are exactly when a recap helps most — only skip the AI when
   // there's genuinely nothing to read.
-  if (!aiEnabled() || !hasAiWorthyContext(activities, extras)) {
+  if (!aiEnabled() || !hasAiWorthyContext(activities, extras) || !(await PlanService.aiAllowed(organizationId))) {
     const last = activities[0];
     return {
       summary: last
@@ -179,7 +180,8 @@ function buildContextualSequence(goal: string): GeneratedSequenceStep[] {
 
 // AI sequence generator — turns a plain-English goal into ready-to-edit sequence steps.
 export async function generateSequenceAction(goal: string): Promise<{ steps: GeneratedSequenceStep[]; ai: boolean }> {
-  await requireOrg();
+  const { organizationId } = await requireOrg();
+  if (!(await PlanService.aiAllowed(organizationId))) throw new Error("AI needs a Starter or Unlimited plan.");
   const clean = String(goal || "").slice(0, 500).trim();
   const contextual = buildContextualSequence(clean);
 
@@ -188,7 +190,6 @@ export async function generateSequenceAction(goal: string): Promise<{ steps: Gen
   }
 
   try {
-    const { organizationId } = await requireOrg();
     const org = await OrgService.getOrganization(organizationId);
     const raw = await generateText(`${businessPreamble(org)}\n\n${SEQ_SYSTEM}`, `Goal: ${clean}\nAudience: sales leads.`, 800);
     if (!raw) return { steps: contextual, ai: false };

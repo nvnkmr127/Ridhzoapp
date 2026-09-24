@@ -3,6 +3,7 @@ import { businessPreamble } from "@/lib/ai/leadBrief";
 import { ActivityService } from "@/domains/activities/service";
 import { OrgService } from "@/domains/organizations/service";
 import { TagService } from "@/domains/tags/service";
+import { PlanService } from "@/domains/billing/planService";
 
 export type LeadIntent = "interested" | "not_interested" | "question" | "scheduling" | "other";
 
@@ -17,11 +18,13 @@ No prose.`;
 // any failure is swallowed so it can never break inbound processing.
 export class InboundIntentService {
   static async classifyAndTag(leadId: string, body: string, organizationId?: string): Promise<void> {
-    if (!aiEnabled() || !body.trim()) return;
+    if (!aiEnabled() || !body.trim() || !organizationId) return;
     try {
+      // Paid-only; without an org we can't check the plan, so skip.
+      if (!(await PlanService.aiAllowed(organizationId))) return;
       // Ground the classifier in the tenant's business so "interested" is judged against what they
-      // actually sell. Org is optional (some callers lack it) — fall back to the generic prompt.
-      const org = organizationId ? await OrgService.getOrganization(organizationId) : null;
+      // actually sell.
+      const org = await OrgService.getOrganization(organizationId);
       const system = org ? `${businessPreamble(org)}\n\n${SYSTEM}` : SYSTEM;
       const raw = await generateText(system, `Message: "${body.slice(0, 500)}"`, 60);
       if (!raw) return;

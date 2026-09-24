@@ -4,12 +4,14 @@ import * as React from "react";
 import { usePathname } from "next/navigation";
 import { AiAssistant } from "./AiAssistant";
 import { Sparkles, X } from "lucide-react";
+import { usePlan } from "@/components/billing/PlanGate";
 
 // Mounted once in the dashboard layout → the assistant floats on every page.
 const STORE_KEY = "assistant-open";
 
 export function FloatingAssistant({ storageKey }: { storageKey?: string } = {}) {
   const [open, setOpen] = React.useState(false);
+  const { aiAllowed, openUpgrade } = usePlan();
   // If the user is on a lead detail page, hand the assistant that lead's id so it's context-aware.
   const pathname = usePathname();
   const currentLeadId = pathname?.match(
@@ -26,6 +28,7 @@ export function FloatingAssistant({ storageKey }: { storageKey?: string } = {}) 
   }, []);
 
   function toggle(next: boolean) {
+    if (next && !aiAllowed) return openUpgrade();
     setOpen(next);
     try {
       localStorage.setItem(STORE_KEY, next ? "1" : "0");

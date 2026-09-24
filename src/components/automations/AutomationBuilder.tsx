@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useRouter } from "next/navigation";
 import { createAutomation, updateAutomation } from "@/lib/actions/automations";
+import { usePlan } from "@/components/billing/PlanGate";
 import { listUsersAction } from "@/lib/actions/users";
 import { getTenantStatusSchemaAction } from "@/lib/actions/customStatuses";
 import { listTemplates } from "@/lib/actions/messaging";
@@ -58,6 +59,7 @@ export function AutomationBuilder({
   sources?: Source[];
   sequences?: Seq[];
 }) {
+  const { openUpgrade } = usePlan();
   const router = useRouter();
   const initCond = parseConditions(initialData?.conditions);
   const [name, setName] = useState(initialData?.name || "");
@@ -122,7 +124,7 @@ export function AutomationBuilder({
         actions: parsedActions,
       };
       const res = automationId ? await updateAutomation(automationId, data) : await createAutomation(data);
-      if (!res.ok) { alert(res.message); return; }
+      if (!res.ok) { if (res.code === "LIMIT") openUpgrade(res.message); else alert(res.message); return; }
       router.push("/automations");
     } catch (e) {
       console.error(e);

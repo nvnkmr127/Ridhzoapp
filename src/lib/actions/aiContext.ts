@@ -6,6 +6,7 @@ import { requireOrg, requirePermission } from "@/lib/rbac";
 import { OrgService } from "@/domains/organizations/service";
 import { generateText, aiEnabled } from "@/lib/ai/client";
 import { ok, fail, actionFail } from "@/lib/actions/result";
+import { PlanService } from "@/domains/billing/planService";
 
 const MAX_BYTES = 10 * 1024 * 1024; // business docs are small; cap the upload
 const MAX_CHARS = 8000; // extracted text ceiling before it hits the editor
@@ -64,7 +65,8 @@ Use ONLY what the notes say — never invent offerings, prices, guarantees, or c
 
 // Rewrites the tenant's raw notes into a clean, structured business profile using the AI Gateway.
 export async function improveAiContextAction(input: z.infer<typeof improveSchema>) {
-  await requireOrg();
+  const { organizationId } = await requireOrg();
+  if (!(await PlanService.aiAllowed(organizationId))) return fail("LIMIT", "AI needs a Starter or Unlimited plan.");
   const parsed = improveSchema.safeParse(input);
   if (!parsed.success) return fail("VALIDATION", "Text is too long to improve.");
   const clean = parsed.data.draft.trim();

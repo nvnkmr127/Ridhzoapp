@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { usePlan } from "@/components/billing/PlanGate";
 import { generateSequenceAction, type GeneratedSequenceStep } from "@/lib/actions/ai";
 import { createSequenceAction, updateSequenceAction } from "@/lib/actions/sequences";
 
@@ -19,6 +20,7 @@ const BLANK: Step = { dayOffset: 0, channel: "whatsapp", body: "", attachmentUrl
 export function SequenceBuilder({ initial }: { initial?: { id: string; name: string; description?: string; steps: Step[] } }) {
   const router = useRouter();
   const { toast } = useToast();
+  const { aiAllowed, openUpgrade } = usePlan();
   const [name, setName] = React.useState(initial?.name ?? "");
   const [description, setDescription] = React.useState(initial?.description ?? "");
   const [goal, setGoal] = React.useState("");
@@ -31,6 +33,7 @@ export function SequenceBuilder({ initial }: { initial?: { id: string; name: str
   }
 
   async function generate() {
+    if (!aiAllowed) return openUpgrade();
     const cleanGoal = goal.trim();
     if (!cleanGoal) {
       toast({
@@ -72,6 +75,7 @@ export function SequenceBuilder({ initial }: { initial?: { id: string; name: str
         ? await updateSequenceAction(initial.id, payload)
         : await createSequenceAction(payload);
       if (!res.ok) {
+        if (res.code === "LIMIT") return openUpgrade(res.message);
         toast({ variant: "destructive", title: "Couldn't save", description: res.message });
         return;
       }
