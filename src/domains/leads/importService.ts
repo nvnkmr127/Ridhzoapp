@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { orgDialCode } from "@/lib/leads/orgDialCode";
 import { leads, leadSources, users } from "@/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { PlanService } from "@/domains/billing/planService";
@@ -201,6 +202,7 @@ export class LeadImportService {
 
     if (toInsert.length > 0) {
       await PlanService.assertCanAddLead(organizationId);
+      const dialCode = await orgDialCode(organizationId);
 
       // Canonicalize contact keys the same way every other ingestion path does, so imported leads
       // dedup against manual/webhook leads and the DB unique index actually applies to them.
@@ -220,7 +222,7 @@ export class LeadImportService {
               organizationId,
               name: r.name!.trim().slice(0, 255),
               email: normalizeEmail(r.email)?.slice(0, 255) || null,
-              phone: normalizePhone(r.phone)?.slice(0, 255) || null,
+              phone: normalizePhone(r.phone, dialCode)?.slice(0, 255) || null,
               company: r.company?.trim().slice(0, 255) || null,
               status: wanted && validStatuses.has(wanted) ? wanted : fallbackStatus,
               sourceId: config.sourceId || null,

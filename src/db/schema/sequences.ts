@@ -32,9 +32,11 @@ export const sequenceEnrollments = pgTable("sequence_enrollments", {
   leadId: uuid("lead_id").references(() => leads.id, { onDelete: "cascade" }).notNull(),
   organizationId: uuid("organization_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   currentStep: integer("current_step").default(0).notNull(),
-  status: varchar("status", { length: 10 }).default("active").notNull(), // active | completed | stopped
+  status: varchar("status", { length: 10 }).default("active").notNull(), // active | paused | completed | stopped
   retryCount: integer("retry_count").default(0).notNull(), // transient send retries for the current step
   nextRunAt: timestamp("next_run_at"),
+  // Set while a rep has paused this lead's sequence; on resume the schedule shifts by the pause length.
+  pausedAt: timestamp("paused_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => ({
   dueIdx: index("sequence_enrollments_due_idx").on(t.status, t.nextRunAt),

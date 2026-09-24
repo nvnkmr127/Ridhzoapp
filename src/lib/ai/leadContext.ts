@@ -57,7 +57,6 @@ export async function loadLeadAiContext(lead: LoadableLead, organizationId: stri
     statusLabel: status?.label,
     statusCategory: status?.category,
     stageName: stage,
-    expectedValue: lead.expectedValue ?? null,
     lostReason: lead.lostReason ?? null,
     source: source && source.organizationId === organizationId ? source.name : typeof cd.leadSource === "string" ? cd.leadSource : null,
     campaign: campaign ?? null,

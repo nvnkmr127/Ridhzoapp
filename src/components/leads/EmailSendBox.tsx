@@ -7,12 +7,21 @@ import { useToast } from "@/hooks/use-toast";
 import { sendEmailAction } from "@/lib/actions/messaging";
 import { Mail } from "lucide-react";
 import { AiDraftControls } from "@/components/leads/AiDraftControls";
+import { useLogContact } from "@/components/leads/useLogContact";
+import { useLeadAction, type LeadUiAction } from "@/components/leads/leadEvents";
 
 export function EmailSendBox({ leadId, email }: { leadId: string; email: string | null }) {
   const { toast } = useToast();
   const [subject, setSubject] = React.useState("");
   const [body, setBody] = React.useState("");
   const [sending, setSending] = React.useState(false);
+  const subjectRef = React.useRef<HTMLInputElement>(null);
+  const logContact = useLogContact(leadId);
+  // Header "Email" button lands here — one place to write emails.
+  const onLeadAction = React.useCallback((a: LeadUiAction) => {
+    if (a.type === "focus-composer" && a.channel === "email") subjectRef.current?.focus();
+  }, []);
+  useLeadAction(onLeadAction);
 
   if (!email) return <div className="text-sm text-muted-foreground">This lead has no email address.</div>;
 
@@ -36,7 +45,19 @@ export function EmailSendBox({ leadId, email }: { leadId: string; email: string 
 
   return (
     <div className="space-y-3">
-      <div className="text-sm text-muted-foreground">To: <span className="font-medium text-muted-foreground">{email}</span></div>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm text-muted-foreground">
+        <span>
+          To: <span className="font-medium text-foreground">{email}</span>
+        </span>
+        {/* Sending from here keeps it on the lead's timeline; this is for reps who prefer their own mail app. */}
+        <a
+          href={`mailto:${email}${subject || body ? `?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}` : ""}`}
+          onClick={() => logContact({ channel: "email" })}
+          className="text-xs underline underline-offset-2 hover:text-foreground"
+        >
+          Use my email app instead
+        </a>
+      </div>
       <AiDraftControls
         leadId={leadId}
         channel="email"
@@ -46,7 +67,7 @@ export function EmailSendBox({ leadId, email }: { leadId: string; email: string 
         }}
         disabled={sending}
       />
-      <Input placeholder="Subject" value={subject} onChange={(e) => setSubject(e.target.value)} />
+      <Input ref={subjectRef} placeholder="Subject" value={subject} onChange={(e) => setSubject(e.target.value)} />
       <textarea
         placeholder="Write your message…" value={body} onChange={(e) => setBody(e.target.value)} rows={6}
         className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"

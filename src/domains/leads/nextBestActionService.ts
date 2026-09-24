@@ -97,7 +97,7 @@ export class NextBestActionService {
         return {
           action: "send_template",
           label: "Send a welcome message",
-          reason: "New lead with no contact yet — the first to reply usually wins it.",
+          reason: "No contact recorded yet — the first to reply usually wins the deal.",
           priority: "high",
         };
       }

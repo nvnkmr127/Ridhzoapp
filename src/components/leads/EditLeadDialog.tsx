@@ -109,7 +109,8 @@ export function EditLeadDialog({ lead }: EditLeadDialogProps) {
           <Pencil className="h-4 w-4" /> Edit
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px]">
+      {/* No auto-focus: on phones it popped the keyboard over half the form before you'd chosen a field. */}
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-[425px]" onOpenAutoFocus={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle>Edit Lead</DialogTitle>
           <DialogDescription>
@@ -151,8 +152,9 @@ export function EditLeadDialog({ lead }: EditLeadDialogProps) {
                 <FormItem>
                   <FormLabel>Phone</FormLabel>
                   <FormControl>
-                    <Input type="tel" {...field} />
+                    <Input type="tel" inputMode="tel" placeholder="+91 98765 43210" {...field} />
                   </FormControl>
+                  <p className="text-xs text-muted-foreground">No country code? We&apos;ll add your workspace&apos;s one automatically.</p>
                   <FormMessage />
                 </FormItem>
               )}

@@ -70,9 +70,11 @@ export function LeadCustomFields({ leadId, initialData, initialDefs }: { leadId:
   return (
     <div className="space-y-3">
       {defs.length === 0 ? (
-        <div className="text-xs text-muted-foreground">
-          No custom fields defined.{" "}
-          <Link href="/settings/custom-fields" className="underline underline-offset-2">Add some</Link>.
+        <div className="space-y-2 text-xs text-muted-foreground">
+          <p>Track extra details on every lead — e.g. budget, property type, preferred location.</p>
+          <Button asChild variant="outline" size="sm" className="h-9">
+            <Link href="/settings/custom-fields">Set up fields</Link>
+          </Button>
         </div>
       ) : (
         <CustomFieldInputs defs={defs} values={values} onChange={(k, v) => setValues((s) => ({ ...s, [k]: v }))} />

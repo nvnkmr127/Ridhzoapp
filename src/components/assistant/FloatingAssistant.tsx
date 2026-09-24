@@ -37,7 +37,7 @@ export function FloatingAssistant({ storageKey }: { storageKey?: string } = {}) 
   return (
     <>
       {open && (
-        <div className="fixed bottom-24 right-6 z-50 flex flex-col w-[400px] max-w-[calc(100vw-3rem)] h-[600px] max-h-[70vh] rounded-2xl border border-border bg-background shadow-2xl">
+        <div className="fixed bottom-20 right-3 sm:bottom-24 sm:right-6 z-50 flex flex-col w-[400px] max-w-[calc(100vw-3rem)] h-[600px] max-h-[70vh] rounded-2xl border border-border bg-background shadow-2xl">
           <div className="flex items-center justify-between border-b px-4 py-3">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-primary" />
@@ -55,7 +55,9 @@ export function FloatingAssistant({ storageKey }: { storageKey?: string } = {}) 
 
       <button
         onClick={() => toggle(!open)}
-        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 active:scale-95"
+        // Smaller and tucked closer to the corner on phones, where the 56px button sat on top of
+        // content and buttons (pages add bottom padding so their last rows can scroll clear of it).
+        className="fixed bottom-4 right-3 z-50 flex h-11 w-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105 active:scale-95 sm:bottom-6 sm:right-6 sm:h-14 sm:w-14"
         aria-label={open ? "Close assistant" : "Open assistant"}
       >
         {open ? <X className="h-6 w-6" /> : <Sparkles className="h-6 w-6" />}

@@ -43,13 +43,14 @@ export function SectionCard({
                   {title}
                 </h3>
               )}
-              {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
             </div>
           </div>
           {action}
         </div>
       )}
-      {children && <div className={cn(hasHeader && "mt-4")}>{children}</div>}
+      {/* Full width under the title row — beside an action button it got squeezed into a thin column on phones. */}
+      {description && <p className="mt-2 text-xs text-muted-foreground">{description}</p>}
+      {children && <div className={cn((hasHeader || description) && "mt-4")}>{children}</div>}
     </section>
   );
 }

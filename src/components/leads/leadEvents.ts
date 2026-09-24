@@ -9,9 +9,11 @@ export type LeadUiAction =
   | { type: "call" }
   | { type: "followup" }
   | { type: "edit" }
-  | { type: "compose"; channel: "whatsapp" | "email" }
-  // Emitted by the tabs after switching for a "compose", once the draft box is mounted.
-  | { type: "ai-draft"; channel: "whatsapp" | "email" };
+  // Open the in-app composer for a channel; `ai` also starts an AI draft.
+  | { type: "compose"; channel: "whatsapp" | "email"; ai?: boolean }
+  // Emitted by the tabs after switching for a "compose", once the composer is mounted.
+  | { type: "ai-draft"; channel: "whatsapp" | "email" }
+  | { type: "focus-composer"; channel: "whatsapp" | "email" };
 
 const EVENT = "ridhzo:lead-ui";
 

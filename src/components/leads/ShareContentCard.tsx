@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Send, Link2, Check, Eye, MessageCircle } from "lucide-react";
+import { Send, Link2, Check, Eye, MessageCircle, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +32,8 @@ export function ShareContentCard({
   const [message, setMessage] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [copied, setCopied] = React.useState<string | null>(null);
+  // Collapsed by default: three empty fields used to take a whole phone screen on every lead.
+  const [formOpen, setFormOpen] = React.useState(false);
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
@@ -52,7 +54,8 @@ export function ShareContentCard({
       setTitle("");
       setUrl("");
       setMessage("");
-      toast({ title: "Trackable page created", description: "Share it — you'll be alerted when it's opened." });
+      setFormOpen(false);
+      toast({ title: "Share link ready", description: "Copy it into WhatsApp — you'll be alerted when they open it." });
     } catch {
       toast({ variant: "destructive", title: "Couldn't create link", description: "We couldn't reach the server. Please try again." });
     } finally {
@@ -80,13 +83,18 @@ export function ShareContentCard({
   return (
     <SectionCard
       icon={Send}
-      title="Share & Track Content"
-      description="Share a brochure or page link and get alerted the moment they open it."
+      title="Share a brochure"
+      description="Send a link and get alerted the moment they open it."
     >
       <div className="space-y-4">
+      {!formOpen ? (
+        <Button type="button" variant="outline" size="sm" className="h-9 w-full gap-1.5" onClick={() => setFormOpen(true)}>
+          <Plus className="h-3.5 w-3.5" /> New share link
+        </Button>
+      ) : (
       <form onSubmit={create} className="space-y-2">
         <Input
-          placeholder="Title (e.g. Pricing brochure)"
+          placeholder="What is it? (e.g. Pricing brochure)"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           disabled={busy}
@@ -113,9 +121,13 @@ export function ShareContentCard({
           disabled={busy || !title.trim() || (!url.trim() && !message.trim())}
           className="h-9 w-full"
         >
-          {busy ? "Creating…" : "Create trackable page"}
+          {busy ? "Creating…" : "Create share link"}
         </Button>
+        <button type="button" onClick={() => setFormOpen(false)} className="w-full text-center text-xs text-muted-foreground hover:text-foreground">
+          Cancel
+        </button>
       </form>
+      )}
 
       {shares.length > 0 && (
         <div className="space-y-2 border-t pt-3">

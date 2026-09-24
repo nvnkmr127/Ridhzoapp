@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { orgDialCode } from "@/lib/leads/orgDialCode";
 import { leads, leadIngestionLogs, leadStatusHistory } from "@/db/schema";
 import { NormalizedLeadPayload } from "../integrations/types";
 import { eq, or, and, isNull, sql } from "drizzle-orm";
@@ -47,7 +48,7 @@ export class IngestionService {
   static async processLead(payload: NormalizedLeadPayload): Promise<{ status: string; leadId: string }> {
     // Canonicalize contact keys so dedup matches across channels/formats (see normalize.ts).
     const email = normalizeEmail(payload.email);
-    const phone = normalizePhone(payload.phone);
+    let phone = normalizePhone(payload.phone);
 
     if (!email && !phone) {
       await this.logIngestion(null, payload.sourceId, payload, "failed", "Email or phone is required for deduplication.");
@@ -67,6 +68,8 @@ export class IngestionService {
       await this.logIngestion(null, payload.sourceId, payload, "failed", "Valid Lead Source with Organization is required.");
       throw new Error("Valid Lead Source with Organization is required");
     }
+    // Now that we know the workspace, complete national numbers with its country code.
+    phone = normalizePhone(payload.phone, await orgDialCode(organizationId)) ?? phone;
 
     // Coerce/validate any custom-field values against the org's field defs, so an inbound lead
     // (Facebook, web form, API) stores typed values (number, date, option-checked) under the field's

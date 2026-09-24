@@ -3,7 +3,7 @@ import { SendFollowUpButton, isSendableFollowUp } from "@/components/leads/SendF
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Calendar, Clock, Plus, CheckCircle2, Circle, Trash2, Bell, Phone, Mail, Video, Pencil } from "lucide-react";
+import { Calendar, Clock, Plus, CheckCircle2, Circle, Trash2, Bell, Phone, Mail, Video, Pencil, MapPin, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -60,7 +60,8 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     tomorrow.setHours(9, 0, 0, 0);
-    return tomorrow.toISOString().slice(0, 16);
+    // Local time, not toISOString(): that's UTC, so "tomorrow 9 AM" showed (and saved) as 3:30 AM in India.
+    return formatForDateTimeLocal(tomorrow);
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -78,7 +79,7 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
     setEditingReminder(reminder);
     setEditTitle(reminder.title);
     setEditDescription(reminder.description || "");
-    setEditType(reminder.type || "followup");
+    setEditType((reminder.type || "followup").toLowerCase());
     setEditDueDate(formatForDateTimeLocal(reminder.dueAt));
   };
 
@@ -98,7 +99,7 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
       });
 
       if (!res.ok) {
-        toast({ title: "Failed to update reminder", description: res.message, variant: "destructive" });
+        toast({ title: "Couldn't update the follow-up", description: res.message, variant: "destructive" });
         return;
       }
 
@@ -107,10 +108,10 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
       );
       setEditingReminder(null);
       router.refresh();
-      toast({ title: "Reminder updated" });
+      toast({ title: "Follow-up updated" });
     } catch {
       toast({
-        title: "Failed to update reminder",
+        title: "Couldn't update the follow-up",
         description: "We couldn't reach the server. Please try again.",
         variant: "destructive",
       });
@@ -133,7 +134,7 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
         dueAt: new Date(dueDate),
       });
       if (!res.ok) {
-        toast({ title: "Failed to create reminder", description: res.message, variant: "destructive" });
+        toast({ title: "Couldn't add the follow-up", description: res.message, variant: "destructive" });
         return;
       }
 
@@ -143,12 +144,12 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
       setShowAdd(false);
       router.refresh();
       toast({
-        title: "Reminder created",
+        title: "Follow-up added",
         description: `Scheduled for ${new Date(dueDate).toLocaleString()}`,
       });
     } catch {
       toast({
-        title: "Failed to create reminder",
+        title: "Couldn't add the follow-up",
         description: "We couldn't reach the server. Please try again.",
         variant: "destructive",
       });
@@ -170,7 +171,7 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
       );
       router.refresh();
       toast({
-        title: newStatus === "completed" ? "Reminder completed" : "Reminder reopened",
+        title: newStatus === "completed" ? "Follow-up done" : "Follow-up reopened",
       });
     } catch {
       toast({
@@ -185,15 +186,15 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
     try {
       const res = await deleteReminderAction(id, leadId);
       if (!res.ok) {
-        toast({ title: "Failed to delete reminder", description: res.message, variant: "destructive" });
+        toast({ title: "Couldn't delete the follow-up", description: res.message, variant: "destructive" });
         return;
       }
       setReminders((prev) => prev.filter((r) => r.id !== id));
       router.refresh();
-      toast({ title: "Reminder deleted" });
+      toast({ title: "Follow-up deleted" });
     } catch {
       toast({
-        title: "Failed to delete reminder",
+        title: "Couldn't delete the follow-up",
         description: "We couldn't reach the server. Please try again.",
         variant: "destructive",
       });
@@ -201,13 +202,17 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
   };
 
   const getTypeIcon = (t: string) => {
-    switch (t) {
+    switch ((t || "").toLowerCase()) {
       case "call":
         return <Phone className="h-4 w-4 text-emerald-500" />;
       case "email":
         return <Mail className="h-4 w-4 text-blue-500" />;
       case "meeting":
         return <Video className="h-4 w-4 text-purple-500" />;
+      case "site_visit":
+        return <MapPin className="h-4 w-4 text-rose-500" />;
+      case "whatsapp":
+        return <MessageSquare className="h-4 w-4 text-emerald-500" />;
       default:
         return <Bell className="h-4 w-4 text-amber-500" />;
     }
@@ -219,25 +224,25 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
   return (
     <div className="space-y-6">
       {/* Header & Add Button */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h4 className="text-sm font-semibold text-foreground">Lead Reminders & Tasks</h4>
-          <p className="text-xs text-muted-foreground">Schedule follow-ups, calls, and meetings for this lead</p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h4 className="text-sm font-semibold text-foreground">Follow-ups</h4>
+          <p className="text-xs text-muted-foreground">Calls, meetings, site visits and messages to do for this lead</p>
         </div>
         {!showAdd && (
           <Button size="sm" onClick={() => setShowAdd(true)} className="gap-1.5 text-xs">
             <Plus className="h-4 w-4" />
-            Add Reminder
+            Add follow-up
           </Button>
         )}
       </div>
 
-      {/* Add Reminder Form */}
+      {/* Add follow-up form */}
       {showAdd && (
         <form onSubmit={handleCreate} className="border rounded-2xl p-4 bg-muted/30 space-y-4 animate-in fade-in-50">
           <div className="flex items-center justify-between border-b pb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">New Reminder</span>
-            <Button type="button" variant="ghost" size="sm" onClick={() => setShowAdd(false)} className="h-7 text-xs">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">New follow-up</span>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setShowAdd(false)} className="h-9 text-xs">
               Cancel
             </Button>
           </div>
@@ -264,6 +269,8 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
                   <SelectItem value="call">Phone Call</SelectItem>
                   <SelectItem value="email">Email</SelectItem>
                   <SelectItem value="meeting">Meeting</SelectItem>
+                  <SelectItem value="site_visit">Site visit</SelectItem>
+                  <SelectItem value="whatsapp">WhatsApp</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -297,7 +304,7 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
             </Button>
             <Button type="submit" size="sm" disabled={submitting || !title.trim()} className="h-8 text-xs gap-1.5">
               <Plus className="h-3.5 w-3.5" />
-              Save Reminder
+              Save follow-up
             </Button>
           </div>
         </form>
@@ -329,7 +336,8 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
                   <div className="flex items-start gap-3 min-w-0 flex-1">
                     <button
                       onClick={() => handleToggle(reminder.id, reminder.status)}
-                      className="mt-0.5 text-muted-foreground hover:text-primary transition-colors shrink-0"
+                      aria-label="Mark as done"
+                      className="-m-2 mt-[-6px] shrink-0 rounded-full p-2 text-muted-foreground transition-colors hover:text-primary"
                     >
                       <Circle className="h-5 w-5" />
                     </button>
@@ -372,7 +380,7 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
                     <Button
                       variant="ghost"
                       size="icon"
-                      aria-label="Edit reminder"
+                      aria-label="Edit follow-up"
                       onClick={() => openEdit(reminder)}
                       className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted shrink-0"
                     >
@@ -381,7 +389,7 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
                     <Button
                       variant="ghost"
                       size="icon"
-                      aria-label="Delete reminder"
+                      aria-label="Delete follow-up"
                       onClick={() => handleDelete(reminder.id)}
                       className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
                     >
@@ -410,7 +418,8 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
                 <div className="flex items-center gap-3 min-w-0 flex-1">
                   <button
                     onClick={() => handleToggle(reminder.id, reminder.status)}
-                    className="text-emerald-500 hover:text-muted-foreground transition-colors shrink-0"
+                    aria-label="Mark as not done"
+                    className="-m-2 shrink-0 rounded-full p-2 text-emerald-500 transition-colors hover:text-muted-foreground"
                   >
                     <CheckCircle2 className="h-5 w-5 fill-emerald-500/10" />
                   </button>
@@ -427,7 +436,7 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
                   <Button
                     variant="ghost"
                     size="icon"
-                    aria-label="Edit reminder"
+                    aria-label="Edit follow-up"
                     onClick={() => openEdit(reminder)}
                     className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-muted shrink-0"
                   >
@@ -436,7 +445,7 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
                   <Button
                     variant="ghost"
                     size="icon"
-                    aria-label="Delete reminder"
+                    aria-label="Delete follow-up"
                     onClick={() => handleDelete(reminder.id)}
                     className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0"
                   >
@@ -453,7 +462,7 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
       <Dialog open={!!editingReminder} onOpenChange={(open) => !open && setEditingReminder(null)}>
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
-            <DialogTitle>Edit Reminder</DialogTitle>
+            <DialogTitle>Edit follow-up</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleUpdate} className="space-y-4 pt-2">
             <div>
@@ -478,6 +487,8 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
                     <SelectItem value="call">Phone Call</SelectItem>
                     <SelectItem value="email">Email</SelectItem>
                     <SelectItem value="meeting">Meeting</SelectItem>
+                  <SelectItem value="site_visit">Site visit</SelectItem>
+                  <SelectItem value="whatsapp">WhatsApp</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

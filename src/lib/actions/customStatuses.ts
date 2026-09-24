@@ -9,6 +9,7 @@ import { LeadStatusService } from "@/domains/leads/leadStatusService";
 import { LeadService } from "@/domains/leads/service";
 import { z } from "zod";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
+import { DEFAULT_LOSS_REASONS, cleanLossReasons, lossReasonsKey } from "@/lib/leads/lossReasons";
 
 const addStatusSchema = z.object({
   key: z.string().min(1).max(50),
@@ -90,4 +91,25 @@ export async function getLeadStatusHistoryAction(leadId: string) {
 export async function getStatusDurationAnalyticsAction() {
   const { organizationId } = await requireOrg();
   return LeadStatusService.getStatusDurationAnalytics(organizationId);
+}
+
+// Per-workspace list of "why was this lead lost" reasons (shown when closing a lead as lost).
+export async function getLossReasonsAction(): Promise<string[]> {
+  const { organizationId } = await requireOrg();
+  const { PlatformConfigService } = await import("@/domains/platform/configService");
+  const saved = await PlatformConfigService.get<string[] | null>(lossReasonsKey(organizationId), null);
+  return saved?.length ? saved : DEFAULT_LOSS_REASONS;
+}
+
+export async function setLossReasonsAction(reasons: string[]) {
+  const { organizationId } = await requirePermission("settings.manage");
+  try {
+    const cleaned = cleanLossReasons(Array.isArray(reasons) ? reasons.map(String) : []);
+    if (cleaned.length < 2) return fail("VALIDATION", "Add at least one reason besides “Other”.");
+    const { PlatformConfigService } = await import("@/domains/platform/configService");
+    await PlatformConfigService.set(lossReasonsKey(organizationId), cleaned);
+    return ok(cleaned);
+  } catch (e) {
+    return actionFail(e);
+  }
 }

@@ -14,12 +14,12 @@ export function NbaActions({ action, hasPhone, hasEmail }: { action: Recommended
     </Button>
   );
   const whatsapp = hasPhone && (
-    <Button key="wa" size="sm" variant={action === "call_lead" ? "outline" : "default"} className="gap-1.5" onClick={() => emitLeadAction({ type: "compose", channel: "whatsapp" })}>
+    <Button key="wa" size="sm" variant={action === "call_lead" ? "outline" : "default"} className="gap-1.5" onClick={() => emitLeadAction({ type: "compose", channel: "whatsapp", ai: true })}>
       <MessageSquare className="h-3.5 w-3.5" /> Write WhatsApp with AI
     </Button>
   );
   const email = hasEmail && (
-    <Button key="email" size="sm" variant="outline" className="gap-1.5" onClick={() => emitLeadAction({ type: "compose", channel: "email" })}>
+    <Button key="email" size="sm" variant="outline" className="gap-1.5" onClick={() => emitLeadAction({ type: "compose", channel: "email", ai: true })}>
       <Mail className="h-3.5 w-3.5" /> Write email with AI
     </Button>
   );

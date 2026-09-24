@@ -32,12 +32,24 @@ export function LeadInsightsCard({ score, customData, leadInfo }: LeadInsightsCa
   if (displayScore === 0 && factors.length === 0 && attrEntries.length === 0) return null;
 
   return (
-    <SectionCard icon={Gauge} title="Why this score">
+    <SectionCard icon={Gauge} title="Lead score" description="How interested this lead looks, and why.">
       <div className="space-y-4">
         <div className="space-y-2">
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-bold tabular-nums">{displayScore}</span>
-            <span className="text-xs text-muted-foreground">/ 100 engagement</span>
+            <span className="text-xs text-muted-foreground">/ 100</span>
+            {/* A bare number meant nothing to reps — say what it means. */}
+            <span
+              className={`ml-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                displayScore >= 60
+                  ? "bg-red-500/10 text-red-600 dark:text-red-400"
+                  : displayScore >= 30
+                    ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                    : "bg-sky-500/10 text-sky-600 dark:text-sky-400"
+              }`}
+            >
+              {displayScore >= 60 ? "Hot" : displayScore >= 30 ? "Warm" : "Cold"}
+            </span>
           </div>
           {factors.length > 0 ? (
             <ul className="space-y-1.5">

@@ -2,17 +2,17 @@
 
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Phone, Mail, MessageSquare, Calendar, Clock, Trash2, ChevronDown } from "lucide-react";
+import { Phone, Mail, MessageSquare, Calendar, Clock, Trash2, ChevronDown, MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { QuickResponseDialog } from "@/components/leads/QuickResponseDialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { EditLeadDialog } from "@/components/leads/EditLeadDialog";
 import { DeleteLeadButton } from "@/components/leads/DeleteLeadButton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { quickDispositionAction, updateLeadFollowUpAction, type QuickFollowUpKind } from "@/lib/actions/leads";
-import { useLeadAction, type LeadUiAction } from "@/components/leads/leadEvents";
+import { emitLeadAction, useLeadAction, type LeadUiAction } from "@/components/leads/leadEvents";
 import { useToast } from "@/hooks/use-toast";
 import { formatLocalDateTime, LocalTime } from "@/components/LocalTime";
 import { useLogContact } from "@/components/leads/useLogContact";
@@ -27,7 +27,6 @@ interface LeadHeaderQuickActionsProps {
     company?: string | null;
     nextFollowUpAt?: Date | string | null;
   };
-  whatsappMode?: "personal" | "bsp";
 }
 
 const CALL_OUTCOMES = [
@@ -71,7 +70,7 @@ function toLocalInputValue(d: Date) {
 
 const actionBtn = "h-12 sm:h-9 px-1 sm:px-3 gap-1 sm:gap-1.5 text-xs font-medium flex-col sm:flex-row";
 
-export function LeadHeaderQuickActions({ lead, whatsappMode = "personal" }: LeadHeaderQuickActionsProps) {
+export function LeadHeaderQuickActions({ lead }: LeadHeaderQuickActionsProps) {
   const router = useRouter();
   const { toast } = useToast();
   const logContact = useLogContact(lead.id);
@@ -84,6 +83,7 @@ export function LeadHeaderQuickActions({ lead, whatsappMode = "personal" }: Lead
   // After an answered call the dialog moves to a second step: what's the outcome?
   const [callStep, setCallStep] = useState<"outcome" | "disposition">("outcome");
   const [kind, setKind] = useState<QuickFollowUpKind>("followup");
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const phoneClean = lead.phone ? lead.phone.replace(/[^0-9+]/g, "") : "";
   const waUrl = phoneClean ? `https://wa.me/${phoneClean.replace("+", "")}` : "";
@@ -199,33 +199,31 @@ export function LeadHeaderQuickActions({ lead, whatsappMode = "personal" }: Lead
           </Button>
         )}
 
-        {waUrl ? (
-          <Button variant="outline" size="sm" className={actionBtn} asChild>
-            <a href={waUrl} target="_blank" rel="noopener noreferrer" onClick={() => logContact({ channel: "whatsapp" })} title="Open WhatsApp chat">
-              <MessageSquare className="h-4 w-4 sm:h-3.5 sm:w-3.5 text-emerald-500" />
-              <span>WhatsApp</span>
-            </a>
-          </Button>
-        ) : (
-          <Button variant="outline" size="sm" className={actionBtn} disabled title="No phone number">
-            <MessageSquare className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-            <span>WhatsApp</span>
-          </Button>
-        )}
+        {/* WhatsApp and Email open the one in-app composer (templates, AI draft, "they replied"),
+            instead of a separate quick-reply dialog and a bare chat link. */}
+        <Button
+          variant="outline"
+          size="sm"
+          className={actionBtn}
+          disabled={!waUrl}
+          title={waUrl ? "Write a WhatsApp message" : "No phone number"}
+          onClick={() => emitLeadAction({ type: "compose", channel: "whatsapp" })}
+        >
+          <MessageSquare className={cn("h-4 w-4 sm:h-3.5 sm:w-3.5", waUrl && "text-emerald-500")} />
+          <span>WhatsApp</span>
+        </Button>
 
-        {lead.email ? (
-          <Button variant="outline" size="sm" className={actionBtn} asChild>
-            <a href={`mailto:${lead.email}`} onClick={() => logContact({ channel: "email" })} title={`Email ${lead.email}`}>
-              <Mail className="h-4 w-4 sm:h-3.5 sm:w-3.5 text-blue-500" />
-              <span>Email</span>
-            </a>
-          </Button>
-        ) : (
-          <Button variant="outline" size="sm" className={actionBtn} disabled title="No email address">
-            <Mail className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-            <span>Email</span>
-          </Button>
-        )}
+        <Button
+          variant="outline"
+          size="sm"
+          className={actionBtn}
+          disabled={!lead.email}
+          title={lead.email ? "Write an email" : "No email address"}
+          onClick={() => emitLeadAction({ type: "compose", channel: "email" })}
+        >
+          <Mail className={cn("h-4 w-4 sm:h-3.5 sm:w-3.5", lead.email && "text-blue-500")} />
+          <span>Email</span>
+        </Button>
 
         {/* Follow-up: the single place to schedule the next touch (the Follow-ups tab lists history). */}
         <Popover open={reminderOpen} onOpenChange={setReminderOpen}>
@@ -329,10 +327,23 @@ export function LeadHeaderQuickActions({ lead, whatsappMode = "personal" }: Lead
         </Popover>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 [&>*]:flex-1 sm:[&>*]:flex-none">
-        <QuickResponseDialog leadId={lead.id} leadName={lead.name} email={lead.email} phone={lead.phone} whatsappMode={whatsappMode} />
+      {/* Secondary actions. Delete lives in "More" so it can't be hit by mistake next to Edit. */}
+      <div className="flex items-center gap-2">
         <EditLeadDialog lead={lead} />
-        <DeleteLeadButton leadId={lead.id} leadName={lead.name} />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="h-9 gap-1.5" aria-label="More actions">
+              <MoreHorizontal className="h-4 w-4" />
+              <span>More</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem className="text-red-600 focus:text-red-600 dark:text-red-400" onSelect={() => setDeleteOpen(true)}>
+              <Trash2 className="mr-2 h-4 w-4" /> Delete lead
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <DeleteLeadButton leadId={lead.id} leadName={lead.name} open={deleteOpen} onOpenChange={setDeleteOpen} />
       </div>
 
       {/* After tapping Call: capture how it went so the attempt is on record. */}

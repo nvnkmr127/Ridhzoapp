@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { sequences, sequenceSteps, sequenceEnrollments, leads, organizations } from "@/db/schema";
-import { and, eq, lte, asc, sql, isNull } from "drizzle-orm";
+import { and, eq, lte, asc, sql, isNull, inArray } from "drizzle-orm";
 import { ActivityService } from "@/domains/activities/service";
 import { CustomStatusSchemaService } from "@/domains/leads/customStatusSchemaService";
 
@@ -218,7 +218,7 @@ export class SequenceService {
       const [existing] = await db
         .select({ id: sequenceEnrollments.id })
         .from(sequenceEnrollments)
-        .where(and(eq(sequenceEnrollments.sequenceId, sequenceId), eq(sequenceEnrollments.leadId, leadId), eq(sequenceEnrollments.status, "active")));
+        .where(and(eq(sequenceEnrollments.sequenceId, sequenceId), eq(sequenceEnrollments.leadId, leadId), inArray(sequenceEnrollments.status, ["active", "paused"])));
       if (existing) continue;
       const nextRunAt = new Date(Date.now() + steps[0].dayOffset * DAY);
       await db.insert(sequenceEnrollments).values({ sequenceId, leadId, organizationId, currentStep: 0, status: "active", nextRunAt });
@@ -243,10 +243,40 @@ export class SequenceService {
     return { ok: true };
   }
 
+  // Pause one lead's enrollment: nothing is sent while paused (runDue only picks "active").
+  static async pause(organizationId: string, enrollmentId: string) {
+    const rows = await db
+      .update(sequenceEnrollments)
+      .set({ status: "paused", pausedAt: new Date() })
+      .where(and(eq(sequenceEnrollments.id, enrollmentId), eq(sequenceEnrollments.organizationId, organizationId), eq(sequenceEnrollments.status, "active")))
+      .returning({ id: sequenceEnrollments.id });
+    return { paused: rows.length };
+  }
+
+  // Resume: shift the whole schedule forward by however long it was paused. Later steps are timed
+  // from createdAt + dayOffset, so without the shift a long pause would fire every overdue step on
+  // consecutive scans instead of keeping the original spacing.
+  static async resume(organizationId: string, enrollmentId: string) {
+    const [enr] = await db
+      .select({ pausedAt: sequenceEnrollments.pausedAt, createdAt: sequenceEnrollments.createdAt, nextRunAt: sequenceEnrollments.nextRunAt })
+      .from(sequenceEnrollments)
+      .where(and(eq(sequenceEnrollments.id, enrollmentId), eq(sequenceEnrollments.organizationId, organizationId), eq(sequenceEnrollments.status, "paused")))
+      .limit(1);
+    if (!enr) return { resumed: 0 };
+    const now = Date.now();
+    const shift = enr.pausedAt ? Math.max(0, now - enr.pausedAt.getTime()) : 0;
+    const nextRunAt = enr.nextRunAt ? new Date(Math.max(enr.nextRunAt.getTime() + shift, now)) : new Date(now);
+    await db
+      .update(sequenceEnrollments)
+      .set({ status: "active", pausedAt: null, createdAt: new Date(enr.createdAt.getTime() + shift), nextRunAt })
+      .where(eq(sequenceEnrollments.id, enrollmentId));
+    return { resumed: 1, nextRunAt };
+  }
+
   static async stop(organizationId: string, enrollmentId: string) {
     await db
       .update(sequenceEnrollments)
-      .set({ status: "stopped", nextRunAt: null })
+      .set({ status: "stopped", nextRunAt: null, pausedAt: null })
       .where(and(eq(sequenceEnrollments.id, enrollmentId), eq(sequenceEnrollments.organizationId, organizationId)));
     return { ok: true };
   }
@@ -256,8 +286,8 @@ export class SequenceService {
   static async stopForLead(leadId: string, reason?: string): Promise<{ stopped: number }> {
     const rows = await db
       .update(sequenceEnrollments)
-      .set({ status: "stopped", nextRunAt: null })
-      .where(and(eq(sequenceEnrollments.leadId, leadId), eq(sequenceEnrollments.status, "active")))
+      .set({ status: "stopped", nextRunAt: null, pausedAt: null })
+      .where(and(eq(sequenceEnrollments.leadId, leadId), inArray(sequenceEnrollments.status, ["active", "paused"])))
       .returning({ id: sequenceEnrollments.id });
     if (rows.length > 0 && reason) {
       await ActivityService.addActivity({ leadId, type: "note", content: `Sequence stopped — ${reason}.` }).catch(() => {});

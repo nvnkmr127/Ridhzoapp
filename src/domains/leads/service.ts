@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { orgDialCode } from "@/lib/leads/orgDialCode";
 import { leads, leadPipelineStages, leadStatusHistory, leadTags, tags, activities, followUps, reminders, leadAttachments, notifications, whatsappMessages } from "@/db/schema";
 import {
   eq,
@@ -57,7 +58,7 @@ export class LeadService {
     // Canonicalize first so "+1 555-0101" and "+15550101" are stored and compared identically;
     // otherwise formatting differences slip past both the app check and the DB unique index.
     const cleanEmail = normalizeEmail(data.email);
-    const cleanPhone = normalizePhone(data.phone);
+    const cleanPhone = normalizePhone(data.phone, await orgDialCode(organizationId));
     // Compare phones on digits only so "+15550101234", "15550101234" and "+1 (555) 010-1234" are
     // treated as the same number — the DB unique index only catches exact-string matches, so this
     // app-level check is what dedups country-code / plus-vs-no-plus variants at create time.
@@ -198,7 +199,7 @@ export class LeadService {
       // Canonicalize contact keys on edit too, so they match the dedup index and stored formats.
       const patch: Record<string, unknown> = { ...data, updatedAt: new Date() };
       if ("email" in data) patch.email = normalizeEmail(data.email) ?? null;
-      if ("phone" in data) patch.phone = normalizePhone(data.phone) ?? null;
+      if ("phone" in data) patch.phone = normalizePhone(data.phone, await orgDialCode(organizationId)) ?? null;
       const conds = [eq(leads.id, leadId), eq(leads.organizationId, organizationId)];
       // Optimistic concurrency: only write if the row hasn't changed since the editor loaded it.
       // Truncate to milliseconds so Postgres' microsecond precision doesn't cause false conflicts

@@ -2,6 +2,8 @@ import { Phone, Mail, Building, Sparkles, Flame, Radio, SlidersHorizontal, Brace
 import { CustomStatusSchemaService } from "@/domains/leads/customStatusSchemaService";
 import { ScoringService } from "@/domains/leads/scoringService";
 import { formAnswers } from "@/lib/leads/formAnswers";
+import { normalizePhone } from "@/lib/leads/normalize";
+import { orgDialCode } from "@/lib/leads/orgDialCode";
 import { NbaActions } from "@/components/leads/NbaActions";
 import { LeadWorkspaceTabs } from "@/components/leads/LeadWorkspaceTabs";
 import { LogReplyBox } from "@/components/leads/LogReplyBox";
@@ -212,6 +214,10 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
 
   // Status by CATEGORY so custom statuses get the same coaching/banners as the built-in ones.
   const statusCategory = await CustomStatusSchemaService.getStatusCategory(organizationId, lead.status).catch(() => undefined);
+  // Dialable number for Call/WhatsApp links. Older leads may be saved without a country code
+  // ("9876543210"), which WhatsApp can't open — complete them with the workspace's default.
+  const dialPhone = normalizePhone(lead.phone, await orgDialCode(organizationId)) ?? null;
+  const stageName = stagesList.find((st) => st.id === lead.stageId)?.name ?? null;
   const callStats = ScoringService.callStats(activities);
   const callCount = activities.filter((a) => a.type === "call").length;
   const inboundCount = waMessages.filter((msg) => msg.direction === "inbound").length;
@@ -260,7 +266,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   const m = (order: string) => `${order} lg:order-none empty:hidden`;
 
   return (
-    <div className="flex-1 space-y-5 p-3 pt-3 sm:space-y-6 sm:p-8 sm:pt-6">
+    <div className="flex-1 space-y-5 p-3 pt-3 pb-28 sm:space-y-6 sm:p-8 sm:pt-6 sm:pb-24">
       <LeadDuplicateBanner count={dupCount} searchQuery={lead.email || lead.phone || undefined} />
 
       {/* Buying signal — a recent content open is a hot moment to reach out. */}
@@ -292,6 +298,11 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <h2 className="break-words text-xl font-bold tracking-tight sm:text-2xl">{lead.name}</h2>
               <LeadStatusControl leadId={lead.id} status={lead.status} className="h-8 w-auto min-w-[130px] text-xs" />
+              {stageName && (
+                <span className="text-xs text-muted-foreground" title="Pipeline stage — change it in Lead Management">
+                  Stage: <span className="font-medium text-foreground">{stageName}</span>
+                </span>
+              )}
             </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
               {lead.phone && (
@@ -345,12 +356,12 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           <LeadPager leadId={lead.id} />
         </div>
 
-        <LeadHeaderQuickActions lead={lead} whatsappMode={whatsappMode} />
+        <LeadHeaderQuickActions lead={{ ...lead, phone: dialPhone ?? null }} />
       </div>
 
       <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-3">
         {/* Left column (desktop): coaching + lead details */}
-        <div className="contents lg:col-span-1 lg:block lg:sticky lg:top-4 lg:max-h-[calc(100dvh-6rem)] lg:space-y-6 lg:overflow-y-auto lg:overscroll-contain lg:pb-6 lg:pr-2">
+        <div className="contents lg:col-span-1 lg:block lg:space-y-6">
           <div className={m("order-1")}>
             <SectionCard icon={Sparkles} title="Next Best Action" className={nbaAccent}>
               <div className="space-y-2">
@@ -406,28 +417,27 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               <div className="space-y-4">
                 <div>
                   <span className="mb-1.5 block text-xs text-muted-foreground">Assignee</span>
-                  <LeadAssignControl leadId={lead.id} ownerId={lead.ownerId} initialUsers={usersList} />
+                  <LeadAssignControl
+                    leadId={lead.id}
+                    ownerId={lead.ownerId}
+                    initialUsers={usersList}
+                    currentUserId={userId}
+                    canSeeAllLeads={isFieldAdmin}
+                  />
                 </div>
                 <div>
                   <span className="mb-1.5 block text-xs text-muted-foreground">Tags</span>
                   <LeadTags leadId={lead.id} initialTags={leadTags} />
                 </div>
                 <div className="border-t pt-4">
-                  <LeadStageAndValueControl
-                    leadId={lead.id}
-                    stageId={lead.stageId}
-                    expectedValue={lead.expectedValue}
-                    stages={stagesList}
-                    currency={org?.currency ?? undefined}
-                    locale={org?.locale ?? undefined}
-                  />
+                  <LeadStageAndValueControl leadId={lead.id} stageId={lead.stageId} stages={stagesList} />
                 </div>
               </div>
             </SectionCard>
           </div>
 
           <div className={m("order-7")}>
-            <ShareContentCard leadId={lead.id} leadPhone={lead.phone} initialShares={shares} />
+            <ShareContentCard leadId={lead.id} leadPhone={dialPhone} initialShares={shares} />
           </div>
 
           <div className={m("order-8")}>
@@ -458,11 +468,14 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             </SectionCard>
           </div>
 
-          <div className={m("order-10")}>
-            <SectionCard icon={Braces} title="Custom Attributes">
-              <LeadCustomFields leadId={lead.id} initialData={(lead.customData as Record<string, unknown>) ?? {}} initialDefs={visibleCustomDefs} />
-            </SectionCard>
-          </div>
+          {/* Hidden for reps when the workspace has no extra fields — they can't set them up anyway. */}
+          {(visibleCustomDefs.length > 0 || isFieldAdmin) && (
+            <div className={m("order-10")}>
+              <SectionCard icon={Braces} title="More details">
+                <LeadCustomFields leadId={lead.id} initialData={(lead.customData as Record<string, unknown>) ?? {}} initialDefs={visibleCustomDefs} />
+              </SectionCard>
+            </div>
+          )}
         </div>
 
         {/* Right column (desktop): conversation & history */}
@@ -478,12 +491,12 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                   content: (
                     <>
                       <WhatsAppThread messages={waMessages} />
-                      {whatsappMode === "personal" && lead.phone && <LogReplyBox leadId={lead.id} />}
+                      {whatsappMode === "personal" && dialPhone && <LogReplyBox leadId={lead.id} />}
                       <WhatsAppSendBox
                         leadId={lead.id}
                         hasPhone={!!lead.phone}
                         mode={whatsappMode}
-                        phone={lead.phone}
+                        phone={dialPhone}
                         leadName={lead.name}
                         company={lead.company}
                       />
@@ -494,7 +507,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 {
                   value: "reminders",
                   label: `Follow-ups (${reminders.length})`,
-                  content: <LeadRemindersTab leadId={lead.id} initialReminders={reminders} leadName={lead.name} leadPhone={lead.phone} />,
+                  content: <LeadRemindersTab leadId={lead.id} initialReminders={reminders} leadName={lead.name} leadPhone={dialPhone} />,
                 },
                 { value: "attachments", label: `Files (${attachments.length})`, content: <LeadAttachmentsTab leadId={lead.id} initialAttachments={attachments} /> },
                 { value: "emails", label: "Email", content: <EmailSendBox leadId={lead.id} email={lead.email} /> },

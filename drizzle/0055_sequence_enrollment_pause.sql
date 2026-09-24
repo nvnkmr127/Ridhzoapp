@@ -1,0 +1,1 @@
+ALTER TABLE "sequence_enrollments" ADD COLUMN "paused_at" timestamp;

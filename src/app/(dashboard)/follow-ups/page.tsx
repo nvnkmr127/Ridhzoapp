@@ -1,4 +1,6 @@
 import { requireOrg } from "@/lib/rbac";
+import { normalizePhone } from "@/lib/leads/normalize";
+import { orgDialCode } from "@/lib/leads/orgDialCode";
 import { db } from "@/db";
 import { followUps, leads } from "@/db/schema";
 import { eq, and, or, asc, isNull } from "drizzle-orm";
@@ -10,6 +12,7 @@ import { LocalTime } from "@/components/LocalTime";
 
 export default async function FollowUpsDashboard() {
   const { userId, organizationId } = await requireOrg();
+  const dialCode = await orgDialCode(organizationId);
   
   // Fetch follow-ups for the user
   const userFollowUps = await db
@@ -69,7 +72,7 @@ export default async function FollowUpsDashboard() {
           <div className="bg-muted p-4 rounded-md space-y-2 border border-border">
             <h3 className="font-semibold text-foreground">Overdue</h3>
             {overdue.map((f) => (
-              <FollowUpRow key={f.followUp.id} f={f} overdue />
+              <FollowUpRow key={f.followUp.id} f={f} dialCode={dialCode} overdue />
             ))}
           </div>
         )}
@@ -78,7 +81,7 @@ export default async function FollowUpsDashboard() {
           <div className="bg-muted p-4 rounded-md space-y-2 border border-border">
             <h3 className="font-semibold text-foreground">Upcoming</h3>
             {upcoming.map((f) => (
-              <FollowUpRow key={f.followUp.id} f={f} />
+              <FollowUpRow key={f.followUp.id} f={f} dialCode={dialCode} />
             ))}
           </div>
         )}
@@ -95,8 +98,10 @@ export default async function FollowUpsDashboard() {
 // ready WhatsApp message (e.g. personal-mode sequence steps) show it with a one-tap send.
 function FollowUpRow({
   f,
+  dialCode,
   overdue = false,
 }: {
+  dialCode: string | null;
   f: {
     followUp: { id: string; title: string; type: string; description: string | null; dueAt: Date };
     lead: { id: string; name: string; phone: string | null };
@@ -123,7 +128,7 @@ function FollowUpRow({
           <LocalTime iso={f.followUp.dueAt} mode="full" />
         </span>
         {sendable && (
-          <SendFollowUpButton followUpId={f.followUp.id} leadId={f.lead.id} leadName={f.lead.name} phone={f.lead.phone} message={f.followUp.description!} />
+          <SendFollowUpButton followUpId={f.followUp.id} leadId={f.lead.id} leadName={f.lead.name} phone={normalizePhone(f.lead.phone, dialCode) ?? null} message={f.followUp.description!} />
         )}
         <FollowUpActions id={f.followUp.id} />
       </div>

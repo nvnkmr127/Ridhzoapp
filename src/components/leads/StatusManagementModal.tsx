@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { LossReasonsEditor } from "@/components/settings/LossReasonsEditor";
 import {
   Dialog,
   DialogContent,
@@ -312,6 +313,8 @@ export function StatusManagementModal({
             </div>
           </div>
         )}
+
+        <LossReasonsEditor />
       </DialogContent>
     </Dialog>
   );

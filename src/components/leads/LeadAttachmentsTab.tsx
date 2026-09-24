@@ -186,13 +186,14 @@ export function LeadAttachmentsTab({ leadId, initialAttachments }: LeadAttachmen
   return (
     <div className="space-y-6">
       {/* Header Bar */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h4 className="text-sm font-semibold text-foreground">Lead Attachments & Documents</h4>
-          <p className="text-xs text-muted-foreground">Store proposals, contracts, quotes, and file links for this lead</p>
+      {/* Stacks on phones: the title used to wrap one word per line and push "Attach Link" off-screen. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h4 className="text-sm font-semibold text-foreground">Files</h4>
+          <p className="text-xs text-muted-foreground">Quotes, brochures, contracts and links for this lead</p>
         </div>
         {!showAdd && (
-          <div className="flex items-center gap-2">
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
             <Button
               size="sm"
               onClick={() => {
@@ -203,7 +204,7 @@ export function LeadAttachmentsTab({ leadId, initialAttachments }: LeadAttachmen
               className="gap-1.5 text-xs"
             >
               <Upload className="h-4 w-4" />
-              Upload Document
+              Upload file
             </Button>
             <Button
               size="sm"

@@ -87,7 +87,7 @@ export function ActivityTimeline({ activities }: { activities: Activity[] }) {
               setShown(PAGE);
             }}
             className={cn(
-              "shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+              "shrink-0 rounded-full border px-3 py-2 text-xs font-medium transition-colors",
               filter === f.key ? "border-foreground bg-foreground text-background" : "border-border text-muted-foreground hover:text-foreground",
             )}
           >

@@ -2,13 +2,14 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
 import { changeLeadStatusAction } from "@/lib/actions/leads"
 import { cn } from "@/lib/utils"
-import { getTenantStatusSchemaAction } from "@/lib/actions/customStatuses"
+import { getLossReasonsAction, getTenantStatusSchemaAction } from "@/lib/actions/customStatuses"
+import { DEFAULT_LOSS_REASONS } from "@/lib/leads/lossReasons"
 import type { CustomStatusItem } from "@/domains/leads/customStatusSchemaService"
 
 // Fallback if the schema can't load — the five system defaults.
@@ -20,14 +21,8 @@ const FALLBACK: CustomStatusItem[] = [
   { key: "unqualified", label: "Unqualified", color: "#6B7280", category: "unqualified", orderIndex: 5, isSystemDefault: true },
 ];
 
-const LOSS_REASONS = [
-  "Price / Budget Constraints",
-  "Competitor Selected",
-  "Product Fit / Missing Features",
-  "No Response / Ghosted",
-  "Unqualified / Out of Scope",
-  "Other / Unspecified",
-];
+// Fallback until the workspace's own list loads (see Settings → statuses).
+const LOSS_REASONS = DEFAULT_LOSS_REASONS;
 
 function Dot({ color }: { color: string }) {
   return <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />;
@@ -40,6 +35,7 @@ export function LeadStatusControl({ leadId, status, className }: { leadId: strin
   const [busy, setBusy] = React.useState(false);
   const [schema, setSchema] = React.useState<CustomStatusItem[]>(FALLBACK);
   const [pendingStatus, setPendingStatus] = React.useState<string | null>(null);
+  const [reasons, setReasons] = React.useState<string[]>(LOSS_REASONS);
   const [reason, setReason] = React.useState(LOSS_REASONS[0]);
   const [detail, setDetail] = React.useState("");
 
@@ -49,6 +45,7 @@ export function LeadStatusControl({ leadId, status, className }: { leadId: strin
 
   React.useEffect(() => {
     getTenantStatusSchemaAction().then((s) => { if (s?.length) setSchema(s as CustomStatusItem[]); }).catch(() => {});
+    getLossReasonsAction().then((r) => { if (r?.length) setReasons(r); }).catch(() => {});
   }, []);
 
   const byKey = React.useMemo(() => {
@@ -60,10 +57,13 @@ export function LeadStatusControl({ leadId, status, className }: { leadId: strin
     return map;
   }, [schema]);
 
+  const categoryOf = (key: string) => (byKey.get(key) || byKey.get(key.toLowerCase()))?.category;
   const isLossCategory = (key: string) => {
-    const cat = (byKey.get(key) || byKey.get(key.toLowerCase()))?.category;
+    const cat = categoryOf(key);
     return cat === "lost" || cat === "unqualified";
   };
+  // Closing (won/lost) cancels follow-ups and stops sequences — so it's always confirmed, never one stray tap.
+  const isClosing = (key: string) => isLossCategory(key) || categoryOf(key) === "won";
 
   async function apply(next: string, lossReason?: string) {
     const prev = value;
@@ -88,9 +88,9 @@ export function LeadStatusControl({ leadId, status, className }: { leadId: strin
 
   function change(next: string) {
     if (next === value) return;
-    if (isLossCategory(next)) {
+    if (isClosing(next)) {
       setPendingStatus(next);
-      setReason(LOSS_REASONS[0]);
+      setReason(reasons[0]);
       setDetail("");
       return;
     }
@@ -98,6 +98,12 @@ export function LeadStatusControl({ leadId, status, className }: { leadId: strin
   }
 
   function confirmLoss() {
+    if (!isLossCategory(pendingStatus!)) {
+      const next = pendingStatus!;
+      setPendingStatus(null);
+      apply(next);
+      return;
+    }
     const full = detail.trim() ? `${reason} — ${detail.trim()}` : reason;
     const next = pendingStatus!;
     setPendingStatus(null);
@@ -133,20 +139,32 @@ export function LeadStatusControl({ leadId, status, className }: { leadId: strin
       <Dialog open={!!pendingStatus} onOpenChange={(o) => !o && setPendingStatus(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Why is this lead {byKey.get(pendingStatus ?? "")?.label ?? pendingStatus}?</DialogTitle>
+            <DialogTitle>
+              {pendingStatus && isLossCategory(pendingStatus)
+                ? `Close this lead as ${byKey.get(pendingStatus)?.label ?? pendingStatus}?`
+                : `Mark as ${byKey.get(pendingStatus ?? "")?.label ?? pendingStatus}?`}
+            </DialogTitle>
+            <DialogDescription>
+              Pending follow-ups will be cancelled and any running sequences stopped. You can reopen the lead later by changing its status.
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <Select value={reason} onValueChange={setReason}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {LOSS_REASONS.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Input placeholder="Optional detail…" value={detail} onChange={(e) => setDetail(e.target.value)} />
-          </div>
-          <DialogFooter>
+          {pendingStatus && isLossCategory(pendingStatus) && (
+            <div className="space-y-3 py-2">
+              <label className="block text-xs font-medium text-muted-foreground">Why?</label>
+              <Select value={reason} onValueChange={setReason}>
+                <SelectTrigger aria-label="Reason"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {reasons.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Input placeholder="Add a detail (optional)" value={detail} onChange={(e) => setDetail(e.target.value)} />
+            </div>
+          )}
+          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:gap-0">
             <Button variant="ghost" onClick={() => setPendingStatus(null)}>Cancel</Button>
-            <Button onClick={confirmLoss} disabled={busy}>Save</Button>
+            <Button onClick={confirmLoss} disabled={busy}>
+              {pendingStatus && isLossCategory(pendingStatus) ? "Close lead" : "Mark as won"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

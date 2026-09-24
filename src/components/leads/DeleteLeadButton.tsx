@@ -17,10 +17,24 @@ import { useToast } from "@/hooks/use-toast";
 import { deleteLeadAction } from "@/lib/actions/leads";
 
 // Sends a lead to the recycle bin (soft delete). Recoverable there for 30 days.
-export function DeleteLeadButton({ leadId, leadName }: { leadId: string; leadName?: string | null }) {
+// Pass open/onOpenChange to drive it from elsewhere (e.g. a "More" menu) — the trigger button is then hidden.
+export function DeleteLeadButton({
+  leadId,
+  leadName,
+  open: controlledOpen,
+  onOpenChange,
+}: {
+  leadId: string;
+  leadName?: string | null;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}) {
   const router = useRouter();
   const { toast } = useToast();
-  const [open, setOpen] = React.useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = React.useState(false);
+  const controlled = controlledOpen !== undefined;
+  const open = controlled ? controlledOpen : uncontrolledOpen;
+  const setOpen = (o: boolean) => (controlled ? onOpenChange?.(o) : setUncontrolledOpen(o));
   const [busy, setBusy] = React.useState(false);
 
   async function handleConfirmDelete() {
@@ -53,12 +67,14 @@ export function DeleteLeadButton({ leadId, leadName }: { leadId: string; leadNam
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="h-9 gap-1.5 text-destructive hover:text-destructive">
-          <Trash2 className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Delete</span>
-        </Button>
-      </DialogTrigger>
+      {!controlled && (
+        <DialogTrigger asChild>
+          <Button variant="outline" size="sm" className="h-9 gap-1.5 text-destructive hover:text-destructive" aria-label="Delete lead">
+            <Trash2 className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Delete</span>
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Move lead to recycle bin?</DialogTitle>
@@ -66,7 +82,7 @@ export function DeleteLeadButton({ leadId, leadName }: { leadId: string; leadNam
             Are you sure you want to delete <span className="font-semibold text-foreground">{leadName || "this lead"}</span>? It will be moved to the recycle bin where it can be restored within 30 days.
           </DialogDescription>
         </DialogHeader>
-        <DialogFooter className="gap-2 sm:gap-0">
+        <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:gap-0">
           <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>
             Cancel
           </Button>

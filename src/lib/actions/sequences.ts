@@ -110,16 +110,49 @@ export async function deleteSequenceAction(sequenceId: string) {
   }
 }
 
+// The enrollment's lead, if this user may act on it (same rule as the lead profile). Throws otherwise.
+async function enrollmentLead(enrollmentId: string, ctx: { userId: string; organizationId: string }) {
+  const [enr] = await db
+    .select({ leadId: sequenceEnrollments.leadId })
+    .from(sequenceEnrollments)
+    .where(and(eq(sequenceEnrollments.id, enrollmentId), eq(sequenceEnrollments.organizationId, ctx.organizationId)))
+    .limit(1);
+  if (!enr) throw new Error("Enrollment not found");
+  await assertLeadAccess(enr.leadId, ctx);
+  return enr.leadId;
+}
+
+// Pause / resume one lead's sequence (the sequence itself keeps running for everyone else).
+export async function pauseEnrollmentAction(enrollmentId: string) {
+  const { userId, organizationId } = await assertWritable();
+  try {
+    const leadId = await enrollmentLead(enrollmentId, { userId, organizationId });
+    const res = await SequenceService.pause(organizationId, enrollmentId);
+    if (!res.paused) return fail("VALIDATION", "Only a running sequence can be paused.");
+    revalidatePath(`/leads/${leadId}`);
+    return ok(res);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function resumeEnrollmentAction(enrollmentId: string) {
+  const { userId, organizationId } = await assertWritable();
+  try {
+    const leadId = await enrollmentLead(enrollmentId, { userId, organizationId });
+    const res = await SequenceService.resume(organizationId, enrollmentId);
+    if (!res.resumed) return fail("VALIDATION", "This sequence isn't paused.");
+    revalidatePath(`/leads/${leadId}`);
+    return ok({ nextRunAt: res.nextRunAt?.toISOString() ?? null });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
 export async function stopEnrollmentAction(enrollmentId: string, leadId?: string) {
   const { userId, organizationId } = await assertWritable();
   try {
-    const [enr] = await db
-      .select({ leadId: sequenceEnrollments.leadId })
-      .from(sequenceEnrollments)
-      .where(and(eq(sequenceEnrollments.id, enrollmentId), eq(sequenceEnrollments.organizationId, organizationId)))
-      .limit(1);
-    if (!enr) return fail("NOT_FOUND", "This enrollment no longer exists.");
-    await assertLeadAccess(enr.leadId, { userId, organizationId });
+    await enrollmentLead(enrollmentId, { userId, organizationId });
     const res = await SequenceService.stop(organizationId, enrollmentId);
     if (leadId) revalidatePath(`/leads/${leadId}`);
     return ok(res);

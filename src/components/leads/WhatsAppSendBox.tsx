@@ -10,6 +10,7 @@ import { AiDraftControls } from "@/components/leads/AiDraftControls"
 import { useRouter } from "next/navigation"
 import { useLogContact } from "@/components/leads/useLogContact"
 import { buildDeepLink, renderTemplate } from "@/lib/messaging/deeplink"
+import { useLeadAction, type LeadUiAction } from "@/components/leads/leadEvents"
 
 type Template = { id: string; name: string; body: string };
 
@@ -34,6 +35,13 @@ export function WhatsAppSendBox({
   const [body, setBody] = React.useState("");
   const [sending, setSending] = React.useState(false);
   const router = useRouter();
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+  // Header "WhatsApp" button lands here (one composer for every way of messaging).
+  const onLeadAction = React.useCallback((a: LeadUiAction) => {
+    if (a.type === "focus-composer" && a.channel === "whatsapp") textareaRef.current?.focus();
+  }, []);
+  useLeadAction(onLeadAction);
 
   // Load WhatsApp templates once for the one-tap picker.
   React.useEffect(() => {
@@ -52,10 +60,12 @@ export function WhatsAppSendBox({
     // message is logged so it shows in the thread and counts as contact.
     if (mode === "personal") {
       const lead = { name: leadName, phone, company };
-      const text = renderTemplate(body, lead);
-      window.open(buildDeepLink("whatsapp", lead, text) ?? `https://wa.me/?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+      const text = renderTemplate(body, lead).trim();
+      // Empty message = just open the chat (what the old header button did).
+      const link = text ? buildDeepLink("whatsapp", lead, text) : buildDeepLink("whatsapp", lead, "")?.replace(/\?text=$/, "");
+      window.open(link ?? "https://wa.me/", "_blank", "noopener,noreferrer");
       setBody("");
-      await logContact({ channel: "whatsapp", message: text }, "Opened in WhatsApp — logged on the lead");
+      await logContact(text ? { channel: "whatsapp", message: text } : { channel: "whatsapp" }, text ? "Opened in WhatsApp — logged on the lead" : undefined);
       return;
     }
     setSending(true);
@@ -85,7 +95,7 @@ export function WhatsAppSendBox({
       {templates.length > 0 && (
         <Select onValueChange={pickTemplate}>
           <SelectTrigger className="w-full">
-            <SelectValue placeholder="Insert a template…" />
+            <SelectValue placeholder="Quick replies — pick a saved message" />
           </SelectTrigger>
           <SelectContent>
             {templates.map((t) => (
@@ -95,16 +105,17 @@ export function WhatsAppSendBox({
         </Select>
       )}
       <Textarea
-        placeholder="Type a WhatsApp message… tokens like {{first_name}} are filled in automatically."
+        ref={textareaRef}
+        placeholder="Type a message… ({{first_name}} becomes their first name)"
         className="min-h-[100px]"
         value={body}
         onChange={(e) => setBody(e.target.value)}
       />
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
         <AiDraftControls leadId={leadId} channel="whatsapp" onDraft={({ draft }) => setBody(draft)} disabled={sending} />
-        <Button onClick={send} disabled={sending || body.trim().length === 0} className="gap-2">
+        <Button onClick={send} disabled={sending || (mode !== "personal" && body.trim().length === 0)} className="gap-2">
           <MessageCircle className="h-4 w-4" />
-          {mode === "personal" ? "Open in WhatsApp" : sending ? "Sending…" : "Send WhatsApp"}
+          {mode === "personal" ? (body.trim() ? "Open in WhatsApp" : "Open WhatsApp chat") : sending ? "Sending…" : "Send WhatsApp"}
         </Button>
       </div>
     </div>
