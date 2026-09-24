@@ -5,9 +5,12 @@ import Link from "next/link";
 import { getAutomations } from "@/lib/actions/automations";
 import { AutomationTemplates } from "@/components/automations/AutomationTemplates";
 import { AutomationCard } from "@/components/automations/AutomationCard";
+import { requireOrg } from "@/lib/rbac";
+import { PlanService } from "@/domains/billing/planService";
 
 export default async function AutomationsPage() {
-  const automations = await getAutomations();
+  const { organizationId } = await requireOrg();
+  const [automations, runnable] = await Promise.all([getAutomations(), PlanService.runnableIds(organizationId, "automations")]);
 
   return (
     <div className="flex-1 space-y-4 p-4 pt-4 sm:p-8 sm:pt-6">
@@ -44,6 +47,7 @@ export default async function AutomationsPage() {
               id={automation.id}
               name={automation.name}
               isActive={automation.isActive}
+              overPlan={!!runnable && !runnable.has(automation.id)}
             />
           ))}
         </div>

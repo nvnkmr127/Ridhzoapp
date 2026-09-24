@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { toggleAutomation, deleteAutomation } from "@/lib/actions/automations";
 
-export function AutomationCard({ id, name, isActive }: { id: string; name: string; isActive: boolean }) {
+export function AutomationCard({ id, name, isActive, overPlan = false }: { id: string; name: string; isActive: boolean; overPlan?: boolean }) {
   const router = useRouter();
   const { toast } = useToast();
   const [busy, setBusy] = React.useState(false);
@@ -55,8 +55,8 @@ export function AutomationCard({ id, name, isActive }: { id: string; name: strin
     <div className="border p-4 rounded-lg flex items-center justify-between">
       <div>
         <h3 className="font-medium">{name}</h3>
-        <Badge variant={active ? "default" : "secondary"} className="mt-1 font-normal">
-          {active ? "Active" : "Inactive"}
+        <Badge variant={active && !overPlan ? "default" : "secondary"} className="mt-1 font-normal">
+          {overPlan ? "Paused — Free plan allows 2" : active ? "Active" : "Inactive"}
         </Badge>
       </div>
       <div className="flex items-center gap-1">

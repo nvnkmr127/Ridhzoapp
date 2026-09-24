@@ -127,6 +127,19 @@ export async function connectFacebookPagesAction(pageIds: z.infer<typeof faceboo
   if (!parsed.success) return fail("VALIDATION", "Please select at least one Facebook Page.");
 
   try {
+    // Check the plan's source cap up front (before consuming the OAuth session), so a free workspace
+    // is never left with some Pages connected and others not. Reconnecting a known Page is free.
+    const existingPageIds = new Set(
+      (await LeadSourceService.getSources(organizationId))
+        .filter((s) => s.type === "facebook_lead_ads")
+        .map((s) => (s.config as { pageId?: string } | null)?.pageId),
+    );
+    const newPages = parsed.data.filter((id) => !existingPageIds.has(id)).length;
+    if (newPages > 0) {
+      const { PlanService } = await import("@/domains/billing/planService");
+      await PlanService.assertCanAdd(organizationId, "sources", newPages);
+    }
+
     const { takePendingPages } = await import("@/lib/leads/fbPendingStore");
     const pending = await takePendingPages(userId);
     if (!pending) return fail("VALIDATION", "Your Facebook connection session expired. Please reconnect and try again.");

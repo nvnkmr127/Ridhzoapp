@@ -11,7 +11,7 @@ import { hasPermission } from "@/lib/rbac";
 import { getOrgFormat } from "@/lib/format.server";
 import { isSuperAdmin, requireOrg } from "@/lib/rbac";
 import { PlatformConfigService } from "@/domains/platform/configService";
-import { PlanService, limitsFor } from "@/domains/billing/planService";
+import { PlanService, limitsFor, PLAN_LIMITS } from "@/domains/billing/planService";
 import { PlanProvider } from "@/components/billing/PlanGate";
 import { BillingLifecycleService } from "@/domains/billing/lifecycleService";
 import { Wrench } from "lucide-react";
@@ -63,7 +63,7 @@ export default async function DashboardLayout({
   const showTzBanner = (await getOrgFormat(organizationId)).timezone === "UTC" && canAdmin;
 
   return (
-    <PlanProvider aiAllowed={limitsFor(usageStats.plan).ai}>
+    <PlanProvider aiAllowed={limitsFor(usageStats.plan).ai} prices={{ starter: PLAN_LIMITS.starter.price, unlimited: PLAN_LIMITS.unlimited.price }}>
     <div className="flex h-dvh overflow-hidden bg-background text-foreground">
       <Sidebar isSuperAdmin={superAdmin} plan={usageStats?.plan} allowed={allowed} />
       <div className="flex flex-col flex-1 overflow-hidden">

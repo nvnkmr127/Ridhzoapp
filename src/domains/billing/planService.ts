@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { users, leads, invitations, organizations, automations, sequences, leadSources } from "@/db/schema";
-import { and, count, eq, gt, isNull } from "drizzle-orm";
+import { and, asc, count, eq, gt, isNull } from "drizzle-orm";
 import { PlatformConfigService } from "@/domains/platform/configService";
 
 // Per-plan ceilings. Infinity = unlimited. Enforcement lives here; charging (Stripe) is separate
@@ -18,8 +18,8 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
 // Countable per-org resources capped by plan. Counts every row (active or paused) so pausing
 // one can't be used to create more.
 const COUNTED = {
-  automations: { table: automations, org: automations.organizationId, label: "automations" },
-  sequences: { table: sequences, org: sequences.organizationId, label: "sequences" },
+  automations: { table: automations, org: automations.organizationId, id: automations.id, createdAt: automations.createdAt, label: "automations" },
+  sequences: { table: sequences, org: sequences.organizationId, id: sequences.id, createdAt: sequences.createdAt, label: "sequences" },
   sources: { table: leadSources, org: leadSources.organizationId, label: "lead sources" },
 } as const;
 export type CountedResource = keyof typeof COUNTED;
@@ -117,13 +117,23 @@ export class PlanService {
   }
 
   // Message contains "plan" so actionFail maps it to code LIMIT → the UI opens the upgrade dialog.
-  static async assertCanAdd(organizationId: string, resource: CountedResource) {
+  static async assertCanAdd(organizationId: string, resource: CountedResource, adding = 1) {
     const max = limitsFor(await this.plan(organizationId))[resource];
     if (max === Infinity) return;
     const { table, org, label } = COUNTED[resource];
     const [row] = await db.select({ n: count() }).from(table).where(eq(org, organizationId));
-    if (Number(row?.n ?? 0) >= max) {
+    if (Number(row?.n ?? 0) + adding > max) {
       throw new Error(`The Free plan allows ${max} ${label}. Upgrade to Starter or Unlimited to add more.`);
     }
+  }
+
+  // A downgraded workspace may hold more than its plan allows. Only the oldest N keep running;
+  // the rest pause until the org upgrades. null = no cap (paid plan).
+  static async runnableIds(organizationId: string, resource: "automations" | "sequences"): Promise<Set<string> | null> {
+    const max = limitsFor(await this.plan(organizationId))[resource];
+    if (max === Infinity) return null;
+    const { table, org, id, createdAt } = COUNTED[resource];
+    const rows = await db.select({ id }).from(table).where(eq(org, organizationId)).orderBy(asc(createdAt)).limit(max);
+    return new Set(rows.map((r) => r.id));
   }
 }

@@ -70,4 +70,33 @@ describe("PlanService free-plan gates", () => {
     queueResults([[{ plan: "starter", planStatus: "active" }]]);
     expect(await PlanService.aiAllowed("org")).toBe(true);
   });
+
+  it("counts every new Facebook Page being connected at once", async () => {
+    queueResults([[{ plan: "free" }], [{ n: 0 }]]);
+    await expect(PlanService.assertCanAdd("org", "sources", 2)).rejects.toThrow(/1 lead sources/);
+  });
+});
+
+describe("PlanService.runnableIds", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("is uncapped on paid plans", async () => {
+    queueResults([[{ plan: "unlimited", planStatus: "active" }]]);
+    expect(await PlanService.runnableIds("org", "automations")).toBeNull();
+  });
+
+  it("keeps only the oldest two on free", async () => {
+    let i = 0;
+    const results: any[][] = [[{ plan: "free" }], [{ id: "a" }, { id: "b" }]];
+    (db.select as any).mockImplementation(() => ({
+      from: () => ({
+        where: () => {
+          const r = results[i++];
+          return { limit: () => Promise.resolve(r), orderBy: () => ({ limit: () => Promise.resolve(r) }) };
+        },
+      }),
+    }));
+    const ids = await PlanService.runnableIds("org", "automations");
+    expect([...ids!]).toEqual(["a", "b"]);
+  });
 });

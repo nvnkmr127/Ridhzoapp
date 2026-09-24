@@ -14,7 +14,7 @@ export const AI_UPGRADE_REASON = "AI features — reply drafts, lead recaps, the
 
 // Mounted once in the dashboard layout. Free-plan clicks on a paid feature (or a LIMIT error from a
 // server action) call openUpgrade(), which shows one shared "subscribe" dialog.
-export function PlanProvider({ aiAllowed, children }: { aiAllowed: boolean; children: React.ReactNode }) {
+export function PlanProvider({ aiAllowed, prices, children }: { aiAllowed: boolean; prices: { starter: string; unlimited: string }; children: React.ReactNode }) {
   const [reason, setReason] = React.useState<string | null>(null);
   const openUpgrade = React.useCallback((r?: string) => setReason(r || AI_UPGRADE_REASON), []);
   const value = React.useMemo(() => ({ aiAllowed, openUpgrade }), [aiAllowed, openUpgrade]);
@@ -32,8 +32,8 @@ export function PlanProvider({ aiAllowed, children }: { aiAllowed: boolean; chil
             <DialogDescription>{reason}</DialogDescription>
           </DialogHeader>
           <ul className="space-y-1 text-sm text-muted-foreground">
-            <li><span className="font-medium text-foreground">Starter · ₹249/mo</span> — AI features, unlimited automations, sequences &amp; lead sources, 3 seats</li>
-            <li><span className="font-medium text-foreground">Unlimited · ₹449/mo</span> — everything, unlimited leads &amp; seats</li>
+            <li><span className="font-medium text-foreground">Starter · {prices.starter}</span> — AI features, unlimited automations, sequences &amp; lead sources, 3 seats</li>
+            <li><span className="font-medium text-foreground">Unlimited · {prices.unlimited}</span> — everything, unlimited leads &amp; seats</li>
           </ul>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setReason(null)}>Not now</Button>

@@ -7,6 +7,7 @@ import { GitFork, Plus, Pause, Play, Square, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { usePlan } from "@/components/billing/PlanGate";
 import { SectionCard } from "./SectionCard";
 import { enrollLeadsAction, pauseEnrollmentAction, resumeEnrollmentAction, stopEnrollmentAction } from "@/lib/actions/sequences";
 import { LocalTime } from "@/components/LocalTime";
@@ -45,6 +46,7 @@ export function LeadSequencesCard({ leadId, availableSequences = [], initialEnro
   const [pending, setPending] = useState<string | null>(null);
   const router = useRouter();
   const { toast } = useToast();
+  const { openUpgrade } = usePlan();
 
   // Server data is the source of truth after every change (router.refresh re-renders with fresh rows).
   useEffect(() => setEnrolled(initialEnrolled), [initialEnrolled]);
@@ -90,6 +92,7 @@ export function LeadSequencesCard({ leadId, availableSequences = [], initialEnro
     try {
       const res = await enrollLeadsAction(seq.id, [leadId]);
       if (!res.ok) {
+        if (res.code === "LIMIT") return openUpgrade(res.message);
         toast({ variant: "destructive", title: "Couldn't enroll", description: res.message });
         return;
       }

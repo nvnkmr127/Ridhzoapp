@@ -60,8 +60,13 @@ async function dispatchTrigger(eventType: string, payload: EventPayload) {
       )
     );
 
+  // Downgraded free workspaces: automations beyond the plan's cap don't fire.
+  const { PlanService } = await import("@/domains/billing/planService");
+  const runnable = activeTriggers.length ? await PlanService.runnableIds(lead.organizationId, "automations") : null;
+
   const disc = eventDiscriminator(eventType, payload);
   for (const trigger of activeTriggers) {
+    if (runnable && !runnable.has(trigger.automationId)) continue;
     const idempotencyKey = `${trigger.automationId}-${payload.leadId}-${eventType}${disc ? `-${disc}` : ""}`;
 
     // jobId = idempotencyKey: BullMQ drops a duplicate enqueue of the same (automation, lead, event),
