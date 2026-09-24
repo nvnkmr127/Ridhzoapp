@@ -98,6 +98,7 @@ export async function updateReminderAction(input: z.infer<typeof updateReminderS
         description: parsed.data.description,
         type: parsed.data.type,
         dueAt: dueDate,
+        overdueNotifiedAt: null, // edited due time → may alert as overdue again
         updatedAt: new Date(),
       })
       .where(and(eq(followUps.id, parsed.data.reminderId), eq(followUps.leadId, parsed.data.leadId)))

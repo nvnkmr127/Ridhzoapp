@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sparkles } from "lucide-react";
-import { navRoutes, navGroups, superAdminRoutes } from "./nav";
+import { visibleRoutes, navGroups, superAdminRoutes } from "./nav";
 
 function SuperAdminNavLinks({ pathname }: { pathname: string }) {
   const searchParams = useSearchParams();
@@ -42,9 +42,12 @@ function SuperAdminNavLinks({ pathname }: { pathname: string }) {
 export function Sidebar({
   isSuperAdmin = false,
   plan,
+  allowed = [],
 }: {
   isSuperAdmin?: boolean;
   plan?: string;
+  /** Permissions the user holds that gate nav items (see nav.ts `permission`). */
+  allowed?: string[];
 }) {
   const pathname = usePathname();
 
@@ -90,7 +93,7 @@ export function Sidebar({
             <p className="px-3 mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
               {group}
             </p>
-            {navRoutes.filter((r) => r.group === group).map((route) => {
+            {visibleRoutes(allowed, isSuperAdmin).filter((r) => r.group === group).map((route) => {
               const active = pathname === route.href;
               return (
                 <Link

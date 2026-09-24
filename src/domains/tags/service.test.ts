@@ -15,7 +15,8 @@ vi.mock("@/db", () => ({
     })),
     insert: vi.fn(() => ({
       values: vi.fn(() => ({
-        onConflictDoNothing: vi.fn().mockResolvedValue([]),
+        // Awaitable directly (tag create) and via .returning() (new lead↔tag links → tag_added events).
+        onConflictDoNothing: vi.fn(() => Object.assign(Promise.resolve([]), { returning: vi.fn().mockResolvedValue([]) })),
       })),
     })),
     delete: vi.fn(() => ({

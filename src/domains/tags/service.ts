@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { tags, leadTags, leads } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { assertLeadInOrg } from "@/domains/leads/ownership";
+import { eventBus } from "@/lib/events/emitter";
 
 export class TagService {
   static async listAll(organizationId: string) {
@@ -30,7 +31,9 @@ export class TagService {
     }
 
     // The (lead_id, tag_id) PK makes this a no-op on re-add and safe under a concurrent double-add.
-    await db.insert(leadTags).values({ leadId, tagId: tag.id }).onConflictDoNothing();
+    const added = await db.insert(leadTags).values({ leadId, tagId: tag.id }).onConflictDoNothing().returning({ leadId: leadTags.leadId });
+    // Only a NEW link is a "tag added" (re-adding an existing tag doesn't re-fire automations).
+    if (added.length) eventBus.emit("lead.tag_added", { leadId, changes: { tagId: tag.id, tagName: tag.name } });
     return { id: tag.id, name: tag.name };
   }
 
@@ -56,7 +59,8 @@ export class TagService {
       [tag] = await db.select().from(tags).where(and(eq(tags.organizationId, organizationId), eq(tags.name, name))).limit(1);
     }
     const values = leadIds.map((leadId) => ({ leadId, tagId: tag.id }));
-    await db.insert(leadTags).values(values).onConflictDoNothing();
+    const added = await db.insert(leadTags).values(values).onConflictDoNothing().returning({ leadId: leadTags.leadId });
+    for (const a of added) eventBus.emit("lead.tag_added", { leadId: a.leadId, changes: { tagId: tag.id, tagName: tag.name } });
     return tag;
   }
 

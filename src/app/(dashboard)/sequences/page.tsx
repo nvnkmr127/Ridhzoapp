@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { GitFork, Users, Layers } from "lucide-react";
 import { listSequencesAction } from "@/lib/actions/sequences";
+import { hasPermission } from "@/lib/rbac";
 import { SequenceBuilder } from "@/components/sequences/SequenceBuilder";
 import { SequenceRowActions } from "@/components/sequences/SequenceRowActions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 
 export default async function SequencesPage() {
-  const sequences = await listSequencesAction();
+  const [sequences, canManage] = await Promise.all([listSequencesAction(), hasPermission("sequences.manage")]);
 
   return (
     <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6">
@@ -22,7 +23,13 @@ export default async function SequencesPage() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <SequenceBuilder />
+        {canManage ? (
+          <SequenceBuilder />
+        ) : (
+          <p className="rounded-2xl border bg-card p-4 text-sm text-muted-foreground">
+            Ask an admin to create or change sequences. You can enroll your leads in any active sequence from the lead page.
+          </p>
+        )}
 
         <Card className="rounded-2xl">
           <CardHeader>
@@ -46,7 +53,7 @@ export default async function SequencesPage() {
                         <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> {s.activeEnrollments} active</span>
                       </p>
                     </Link>
-                    <SequenceRowActions id={s.id} name={s.name} isActive={s.isActive} />
+                    {canManage && <SequenceRowActions id={s.id} name={s.name} isActive={s.isActive} />}
                   </li>
                 ))}
               </ul>

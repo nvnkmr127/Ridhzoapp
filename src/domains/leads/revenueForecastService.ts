@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { CustomStatusSchemaService } from "./customStatusSchemaService";
 import { leads } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
@@ -33,6 +34,7 @@ export class RevenueForecastService {
     organizationId: string,
     preloadedLeads?: { id: string; status: string | null; expectedValue: string | null }[]
   ): Promise<RevenueForecast> {
+    const { cat } = await CustomStatusSchemaService.resolver(organizationId); // custom statuses count by category
     const orgLeads = preloadedLeads ?? await db
       .select({
         id: leads.id,
@@ -72,7 +74,7 @@ export class RevenueForecastService {
       unweightedTotalValue += cleanVal;
       weightedProjectedRevenue += weightedVal;
 
-      if (status === "won") {
+      if (cat(status) === "won") {
         wonRevenue += cleanVal;
       }
     }

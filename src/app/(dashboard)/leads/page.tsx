@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { MeetingService } from "@/domains/meetings/service";
+import { CustomStatusSchemaService } from "@/domains/leads/customStatusSchemaService";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { SmartSegments } from "@/components/leads/SmartSegments";
@@ -133,6 +134,7 @@ export default async function LeadsPage({
           users: usersList,
           sources: sourcesList.map((s) => ({ id: s.id, name: s.name })),
           tags: tagsList.map((t) => ({ id: t.id, name: t.name })),
+          statuses: (await CustomStatusSchemaService.getTenantStatusSchema(organizationId).catch(() => [])).map((st) => ({ key: st.key, label: st.label })),
         }}
       />
 

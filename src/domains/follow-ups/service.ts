@@ -104,6 +104,7 @@ export class FollowUpService {
       .set({
         dueAt: snoozedUntil,
         snoozedUntil,
+        overdueNotifiedAt: null, // a new due time can go overdue (and alert) again
         status: "pending", // Reset to pending
         updatedAt: new Date()
       })
@@ -119,6 +120,7 @@ export class FollowUpService {
       .set({
         dueAt,
         snoozedUntil: null, // clear snooze on reschedule
+        overdueNotifiedAt: null,
         updatedAt: new Date()
       })
       .where(scopeById(id, organizationId))

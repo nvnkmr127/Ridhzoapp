@@ -7,7 +7,7 @@ import { and, eq } from "drizzle-orm";
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { requireOrg, assertWritable } from "@/lib/rbac";
+import { requireOrg, assertWritable, requirePermission } from "@/lib/rbac";
 import { SequenceService } from "@/domains/leads/sequenceService";
 import { ok, fail, actionFail } from "@/lib/actions/result";
 
@@ -26,7 +26,7 @@ const createSchema = z.object({
 });
 
 export async function createSequenceAction(input: unknown) {
-  const { organizationId } = await assertWritable();
+  const { organizationId } = await requirePermission("sequences.manage"); // shared org config — like automations.manage
   const parsed = createSchema.safeParse(input);
   if (!parsed.success) {
     return fail("VALIDATION", "Add a name and at least one valid step (each with a message under 2,000 characters).");
@@ -72,7 +72,7 @@ export async function getSequenceDetailAction(sequenceId: string) {
 }
 
 export async function updateSequenceAction(sequenceId: string, input: unknown) {
-  const { organizationId } = await assertWritable();
+  const { organizationId } = await requirePermission("sequences.manage"); // shared org config — like automations.manage
   const parsed = createSchema.safeParse(input);
   if (!parsed.success) {
     return fail("VALIDATION", "Add a name and at least one valid step (each with a message under 2,000 characters).");
@@ -87,7 +87,7 @@ export async function updateSequenceAction(sequenceId: string, input: unknown) {
 }
 
 export async function setSequenceActiveAction(sequenceId: string, isActive: boolean) {
-  const { organizationId } = await assertWritable();
+  const { organizationId } = await requirePermission("sequences.manage"); // shared org config — like automations.manage
   try {
     const row = await SequenceService.setActive(organizationId, sequenceId, isActive);
     if (!row) return fail("NOT_FOUND", "This sequence no longer exists.");
@@ -100,7 +100,7 @@ export async function setSequenceActiveAction(sequenceId: string, isActive: bool
 }
 
 export async function deleteSequenceAction(sequenceId: string) {
-  const { organizationId } = await assertWritable();
+  const { organizationId } = await requirePermission("sequences.manage"); // shared org config — like automations.manage
   try {
     const res = await SequenceService.delete(organizationId, sequenceId);
     revalidatePath("/sequences");

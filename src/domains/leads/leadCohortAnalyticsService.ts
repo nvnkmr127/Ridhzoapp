@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { CustomStatusSchemaService } from "./customStatusSchemaService";
 import { leads } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
@@ -24,6 +25,7 @@ export class LeadCohortAnalyticsService {
       createdAt: Date;
     }[]
   ): Promise<CohortMetric[]> {
+    const { cat } = await CustomStatusSchemaService.resolver(organizationId); // custom statuses count by category
     const orgLeads = preloadedLeads ?? await db
       .select({
         id: leads.id,
@@ -49,9 +51,9 @@ export class LeadCohortAnalyticsService {
       grouped[cohortMonth].total += 1;
       const status = lead.status || "new";
 
-      if (status === "won") {
+      if (cat(status) === "won") {
         grouped[cohortMonth].won += 1;
-      } else if (status === "lost" || status === "unqualified") {
+      } else if (cat(status) === "lost" || cat(status) === "unqualified") {
         grouped[cohortMonth].lost += 1;
       } else {
         grouped[cohortMonth].active += 1;

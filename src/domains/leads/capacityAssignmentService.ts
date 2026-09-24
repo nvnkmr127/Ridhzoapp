@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { CustomStatusSchemaService } from "./customStatusSchemaService";
 import { leads, users } from "@/db/schema";
 import { and, eq, inArray, count } from "drizzle-orm";
 import { AssignmentService } from "@/domains/leads/assignmentService";
@@ -21,6 +22,7 @@ export class CapacityAssignmentService {
     defaultMaxCapacity: number = 25,
     preloadedUsers?: { id: string; email: string }[]
   ): Promise<RepCapacity[]> {
+    const { openKeys } = await CustomStatusSchemaService.resolver(organizationId); // custom statuses count by category
     const orgUsers = preloadedUsers ?? await db
       .select({ id: users.id, email: users.email })
       .from(users)
@@ -40,7 +42,7 @@ export class CapacityAssignmentService {
       .where(
         and(
           eq(leads.organizationId, organizationId),
-          inArray(leads.status, ["new", "active"]),
+          inArray(leads.status, openKeys),
           inArray(leads.ownerId, userIds)
         )
       )

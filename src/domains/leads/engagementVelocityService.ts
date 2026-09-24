@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { CustomStatusSchemaService } from "./customStatusSchemaService";
 import { leads, activities } from "@/db/schema";
 import { and, eq, gte, inArray } from "drizzle-orm";
 
@@ -29,6 +30,7 @@ export class EngagementVelocityService {
    * Evaluates activity touchpoint momentum comparing recent (0-7d) vs previous (8-14d) windows.
    */
   static async getEngagementVelocity(organizationId: string): Promise<EngagementVelocityMetrics> {
+    const { openKeys } = await CustomStatusSchemaService.resolver(organizationId); // custom statuses count by category
     const activeLeads = await db
       .select({
         id: leads.id,
@@ -41,7 +43,7 @@ export class EngagementVelocityService {
       .where(
         and(
           eq(leads.organizationId, organizationId),
-          inArray(leads.status, ["new", "active"])
+          inArray(leads.status, openKeys)
         )
       );
 
@@ -70,7 +72,7 @@ export class EngagementVelocityService {
       .where(
         and(
           eq(leads.organizationId, organizationId),
-          inArray(leads.status, ["new", "active"]),
+          inArray(leads.status, openKeys),
           gte(activities.createdAt, fourteenDaysAgo)
         )
       );

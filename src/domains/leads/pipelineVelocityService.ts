@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { CustomStatusSchemaService } from "./customStatusSchemaService";
 import { leads, leadStatusHistory } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
@@ -25,6 +26,7 @@ export class PipelineVelocityService {
     organizationId: string,
     preloadedLeads?: { id: string; status: string | null; createdAt: Date }[]
   ): Promise<PipelineVelocityMetrics> {
+    const { cat } = await CustomStatusSchemaService.resolver(organizationId); // custom statuses count by category
     const orgLeads = preloadedLeads ?? await db
       .select({ id: leads.id, status: leads.status, createdAt: leads.createdAt })
       .from(leads)
@@ -99,8 +101,8 @@ export class PipelineVelocityService {
 
     // Funnel conversion counts
     const totalLeadsCount = orgLeads.length;
-    const activeCount = orgLeads.filter((l) => l.status === "active" || l.status === "won").length;
-    const wonCount = orgLeads.filter((l) => l.status === "won").length;
+    const activeCount = orgLeads.filter((l) => cat(l.status) === "in_progress" || cat(l.status) === "won").length;
+    const wonCount = orgLeads.filter((l) => cat(l.status) === "won").length;
 
     const newToActiveRate = totalLeadsCount > 0 ? Math.round((activeCount / totalLeadsCount) * 1000) / 10 : 0;
     const activeToWonRate = activeCount > 0 ? Math.round((wonCount / activeCount) * 1000) / 10 : 0;

@@ -27,12 +27,14 @@ export interface NavRoute {
   icon: LucideIcon;
   href: string;
   group: string;
+  /** Hidden unless the user holds this permission (workspace-wide data or admin tools). */
+  permission?: string;
 }
 
 export const navRoutes: NavRoute[] = [
-  { label: "Dashboard", icon: LayoutDashboard, href: "/", group: "Analytics" },
+  { label: "Dashboard", icon: LayoutDashboard, href: "/", group: "Analytics", permission: "settings.manage" },
   { label: "My Dashboard", icon: Activity, href: "/my-dashboard", group: "Analytics" },
-  { label: "Insights", icon: TrendingUp, href: "/insights", group: "Analytics" },
+  { label: "Insights", icon: TrendingUp, href: "/insights", group: "Analytics", permission: "settings.manage" },
   { label: "Leads", icon: Users, href: "/leads", group: "CRM" },
   { label: "Pipeline Board", icon: Kanban, href: "/leads/kanban", group: "CRM" },
   { label: "Cold Leads", icon: Snowflake, href: "/leads/cold", group: "CRM" },
@@ -40,9 +42,13 @@ export const navRoutes: NavRoute[] = [
   { label: "Meetings", icon: CalendarCheck, href: "/meetings", group: "Productivity" },
   { label: "Automations", icon: Zap, href: "/automations", group: "Productivity" },
   { label: "Sequences", icon: GitFork, href: "/sequences", group: "Productivity" },
-  { label: "Sources", icon: Network, href: "/settings/sources", group: "Settings" },
+  { label: "Sources", icon: Network, href: "/settings/sources", group: "Settings", permission: "sources.manage" },
   { label: "Settings", icon: Settings, href: "/settings", group: "Settings" },
 ];
+
+export function visibleRoutes(allowed: string[] = [], isSuperAdmin = false) {
+  return navRoutes.filter((r) => !r.permission || isSuperAdmin || allowed.includes(r.permission));
+}
 
 export const navGroups = ["Analytics", "CRM", "Productivity", "Settings"];
 

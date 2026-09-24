@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { CustomStatusSchemaService } from "./customStatusSchemaService";
 import { leads } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 
@@ -30,8 +31,9 @@ export class PipelineAgingService {
       createdAt: Date;
     }[]
   ): Promise<PipelineAgingMatrix> {
+    const { cat, openKeys } = await CustomStatusSchemaService.resolver(organizationId); // custom statuses count by category
     const activeLeads = preloadedLeads
-      ? preloadedLeads.filter((l) => l.status && ["new", "active"].includes(l.status))
+      ? preloadedLeads.filter((l) => l.status && ["open", "in_progress"].includes(cat(l.status)))
       : await db
           .select({
             id: leads.id,
@@ -43,7 +45,7 @@ export class PipelineAgingService {
           .where(
             and(
               eq(leads.organizationId, organizationId),
-              inArray(leads.status, ["new", "active"])
+              inArray(leads.status, openKeys)
             )
           );
 

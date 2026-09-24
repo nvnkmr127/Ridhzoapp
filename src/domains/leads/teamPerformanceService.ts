@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { CustomStatusSchemaService } from "./customStatusSchemaService";
 import { leads, users, followUps } from "@/db/schema";
 import { and, eq, gte, inArray, count } from "drizzle-orm";
 
@@ -25,6 +26,7 @@ export class TeamPerformanceService {
     periodDays?: number,
     preloadedUsers?: { id: string; email: string; firstName: string | null; lastName: string | null }[]
   ): Promise<RepPerformanceMetric[]> {
+    const { cat } = await CustomStatusSchemaService.resolver(organizationId); // custom statuses count by category
     const orgUsers = preloadedUsers ?? await db
       .select({
         id: users.id,
@@ -95,7 +97,7 @@ export class TeamPerformanceService {
     for (const l of orgLeads) {
       if (l.ownerId && statsMap[l.ownerId]) {
         statsMap[l.ownerId].total += 1;
-        if (l.status === "won") {
+        if (cat(l.status) === "won") {
           statsMap[l.ownerId].won += 1;
           const val = Number(l.expectedValue ?? 0);
           statsMap[l.ownerId].revenue += isNaN(val) ? 0 : val;

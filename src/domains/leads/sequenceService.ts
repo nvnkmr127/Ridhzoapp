@@ -423,8 +423,12 @@ export class SequenceService {
       if (channel === "email") {
         if (!lead.email) return { sent: false, permanent: true, reason: "no email address" };
         const { sendEmail } = await import("@/lib/mail/mailer");
-        const attachHtml = attachmentUrl ? `<p>📎 <a href="${attachmentUrl}">${label}</a></p>` : "";
-        await sendEmail({ to: lead.email, subject: "Following up", html: `<p>${rendered.replace(/\n/g, "<br/>")}</p>${attachHtml}` }, lead.organizationId ?? undefined);
+        // Escape everything that goes into the HTML: the step text includes lead-submitted values
+        // ({{name}} etc.), and only http(s) attachment links are allowed.
+        const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+        const safeUrl = attachmentUrl && /^https?:\/\//i.test(attachmentUrl) ? attachmentUrl : null;
+        const attachHtml = safeUrl ? `<p>📎 <a href="${esc(safeUrl)}">${esc(label)}</a></p>` : "";
+        await sendEmail({ to: lead.email, subject: "Following up", html: `<p>${esc(rendered).replace(/\n/g, "<br/>")}</p>${attachHtml}` }, lead.organizationId ?? undefined);
         await ActivityService.addActivity({ leadId, type: "email", content: `[sequence email] ${rendered.slice(0, 120)}` });
       } else {
         if (!lead.phone) return { sent: false, permanent: true, reason: "no phone number" };

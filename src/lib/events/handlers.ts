@@ -13,6 +13,14 @@ function eventDiscriminator(eventType: string, p: EventPayload): string {
     case "lead.assigned": return p.ownerId ?? "";
     case "lead.stage_changed": return (p.changes?.stageId as string) ?? "";
     case "lead.tag_added": return (p.changes?.tagId as string) ?? "";
+    // Follow-up triggers fire once per follow-up (they used to fire once per LEAD, ever — so a
+    // "follow-up scheduled" automation only ran for a lead's first follow-up).
+    case "follow_up.scheduled":
+    case "follow_up.completed":
+    case "follow_up.rescheduled":
+    case "task.completed": return p.followUpId ?? "";
+    // Overdue once per due time — a rescheduled follow-up that slips again fires again.
+    case "follow_up.overdue": return `${p.followUpId ?? ""}-${(p.changes?.dueAt as string) ?? ""}`;
     // Meeting triggers fire once per meeting (a reschedule once per new time).
     case "meeting.rescheduled": return `${p.meetingId ?? ""}-${p.startAt ?? ""}`;
     case "meeting.scheduled":

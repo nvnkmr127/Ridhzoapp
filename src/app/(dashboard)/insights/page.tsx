@@ -1,5 +1,6 @@
 import { TrendingUp, Trophy, Network, HeartPulse } from "lucide-react";
-import { requireOrg } from "@/lib/rbac";
+import { requireOrg, hasPermission } from "@/lib/rbac";
+import { redirect } from "next/navigation";
 import { RevenueForecastService } from "@/domains/leads/revenueForecastService";
 import { WinLossAnalyticsService } from "@/domains/leads/winLossAnalyticsService";
 import { SourceRoiAnalyticsService } from "@/domains/leads/sourceRoiAnalyticsService";
@@ -40,6 +41,8 @@ import { SlaAnalyticsService } from "@/domains/leads/slaAnalyticsService";
 
 export default async function InsightsPage() {
   const { organizationId } = await requireOrg();
+  // Revenue, every rep's performance and lead-level lists across the workspace: admins only.
+  if (!(await hasPermission("settings.manage"))) redirect("/my-dashboard");
   const fmt = await getOrgFormat(organizationId);
   // Money in the workspace's configured currency/locale (was hardcoded USD).
   const money = (n: number) => formatCurrency(n, fmt);

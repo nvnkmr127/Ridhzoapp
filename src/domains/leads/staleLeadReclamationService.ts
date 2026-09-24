@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { CustomStatusSchemaService } from "./customStatusSchemaService";
 import { leads } from "@/db/schema";
 import { and, eq, inArray, lt, or, isNull } from "drizzle-orm";
 import { ActivityService } from "@/domains/activities/service";
@@ -23,6 +24,7 @@ export class StaleLeadReclamationService {
     daysInactiveThreshold: number = 14,
     enforceOwnerId?: string
   ): Promise<StaleLeadSummary[]> {
+    const { openKeys } = await CustomStatusSchemaService.resolver(organizationId); // custom statuses count by category
     const thresholdDate = new Date(Date.now() - daysInactiveThreshold * 24 * 60 * 60 * 1000);
 
     const candidates = await db
@@ -40,7 +42,7 @@ export class StaleLeadReclamationService {
         and(
           eq(leads.organizationId, organizationId),
           isNull(leads.deletedAt),
-          inArray(leads.status, ["new", "active"]),
+          inArray(leads.status, openKeys),
           ...(enforceOwnerId ? [eq(leads.ownerId, enforceOwnerId)] : []),
           or(
             lt(leads.lastContactedAt, thresholdDate),

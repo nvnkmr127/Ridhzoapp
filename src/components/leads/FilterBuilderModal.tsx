@@ -19,10 +19,22 @@ export type MetadataOptions = {
   users: { id: string; name: string }[];
   sources: { id: string; name: string }[];
   tags: { id: string; name: string }[];
+  /** The workspace's statuses (incl. custom ones) for the Status filter. */
+  statuses?: { key: string; label: string }[];
 };
 
-const FIELD_OPTIONS = [
+export const STATUS_GROUP_LABELS: Record<string, string> = {
+  open: "Open (new)",
+  in_progress: "In progress",
+  won: "Won",
+  lost: "Lost",
+  unqualified: "Unqualified",
+};
+
+export const FIELD_OPTIONS = [
   { key: "status", label: "Status", type: "enum", options: ["new", "active", "won", "lost", "unqualified"] },
+  // Matches every status in a group — so custom statuses ("Site visit booked") are included.
+  { key: "statusCategory", label: "Status group", type: "enum", options: ["open", "in_progress", "won", "lost", "unqualified"] },
   { key: "ownerId", label: "Owner", type: "user" },
   { key: "sourceId", label: "Source", type: "source" },
   { key: "tag", label: "Tag", type: "tag" },
@@ -260,11 +272,17 @@ export function FilterBuilderModal({
                               <SelectValue placeholder="Select value..." />
                             </SelectTrigger>
                             <SelectContent>
-                              {fieldDef.options?.map((opt) => (
-                                <SelectItem key={opt} value={opt}>
-                                  {opt[0].toUpperCase() + opt.slice(1)}
-                                </SelectItem>
-                              ))}
+                              {fieldDef.key === "status" && metadata.statuses?.length
+                                ? metadata.statuses.map((st) => (
+                                    <SelectItem key={st.key} value={st.key}>
+                                      {st.label}
+                                    </SelectItem>
+                                  ))
+                                : fieldDef.options?.map((opt) => (
+                                    <SelectItem key={opt} value={opt}>
+                                      {STATUS_GROUP_LABELS[opt] ?? opt[0].toUpperCase() + opt.slice(1)}
+                                    </SelectItem>
+                                  ))}
                             </SelectContent>
                           </Select>
                         ) : fieldDef.type === "user" ? (

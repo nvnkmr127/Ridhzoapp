@@ -1,4 +1,5 @@
 "use client";
+import { useToast } from "@/hooks/use-toast";
 
 import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -7,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Search, SlidersHorizontal, X, Bookmark, ArrowUpDown } from "lucide-react";
-import { FilterBuilderModal, MetadataOptions } from "./FilterBuilderModal";
+import { FIELD_OPTIONS, STATUS_GROUP_LABELS, FilterBuilderModal, MetadataOptions } from "./FilterBuilderModal";
 import { SaveViewDialog } from "./SaveViewDialog";
 import { deleteSavedViewAction, updateSavedViewAction } from "@/lib/actions/savedViews";
 import { SavedViewData } from "@/domains/savedViews/service";
@@ -29,6 +30,7 @@ export function LeadsFilterBar({
   const currentSort = searchParams.get("sort") || "createdAt";
   const currentOrder = (searchParams.get("order") as "asc" | "desc") || "desc";
   const currentViewId = searchParams.get("viewId") || defaultViewId;
+  const { toast } = useToast();
   const rawFiltersParam = searchParams.get("filters");
 
   const [term, setTerm] = React.useState(currentSearch);
@@ -152,7 +154,7 @@ export function LeadsFilterBar({
               >
                 {v.name}
               </Button>
-              {isActive && (
+              {isActive && !isBuiltInView(v) && (
                 <button
                   type="button"
                   aria-label={`Delete view ${v.name}`}
@@ -160,11 +162,15 @@ export function LeadsFilterBar({
                   onClick={async () => {
                     if (!confirm(`Delete saved view "${v.name}"?`)) return;
                     try {
-                      await deleteSavedViewAction(v.id);
+                      const res = await deleteSavedViewAction(v.id);
+                      if (res && "ok" in res && !res.ok) {
+                        toast({ variant: "destructive", title: "View not deleted", description: res.message });
+                        return;
+                      }
                       applyParams({ viewId: null, filters: null });
                       router.refresh();
                     } catch {
-                      /* noop */
+                      toast({ variant: "destructive", title: "View not deleted", description: "We couldn't reach the server. Please try again." });
                     }
                   }}
                 >
@@ -247,7 +253,7 @@ export function LeadsFilterBar({
               Save View
             </Button>
           )}
-          {views.some((v) => v.id === currentViewId) && (
+          {views.some((v) => v.id === currentViewId && !isBuiltInView(v)) && (
             <Button
               type="button"
               variant="ghost"
@@ -256,10 +262,15 @@ export function LeadsFilterBar({
               title="Save current filters & sort into this view"
               onClick={async () => {
                 try {
-                  await updateSavedViewAction({ id: currentViewId, filters: activeFilterGroup, sortField: currentSort, sortOrder: currentOrder });
+                  const res = await updateSavedViewAction({ id: currentViewId, filters: activeFilterGroup, sortField: currentSort, sortOrder: currentOrder });
+                  if (res && "ok" in res && !res.ok) {
+                    toast({ variant: "destructive", title: "View not updated", description: res.message });
+                    return;
+                  }
+                  toast({ title: "View updated" });
                   router.refresh();
                 } catch {
-                  /* noop */
+                  toast({ variant: "destructive", title: "View not updated", description: "We couldn't reach the server. Please try again." });
                 }
               }}
             >
@@ -283,7 +294,7 @@ export function LeadsFilterBar({
 
           {activeFilterGroup.rules.map((rule, idx) => (
             <Badge key={idx} variant="secondary" className="gap-1 bg-muted text-foreground">
-              <span className="capitalize">{rule.field}</span>: {rule.operator} {rule.value ? `&quot;${rule.value}&quot;` : ""}
+              {describeRule(rule, metadata)}
               <X
                 className="h-3 w-3 cursor-pointer hover:text-foreground"
                 onClick={() => removeSingleRule(idx)}
@@ -327,4 +338,37 @@ export function LeadsFilterBar({
       />
     </div>
   );
+}
+
+// Built-in presets ("All Leads", "My Leads"…) can't be edited or deleted — hide those controls.
+function isBuiltInView(v: { id: string; isPreset?: boolean }) {
+  return v.isPreset || v.id.startsWith("preset-");
+}
+
+const OPERATOR_WORDS: Record<string, string> = {
+  equals: "is",
+  not_equals: "is not",
+  contains: "contains",
+  does_not_contain: "doesn't contain",
+  gt: ">",
+  lt: "<",
+  between: "between",
+  is_empty: "is empty",
+  is_not_empty: "is set",
+  before: "before",
+  after: "after",
+};
+
+// "Owner is Asha", "Status group is Won" — not raw keys and ids.
+function describeRule(rule: { field: string; operator: string; value?: unknown }, metadata: MetadataOptions) {
+  const label = FIELD_OPTIONS.find((f) => f.key === rule.field)?.label ?? rule.field;
+  const raw = rule.value == null ? "" : String(rule.value);
+  const value =
+    rule.field === "ownerId" ? (raw === "me" ? "me" : metadata.users.find((u) => u.id === raw)?.name ?? raw)
+    : rule.field === "sourceId" ? metadata.sources.find((s) => s.id === raw)?.name ?? raw
+    : rule.field === "tag" || rule.field === "tagId" ? metadata.tags.find((t) => t.id === raw)?.name ?? raw
+    : rule.field === "status" ? metadata.statuses?.find((st) => st.key === raw)?.label ?? raw
+    : rule.field === "statusCategory" ? STATUS_GROUP_LABELS[raw] ?? raw
+    : raw;
+  return `${label} ${OPERATOR_WORDS[rule.operator] ?? rule.operator.replace(/_/g, " ")}${value ? ` “${value}”` : ""}`;
 }

@@ -1,5 +1,6 @@
 import { Worker, Queue } from "bullmq";
-import { and, eq, lte, or, isNull, notExists, sql } from "drizzle-orm";
+import { and, eq, gte, lte, lt, or, isNull, notExists, sql } from "drizzle-orm";
+import { eventBus } from "@/lib/events/emitter";
 import { createRedis, quietErrors } from "../redis";
 import { db } from "@/db";
 import { followUps, leads, reminders } from "@/db/schema";
@@ -62,7 +63,65 @@ export async function processFollowUpReminderScan() {
   }
 
   if (sent > 0) console.log(`[FOLLOWUP_REMINDER_WORKER] Sent ${sent} follow-up reminders`);
-  return { sent };
+  const overdue = await processOverdueFollowUps(now);
+  return { sent, overdue };
+}
+
+// How long past due before a follow-up counts as "overdue" (alert + follow_up.overdue trigger).
+const OVERDUE_AFTER_MINUTES = 60;
+
+// Once per follow-up (per due time): notify the assignee — also emailed unless they muted
+// "Follow-up overdue" — and fire the follow_up.overdue automation trigger. Claimed via a
+// conditional update so overlapping scans never double-alert. Only the last 3 days, so a backlog
+// of ancient follow-ups can't flood anyone.
+export async function processOverdueFollowUps(now = new Date()) {
+  const cutoff = new Date(now.getTime() - OVERDUE_AFTER_MINUTES * 60_000);
+  const rows = await db
+    .select({ followUp: followUps, lead: { id: leads.id, name: leads.name, ownerId: leads.ownerId, organizationId: leads.organizationId } })
+    .from(followUps)
+    .innerJoin(leads, eq(followUps.leadId, leads.id))
+    .where(
+      and(
+        eq(followUps.status, "pending"),
+        isNull(followUps.overdueNotifiedAt),
+        lt(followUps.dueAt, cutoff),
+        gte(followUps.dueAt, new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000)),
+        or(isNull(followUps.snoozedUntil), lte(followUps.snoozedUntil, now)),
+        isNull(leads.deletedAt),
+      ),
+    )
+    .limit(500);
+
+  let alerted = 0;
+  for (const { followUp, lead } of rows) {
+    const [claimed] = await db
+      .update(followUps)
+      .set({ overdueNotifiedAt: now })
+      .where(and(eq(followUps.id, followUp.id), isNull(followUps.overdueNotifiedAt)))
+      .returning({ id: followUps.id });
+    if (!claimed) continue;
+    const target = followUp.userId || lead.ownerId;
+    if (target && lead.organizationId) {
+      await NotificationService.create({
+        userId: target,
+        type: "follow_up_overdue",
+        title: `Overdue: ${followUp.title}`,
+        body: `Follow-up with ${lead.name} was due and hasn't been done.`,
+        leadId: lead.id,
+      });
+    }
+    eventBus.emit("follow_up.overdue", {
+      leadId: lead.id,
+      userId: followUp.userId ?? undefined,
+      followUpId: followUp.id,
+      type: followUp.type,
+      title: followUp.title,
+      changes: { dueAt: new Date(followUp.dueAt).toISOString() },
+    });
+    alerted++;
+  }
+  if (alerted > 0) console.log(`[FOLLOWUP_REMINDER_WORKER] ${alerted} follow-ups went overdue`);
+  return alerted;
 }
 
 export function createFollowUpReminderWorker(redisUrl?: string) {

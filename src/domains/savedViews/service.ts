@@ -51,7 +51,8 @@ export const DEFAULT_LEAD_VIEWS: SavedViewData[] = [
   {
     id: "preset-new",
     name: "New Leads",
-    filters: [{ field: "status", operator: "equals", value: "new" }],
+    // Status GROUP, so workspaces with custom "new" statuses (e.g. "Fresh enquiry") are included.
+    filters: [{ field: "statusCategory", operator: "equals", value: "open" }],
     sortField: "createdAt",
     sortOrder: "desc",
     isPreset: true,

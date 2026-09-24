@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { CustomStatusSchemaService } from "./customStatusSchemaService";
 import { leads } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
@@ -20,6 +21,7 @@ export class SmartSegmentationService {
    * Computes dynamic smart lead segments and rule-based lead counts for an organization.
    */
   static async getSmartSegments(organizationId: string): Promise<SmartSegmentSummary[]> {
+    const { cat } = await CustomStatusSchemaService.resolver(organizationId); // custom statuses count by category
     const orgLeads = await db
       .select({
         id: leads.id,
@@ -60,17 +62,17 @@ export class SmartSegmentationService {
       }
 
       // Rule 2: High Value At Risk (Value >= 10000, active/new status, no contact > 7 days)
-      if (cleanVal >= 10000 && (status === "new" || status === "active") && daysInactiveMs > sevenDaysMs) {
+      if (cleanVal >= 10000 && (cat(status) === "open" || cat(status) === "in_progress") && daysInactiveMs > sevenDaysMs) {
         highValueAtRiskCount++;
       }
 
       // Rule 3: Unassigned New Leads
-      if (status === "new" && !l.ownerId) {
+      if (cat(status) === "open" && !l.ownerId) {
         unassignedNewCount++;
       }
 
       // Rule 4: Stale High Priority (Priority High, active, inactive > 7 days)
-      if (l.priority === "high" && (status === "active" || status === "new") && daysInactiveMs > sevenDaysMs) {
+      if (l.priority === "high" && (cat(status) === "in_progress" || cat(status) === "open") && daysInactiveMs > sevenDaysMs) {
         staleHighPriorityCount++;
       }
     }

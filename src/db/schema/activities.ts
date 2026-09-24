@@ -29,6 +29,8 @@ export const followUps = pgTable('follow_ups', {
   dueAt: timestamp('due_at').notNull(),
   snoozedUntil: timestamp('snoozed_until'),
   completedAt: timestamp('completed_at'),
+  // Set once the "overdue" alert + follow_up.overdue event went out (reset on reschedule/snooze).
+  overdueNotifiedAt: timestamp('overdue_notified_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({

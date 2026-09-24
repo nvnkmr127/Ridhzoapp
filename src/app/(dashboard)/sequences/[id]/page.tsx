@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { hasPermission } from "@/lib/rbac";
 import Link from "next/link";
 import { ArrowLeft, Pencil } from "lucide-react";
 import { getSequenceDetailAction } from "@/lib/actions/sequences";
@@ -8,7 +9,7 @@ import { SequenceFlow } from "@/components/sequences/SequenceFlow";
 
 export default async function SequenceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const seq = await getSequenceDetailAction(id);
+  const [seq, canManage] = await Promise.all([getSequenceDetailAction(id), hasPermission("sequences.manage")]);
   if (!seq) notFound();
 
   const days = seq.steps.reduce((m, s) => Math.max(m, s.dayOffset), 0);
@@ -27,9 +28,11 @@ export default async function SequenceDetailPage({ params }: { params: Promise<{
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Badge variant={seq.isActive ? "default" : "secondary"}>{seq.isActive ? "Active" : "Inactive"}</Badge>
-          <Button asChild variant="outline" size="sm" className="gap-1">
-            <Link href={`/sequences/${seq.id}/edit`}><Pencil className="h-3.5 w-3.5" /> Edit</Link>
-          </Button>
+          {canManage && (
+            <Button asChild variant="outline" size="sm" className="gap-1">
+              <Link href={`/sequences/${seq.id}/edit`}><Pencil className="h-3.5 w-3.5" /> Edit</Link>
+            </Button>
+          )}
         </div>
       </div>
 

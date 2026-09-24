@@ -7,6 +7,7 @@ import { PriorityActions } from "@/components/dashboard/PriorityActions";
 import { GettingStarted } from "@/components/dashboard/GettingStarted";
 import { DashboardDateFilter } from "@/components/dashboard/DashboardDateFilter";
 import { requireOrg, hasPermission } from "@/lib/rbac";
+import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { automations, leadSources } from "@/db/schema";
 import { and, count, eq } from "drizzle-orm";
@@ -43,6 +44,9 @@ export default async function ExecutiveDashboardPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { organizationId } = await requireOrg();
+  // Workspace-wide numbers, every rep's pipeline and a cross-lead activity feed: admins only.
+  // Reps get their own dashboard (same rule as leads: they only see their own).
+  if (!(await hasPermission("settings.manage"))) redirect("/my-dashboard");
   const params = await searchParams;
 
   const filters: AnalyticsFilters = {

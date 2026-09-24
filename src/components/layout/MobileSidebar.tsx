@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Menu, X } from "lucide-react";
-import { navRoutes, navGroups, superAdminRoutes } from "./nav";
+import { visibleRoutes, navGroups, superAdminRoutes } from "./nav";
 
 function MobileSuperAdminNavLinks({
   pathname,
@@ -44,7 +44,7 @@ function MobileSuperAdminNavLinks({
 }
 
 // Hamburger + slide-in nav drawer for mobile. Hidden on md+ (the fixed Sidebar takes over there).
-export function MobileSidebar({ isSuperAdmin = false, plan }: { isSuperAdmin?: boolean; plan?: string }) {
+export function MobileSidebar({ isSuperAdmin = false, plan, allowed = [] }: { isSuperAdmin?: boolean; plan?: string; allowed?: string[] }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
@@ -110,7 +110,7 @@ export function MobileSidebar({ isSuperAdmin = false, plan }: { isSuperAdmin?: b
                   <p className="px-3 mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
                     {group}
                   </p>
-                  {navRoutes.filter((r) => r.group === group).map((route) => {
+                  {visibleRoutes(allowed, isSuperAdmin).filter((r) => r.group === group).map((route) => {
                     const active = pathname === route.href;
                     return (
                       <Link

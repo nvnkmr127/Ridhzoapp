@@ -4,10 +4,13 @@ import { Button } from "@/components/ui/button";
 import { LeadSourceService } from "@/domains/leads/sourceService";
 import { SourcesManager } from "@/components/sources/SourcesManager";
 
-import { requireOrg } from "@/lib/rbac";
+import { requireOrg, hasPermission } from "@/lib/rbac";
+import { redirect } from "next/navigation";
 
 export default async function LeadSourcesPage() {
   const { organizationId } = await requireOrg();
+  // Sources carry webhook signing secrets — only people who manage sources may see them.
+  if (!(await hasPermission("sources.manage"))) redirect("/settings");
   const sources = await LeadSourceService.getSources(organizationId);
   const leadCounts = await LeadSourceService.getLeadCounts(sources.map((s) => s.id), organizationId);
 

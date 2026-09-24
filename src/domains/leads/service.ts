@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { orgDialCode } from "@/lib/leads/orgDialCode";
-import { leads, leadPipelineStages, leadStatusHistory, leadTags, tags, activities, followUps, reminders, leadAttachments, notifications, whatsappMessages } from "@/db/schema";
+import { leads, leadPipelineStages, leadStatusHistory, leadTags, tags, activities, followUps, reminders, leadAttachments, notifications, whatsappMessages, customStatusConfigs } from "@/db/schema";
+import { DEFAULT_SYSTEM_STATUSES } from "./customStatusSchemaService";
 import {
   eq,
   ilike,
@@ -42,6 +43,8 @@ export type ListLeadsOptions = {
   limit?: number;
   currentUserId?: string;
   enforceOwnerId?: string;
+  /** Restrict to these lead ids (e.g. exporting the rows a user ticked). */
+  ids?: string[];
 };
 
 export class LeadService {
@@ -275,6 +278,15 @@ export class LeadService {
 
     const op = rule.operator;
 
+    // Status GROUP: every status (built-in or custom) in a category, resolved inside the query.
+    if (rule.field === "statusCategory") {
+      const catVal = String(rawVal || "");
+      const baseKeys = DEFAULT_SYSTEM_STATUSES.filter((st) => st.category === catVal).map((st) => st.key);
+      const inCustom = sql`${leads.status} IN (SELECT ${customStatusConfigs.key} FROM ${customStatusConfigs} WHERE ${customStatusConfigs.organizationId} = ${leads.organizationId} AND ${customStatusConfigs.category} = ${catVal})`;
+      const cond = baseKeys.length ? or(inArray(leads.status, baseKeys), inCustom)! : inCustom;
+      return op === "not_equals" ? sql`NOT (${cond})` : cond;
+    }
+
     // Special field helpers
     if (rule.field === "tag" || rule.field === "tagId") {
       const tagVal = String(rawVal || "");
@@ -456,6 +468,7 @@ export class LeadService {
     if (options.teamId) baseConditions.push(eq(leads.teamId, options.teamId));
     if (options.sourceId) baseConditions.push(eq(leads.sourceId, options.sourceId));
     if (options.stageId) baseConditions.push(eq(leads.stageId, options.stageId));
+    if (options.ids) baseConditions.push(options.ids.length ? inArray(leads.id, options.ids) : sql`false`);
 
     // Structured Filters (Group or Rules array)
     if (options.filters) {
@@ -743,6 +756,8 @@ export class LeadService {
     const target = matchClosingStage(candidates, kind);
     if (target && target.id !== lead.stageId) {
       await db.update(leads).set({ stageId: target.id, updatedAt: new Date() }).where(eq(leads.id, lead.id));
+      const { eventBus } = await import("@/lib/events/emitter");
+      eventBus.emit("lead.stage_changed", { leadId: lead.id, changes: { stageId: target.id, fromStageId: lead.stageId } });
     }
   }
 }

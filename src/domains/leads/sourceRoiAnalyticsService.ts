@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { CustomStatusSchemaService } from "./customStatusSchemaService";
 import { leads, leadSources } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
@@ -21,6 +22,7 @@ export class SourceRoiAnalyticsService {
     organizationId: string,
     preloadedLeads?: { sourceId: string | null; status: string | null; expectedValue: string | null }[]
   ): Promise<SourceRoiMetric[]> {
+    const { cat } = await CustomStatusSchemaService.resolver(organizationId); // custom statuses count by category
     const sourcesList = await db
       .select({
         id: leadSources.id,
@@ -56,7 +58,7 @@ export class SourceRoiAnalyticsService {
       }
       grouped[key].totalLeads += 1;
 
-      if (l.status === "won") {
+      if (cat(l.status) === "won") {
         grouped[key].wonLeads += 1;
         const val = Number(l.expectedValue ?? 0);
         grouped[key].totalRevenue += isNaN(val) ? 0 : val;

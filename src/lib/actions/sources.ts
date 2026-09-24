@@ -39,9 +39,11 @@ async function requeueAuthFailedEvents(pageId: string): Promise<number> {
   }
 }
 
+// Source picker for imports (any member): name/type only — never webhook secrets or tokens.
 export async function listSourcesAction() {
   const { organizationId } = await requireOrg();
-  return LeadSourceService.getSources(organizationId);
+  const rows = await LeadSourceService.getSources(organizationId);
+  return rows.map((s) => ({ id: s.id, name: s.name, type: s.type, isActive: s.isActive }));
 }
 
 const createSchema = z.object({

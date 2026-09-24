@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { CustomStatusSchemaService } from "./customStatusSchemaService";
 import { leads } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 
@@ -33,8 +34,9 @@ export class CustomerLtvAnalyticsService {
       expectedValue: string | null;
     }[]
   ): Promise<CustomerLtvAnalytics> {
+    const { cat } = await CustomStatusSchemaService.resolver(organizationId); // custom statuses count by category
     const wonLeads = preloadedLeads
-      ? preloadedLeads.filter((l) => l.status === "won")
+      ? preloadedLeads.filter((l) => cat(l.status) === "won")
       : await db
           .select({
             id: leads.id,

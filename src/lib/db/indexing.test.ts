@@ -4,6 +4,20 @@ import { LeadSourceService } from '@/domains/leads/sourceService';
 import { WhatsAppService } from '@/lib/messaging/whatsapp/service';
 import { AnalyticsService } from '@/lib/analytics/service';
 
+// Assignment counts open leads by status category; use the built-in statuses (no DB round trip).
+vi.mock("@/domains/leads/customStatusSchemaService", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/domains/leads/customStatusSchemaService")>();
+  const base = new Map(actual.DEFAULT_SYSTEM_STATUSES.map((s) => [s.key, s.category]));
+  const keys = (...c: string[]) => [...base].filter(([, v]) => c.includes(v)).map(([k]) => k);
+  return {
+    ...actual,
+    CustomStatusSchemaService: Object.assign(actual.CustomStatusSchemaService, {
+      resolver: async () => ({ cat: (s: string | null | undefined) => base.get(s ?? "") ?? "open", openKeys: keys("open", "in_progress"), closedKeys: keys("won", "lost", "unqualified") }),
+    }),
+  };
+});
+
+
 // Mock DB
 vi.mock('@/db', () => ({
   db: {

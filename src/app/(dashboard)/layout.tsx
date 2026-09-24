@@ -57,18 +57,20 @@ export default async function DashboardLayout({
     : undefined;
   const usageStats = await PlanService.getUsageStats(organizationId, effectivePlan);
   // Admins of a workspace still on the default UTC get a one-click "use my timezone" banner.
-  const showTzBanner = (await getOrgFormat(organizationId)).timezone === "UTC" && (await hasPermission("settings.manage"));
+  const [canAdmin, canSources] = await Promise.all([hasPermission("settings.manage"), hasPermission("sources.manage")]);
+  const allowed = [canAdmin && "settings.manage", canSources && "sources.manage"].filter((p): p is string => !!p);
+  const showTzBanner = (await getOrgFormat(organizationId)).timezone === "UTC" && canAdmin;
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background text-foreground">
-      <Sidebar isSuperAdmin={superAdmin} plan={usageStats?.plan} />
+      <Sidebar isSuperAdmin={superAdmin} plan={usageStats?.plan} allowed={allowed} />
       <div className="flex flex-col flex-1 overflow-hidden">
         <SystemBroadcastBanner currentOrg={{ id: organizationId, plan: usageStats?.plan ?? effectivePlan ?? "free" }} />
         <PaymentGraceBanner billingInfo={billingInfo} />
         <ImpersonationBanner />
         <InstallPwaBanner />
         {showTzBanner && <TimezoneBanner />}
-        <Header isSuperAdmin={superAdmin} organizationId={organizationId} usageStats={usageStats} />
+        <Header isSuperAdmin={superAdmin} organizationId={organizationId} usageStats={usageStats} allowed={allowed} />
         <main className="flex-1 overflow-y-auto">
           {children}
         </main>

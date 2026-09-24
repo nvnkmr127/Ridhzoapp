@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { CustomStatusSchemaService } from "./customStatusSchemaService";
 import { leads } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
@@ -23,6 +24,7 @@ export class LeadGeoAnalyticsService {
       customData: unknown;
     }[]
   ): Promise<LocationMetric[]> {
+    const { cat } = await CustomStatusSchemaService.resolver(organizationId); // custom statuses count by category
     const orgLeads = preloadedLeads ?? await db
       .select({
         id: leads.id,
@@ -51,7 +53,7 @@ export class LeadGeoAnalyticsService {
 
       grouped[locKey].totalLeads += 1;
 
-      if (lead.status === "won") {
+      if (cat(lead.status) === "won") {
         grouped[locKey].wonLeads += 1;
         const val = Number(lead.expectedValue ?? 0);
         grouped[locKey].totalRevenue += isNaN(val) ? 0 : val;

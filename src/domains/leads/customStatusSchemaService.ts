@@ -46,6 +46,28 @@ export class CustomStatusSchemaService {
     return map;
   }
 
+  /**
+   * The tenant's status keys grouped by category — for queries that must filter "open/active" or
+   * "won/lost" leads (`inArray(leads.status, keys.open.concat(keys.in_progress))`), never by
+   * literal base keys.
+   */
+  static async getStatusKeysByCategory(organizationId: string): Promise<Record<StatusCategory, string[]>> {
+    const out: Record<StatusCategory, string[]> = { open: [], in_progress: [], won: [], lost: [], unqualified: [] };
+    for (const [key, cat] of await this.getStatusCategoryMap(organizationId)) out[cat].push(key);
+    return out;
+  }
+
+  /**
+   * Everything a report needs to treat CUSTOM statuses correctly: `cat(status)` → category, plus the
+   * key lists for open/active (`openKeys`) and resolved (`closedKeys`) leads for SQL filters.
+   */
+  static async resolver(organizationId: string) {
+    const map = await this.getStatusCategoryMap(organizationId);
+    const cat = (s: string | null | undefined): StatusCategory => map.get(s ?? "") ?? "open";
+    const keys = (...cats: StatusCategory[]) => [...map].filter(([, c]) => cats.includes(c)).map(([k]) => k);
+    return { cat, openKeys: keys("open", "in_progress"), closedKeys: keys("won", "lost", "unqualified") };
+  }
+
   /** Category for a single status key (base fallback → 'open' for an unknown custom key). */
   static async getStatusCategory(organizationId: string, key: string): Promise<StatusCategory> {
     const map = await this.getStatusCategoryMap(organizationId);

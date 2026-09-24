@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { CustomStatusSchemaService } from "./customStatusSchemaService";
 import { leads } from "@/db/schema";
 import { and, eq, inArray, lt } from "drizzle-orm";
 import { ActivityService } from "@/domains/activities/service";
@@ -36,13 +37,14 @@ export class StageStagnationService {
       updatedAt: Date;
     }[]
   ): Promise<StagnantLeadSummary[]> {
+    const { cat, openKeys } = await CustomStatusSchemaService.resolver(organizationId); // custom statuses count by category
     const thresholdDate = new Date(Date.now() - daysThreshold * 24 * 60 * 60 * 1000);
 
     const candidates = preloadedLeads
       ? preloadedLeads.filter(
           (l) =>
             l.status &&
-            ["new", "active"].includes(l.status) &&
+            ["open", "in_progress"].includes(cat(l.status)) &&
             new Date(l.updatedAt) < thresholdDate
         )
       : await db
@@ -60,7 +62,7 @@ export class StageStagnationService {
           .where(
             and(
               eq(leads.organizationId, organizationId),
-              inArray(leads.status, ["new", "active"]),
+              inArray(leads.status, openKeys),
               lt(leads.updatedAt, thresholdDate)
             )
           );

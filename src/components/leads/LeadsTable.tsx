@@ -28,6 +28,7 @@ import { EditLeadDialog } from "@/components/leads/EditLeadDialog";
 import { bulkAddTagAction } from "@/lib/actions/tags";
 import { NextBestActionService, type ActionPriority } from "@/domains/leads/nextBestActionService";
 import { getTenantStatusSchemaAction } from "@/lib/actions/customStatuses";
+import { exportLeadsCsvAction } from "@/lib/actions/exportLeads";
 import { LocalTime } from "@/components/LocalTime";
 
 type Lead = {
@@ -158,29 +159,43 @@ export function LeadsTable({
 
   const [tagName, setTagName] = React.useState("");
 
-  function exportSelectedCsv() {
-    const selectedLeads = leads.filter((l) => selected.has(l.id));
-    if (selectedLeads.length === 0) return;
-    const headers = ["ID", "Name", "Phone", "Email", "Status", "Created At"];
-    const rows = selectedLeads.map((l) => [
-      l.id,
-      `"${(l.name || "").replace(/"/g, '""')}"`,
-      `"${(l.phone || "").replace(/"/g, '""')}"`,
-      `"${(l.email || "").replace(/"/g, '""')}"`,
-      l.status,
-      l.createdAt ? new Date(l.createdAt).toISOString() : "",
-    ]);
-    const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.setAttribute("download", `leads_export_${Date.now()}.csv`);
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast({ title: `Exported ${selectedLeads.length} leads to CSV` });
+  // Export runs on the server: ticked rows, or EVERY lead matching the current search/filters (not
+  // just this page), with owner/source/stage names and custom fields, formula-safe.
+  const [exporting, setExporting] = React.useState(false);
+  async function exportCsv(onlySelected: boolean) {
+    setExporting(true);
+    try {
+      const get = (k: string) => searchParams.get(k) || undefined;
+      const res = await exportLeadsCsvAction({
+        search: get("search"),
+        status: get("status"),
+        owner: get("owner"),
+        filters: get("filters"),
+        sort: get("sort"),
+        order: (get("order") as "asc" | "desc" | undefined) ?? undefined,
+        ids: onlySelected ? Array.from(selected) : undefined,
+      });
+      if (!res.ok) {
+        toast({ variant: "destructive", title: "Export failed", description: res.message });
+        return;
+      }
+      const url = URL.createObjectURL(new Blob([res.data.csv], { type: "text/csv;charset=utf-8;" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `leads_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast({
+        title: `Exported ${res.data.count} lead${res.data.count === 1 ? "" : "s"}`,
+        description: res.data.truncated ? `Limited to the first ${res.data.count} of ${res.data.total}. Narrow the filters to export the rest.` : undefined,
+      });
+    } catch {
+      toast({ variant: "destructive", title: "Export failed", description: "We couldn't reach the server. Please try again." });
+    } finally {
+      setExporting(false);
+    }
   }
 
   const ids = () => Array.from(selected);
@@ -285,11 +300,12 @@ export function LeadsTable({
           <Button
             variant="secondary"
             size="sm"
-            onClick={exportSelectedCsv}
+            onClick={() => exportCsv(true)}
+            disabled={exporting}
             className="h-9 gap-1.5 ml-auto"
           >
             <Download className="h-4 w-4" />
-            Export CSV
+            {exporting ? "Exporting…" : "Export CSV"}
           </Button>
           <Button
             variant="outline"
@@ -447,6 +463,9 @@ export function LeadsTable({
             <span className="ml-2 font-medium">
               Showing {startRecord} - {endRecord} of {total} leads
             </span>
+            <Button type="button" variant="ghost" size="sm" className="ml-2 h-7 gap-1 text-xs" disabled={exporting || total === 0} onClick={() => exportCsv(false)} title="Export every lead matching the current search and filters">
+              <Download className="h-3.5 w-3.5" /> {exporting ? "Exporting…" : `Export all ${total}`}
+            </Button>
           </div>
 
           <div className="flex items-center space-x-1">

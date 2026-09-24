@@ -44,6 +44,11 @@ export async function signupAction(input: z.infer<typeof signupSchema>) {
     return fail("VALIDATION", "Please check the highlighted fields and try again.", zodFieldErrors(parsed.error));
   }
   const data = { ...parsed.data, email: parsed.data.email.trim().toLowerCase() };
+  // Throttle workspace creation per client (bots can't mass-create accounts).
+  const ip = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  if (!(await RateLimiter.checkLimit(`auth:signup:ip:${ip}`, 5, 60 * 60)).success) {
+    return fail("RATE_LIMIT", "Too many sign-ups from this network. Please try again in an hour.");
+  }
   // Business name is optional; fall back to "<name>'s Workspace" like the Google/phone flows.
   const orgName = data.orgName?.trim() || `${data.firstName?.trim() || data.email.split("@")[0]}'s Workspace`;
   try {
@@ -175,17 +180,6 @@ export async function requestPasswordResetAction(input: { email: string }) {
 }
 
 // Checks if an account exists with the given phone number
-export async function checkPhoneExistsAction(phone: string) {
-  const clean = phone.trim();
-  const formatted = clean.startsWith("+") ? clean : `+91${clean.replace(/^0+/, "")}`;
-  const [existing] = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(and(eq(users.phone, formatted), isNull(users.deletedAt)))
-    .limit(1);
-  return { exists: Boolean(existing) };
-}
-
 const sendOtpSchema = z.object({
   phone: z.string().min(10, "Please enter a valid phone number"),
   purpose: z.enum(["login", "signup", "link"]).default("login"),

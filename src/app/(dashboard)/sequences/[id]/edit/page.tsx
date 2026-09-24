@@ -1,4 +1,5 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { hasPermission } from "@/lib/rbac";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getSequenceAction } from "@/lib/actions/sequences";
@@ -7,6 +8,7 @@ import { Button } from "@/components/ui/button";
 
 export default async function EditSequencePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!(await hasPermission("sequences.manage"))) redirect(`/sequences/${id}`);
   const sequence = await getSequenceAction(id);
   if (!sequence) notFound();
 

@@ -545,7 +545,7 @@ export async function updateLeadFollowUpAction(leadId: string, nextFollowUpAt: s
       const title = `Follow-up with ${updated.name || "lead"}`;
       if (existing) {
         await db.update(followUps)
-          .set({ dueAt: followUpDate, title, updatedAt: new Date() })
+          .set({ dueAt: followUpDate, title, overdueNotifiedAt: null, updatedAt: new Date() })
           .where(eq(followUps.id, existing.id));
       } else {
         await db.insert(followUps).values({
@@ -594,6 +594,7 @@ export async function updateLeadStageAndValueAction(leadId: string, input: { sta
     const { db } = await import("@/db");
     const { leads } = await import("@/db/schema");
     const { eq, and } = await import("drizzle-orm");
+    const [before] = await db.select({ stageId: leads.stageId }).from(leads).where(and(eq(leads.id, leadId), eq(leads.organizationId, organizationId))).limit(1);
 
     const [updated] = await db.update(leads)
       .set({
@@ -605,6 +606,10 @@ export async function updateLeadStageAndValueAction(leadId: string, input: { sta
       .returning();
 
     if (!updated) return fail("NOT_FOUND", "This lead no longer exists or was moved.");
+    if (input.stageId !== undefined && (before?.stageId ?? null) !== (updated.stageId ?? null)) {
+      const { eventBus } = await import("@/lib/events/emitter");
+      eventBus.emit("lead.stage_changed", { leadId, userId, changes: { stageId: updated.stageId, fromStageId: before?.stageId ?? null } });
+    }
     revalidatePath(`/leads/${leadId}`);
     revalidatePath('/leads');
     return ok(updated);

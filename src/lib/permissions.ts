@@ -7,6 +7,7 @@ export const PERMISSIONS = {
   "sources.manage": "Manage lead sources & webhooks",
   "templates.manage": "Manage message templates",
   "automations.manage": "Manage automations",
+  "sequences.manage": "Create, edit & delete follow-up sequences",
   "leads.edit": "Create, edit, assign & change status of leads",
   "leads.delete": "Delete leads (to recycle bin)",
   "leads.purge": "Permanently delete leads / empty recycle bin",

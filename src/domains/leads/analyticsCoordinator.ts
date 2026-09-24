@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { leads, users } from "@/db/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
 export interface AnalyticsLeadRecord {
   id: string;
@@ -49,7 +49,9 @@ export class AnalyticsCoordinator {
         sourceId: leads.sourceId,
         ownerId: leads.ownerId,
         stageId: leads.stageId,
-        customData: leads.customData,
+        // Drop the bulky per-lead AI recap + score evidence — no report reads them, and on large
+        // workspaces they dominated this admin-only full-tenant load.
+        customData: sql<unknown>`${leads.customData} - '_aiRecap' - '_scoreFactors'`,
         createdAt: leads.createdAt,
         updatedAt: leads.updatedAt,
         lastContactedAt: leads.lastContactedAt,

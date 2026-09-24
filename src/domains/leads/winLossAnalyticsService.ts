@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { CustomStatusSchemaService } from "./customStatusSchemaService";
 import { leads } from "@/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 
@@ -25,8 +26,9 @@ export class WinLossAnalyticsService {
     organizationId: string,
     preloadedLeads?: { id: string; status: string | null; lostReason: string | null }[]
   ): Promise<WinLossAnalytics> {
+    const { cat, closedKeys } = await CustomStatusSchemaService.resolver(organizationId); // custom statuses count by category
     const closedLeads = preloadedLeads
-      ? preloadedLeads.filter((l) => l.status && ["won", "lost", "unqualified"].includes(l.status))
+      ? preloadedLeads.filter((l) => l.status && ["won", "lost", "unqualified"].includes(cat(l.status)))
       : await db
           .select({
             id: leads.id,
@@ -37,7 +39,7 @@ export class WinLossAnalyticsService {
           .where(
             and(
               eq(leads.organizationId, organizationId),
-              inArray(leads.status, ["won", "lost", "unqualified"])
+              inArray(leads.status, closedKeys)
             )
           );
 
@@ -57,9 +59,9 @@ export class WinLossAnalyticsService {
     let unqualifiedCount = 0;
 
     for (const lead of closedLeads) {
-      if (lead.status === "won") wonCount++;
-      else if (lead.status === "lost") lostCount++;
-      else if (lead.status === "unqualified") unqualifiedCount++;
+      if (cat(lead.status) === "won") wonCount++;
+      else if (cat(lead.status) === "lost") lostCount++;
+      else if (cat(lead.status) === "unqualified") unqualifiedCount++;
     }
 
     const winRatePercentage =
@@ -79,7 +81,7 @@ export class WinLossAnalyticsService {
     // (older data) fall into "Other / Unspecified".
     const buckets = Object.keys(lossMap);
     for (const lead of closedLeads) {
-      if (lead.status !== "lost" && lead.status !== "unqualified") continue;
+      if (cat(lead.status) !== "lost" && cat(lead.status) !== "unqualified") continue;
       const bucket = lead.lostReason
         ? buckets.find((b) => lead.lostReason!.startsWith(b)) ?? "Other / Unspecified"
         : "Other / Unspecified";

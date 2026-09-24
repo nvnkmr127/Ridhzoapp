@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { RevenueForecastService } from "./revenueForecastService";
 import { WinLossAnalyticsService } from "./winLossAnalyticsService";
 import { SourceRoiAnalyticsService } from "./sourceRoiAnalyticsService";
@@ -11,6 +11,20 @@ import { CustomerLtvAnalyticsService } from "./customerLtvAnalyticsService";
 import { LeadGeoAnalyticsService } from "./leadGeoAnalyticsService";
 import { SlaAnalyticsService } from "./slaAnalyticsService";
 import { AnalyticsLeadRecord } from "./analyticsCoordinator";
+
+// Reports resolve custom statuses by category; these tests use the built-in five (no DB round trip).
+vi.mock("./customStatusSchemaService", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./customStatusSchemaService")>();
+  const base = new Map(actual.DEFAULT_SYSTEM_STATUSES.map((s) => [s.key, s.category]));
+  const keys = (...c: string[]) => [...base].filter(([, v]) => c.includes(v)).map(([k]) => k);
+  return {
+    ...actual,
+    CustomStatusSchemaService: Object.assign(actual.CustomStatusSchemaService, {
+      resolver: async () => ({ cat: (s: string | null | undefined) => base.get(s ?? "") ?? "open", openKeys: keys("open", "in_progress"), closedKeys: keys("won", "lost", "unqualified") }),
+    }),
+  };
+});
+
 
 describe("AnalyticsCoordinator Preloaded Leads Integration", () => {
   const mockDate = new Date("2026-09-01T10:00:00Z");

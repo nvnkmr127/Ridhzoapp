@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { CustomStatusSchemaService } from "./customStatusSchemaService";
 import { leads } from "@/db/schema";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 
@@ -33,6 +34,7 @@ export class LeadConversionPredictorService {
     organizationId: string,
     enforceOwnerId?: string
   ): Promise<LeadConversionPredictionReport> {
+    const { openKeys } = await CustomStatusSchemaService.resolver(organizationId); // custom statuses count by category
     const activeLeads = await db
       .select({
         id: leads.id,
@@ -54,7 +56,7 @@ export class LeadConversionPredictorService {
         and(
           eq(leads.organizationId, organizationId),
           isNull(leads.deletedAt),
-          inArray(leads.status, ["new", "active"]),
+          inArray(leads.status, openKeys),
           ...(enforceOwnerId ? [eq(leads.ownerId, enforceOwnerId)] : [])
         )
       );

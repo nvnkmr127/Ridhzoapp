@@ -32,7 +32,9 @@ export function Header({
   isSuperAdmin = false,
   organizationId,
   usageStats,
+  allowed = [],
 }: {
+  allowed?: string[];
   isSuperAdmin?: boolean;
   organizationId?: string;
   usageStats?: UsageStats | null;
@@ -61,7 +63,7 @@ export function Header({
     <div className="flex h-14 items-center justify-between border-b border-border px-4 lg:px-6 bg-background shrink-0">
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
       <div className="flex items-center flex-1 gap-2">
-        <MobileSidebar isSuperAdmin={isSuperAdmin} plan={usageStats?.plan} />
+        <MobileSidebar isSuperAdmin={isSuperAdmin} plan={usageStats?.plan} allowed={allowed} />
         <div className="flex items-center gap-2">
           <Link href="/leads" className="flex items-center">
             {usageStats?.plan === "starter" ? (
