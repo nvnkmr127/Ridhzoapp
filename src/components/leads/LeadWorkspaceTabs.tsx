@@ -41,6 +41,11 @@ export function LeadWorkspaceTabs({ tabs, defaultValue }: { tabs: LeadTab[]; def
   }, [value]);
 
   const onLeadAction = React.useCallback((a: LeadUiAction) => {
+    if (a.type === "open-tab") {
+      setValue(a.tab);
+      ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
     if (a.type !== "compose") return;
     setValue(a.channel === "whatsapp" ? "whatsapp" : "emails");
     ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });

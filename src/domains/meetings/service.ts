@@ -213,8 +213,10 @@ export class MeetingService {
 
   static async create(input: MeetingInput, ctx: { userId: string | null; organizationId: string }) {
     const lead = await getLead(input.leadId, ctx.organizationId);
-    const assigneeId = input.assigneeId || lead.ownerId || ctx.userId;
+    // An explicit pick must be an active teammate; the default (lead owner) is skipped if deactivated.
+    let assigneeId = input.assigneeId || null;
     if (assigneeId) await this.assertOrgUser(assigneeId, ctx.organizationId);
+    else assigneeId = lead.ownerId && (await this.isActiveOrgUser(lead.ownerId, ctx.organizationId)) ? lead.ownerId : ctx.userId;
     const place = await this.resolvePlace(input, ctx.organizationId);
 
     const [created] = await db.insert(meetings).values({
@@ -276,7 +278,7 @@ export class MeetingService {
       ...place,
       // Keep an auto-generated Meet link when the rep didn't paste a different one.
       meetingUrl: input.mode === "online" ? place.meetingUrl || existing.meetingUrl : null,
-      notes: input.notes ?? existing.notes,
+      notes: input.notes === undefined ? existing.notes : input.notes || null,
       ...(moved ? { bookedAt: new Date(), leadReminder24hSentAt: null, leadReminder1hSentAt: null, repReminderSentAt: null, outcomePromptSentAt: null } : {}),
       updatedAt: new Date(),
     }).where(this.scope(id, ctx.organizationId)).returning();
@@ -313,12 +315,14 @@ export class MeetingService {
       status: input.status,
       outcome: input.outcome || null,
       completedAt: input.status === "completed" ? new Date() : null,
+      // A cancelled meeting's calendar event is deleted below; forget it so a reopen + edit makes a new one.
+      ...(input.status === "cancelled" ? { googleEventId: null, googleEventOwnerId: null } : {}),
       updatedAt: new Date(),
     }).where(this.scope(id, ctx.organizationId)).returning();
 
     if (input.status === "completed") await markLeadContacted(updated.leadId, new Date());
-    if (input.status === "cancelled" && updated.googleEventId && updated.googleEventOwnerId) {
-      await GoogleCalendarService.deleteEvent(updated.googleEventOwnerId, updated.googleEventId);
+    if (input.status === "cancelled" && existing.googleEventId && existing.googleEventOwnerId) {
+      await GoogleCalendarService.deleteEvent(existing.googleEventOwnerId, existing.googleEventId);
     }
 
     const label = { completed: "done", no_show: "marked no-show", cancelled: "cancelled" }[input.status];
@@ -373,10 +377,14 @@ export class MeetingService {
     return updated;
   }
 
-  private static async assertOrgUser(userId: string, organizationId: string) {
+  private static async isActiveOrgUser(userId: string, organizationId: string) {
     const [u] = await db.select({ id: users.id }).from(users)
-      .where(and(eq(users.id, userId), eq(users.organizationId, organizationId), eq(users.isActive, true))).limit(1);
-    if (!u) throw new MeetingError("That team member isn't in this workspace");
+      .where(and(eq(users.id, userId), eq(users.organizationId, organizationId), eq(users.isActive, true), isNull(users.deletedAt))).limit(1);
+    return !!u;
+  }
+
+  private static async assertOrgUser(userId: string, organizationId: string) {
+    if (!(await this.isActiveOrgUser(userId, organizationId))) throw new MeetingError("That team member isn't in this workspace");
   }
 
   // ---- Saved locations ----

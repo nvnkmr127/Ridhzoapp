@@ -8,6 +8,8 @@ import { CustomFieldService } from "@/domains/customFields/service";
 import { CustomStatusSchemaService } from "@/domains/leads/customStatusSchemaService";
 import { LeadSourceService } from "@/domains/leads/sourceService";
 import { ScoringService } from "@/domains/leads/scoringService";
+import { MeetingService } from "@/domains/meetings/service";
+import { meetingWhere, modeLabel } from "@/domains/meetings/format";
 import { formAnswers } from "@/lib/leads/formAnswers";
 import type { LeadExtras, LeadLike } from "@/lib/ai/leadBrief";
 
@@ -27,7 +29,7 @@ type LoadableLead = LeadLike & {
 export async function loadLeadAiContext(lead: LoadableLead, organizationId: string) {
   const cd = (lead.customData as Record<string, unknown> | null) ?? {};
 
-  const [activities, messages, shares, statuses, defs, stage, source] = await Promise.all([
+  const [activities, messages, shares, statuses, defs, stage, source, meetingRows] = await Promise.all([
     ActivityService.getLeadActivities(lead.id),
     db
       .select({ direction: whatsappMessages.direction, body: whatsappMessages.body, createdAt: whatsappMessages.createdAt })
@@ -47,6 +49,7 @@ export async function loadLeadAiContext(lead: LoadableLead, organizationId: stri
           .then((r) => r[0]?.name ?? null)
       : Promise.resolve(null),
     lead.sourceId ? LeadSourceService.getSource(lead.sourceId).catch(() => null) : Promise.resolve(null),
+    MeetingService.listForLead(lead.id, organizationId).catch(() => []),
   ]);
 
   const status = statuses.find((s) => s.key === lead.status);
@@ -64,6 +67,15 @@ export async function loadLeadAiContext(lead: LoadableLead, organizationId: stri
     messages: [...messages].reverse(),
     contentOpens: shares.map((s) => ({ title: s.title, viewCount: s.viewCount })),
     unansweredStreak: ScoringService.callStats(activities).unansweredStreak,
+    meetings: meetingRows.map((m) => ({
+      mode: m.mode,
+      title: modeLabel(m.mode),
+      startAt: m.startAt,
+      durationMinutes: m.durationMinutes,
+      status: m.status,
+      where: meetingWhere(m),
+      outcome: m.outcome,
+    })),
   };
 
   return { activities, extras };

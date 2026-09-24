@@ -9,6 +9,8 @@ export type RecommendedActionType =
   | "reengage_cold_lead"
   | "close_deal"
   | "try_whatsapp"
+  | "log_meeting_outcome"
+  | "confirm_meeting"
   | "wait";
 
 export interface NextBestActionRecommendation {
@@ -31,6 +33,8 @@ export interface NextBestActionInput {
   recentContentOpen?: { title: string; count: number } | null;
   /** Calls in a row that went unanswered since the lead last engaged. */
   unansweredStreak?: number;
+  /** The lead's earliest still-scheduled meeting (may already have ended without an outcome). */
+  meeting?: { startAt: Date | string; durationMinutes: number; label: string } | null;
 }
 
 const BASE_CATEGORY: Record<string, StatusCategory> = {
@@ -79,6 +83,29 @@ export class NextBestActionService {
         reason: `Opened "${title}" ${count} time${count === 1 ? "" : "s"} recently — strike while interest is high.`,
         priority: "high",
       };
+    }
+
+    // 0b. Meetings: an ended meeting needs its outcome logged (not "follow-up overdue"); one in the
+    // next 24h is worth confirming so the lead actually turns up.
+    if (input.meeting) {
+      const start = new Date(input.meeting.startAt).getTime();
+      const end = start + input.meeting.durationMinutes * 60_000;
+      if (end < now) {
+        return {
+          action: "log_meeting_outcome",
+          label: `Log how the ${input.meeting.label.toLowerCase()} went`,
+          reason: "It has ended but has no outcome yet — mark it done or no-show and set the next step.",
+          priority: "high",
+        };
+      }
+      if (start - now < 24 * 60 * 60 * 1000) {
+        return {
+          action: "confirm_meeting",
+          label: `${input.meeting.label} coming up — confirm with the lead`,
+          reason: "A quick confirmation the day before cuts no-shows.",
+          priority: "medium",
+        };
+      }
     }
 
     // 1. Overdue follow-up (the rep planned this — it wins over the generic first-contact nudge)

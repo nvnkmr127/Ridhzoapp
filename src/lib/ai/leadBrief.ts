@@ -42,6 +42,8 @@ export interface LeadExtras {
   messages?: { direction: string; body: string | null; createdAt: Date | null }[];
   contentOpens?: { title: string; viewCount: number }[];
   unansweredStreak?: number;
+  /** Upcoming and recent meetings (newest first). */
+  meetings?: { mode: string; title: string; startAt: Date; durationMinutes: number; status: string; where: string; outcome: string | null }[];
 }
 
 export const UNTRUSTED_NOTE =
@@ -58,6 +60,7 @@ const fence = (s: string) => clip(s.replace(/<\/?lead_data>/gi, "").replace(/\s+
 
 /** Compact, factual context block fed to the model. Only CRM-known data goes in. */
 export function buildLeadContext(lead: LeadLike, activities: ActivityLike[], extras: LeadExtras = {}): string {
+  const nextScheduled = extras.meetings?.filter((m) => m.status === "scheduled").at(-1);
   const recentOpen = extras.contentOpens?.find((c) => c.viewCount > 0);
   const nba = NextBestActionService.getRecommendation({
     status: lead.status,
@@ -69,6 +72,7 @@ export function buildLeadContext(lead: LeadLike, activities: ActivityLike[], ext
     email: lead.email,
     recentContentOpen: recentOpen ? { title: recentOpen.title, count: recentOpen.viewCount } : null,
     unansweredStreak: extras.unansweredStreak,
+    meeting: nextScheduled ? { startAt: nextScheduled.startAt, durationMinutes: nextScheduled.durationMinutes, label: nextScheduled.title } : null,
   });
 
   const enrichment = (lead.customData as { _enrichment?: { attributes?: Record<string, unknown> } } | null)
@@ -91,6 +95,9 @@ export function buildLeadContext(lead: LeadLike, activities: ActivityLike[], ext
     `Next follow-up: ${fmtDate(lead.nextFollowUpAt)}`,
   );
   if (extras.unansweredStreak) lines.push(`Unanswered calls in a row: ${extras.unansweredStreak}`);
+  if (nextScheduled) {
+    lines.push(`Upcoming meeting: ${nextScheduled.title} on ${new Date(nextScheduled.startAt).toISOString().slice(0, 16).replace("T", " ")} UTC (${nextScheduled.durationMinutes} min)`);
+  }
   if (extras.contentOpens?.length) {
     lines.push(`Content shared: ${extras.contentOpens.map((c) => `"${c.title}" (opened ${c.viewCount}×)`).join("; ")}`);
   }
@@ -109,6 +116,12 @@ export function buildLeadContext(lead: LeadLike, activities: ActivityLike[], ext
     data.push("WhatsApp conversation (oldest first):");
     for (const m of extras.messages.slice(-8)) {
       data.push(`- [${fmtDate(m.createdAt)}] ${m.direction === "inbound" ? "Lead" : "You"}: ${fence(m.body ?? "")}`);
+    }
+  }
+  if (extras.meetings?.length) {
+    data.push("Meetings (newest first):");
+    for (const m of extras.meetings.slice(0, 5)) {
+      data.push(`- [${fmtDate(m.startAt)}] ${m.title} — ${m.status}${m.where ? ` at ${fence(m.where)}` : ""}${m.outcome ? `. Outcome: ${fence(m.outcome)}` : ""}`);
     }
   }
   if (activities.length > 0) {

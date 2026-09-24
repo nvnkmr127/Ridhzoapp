@@ -99,4 +99,18 @@ describe("NextBestActionService — real-use cases", () => {
     expect(NextBestActionService.getRecommendation({ ...base, unansweredStreak: 1 })).toMatchObject({ action: "call_lead", priority: "high" });
     expect(NextBestActionService.getRecommendation({ ...base, unansweredStreak: 3 }).action).toBe("try_whatsapp");
   });
+
+  it("asks for the outcome of an ended meeting instead of calling it an overdue follow-up", () => {
+    const ended = { startAt: new Date(Date.now() - 2 * 60 * 60 * 1000), durationMinutes: 30, label: "Site visit" };
+    const r = NextBestActionService.getRecommendation({ status: "active", phone: "+1", lastContactedAt: new Date(), nextFollowUpAt: ended.startAt, meeting: ended });
+    expect(r).toMatchObject({ action: "log_meeting_outcome", priority: "high" });
+  });
+
+  it("suggests confirming a meeting in the next 24h, and waits when it's further out", () => {
+    const base = { status: "active", phone: "+1", lastContactedAt: new Date() };
+    const soon = { startAt: new Date(Date.now() + 3 * 60 * 60 * 1000), durationMinutes: 30, label: "Online meeting" };
+    const later = { startAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), durationMinutes: 30, label: "Online meeting" };
+    expect(NextBestActionService.getRecommendation({ ...base, nextFollowUpAt: soon.startAt, meeting: soon }).action).toBe("confirm_meeting");
+    expect(NextBestActionService.getRecommendation({ ...base, nextFollowUpAt: later.startAt, meeting: later }).action).toBe("wait");
+  });
 });

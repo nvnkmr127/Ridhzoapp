@@ -22,6 +22,19 @@ describe("buildLeadContext", () => {
     expect(ctx).toContain("Recommended next action (heuristic):");
   });
 
+  it("includes meetings, with staff-logged outcomes fenced as untrusted data", () => {
+    const ctx = buildLeadContext(baseLead, [], {
+      meetings: [
+        { mode: "site_visit", title: "Site visit", startAt: new Date("2099-01-02T09:30:00Z"), durationMinutes: 60, status: "scheduled", where: "Plot 12, Kokapet", outcome: null },
+        { mode: "online", title: "Online meeting", startAt: new Date("2026-08-01T10:00:00Z"), durationMinutes: 30, status: "completed", where: "", outcome: "Wants 2BHK under 80L" },
+      ],
+    });
+    expect(ctx).toContain("Upcoming meeting: Site visit on 2099-01-02 09:30 UTC (60 min)");
+    const fenced = ctx.slice(ctx.indexOf("<lead_data>"));
+    expect(fenced).toContain("Site visit — scheduled at Plot 12, Kokapet");
+    expect(fenced).toContain("Outcome: Wants 2BHK under 80L");
+  });
+
   it("surfaces enrichment as observed, not fact", () => {
     const lead = { ...baseLead, customData: { _enrichment: { attributes: { title: "Countess" } } } };
     expect(buildLeadContext(lead, [])).toContain("Enriched (observed by data provider):");

@@ -12,6 +12,8 @@ export type LeadUiAction =
   // Open the meeting dialog — new, or editing `meeting`.
   | { type: "meeting"; meeting?: MeetingView }
   | { type: "edit" }
+  // Switch the workspace tabs (e.g. the NBA card jumping to Meetings).
+  | { type: "open-tab"; tab: string }
   // Open the in-app composer for a channel; `ai` also starts an AI draft.
   | { type: "compose"; channel: "whatsapp" | "email"; ai?: boolean }
   // Emitted by the tabs after switching for a "compose", once the composer is mounted.

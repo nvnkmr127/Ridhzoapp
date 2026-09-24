@@ -44,6 +44,7 @@ import { LeadAttachmentsTab } from "@/components/leads/LeadAttachmentsTab";
 import { LeadMeetingsTab } from "@/components/meetings/LeadMeetingsTab";
 import { MeetingScheduler } from "@/components/meetings/MeetingScheduler";
 import { MeetingService } from "@/domains/meetings/service";
+import { modeLabel } from "@/domains/meetings/format";
 import { GoogleCalendarService } from "@/domains/integrations/googleCalendarService";
 import { isConfigured as googleConfigured } from "@/lib/integrations/google";
 import { LocalTime } from "@/components/LocalTime";
@@ -242,6 +243,12 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     .filter((s) => s.viewCount > 0 && s.lastViewedAt && Date.now() - new Date(s.lastViewedAt).getTime() <= RECENT_OPEN_MS)
     .sort((a, b) => new Date(b.lastViewedAt!).getTime() - new Date(a.lastViewedAt!).getTime())[0];
 
+  // Earliest still-scheduled meeting (listForLead is newest first).
+  const scheduledMeeting = leadMeetings.filter((mt) => mt.status === "scheduled").at(-1);
+  const nextMeeting = scheduledMeeting
+    ? { startAt: scheduledMeeting.startAt, durationMinutes: scheduledMeeting.durationMinutes, label: modeLabel(scheduledMeeting.mode) }
+    : null;
+
   const nba = NextBestActionService.getRecommendation({
     status: lead.status,
     score: lead.score ?? 0,
@@ -252,6 +259,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     recentContentOpen: recentOpen ? { title: recentOpen.title, count: recentOpen.viewCount } : null,
     statusCategory,
     unansweredStreak: callStats.unansweredStreak,
+    meeting: nextMeeting,
   });
   const nbaAccent =
     nba.priority === "high"
@@ -374,7 +382,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           locations={meetingLocations.map((l) => ({ id: l.id, name: l.name, address: l.address }))}
           canAutoMeet={calendarConnected}
           canManageLocations={isFieldAdmin}
-          defaultAssigneeId={lead.ownerId ?? userId}
+          defaultAssigneeId={usersList.some((u) => u.id === lead.ownerId) ? lead.ownerId! : userId}
         />
       </div>
 

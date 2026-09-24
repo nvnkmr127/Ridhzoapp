@@ -1,6 +1,6 @@
 "use client";
 
-import { Phone, MessageSquare, Mail, CalendarPlus, UserPen } from "lucide-react";
+import { Phone, MessageSquare, Mail, CalendarPlus, CalendarCheck, UserPen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { RecommendedActionType } from "@/domains/leads/nextBestActionService";
 import { emitLeadAction } from "@/components/leads/leadEvents";
@@ -56,6 +56,15 @@ export function NbaActions({ action, hasPhone, hasEmail }: { action: Recommended
         <Button key="edit" size="sm" variant={hasEmail ? "outline" : "default"} className="gap-1.5" onClick={() => emitLeadAction({ type: "edit" })}>
           <UserPen className="h-3.5 w-3.5" /> Add phone / email
         </Button>,
+      ];
+      break;
+    case "log_meeting_outcome":
+    case "confirm_meeting":
+      buttons = [
+        <Button key="meetings" size="sm" className="gap-1.5" onClick={() => emitLeadAction({ type: "open-tab", tab: "meetings" })}>
+          <CalendarCheck className="h-3.5 w-3.5" /> {action === "log_meeting_outcome" ? "Log outcome" : "Open meeting"}
+        </Button>,
+        action === "confirm_meeting" ? whatsapp : call,
       ];
       break;
     case "wait":
