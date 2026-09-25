@@ -35,6 +35,8 @@ export interface FcmMessage {
   title: string;
   body?: string;
   data?: Record<string, unknown>;
+  channelId?: string;
+  badge?: number;
 }
 
 const b64url = (buf: Buffer | string) =>
@@ -105,7 +107,14 @@ export const FcmPushService = {
                 token: t,
                 notification: { title: message.title, body: message.body ?? "" },
                 data,
-                android: { priority: "high" },
+                android: {
+                  priority: "high",
+                  notification: {
+                    sound: "default",
+                    ...(message.channelId ? { channel_id: message.channelId } : {}),
+                    ...(message.badge !== undefined ? { notification_count: message.badge } : {}),
+                  },
+                },
               },
             }),
           });

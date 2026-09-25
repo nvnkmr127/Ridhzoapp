@@ -156,17 +156,36 @@ eventBus.on('lead.assigned', async (p) => {
   await fireLeadWebhook(p.leadId, 'lead.assigned', { ownerId: p.ownerId ?? null, ownerName: ownerName ?? null });
   await ActivityService.addActivity({ leadId: p.leadId, userId: isUuid(p.assignedById) ? p.assignedById : undefined, type: 'note', content });
 
-  // The "New Lead Alert": ping the owner, unless they assigned it to themselves.
+  // Ping the owner, unless they assigned it to themselves. A lead that just came in is a "New lead";
+  // handing an existing lead to someone is "Lead assigned to you" (with who did it), so a rep can
+  // tell a fresh enquiry from a reassignment at a glance.
   if (p.ownerId && p.ownerId !== p.assignedById) {
     const lead = await LeadService.getLeadById(p.leadId);
-    await NotificationService.create({
-      userId: p.ownerId,
-      type: 'new_lead',
-      title: "New lead: {name}",
-      titleVars: { name: lead?.name ?? "Unknown" },
-      body: lead?.phone || lead?.email || undefined,
-      leadId: p.leadId,
-    });
+    const isFresh = !lead?.createdAt || Date.now() - new Date(lead.createdAt).getTime() < 10 * 60 * 1000;
+    let assignerName: string | undefined;
+    if (!isFresh && isUuid(p.assignedById)) {
+      const [a] = await db.select({ firstName: users.firstName, lastName: users.lastName, email: users.email }).from(users).where(eq(users.id, p.assignedById!)).limit(1);
+      if (a) assignerName = [a.firstName, a.lastName].filter(Boolean).join(" ") || a.email;
+    }
+    await NotificationService.create(
+      isFresh
+        ? {
+            userId: p.ownerId,
+            type: 'new_lead',
+            title: "New lead: {name}",
+            titleVars: { name: lead?.name ?? "Unknown" },
+            body: lead?.phone || lead?.email || undefined,
+            leadId: p.leadId,
+          }
+        : {
+            userId: p.ownerId,
+            type: 'lead_assigned',
+            title: "Lead assigned to you: {name}",
+            titleVars: { name: lead?.name ?? "Unknown" },
+            ...(assignerName ? { body: "Assigned by {name}", bodyVars: { name: assignerName } } : { body: lead?.phone || lead?.email || undefined }),
+            leadId: p.leadId,
+          },
+    );
   }
 });
 

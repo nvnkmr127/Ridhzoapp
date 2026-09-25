@@ -13,6 +13,8 @@ export interface MobilePushMessage {
   title: string;
   body?: string;
   data?: Record<string, unknown>;
+  channelId?: string;
+  badge?: number;
 }
 
 const isExpoToken = (t: string) => t.startsWith("ExponentPushToken") || t.startsWith("ExpoPushToken");

@@ -34,6 +34,10 @@ const HI: Record<string, string> = {
   "Quick Add": "लीड जोड़ें",
   // Notifications
   "New lead: {name}": "नई लीड: {name}",
+  "Lead assigned to you: {name}": "आपको लीड सौंपी गई: {name}",
+  "Assigned by {name}": "{name} द्वारा सौंपी गई",
+  "Notifications are on": "सूचनाएँ चालू हैं",
+  "You'll get new leads, follow-up reminders and meeting alerts here.": "आपको नई लीड, फ़ॉलो-अप रिमाइंडर और मीटिंग अलर्ट यहाँ मिलेंगे।",
   "Follow-up due: {title}": "फॉलो-अप का समय: {title}",
   "Follow up with {name} ({type})": "{name} से फॉलो-अप करें ({type})",
   "Overdue: {title}": "समय निकल गया: {title}",
@@ -71,6 +75,10 @@ const TE: Record<string, string> = {
   "Quick Add": "లీడ్ జోడించండి",
   // Notifications
   "New lead: {name}": "కొత్త లీడ్: {name}",
+  "Lead assigned to you: {name}": "మీకు లీడ్ కేటాయించబడింది: {name}",
+  "Assigned by {name}": "{name} కేటాయించారు",
+  "Notifications are on": "నోటిఫికేషన్లు ఆన్‌లో ఉన్నాయి",
+  "You'll get new leads, follow-up reminders and meeting alerts here.": "కొత్త లీడ్‌లు, ఫాలో-అప్ రిమైండర్‌లు మరియు మీటింగ్ అలర్ట్‌లు ఇక్కడ వస్తాయి.",
   "Follow-up due: {title}": "ఫాలో-అప్ సమయం: {title}",
   "Follow up with {name} ({type})": "{name}తో ఫాలో-అప్ చేయండి ({type})",
   "Overdue: {title}": "సమయం దాటింది: {title}",

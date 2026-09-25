@@ -9,6 +9,8 @@ export interface ExpoPushMessage {
   title: string;
   body?: string;
   data?: Record<string, unknown>;
+  channelId?: string; // Android channel (see lib/push/channels)
+  badge?: number; // app-icon badge = unread count
 }
 
 export const ExpoPushService = {
@@ -38,6 +40,9 @@ export const ExpoPushService = {
         body: message.body ?? "",
         data: message.data ?? {},
         sound: "default",
+        priority: "high", // heads-up on Android, immediate delivery
+        ...(message.channelId ? { channelId: message.channelId } : {}),
+        ...(message.badge !== undefined ? { badge: message.badge } : {}),
       }));
 
       const res = await fetch(EXPO_PUSH_URL, {

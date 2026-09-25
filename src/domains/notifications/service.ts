@@ -27,13 +27,22 @@ export class NotificationService {
       body: data.body,
       url: data.leadId ? `/leads/${data.leadId}` : "/",
     });
-    // Best-effort mobile push (Expo + FCM) — same event, native devices.
-    const { MobilePushService } = await import("@/lib/push/mobile");
-    void MobilePushService.sendToUser(data.userId, {
-      title: data.title,
-      body: data.body,
-      data: data.leadId ? { leadId: data.leadId } : {},
-    });
+    // Best-effort mobile push (Expo + FCM) — same event, native devices. The app routes taps by
+    // type/leadId, marks the notification read by id, and shows the unread count on its icon.
+    void (async () => {
+      const [{ MobilePushService }, { pushChannelFor }, badge] = await Promise.all([
+        import("@/lib/push/mobile"),
+        import("@/lib/push/channels"),
+        NotificationService.unreadCount(data.userId).catch(() => undefined),
+      ]);
+      await MobilePushService.sendToUser(data.userId, {
+        title: data.title,
+        body: data.body,
+        data: { type: data.type, notificationId: row.id, ...(data.leadId ? { leadId: data.leadId } : {}) },
+        channelId: pushChannelFor(data.type),
+        badge,
+      });
+    })().catch(() => {});
     if (EMAIL_TYPES.has(data.type)) void NotificationService.email({ ...data, type: data.type });
     return row;
   }
