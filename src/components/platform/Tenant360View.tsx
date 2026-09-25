@@ -210,25 +210,24 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
 
   const handleGrantCredits = async () => {
     const aiVal = parseInt(aiGrant, 10);
-    const waVal = parseInt(whatsappGrant, 10);
-    if (isNaN(aiVal) || isNaN(waVal)) {
+    if (isNaN(aiVal)) {
       toast({ title: "Invalid amount", description: "Please enter valid credit amounts.", variant: "destructive" });
       return;
     }
 
     setGranting(true);
     try {
-      const res = await grantTenantCreditsAction(org.id, aiVal, waVal);
+      const res = await grantTenantCreditsAction(org.id, aiVal);
       if (res.ok) {
         toast({
           title: "Credits Granted",
-          description: `Added ${aiVal} AI & ${waVal} WhatsApp credits to ${org.name}.`,
+          description: `Added ${aiVal} AI credits to ${org.name}.`,
         });
         if (res.data) {
           setData((prev) => ({
             ...prev,
             health: prev.health
-              ? { ...prev.health, aiCredits: res.data!.aiCredits, whatsappCredits: res.data!.whatsappCredits }
+              ? { ...prev.health, aiCreditsLeft: res.data!.max - res.data!.used, aiCreditsMax: res.data!.max }
               : null,
           }));
         }
@@ -840,12 +839,11 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
               <Zap className="h-4 w-4 text-amber-500" />
             </CardDescription>
             <CardTitle className="text-xl font-bold font-mono">
-              {(health?.aiCredits ?? 0).toLocaleString()} AI
+              {(health?.aiCreditsLeft ?? 0).toLocaleString()} AI
             </CardTitle>
           </CardHeader>
           <CardContent className="p-4 pt-0 text-xs text-muted-foreground flex items-center gap-1 font-mono">
-            <Radio className="h-3 w-3 text-emerald-500" />
-            {(health?.whatsappCredits ?? 0).toLocaleString()} WhatsApp
+            Max: {(health?.aiCreditsMax ?? 0).toLocaleString()}
           </CardContent>
         </Card>
 

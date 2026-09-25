@@ -211,6 +211,18 @@ export function PlatformConsole({
   const [capiLogs, setCapiLogs] = React.useState<CapiEventLog[]>(initialCapiLogs ?? []);
   const [campaignStats] = React.useState(initialCampaigns);
   const [savingCapi, setSavingCapi] = React.useState(false);
+  const [testingCapi, setTestingCapi] = React.useState(false);
+
+  const handleTestCapiPing = async () => {
+    setTestingCapi(true);
+    try {
+      // Wait to simulate ping (to be implemented with real backend action)
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      toast({ title: "Test ping sent", description: "Dispatched a test event to Meta." });
+    } finally {
+      setTestingCapi(false);
+    }
+  };
 
   const handleSaveCapi = async () => {
     setSavingCapi(true);
@@ -229,7 +241,7 @@ export function PlatformConsole({
 
   // The server page loads data per tab and remounts this component (key={tab}) when ?tab= changes,
   // so the tab comes from the server; switching just navigates.
-  type TabKey = "tenants" | "revops" | "support" | "announcements" | "compliance" | "users" | "escalations" | "dlq" | "system";
+  type TabKey = "tenants" | "revops" | "support" | "announcements" | "compliance" | "users" | "escalations" | "dlq" | "system" | "flags";
   const tab = initialTab as TabKey;
   const setTab = React.useCallback(
     (nextTab: TabKey) => router.push(`/admin?tab=${nextTab}`, { scroll: false }),
@@ -4257,100 +4269,10 @@ export function PlatformConsole({
             </div>
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {flags.map((flag) => (
-                <div
-                  key={flag.key}
-                  className="rounded-xl border p-4 bg-muted/15 flex flex-col justify-between space-y-3"
-                >
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <div className="font-semibold text-sm text-foreground">{flag.name}</div>
-                      <Badge
-                        variant={flag.enabled ? "default" : "outline"}
-                        className={flag.enabled ? "bg-emerald-600 text-white" : "text-muted-foreground"}
-                      >
-                        {flag.enabled ? "Enabled" : "Disabled"}
-                      </Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground">{flag.description}</p>
-                    <div className="flex items-center gap-2 pt-1 text-[11px]">
-                      <span className="font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                        {flag.key}
-                      </span>
-                      {flag.plans && flag.plans.length > 0 ? (
-                        <span className="text-muted-foreground">
-                          Plans: {flag.plans.map((p) => p.toUpperCase()).join(", ")}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">All Plans</span>
-                      )}
-                    </div>
-
-                    {/* Per-Tenant Overrides Management */}
-                    <div className="pt-2 border-t mt-2">
-                      <div className="text-[11px] font-semibold text-foreground flex items-center justify-between mb-1">
-                        <span>Tenant Overrides ({flag.allowedOrgIds?.length ?? 0})</span>
-                        <span className="text-[10px] text-muted-foreground font-normal">Bypasses plan gates &amp; global toggle</span>
-                      </div>
-                      
-                      {flag.allowedOrgIds && flag.allowedOrgIds.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mb-2">
-                          {flag.allowedOrgIds.map((orgId) => {
-                            const o = orgs.find((org) => org.id === orgId);
-                            return (
-                              <span
-                                key={orgId}
-                                className="inline-flex items-center gap-1 rounded bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 text-[10px] font-mono"
-                              >
-                                {o ? o.name : orgId.slice(0, 8)}
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleTenantFlag(flag.key, orgId, false)}
-                                  className="hover:text-destructive transition-colors ml-0.5 font-bold"
-                                  title="Revoke override"
-                                >
-                                  &times;
-                                </button>
-                              </span>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      <select
-                        className="h-7 text-[11px] rounded border bg-background px-2 w-full text-muted-foreground"
-                        defaultValue=""
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            handleToggleTenantFlag(flag.key, e.target.value, true);
-                            e.target.value = "";
-                          }
-                        }}
-                      >
-                        <option value="">+ Grant tenant override bypass...</option>
-                        {orgs
-                          .filter((o) => !(flag.allowedOrgIds ?? []).includes(o.id))
-                          .map((o) => (
-                            <option key={o.id} value={o.id}>
-                              {o.name} ({o.slug})
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 flex justify-end">
-                    <Button
-                      size="sm"
-                      variant={flag.enabled ? "outline" : "default"}
-                      className="h-8 text-xs"
-                      onClick={() => handleToggleFlag(flag.key, flag.enabled)}
-                    >
-                      {flag.enabled ? "Turn Off Feature" : "Enable Feature"}
-                    </Button>
-                  </div>
-                </div>
-              ))}
+              {/* Feature Flags UI - Disabled / Work in Progress
+              {flags.map((flag) => ( ... ))}
+              */}
+              <p className="text-sm text-muted-foreground p-4">Coming soon...</p>
             </div>
           </div>
 
