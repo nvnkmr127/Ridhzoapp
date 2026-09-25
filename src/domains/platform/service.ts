@@ -29,6 +29,15 @@ import {
   webhookEndpoints,
   tenantIntegrationSettings,
   webhookEvents,
+  notifications,
+  pushSubscriptions,
+  sharedLinks,
+  tags,
+  messageTemplates,
+  leadPipelines,
+  leadPipelineStages,
+  leadCounters,
+  customStatusConfigs,
 } from "@/db/schema";
 import { count, desc, eq, isNull, isNotNull, and, or, ilike, like, sql, gte, inArray } from "drizzle-orm";
 import { redisConfigured } from "@/lib/jobs/redis";
@@ -230,7 +239,13 @@ export interface TenantDossier {
   supportTickets: unknown[];
   apiKeys: unknown[];
   auditLogs: unknown[];
+  /** True when a section hit DOSSIER_ROW_CAP — the export is partial and says so. */
+  truncated: boolean;
 }
+
+// Per-section row cap for the JSON dossier, so one huge tenant can't exhaust server memory.
+// ponytail: fixed cap; stream NDJSON per table if a full export of bigger tenants is needed.
+const DOSSIER_ROW_CAP = 20_000;
 
 // Calendar months, clamped to the month's last day (Jan 31 + 1 month = Feb 28/29).
 function addMonths(d: Date, months: number) {
@@ -280,63 +295,35 @@ export class PlatformService {
     }));
   }
 
-  static async getStorageMetrics(): Promise<StorageMetrics> {
-    const [l, a, au, wh, rb] = await Promise.all([
-      db.select({ c: count() }).from(leads).where(isNull(leads.deletedAt)).catch(() => [{ c: 0 }]),
-      db.select({ c: count() }).from(activities).catch(() => [{ c: 0 }]),
-      db.select({ c: count() }).from(auditLogs).catch(() => [{ c: 0 }]),
-      db.select({ c: count() }).from(webhookDeliveries).catch(() => [{ c: 0 }]),
-      db.select({ c: count() }).from(leads).where(isNotNull(leads.deletedAt)).catch(() => [{ c: 0 }]),
-    ]);
-
-    return {
-      leadsCount: Number(l[0]?.c ?? 0),
-      activitiesCount: Number(a[0]?.c ?? 0),
-      auditLogsCount: Number(au[0]?.c ?? 0),
-      webhookDeliveriesCount: Number(wh[0]?.c ?? 0),
-      recycleBinCount: Number(rb[0]?.c ?? 0),
-    };
-  }
-
+  // Every headline count in ONE round trip. A failure is reported as dbHealthy=false (the console
+  // shows "DB unreachable"), never as a fleet of zeros that looks like real data.
   static async getPlatformMetrics(): Promise<PlatformMetrics> {
-    let dbHealthy = false;
+    let counts: Record<string, number> | null = null;
     try {
-      await db.execute(sql`SELECT 1`);
-      dbHealthy = true;
-    } catch {
-      dbHealthy = false;
+      const rows = (await db.execute(sql`
+        SELECT
+          (SELECT count(*) FROM organizations)::int                                         AS orgs,
+          (SELECT count(*) FROM users WHERE deleted_at IS NULL)::int                        AS users,
+          (SELECT count(*) FROM leads WHERE deleted_at IS NULL)::int                        AS leads,
+          (SELECT count(*) FROM leads WHERE deleted_at IS NOT NULL)::int                    AS recycle_bin,
+          (SELECT count(*) FROM leads WHERE escalated_at IS NOT NULL AND deleted_at IS NULL)::int AS escalations,
+          (SELECT count(*) FROM webhook_deliveries WHERE status = 'failed')::int            AS failed_deliveries,
+          (SELECT count(*) FROM webhook_deliveries)::int                                    AS deliveries,
+          (SELECT count(*) FROM activities)::int                                            AS activities,
+          (SELECT count(*) FROM audit_logs)::int                                            AS audit_logs
+      `)) as unknown as Record<string, number>[];
+      counts = rows[0] ?? null;
+    } catch (e) {
+      console.error("[platform] metrics query failed", e);
     }
-
-    const [escCount] = await db
-      .select({ c: count() })
-      .from(leads)
-      .where(and(isNotNull(leads.escalatedAt), isNull(leads.deletedAt)))
-      .catch(() => [{ c: 0 }]);
-
-    const [failedCount] = await db
-      .select({ c: count() })
-      .from(webhookDeliveries)
-      .where(eq(webhookDeliveries.status, "failed"))
-      .catch(() => [{ c: 0 }]);
-
-    const [userCount] = await db
-      .select({ c: count() })
-      .from(users)
-      .where(isNull(users.deletedAt))
-      .catch(() => [{ c: 0 }]);
-
-    const [leadCount] = await db
-      .select({ c: count() })
-      .from(leads)
-      .where(isNull(leads.deletedAt))
-      .catch(() => [{ c: 0 }]);
-
-    const [orgCount] = await db
-      .select({ c: count() })
-      .from(organizations)
-      .catch(() => [{ c: 0 }]);
-
-    const storage = await this.getStorageMetrics();
+    const n = (k: string) => Number(counts?.[k] ?? 0);
+    const storage: StorageMetrics = {
+      leadsCount: n("leads"),
+      activitiesCount: n("activities"),
+      auditLogsCount: n("audit_logs"),
+      webhookDeliveriesCount: n("deliveries"),
+      recycleBinCount: n("recycle_bin"),
+    };
 
     let queues: QueueMetrics | undefined;
     if (redisConfigured()) {
@@ -364,12 +351,12 @@ export class PlatformService {
     }
 
     return {
-      totalOrgs: Number(orgCount?.c ?? 0),
-      totalUsers: Number(userCount?.c ?? 0),
-      totalLeads: Number(leadCount?.c ?? 0),
-      activeEscalations: Number(escCount?.c ?? 0),
-      failedDeliveries: Number(failedCount?.c ?? 0),
-      dbHealthy,
+      totalOrgs: n("orgs"),
+      totalUsers: n("users"),
+      totalLeads: n("leads"),
+      activeEscalations: n("escalations"),
+      failedDeliveries: n("failed_deliveries"),
+      dbHealthy: counts !== null,
       redisConfigured: redisConfigured(),
       queues,
       storage,
@@ -439,19 +426,26 @@ export class PlatformService {
       .update(users)
       .set({ isSuperAdmin, updatedAt: new Date() })
       .where(eq(users.id, userId))
-      .returning({ id: users.id, email: users.email });
+      .returning({ id: users.id, email: users.email, organizationId: users.organizationId });
     return row ?? null;
   }
 
+  // Active super-admins — the last one can't be demoted.
+  static async countSuperAdmins(): Promise<number> {
+    const [row] = await db
+      .select({ c: count() })
+      .from(users)
+      .where(and(eq(users.isSuperAdmin, true), eq(users.isActive, true), isNull(users.deletedAt)));
+    return Number(row?.c ?? 0);
+  }
+
   static async setSeatOverride(organizationId: string, seats: number | null) {
-    const current = await PlatformConfigService.get<Record<string, number>>("seat_overrides", {});
-    if (seats == null || seats <= 0) {
-      delete current[organizationId];
-    } else {
-      current[organizationId] = seats;
-    }
-    await PlatformConfigService.set("seat_overrides", current);
-    return { organizationId, seats: current[organizationId] ?? null };
+    const next = await PlatformConfigService.update<Record<string, number>>("seat_overrides", {}, (current) => {
+      if (seats == null || seats <= 0) delete current[organizationId];
+      else current[organizationId] = seats;
+      return current;
+    });
+    return { organizationId, seats: next[organizationId] ?? null };
   }
 
   static async getBroadcast(): Promise<BroadcastConfig | null> {
@@ -675,13 +669,13 @@ export class PlatformService {
     }));
   }
 
-  static async revokeFleetApiKey(id: string): Promise<boolean> {
+  static async revokeFleetApiKey(id: string): Promise<{ organizationId: string; name: string } | null> {
     const [row] = await db
       .update(apiKeys)
       .set({ revokedAt: new Date() })
       .where(eq(apiKeys.id, id))
-      .returning({ id: apiKeys.id });
-    return !!row;
+      .returning({ organizationId: apiKeys.organizationId, name: apiKeys.name });
+    return row ?? null;
   }
 
   static async getPlatformActivity(limit = 50): Promise<PlatformActivitySummary[]> {
@@ -1095,15 +1089,14 @@ export class PlatformService {
           updatedAt: users.updatedAt,
         })
         .from(users)
-        .where(eq(users.organizationId, organizationId))
-        .catch(() => []),
+        .where(eq(users.organizationId, organizationId)),
       db
         .select()
         .from(leads)
         .where(eq(leads.organizationId, organizationId))
-        .catch(() => []),
-      import("@/domains/billing/invoiceService").then((m) => m.InvoiceService.listInvoices(1000)).catch(() => []),
-      import("./supportService").then((m) => m.SupportTicketService.listTickets("all")).catch(() => []),
+        .limit(DOSSIER_ROW_CAP + 1),
+      import("@/domains/billing/invoiceService").then((m) => m.InvoiceService.listForOrg(organizationId)),
+      import("./supportService").then((m) => m.SupportTicketService.listTickets("all")).then((all) => all.filter((t) => t.orgId === organizationId)),
       db
         .select({
           id: apiKeys.id,
@@ -1115,20 +1108,18 @@ export class PlatformService {
           createdAt: apiKeys.createdAt,
         })
         .from(apiKeys)
-        .where(eq(apiKeys.organizationId, organizationId))
-        .catch(() => []),
+        .where(eq(apiKeys.organizationId, organizationId)),
       this.getTenantAuditLogs(organizationId, 500),
     ]);
 
-    const leadIds = orgLeads.map((l) => l.id);
+    // Filter by the org in SQL (a subquery), not by passing every lead id back in.
+    const orgLeadIds = db.select({ id: leads.id }).from(leads).where(eq(leads.organizationId, organizationId));
     const [orgActivities, orgFollowUps] = await Promise.all([
-      leadIds.length > 0
-        ? db.select().from(activities).where(inArray(activities.leadId, leadIds)).catch(() => [])
-        : [],
-      leadIds.length > 0
-        ? db.select().from(followUps).where(inArray(followUps.leadId, leadIds)).catch(() => [])
-        : [],
+      db.select().from(activities).where(inArray(activities.leadId, orgLeadIds)).limit(DOSSIER_ROW_CAP + 1),
+      db.select().from(followUps).where(inArray(followUps.leadId, orgLeadIds)).limit(DOSSIER_ROW_CAP + 1),
     ]);
+    const capped = <T,>(rows: T[]) => rows.slice(0, DOSSIER_ROW_CAP);
+    const truncated = [orgLeads, orgActivities, orgFollowUps].some((r) => r.length > DOSSIER_ROW_CAP);
 
     // ponytail: JSON dossier bundle instead of multi-file zip to avoid unneeded zip archiving dependencies; add archiver/jszip if multi-file archive is required.
     return {
@@ -1136,13 +1127,14 @@ export class PlatformService {
       exportedAt: new Date().toISOString(),
       organization: org,
       users: orgUsers,
-      leads: orgLeads,
-      activities: orgActivities,
-      followUps: orgFollowUps,
-      invoices: allInvoices.filter((i) => i.orgId === organizationId),
-      supportTickets: allTickets.filter((t) => t.orgId === organizationId),
+      leads: capped(orgLeads),
+      activities: capped(orgActivities),
+      followUps: capped(orgFollowUps),
+      invoices: allInvoices,
+      supportTickets: allTickets,
       apiKeys: orgApiKeys,
       auditLogs: orgAuditLogs,
+      truncated,
     };
   }
 
@@ -1172,8 +1164,20 @@ export class PlatformService {
     // Attachment files live outside Postgres (R2/local) — note them now, delete after the wipe commits.
     const orgFiles = await db.select({ ref: leadAttachments.fileUrl }).from(leadAttachments).where(eq(leadAttachments.organizationId, organizationId));
 
-    // Step 1: Wipe all relational tenant records in a strict transaction
+    // Step 1: Wipe all relational tenant records in a strict transaction. Every table whose FK to
+    // organizations / users / leads is NO ACTION must be listed here (children before parents) or the
+    // whole wipe rolls back — tenantOffboarding.test.ts fails if a new such table isn't covered.
     await db.transaction(async (tx) => {
+      const orgUserIds = (await tx.select({ id: users.id }).from(users).where(eq(users.organizationId, organizationId))).map((u) => u.id);
+      // Per-user rows with NO ACTION FKs (they'd block deleting the users / leads below).
+      if (orgUserIds.length > 0) {
+        await tx.delete(notifications).where(inArray(notifications.userId, orgUserIds));
+        await tx.delete(pushSubscriptions).where(inArray(pushSubscriptions.userId, orgUserIds));
+        await tx.delete(sharedLinks).where(inArray(sharedLinks.ownerId, orgUserIds));
+        // Keep other orgs' audit trails intact if they ever reference one of these users.
+        await tx.update(auditLogs).set({ userId: null }).where(inArray(auditLogs.userId, orgUserIds));
+      }
+
       const orgLeads = await tx
         .select({ id: leads.id })
         .from(leads)
@@ -1195,8 +1199,17 @@ export class PlatformService {
         await tx.delete(whatsappMessages).where(inArray(whatsappMessages.leadId, leadIds));
         await tx.delete(leadTags).where(inArray(leadTags.leadId, leadIds));
         await tx.delete(leadStatusHistory).where(inArray(leadStatusHistory.leadId, leadIds));
+        await tx.delete(notifications).where(inArray(notifications.leadId, leadIds));
         await tx.delete(leads).where(eq(leads.organizationId, organizationId));
       }
+
+      // Lead-side config (leads referencing these are gone now).
+      await tx.delete(tags).where(eq(tags.organizationId, organizationId));
+      await tx.delete(leadPipelineStages).where(eq(leadPipelineStages.organizationId, organizationId));
+      await tx.delete(leadPipelines).where(eq(leadPipelines.organizationId, organizationId));
+      await tx.delete(leadCounters).where(eq(leadCounters.organizationId, organizationId));
+      await tx.delete(customStatusConfigs).where(eq(customStatusConfigs.organizationId, organizationId));
+      await tx.delete(messageTemplates).where(eq(messageTemplates.organizationId, organizationId));
 
       // 2. Sources, Assignment & lead alerts (alert rules reference sources and the org, NO ACTION FKs)
       await tx.delete(leadDistributionDeliveries).where(eq(leadDistributionDeliveries.organizationId, organizationId));
@@ -1222,16 +1235,22 @@ export class PlatformService {
       await tx.delete(invitations).where(eq(invitations.organizationId, organizationId));
       await tx.delete(emailSettings).where(eq(emailSettings.organizationId, organizationId));
       await tx.delete(webhookDeliveries).where(eq(webhookDeliveries.organizationId, organizationId));
+      await tx.delete(webhookEndpoints).where(eq(webhookEndpoints.organizationId, organizationId));
       await tx.delete(auditLogs).where(eq(auditLogs.organizationId, organizationId));
 
       // 5. Users & credentials
-      const orgUsers = await tx
-        .select({ id: users.id })
-        .from(users)
-        .where(eq(users.organizationId, organizationId));
-      const userIds = orgUsers.map((u) => u.id);
-      if (userIds.length > 0) {
-        await tx.delete(googleCredentials).where(inArray(googleCredentials.userId, userIds));
+      // Assignment rules not tied to a source still point at this org's users/teams.
+      const orgTeamIds = (await tx.select({ id: teams.id }).from(teams).where(eq(teams.organizationId, organizationId))).map((t) => t.id);
+      if (orgUserIds.length > 0 || orgTeamIds.length > 0) {
+        await tx.delete(assignmentRules).where(or(
+          orgUserIds.length ? inArray(assignmentRules.userId, orgUserIds) : sql`false`,
+          orgUserIds.length ? inArray(assignmentRules.lastAssignedUserId, orgUserIds) : sql`false`,
+          orgTeamIds.length ? inArray(assignmentRules.teamId, orgTeamIds) : sql`false`,
+        ));
+      }
+      if (orgUserIds.length > 0) {
+        await tx.delete(googleCredentials).where(inArray(googleCredentials.userId, orgUserIds));
+        await tx.delete(savedViews).where(inArray(savedViews.userId, orgUserIds));
       }
       await tx.delete(users).where(eq(users.organizationId, organizationId));
 
@@ -1249,22 +1268,15 @@ export class PlatformService {
       await Promise.all(orgFiles.map((f) => deleteAttachment(f.ref)));
     }
 
-    // Step 2: Clean up platform configuration maps
+    // Step 2: Clean up platform configuration maps (locked, so other tenants' entries are never lost).
     try {
-      const [overrides, credits] = await Promise.all([
-        PlatformConfigService.get<Record<string, number>>("seat_overrides", {}),
-        PlatformConfigService.get<Record<string, any>>("tenant_credits", {}),
-      ]);
-      delete overrides[organizationId];
-      delete credits[organizationId];
-      await Promise.all([
-        PlatformConfigService.set("seat_overrides", overrides),
-        PlatformConfigService.set("tenant_credits", credits),
-        PlatformConfigService.set(`billing_lifecycle:${organizationId}`, {}),
-        PlatformConfigService.set(`revoked_org:${organizationId}`, new Date().toISOString()),
-      ]);
-    } catch {
-      // ignore config cleanup error
+      await PlatformConfigService.update<Record<string, unknown>>("seat_overrides", {}, (m) => { delete m[organizationId]; return m; });
+      await PlatformConfigService.update<Record<string, unknown>>("tenant_attributions", {}, (m) => { delete m[organizationId]; return m; });
+      await PlatformConfigService.set(`billing_lifecycle:${organizationId}`, {});
+      await PlatformConfigService.set(`retention_state:${organizationId}`, {});
+      await PlatformConfigService.set(`revoked_org:${organizationId}`, new Date().toISOString());
+    } catch (e) {
+      console.error(`[platform] hard delete ${organizationId}: config cleanup failed (data already erased)`, e);
     }
 
     // Step 3: Audit log & Ops Alert

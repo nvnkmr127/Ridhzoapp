@@ -2,7 +2,6 @@ import { canonicalPlan, isPayingOrg, PLAN_MONTHLY_PRICE } from "@/domains/billin
 import { db } from "@/db";
 import { organizations, leads, users } from "@/db/schema";
 import { count, eq, isNull, max, and, gte } from "drizzle-orm";
-import { PlatformConfigService } from "./configService";
 
 export interface TenantHealthSummary {
   id: string;
@@ -14,17 +13,11 @@ export interface TenantHealthSummary {
   lastActiveAt: string | null;
   daysInactive: number;
   health: "healthy" | "slowing" | "at_risk" | "critical";
-  aiCredits: number;
-  whatsappCredits: number;
+  /** AI credits left this month on the real meter (plan allowance + any super-admin bonus − used). */
+  aiCreditsLeft: number;
+  aiCreditsMax: number;
 }
 
-export interface MrrWaterfall {
-  startingMrr: number;
-  newMrr: number;
-  expansionMrr: number;
-  churnRiskMrr: number;
-  netMrr: number;
-}
 
 export interface LifecycleFunnelStage {
   stage: "signed_up" | "activated" | "paid" | "churned";
@@ -54,17 +47,22 @@ export interface RevOpsMetrics {
   complimentaryAccounts: number;
   freeAccounts: number;
   churnRiskCount: number;
-  waterfall: MrrWaterfall;
+  /** List-price MRR of paying accounts flagged at-risk/critical by the health model — a risk, not churn. */
+  churnRiskMrr: number;
+  /** MRR from paying accounts created in the last 30 days. */
+  newAccountsMrr: number;
   funnel?: LifecycleFunnel;
 }
 
 const PLAN_PRICES = PLAN_MONTHLY_PRICE;
 
 export class RevOpsService {
-  static async getMetrics(): Promise<RevOpsMetrics> {
+  // MRR at list price for real payers only (trials and complimentary plans aren't revenue).
+  // ponytail: list price, not charged amount — coupons/annual discounts aren't reflected; use the
+  // invoice ledger if MRR must match cash exactly.
+  private static async revenue() {
     const orgs = await db
       .select({
-        id: organizations.id,
         plan: organizations.plan,
         planStatus: organizations.planStatus,
         createdAt: organizations.createdAt,
@@ -72,64 +70,45 @@ export class RevOpsService {
         trialEndsAt: organizations.trialEndsAt,
       })
       .from(organizations);
-
-    let mrr = 0;
-    let paidAccounts = 0;
-    let freeAccounts = 0;
-    let complimentaryAccounts = 0;
-    let newMrr = 0;
-    let expansionMrr = 0;
-
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-
+    const since = Date.now() - 30 * 86_400_000;
+    let mrr = 0, paidAccounts = 0, freeAccounts = 0, complimentaryAccounts = 0, newAccountsMrr = 0;
     for (const org of orgs) {
-      // Revenue = real payers only: trials and free-for-client (complimentary) plans aren't MRR.
       if (org.complimentary === 1) complimentaryAccounts++;
       if (isPayingOrg(org)) {
         const price = PLAN_PRICES[canonicalPlan(org.plan)];
         mrr += price;
         paidAccounts++;
-
-        if (new Date(org.createdAt).getTime() >= thirtyDaysAgo.getTime()) {
-          newMrr += price;
-        }
-        if (canonicalPlan(org.plan) === "unlimited") {
-          expansionMrr += PLAN_PRICES.unlimited - PLAN_PRICES.starter; // expansion delta over Starter
-        }
+        if (new Date(org.createdAt).getTime() >= since) newAccountsMrr += price;
       } else {
         freeAccounts++;
       }
     }
+    return { mrr, paidAccounts, freeAccounts, complimentaryAccounts, newAccountsMrr };
+  }
 
-    const arr = mrr * 12;
-    const arpu = paidAccounts > 0 ? Math.round(mrr / paidAccounts) : 0;
+  // Just the headline numbers (console header) — no health model or funnel.
+  static async getSummary(): Promise<{ mrr: number; paidAccounts: number }> {
+    const { mrr, paidAccounts } = await this.revenue();
+    return { mrr, paidAccounts };
+  }
 
-    const [healthList, funnel] = await Promise.all([
+  static async getMetrics(): Promise<RevOpsMetrics> {
+    const [{ mrr, paidAccounts, freeAccounts, complimentaryAccounts, newAccountsMrr }, healthList, funnel] = await Promise.all([
+      this.revenue(),
       this.listTenantHealth(50),
       this.getLifecycleFunnel(30),
     ]);
     const atRiskList = healthList.filter((t) => t.health === "at_risk" || t.health === "critical");
-    const churnRiskCount = atRiskList.length;
-    const churnRiskMrr = atRiskList.reduce((acc, t) => acc + (PLAN_PRICES[canonicalPlan(t.plan)] ?? 0), 0);
-    const startingMrr = Math.max(0, mrr - newMrr);
-
-    const waterfall: MrrWaterfall = {
-      startingMrr,
-      newMrr,
-      expansionMrr,
-      churnRiskMrr,
-      netMrr: mrr,
-    };
-
     return {
       mrr,
-      arr,
-      arpu,
+      arr: mrr * 12,
+      arpu: paidAccounts > 0 ? Math.round(mrr / paidAccounts) : 0,
       paidAccounts,
       complimentaryAccounts,
       freeAccounts,
-      churnRiskCount,
-      waterfall,
+      churnRiskCount: atRiskList.length,
+      churnRiskMrr: atRiskList.reduce((acc, t) => acc + (PLAN_PRICES[canonicalPlan(t.plan)] ?? 0), 0),
+      newAccountsMrr,
       funnel,
     };
   }
@@ -223,9 +202,10 @@ export class RevOpsService {
         slug: organizations.slug,
         plan: organizations.plan,
         createdAt: organizations.createdAt,
+        aiUsed: organizations.aiCreditsUsed,
+        aiPeriod: organizations.aiCreditsPeriod,
       })
-      .from(organizations)
-      .limit(limit);
+      .from(organizations);
 
     const latestLeads = await db
       .select({
@@ -243,9 +223,8 @@ export class RevOpsService {
       .where(isNull(users.deletedAt))
       .groupBy(users.organizationId);
 
-    const creditsMap = await PlatformConfigService.get<
-      Record<string, { aiCredits: number; whatsappCredits: number }>
-    >("tenant_credits", {});
+    const { limitsFor, currentPeriod } = await import("@/domains/billing/planService");
+    const period = currentPeriod();
 
     const leadMap = new Map(latestLeads.map((r) => [r.orgId, { count: Number(r.c), last: r.lastActivity }]));
     const userMap = new Map(userCounts.map((r) => [r.orgId, Number(r.c)]));
@@ -263,7 +242,8 @@ export class RevOpsService {
       else if (daysInactive >= 7) health = "at_risk";
       else if (daysInactive >= 3) health = "slowing";
 
-      const credits = creditsMap[o.id] ?? { aiCredits: 100, whatsappCredits: 500 };
+      const allowance = limitsFor(o.plan ?? "free").aiCredits;
+      const used = o.aiPeriod === period ? o.aiUsed : 0;
 
       return {
         id: o.id,
@@ -275,27 +255,33 @@ export class RevOpsService {
         lastActiveAt: lastActiveDate ? new Date(lastActiveDate).toISOString() : null,
         daysInactive,
         health,
-        aiCredits: credits.aiCredits,
-        whatsappCredits: credits.whatsappCredits,
+        aiCreditsLeft: Math.max(0, allowance - used),
+        aiCreditsMax: allowance - Math.min(0, used),
       };
-    }).sort((a, b) => b.daysInactive - a.daysInactive);
+    })
+      // Rank EVERY tenant, then take the worst — not an arbitrary first-N slice of the table.
+      .sort((a, b) => b.daysInactive - a.daysInactive)
+      .slice(0, limit);
   }
 
-  static async grantCredits(
-    organizationId: string,
-    aiGrant: number,
-    whatsappGrant: number
-  ): Promise<{ aiCredits: number; whatsappCredits: number }> {
-    const creditsMap = await PlatformConfigService.get<
-      Record<string, { aiCredits: number; whatsappCredits: number }>
-    >("tenant_credits", {});
-
-    const current = creditsMap[organizationId] ?? { aiCredits: 100, whatsappCredits: 500 };
-    current.aiCredits = Math.max(0, current.aiCredits + aiGrant);
-    current.whatsappCredits = Math.max(0, current.whatsappCredits + whatsappGrant);
-    creditsMap[organizationId] = current;
-
-    await PlatformConfigService.set("tenant_credits", creditsMap);
-    return current;
+  // Bonus AI credits for THIS month, on the same meter the product actually enforces
+  // (organizations.ai_credits_used): granting N lowers this month's usage by N (it can go negative,
+  // which is the bonus). A new month resets the meter, so a grant doesn't carry over.
+  static async grantCredits(organizationId: string, aiGrant: number): Promise<{ used: number; max: number }> {
+    const { db } = await import("@/db");
+    const { organizations } = await import("@/db/schema");
+    const { eq, sql } = await import("drizzle-orm");
+    const { PlanService, currentPeriod } = await import("@/domains/billing/planService");
+    const period = currentPeriod();
+    const rows = await db
+      .update(organizations)
+      .set({
+        aiCreditsUsed: sql`CASE WHEN ${organizations.aiCreditsPeriod} = ${period} THEN ${organizations.aiCreditsUsed} - ${aiGrant} ELSE ${-aiGrant} END`,
+        aiCreditsPeriod: period,
+      })
+      .where(eq(organizations.id, organizationId))
+      .returning({ id: organizations.id });
+    if (!rows.length) throw new Error("Organization not found.");
+    return PlanService.aiCredits(organizationId);
   }
 }

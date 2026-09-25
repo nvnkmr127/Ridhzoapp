@@ -232,6 +232,7 @@ export class BillingService {
   static async handleWebhook(
     event: string,
     subscriptionEntity: { id?: string; current_end?: number; plan_id?: string; notes?: Record<string, string> } | undefined,
+    paymentEntity?: { id?: string; amount?: number; status?: string },
   ) {
     const subId = subscriptionEntity?.id;
     if (!subId) return;
@@ -247,6 +248,19 @@ export class BillingService {
     const isCurrent = org.subscriptionId === subId;
 
     const periodEnd = subscriptionEntity.current_end ? new Date(subscriptionEntity.current_end * 1000) : undefined;
+
+    // Every real charge gets its GST tax invoice — before the stale-event drop below, because a first
+    // charge can carry the same period as the activation already stored. Idempotent per payment id,
+    // so webhook retries are safe; best-effort, so a ledger hiccup never blocks plan reconciliation.
+    if (event === "subscription.charged" && paymentEntity?.id && paymentEntity.amount) {
+      const { InvoiceService } = await import("./invoiceService");
+      await InvoiceService.generateInvoice({
+        orgId: org.id,
+        plan: razorpay.planForPlanId(subscriptionEntity.plan_id) ?? org.plan ?? "starter",
+        total: paymentEntity.amount / 100,
+        paymentId: paymentEntity.id,
+      }).catch((e) => console.error(`[billing] invoice for payment ${paymentEntity.id} failed`, e));
+    }
 
     // Razorpay does not guarantee delivery order. Drop a stale/duplicate activation whose billing
     // period is not newer than what we've already stored, so a late "charged" can't resurrect a

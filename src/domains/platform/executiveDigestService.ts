@@ -116,8 +116,8 @@ export class ExecutiveDigestService {
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
         <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
           <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: #64748b;">Annual Run Rate (ARR)</div>
-          <div style="font-size: 24px; font-weight: 800; color: #0f172a; margin-top: 4px;">$${data.revops.arr.toLocaleString()}</div>
-          <div style="font-size: 12px; color: #059669; margin-top: 2px;">MRR: $${data.revops.mrr.toLocaleString()} • ARPU: $${data.revops.arpu}</div>
+          <div style="font-size: 24px; font-weight: 800; color: #0f172a; margin-top: 4px;">₹${data.revops.arr.toLocaleString()}</div>
+          <div style="font-size: 12px; color: #059669; margin-top: 2px;">MRR: ₹${data.revops.mrr.toLocaleString()} • ARPU: ₹${data.revops.arpu}</div>
         </div>
 
         <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px;">
@@ -209,7 +209,7 @@ export class ExecutiveDigestService {
 
     const data = await this.buildDigestData();
     const html = this.renderDigestHtml(data);
-    const subject = `[Ridhzo Executive] ${config.frequency.toUpperCase()} Briefing: $${data.revops.arr.toLocaleString()} ARR • ${data.metrics.totalOrgs} Tenants`;
+    const subject = `[Ridhzo Executive] ${config.frequency.toUpperCase()} Briefing: ₹${data.revops.arr.toLocaleString()} ARR • ${data.metrics.totalOrgs} Tenants`;
 
     let successCount = 0;
     for (const to of recipients) {

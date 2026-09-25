@@ -51,8 +51,11 @@ import {
   Target,
 } from "lucide-react";
 import type { MetaCapiConfig, CapiEventLog } from "@/domains/platform/capiService";
+
+// The console never receives the CAPI access token — only whether one is stored.
+type PublicCapiConfig = Omit<MetaCapiConfig, "accessToken"> & { accessToken: string; hasAccessToken: boolean };
 import type { CampaignAnalytics } from "@/domains/platform/attributionService";
-import { saveCapiConfigAction, sendTestCapiPingAction } from "@/lib/actions/platform";
+import { saveCapiConfigAction } from "@/lib/actions/platform";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -77,8 +80,6 @@ import {
   setOrgSeatOverrideAction,
   setBroadcastAction,
   retryAllFailedDeliveriesAction,
-  purgeRecycleBinAction,
-  toggleFeatureFlagAction,
   grantTenantCreditsAction,
   toggleMaintenanceModeAction,
   searchDsrSubjectAction,
@@ -89,13 +90,10 @@ import {
   triggerSuspensionRetentionScanAction,
   saveOpsAlertConfigAction,
   testOpsAlertAction,
-  getTenantSecurityPolicyAction,
-  setTenantSecurityPolicyAction,
   listBillingLifecycleAction,
   extendGracePeriodAction,
   markTenantManuallyPaidAction,
   sendDunningNoticeAction,
-  simulatePaymentFailureAction,
   generateInvoiceAction,
   voidInvoiceAction,
   issueCreditNoteAction,
@@ -116,12 +114,8 @@ import {
   listAnomaliesAction,
   resolveAnomalyAction,
   remediateAnomalyAction,
-  setTenantFlagOverrideAction,
   assignSupportTicketAction,
   addSupportTicketNoteAction,
-  registerCustomDomainAction,
-  verifyCustomDomainAction,
-  removeCustomDomainAction,
 } from "@/lib/actions/platform";
 import type {
   PlatformMetrics,
@@ -134,18 +128,15 @@ import type {
   PlatformActivitySummary,
 } from "@/domains/platform/service";
 import type { BroadcastConfig } from "@/domains/platform/configService";
-import type { FeatureFlag } from "@/domains/platform/featureFlags";
 import type { RevOpsMetrics, TenantHealthSummary } from "@/domains/platform/revops";
 import type { OpsWebhookConfig } from "@/domains/platform/opsAlertService";
 import type { SubjectMatch } from "@/domains/platform/complianceService";
-import type { TenantSecurityPolicy } from "@/domains/platform/securityPolicyService";
 import type { TenantBillingInfo } from "@/domains/billing/lifecycleService";
 import type { TaxInvoice } from "@/domains/billing/invoiceService";
 import type { Coupon } from "@/domains/billing/couponService";
 import type { SupportTicket } from "@/domains/platform/supportService";
 import type { ExecutiveDigestConfig } from "@/domains/platform/executiveDigestService";
 import type { SecurityAnomaly } from "@/domains/platform/anomalyDetectionService";
-import type { CustomDomainRecord } from "@/domains/platform/customDomainService";
 
 const PLANS = ["free", "starter", "unlimited"];
 
@@ -156,7 +147,8 @@ export function PlatformConsole({
   metrics,
   escalations = [],
   dlq = [],
-  initialFlags = [],
+  initialTab = "tenants",
+  revenueSummary,
   revops,
   tenantHealth = [],
   initialMaintenance = { enabled: false, message: "" },
@@ -168,7 +160,6 @@ export function PlatformConsole({
   initialApiKeys = [],
   initialDigestConfig,
   initialAnomalies = [],
-  initialDomains = [],
   initialCapiConfig,
   initialCapiLogs = [],
   initialCampaigns,
@@ -180,7 +171,8 @@ export function PlatformConsole({
   metrics?: PlatformMetrics;
   escalations?: EscalatedLeadSummary[];
   dlq?: FailedDeliverySummary[];
-  initialFlags?: FeatureFlag[];
+  initialTab?: string;
+  revenueSummary?: { mrr: number; paidAccounts: number };
   revops?: RevOpsMetrics;
   tenantHealth?: TenantHealthSummary[];
   initialMaintenance?: { enabled: boolean; message: string };
@@ -192,8 +184,7 @@ export function PlatformConsole({
   initialApiKeys?: FleetApiKeySummary[];
   initialDigestConfig?: ExecutiveDigestConfig;
   initialAnomalies?: SecurityAnomaly[];
-  initialDomains?: CustomDomainRecord[];
-  initialCapiConfig?: MetaCapiConfig;
+  initialCapiConfig?: PublicCapiConfig;
   initialCapiLogs?: CapiEventLog[];
   initialCampaigns?: {
     campaigns: CampaignAnalytics[];
@@ -214,13 +205,12 @@ export function PlatformConsole({
   const [bulkBusy, setBulkBusy] = React.useState(false);
 
   // Meta Conversions & Ad Source Tracking State
-  const [capiConfig, setCapiConfig] = React.useState<MetaCapiConfig>(
-    initialCapiConfig ?? { pixelId: "", accessToken: "", testEventCode: "", enabled: false }
+  const [capiConfig, setCapiConfig] = React.useState<PublicCapiConfig>(
+    initialCapiConfig ?? { pixelId: "", accessToken: "", testEventCode: "", enabled: false, hasAccessToken: false }
   );
   const [capiLogs, setCapiLogs] = React.useState<CapiEventLog[]>(initialCapiLogs ?? []);
   const [campaignStats] = React.useState(initialCampaigns);
   const [savingCapi, setSavingCapi] = React.useState(false);
-  const [testingCapi, setTestingCapi] = React.useState(false);
 
   const handleSaveCapi = async () => {
     setSavingCapi(true);
@@ -237,48 +227,14 @@ export function PlatformConsole({
     }
   };
 
-  const handleTestCapiPing = async () => {
-    setTestingCapi(true);
-    try {
-      const res = await sendTestCapiPingAction();
-      if (res.ok) {
-        toast({ title: "Test Event Sent", description: "Dispatched CompleteRegistration to Meta Conversions." });
-        const { listCapiLogsAction } = await import("@/lib/actions/platform");
-        const fresh = await listCapiLogsAction(25);
-        if (fresh.ok) setCapiLogs(fresh.data);
-      } else {
-        toast({ title: "Conversions Test Failed", description: res.message, variant: "destructive" });
-      }
-    } finally {
-      setTestingCapi(false);
-    }
-  };
-
-  const urlTab = searchParams.get("tab");
-  const validTabs = React.useMemo(
-    () => ["tenants", "revops", "support", "flags", "compliance", "users", "escalations", "dlq", "system"] as const,
-    []
-  );
-  type TabKey = typeof validTabs[number];
-
-  const [tab, setTabState] = React.useState<TabKey>(
-    urlTab && (validTabs as readonly string[]).includes(urlTab) ? (urlTab as TabKey) : "tenants"
-  );
-
-  React.useEffect(() => {
-    if (urlTab && (validTabs as readonly string[]).includes(urlTab) && urlTab !== tab) {
-      setTabState(urlTab as TabKey);
-    }
-  }, [urlTab, validTabs, tab]);
-
+  // The server page loads data per tab and remounts this component (key={tab}) when ?tab= changes,
+  // so the tab comes from the server; switching just navigates.
+  type TabKey = "tenants" | "revops" | "support" | "announcements" | "compliance" | "users" | "escalations" | "dlq" | "system";
+  const tab = initialTab as TabKey;
   const setTab = React.useCallback(
-    (nextTab: TabKey) => {
-      setTabState(nextTab);
-      router.replace(`/admin?tab=${nextTab}`, { scroll: false });
-    },
+    (nextTab: TabKey) => router.push(`/admin?tab=${nextTab}`, { scroll: false }),
     [router]
   );
-  const [flags, setFlags] = React.useState<FeatureFlag[]>(initialFlags ?? []);
   const [maintenance, setMaintenance] = React.useState<{ enabled: boolean; message: string }>(
     initialMaintenance ?? { enabled: false, message: "" }
   );
@@ -329,7 +285,10 @@ export function PlatformConsole({
     }
   };
 
+  const billingName = (orgId: string) => billingList.find((b) => b.orgId === orgId)?.orgName ?? "this workspace";
+
   const handleMarkPaid = async (orgId: string) => {
+    if (!confirm(`Mark ${billingName(orgId)} as paid offline for 30 days? They get full access without a charge.`)) return;
     setBillingBusyId(`paid-${orgId}`);
     try {
       const res = await markTenantManuallyPaidAction(orgId, 30);
@@ -345,6 +304,7 @@ export function PlatformConsole({
   };
 
   const handleSendDunning = async (orgId: string) => {
+    if (!confirm(`Email a payment reminder to ${billingName(orgId)}'s admins now?`)) return;
     setBillingBusyId(`dunning-${orgId}`);
     try {
       const res = await sendDunningNoticeAction(orgId);
@@ -353,24 +313,6 @@ export function PlatformConsole({
         await refreshBillingFleet();
       } else {
         toast({ title: "Failed to send dunning", description: res.message, variant: "destructive" });
-      }
-    } finally {
-      setBillingBusyId(null);
-    }
-  };
-
-  const handleSimulateFailure = async (orgId: string) => {
-    setBillingBusyId(`sim-${orgId}`);
-    try {
-      const res = await simulatePaymentFailureAction(orgId, "Card declined: insufficient funds (Simulated)");
-      if (res.ok) {
-        toast({
-          title: "Payment Failure Simulated",
-          description: "7-day grace period started; dunning email & in-app alert dispatched.",
-        });
-        await refreshBillingFleet();
-      } else {
-        toast({ title: "Simulation failed", description: res.message, variant: "destructive" });
       }
     } finally {
       setBillingBusyId(null);
@@ -697,6 +639,11 @@ export function PlatformConsole({
   };
 
   const handleRemediateAnomaly = async (id: string) => {
+    const a = anomalies.find((x) => x.id === id);
+    const what = a?.suggestedAction === "suspend_org" ? `SUSPEND ${a.organizationName} (all its users are locked out)`
+      : a?.suggestedAction === "terminate_sessions" ? `sign out every user of ${a.organizationName}`
+      : "apply the suggested fix";
+    if (!confirm(`This will ${what}. Continue?`)) return;
     setAnomalyBusyId(`rem-${id}`);
     try {
       const res = await remediateAnomalyAction(id);
@@ -726,47 +673,6 @@ export function PlatformConsole({
     }
   };
 
-  // --- Custom Domains State ---
-  const [domains, setDomains] = React.useState<CustomDomainRecord[]>(initialDomains ?? []);
-  const [domainModalOpen, setDomainModalOpen] = React.useState(false);
-  const [domainOrgId, setDomainOrgId] = React.useState("");
-  const [domainNameInput, setDomainNameInput] = React.useState("");
-  const [domainBusy, setDomainBusy] = React.useState(false);
-
-  const handleRegisterDomain = async () => {
-    if (!domainOrgId || !domainNameInput.trim()) return;
-    setDomainBusy(true);
-    try {
-      const res = await registerCustomDomainAction(domainOrgId, domainNameInput.trim());
-      if (res.ok) {
-        toast({ title: "Custom Domain Registered", description: `${res.data.domain} mapped.` });
-        setDomains((prev) => [res.data, ...prev.filter((d) => d.id !== res.data.id)]);
-        setDomainModalOpen(false);
-        setDomainNameInput("");
-      } else {
-        toast({ title: "Registration failed", description: res.message, variant: "destructive" });
-      }
-    } finally {
-      setDomainBusy(false);
-    }
-  };
-
-  const handleVerifyDomain = async (id: string) => {
-    const res = await verifyCustomDomainAction(id);
-    if (res.ok && res.data) {
-      toast({ title: "Domain Verified & SSL Active", description: `${res.data.domain} is verified.` });
-      setDomains((prev) => prev.map((d) => (d.id === id ? res.data! : d)));
-    }
-  };
-
-  const handleRemoveDomain = async (id: string) => {
-    const res = await removeCustomDomainAction(id);
-    if (res.ok) {
-      toast({ title: "Custom Domain Removed" });
-      setDomains((prev) => prev.filter((d) => d.id !== id));
-    }
-  };
-
   // --- Support Triage & Internal Notes State ---
   const [ticketNoteText, setTicketNoteText] = React.useState("");
   const [ticketActiveTab, setTicketActiveTab] = React.useState<"messages" | "notes">("messages");
@@ -791,22 +697,9 @@ export function PlatformConsole({
     }
   };
 
-  // --- Tenant Feature Overrides ---
-  const handleToggleTenantFlag = async (flagKey: string, orgId: string, enabled: boolean) => {
-    const res = await setTenantFlagOverrideAction(flagKey, orgId, enabled);
-    if (res.ok && res.data) {
-      toast({
-        title: enabled ? "Tenant Override Granted" : "Tenant Override Revoked",
-        description: `Updated access for flag ${flagKey}.`,
-      });
-      setFlags((prev) => prev.map((f) => (f.key === flagKey ? res.data! : f)));
-    }
-  };
-
   // Credits Grant Modal state
   const [creditModalOrg, setCreditModalOrg] = React.useState<TenantHealthSummary | null>(null);
   const [aiGrantAmount, setAiGrantAmount] = React.useState("500");
-  const [whatsappGrantAmount, setWhatsappGrantAmount] = React.useState("250");
   const [grantingCredits, setGrantingCredits] = React.useState(false);
 
   // Compliance & GDPR Data Request state
@@ -836,13 +729,6 @@ export function PlatformConsole({
   );
   const [opsAlertSaving, setOpsAlertSaving] = React.useState(false);
   const [testingOpsAlert, setTestingOpsAlert] = React.useState(false);
-
-  // Tenant Security Policy state
-  const [secPolicyOrgId, setSecPolicyOrgId] = React.useState<string>(initial[0]?.id ?? "");
-  const [secPolicy, setSecPolicy] = React.useState<TenantSecurityPolicy | null>(null);
-  const [secPolicyLoading, setSecPolicyLoading] = React.useState(false);
-  const [secPolicySaving, setSecPolicySaving] = React.useState(false);
-  const [allowedCidrsInput, setAllowedCidrsInput] = React.useState("");
 
   // Org search & filtering
   const urlOrgSearch = searchParams.get("q") || searchParams.get("search") || "";
@@ -1048,7 +934,7 @@ export function PlatformConsole({
   }
 
   async function handleRetryAllDlq() {
-    if (!confirm("Retry all failed webhook deliveries across all tenants?")) return;
+    if (!confirm("Retry up to 100 failed webhook deliveries across ALL tenants? Their endpoints will receive these events again.")) return;
     setBusy("dlq_retry");
     const res = await retryAllFailedDeliveriesAction();
     setBusy(null);
@@ -1060,25 +946,14 @@ export function PlatformConsole({
     }
   }
 
-  async function handlePurgeRecycleBin() {
-    if (!confirm("Permanently delete all soft-deleted items across all tenants? This cannot be undone.")) return;
-    setBusy("purge_trash");
-    const res = await purgeRecycleBinAction();
-    setBusy(null);
-    if (!res.ok) {
-      toast({ variant: "destructive", title: "Failed to purge recycle bin", description: res.message });
-    } else {
-      toast({ title: `Permanently purged ${res.data.purgedCount} soft-deleted items` });
-      router.refresh();
-    }
-  }
-
   function exportOrganizationsCsv() {
+    // Org names are tenant-controlled: neutralise spreadsheet formulas (=, +, -, @) and quote.
+    const cell = (v: string) => `"${(/^[=+\-@\t\r]/.test(v) ? `'${v}` : v).replace(/"/g, '""')}"`;
     const headers = ["Organization,Slug,Plan,Seats,Status,Users,Leads,Created At"];
     const rows = filteredOrgs.map((o) =>
       [
-        `"${o.name.replace(/"/g, '""')}"`,
-        `"${o.slug}"`,
+        cell(o.name),
+        cell(o.slug),
         o.plan,
         o.customSeats ? `${o.customSeats} (custom)` : "plan default",
         o.suspended ? "Suspended" : "Active",
@@ -1097,19 +972,9 @@ export function PlatformConsole({
     document.body.removeChild(link);
   }
 
-  async function handleToggleFlag(key: string, currentEnabled: boolean) {
-    const next = !currentEnabled;
-    setFlags((prev) => prev.map((f) => (f.key === key ? { ...f, enabled: next } : f)));
-    const res = await toggleFeatureFlagAction(key, next);
-    if (!res.ok) {
-      setFlags((prev) => prev.map((f) => (f.key === key ? { ...f, enabled: currentEnabled } : f)));
-      toast({ variant: "destructive", title: "Failed to update feature flag", description: res.message });
-    } else {
-      toast({ title: `${key} ${next ? "enabled" : "disabled"}` });
-    }
-  }
-
   async function handleSaveMaintenance() {
+    // Turning it on locks every tenant out of the app — make the operator type it.
+    if (maintenance.enabled && window.prompt('This locks EVERY workspace out of Ridhzo (super-admins excepted). Type MAINTENANCE to confirm.')?.trim() !== "MAINTENANCE") return;
     setMaintenanceSaving(true);
     const res = await toggleMaintenanceModeAction(maintenance.enabled, maintenance.message);
     setMaintenanceSaving(false);
@@ -1128,26 +993,23 @@ export function PlatformConsole({
   async function handleGrantCredits() {
     if (!creditModalOrg) return;
     const ai = parseInt(aiGrantAmount, 10);
-    const wa = parseInt(whatsappGrantAmount, 10);
-    if (isNaN(ai) || isNaN(wa) || (ai <= 0 && wa <= 0)) {
+    if (isNaN(ai) || ai <= 0) {
       toast({ variant: "destructive", title: "Enter a positive number of credits." });
       return;
     }
     setGrantingCredits(true);
-    const res = await grantTenantCreditsAction(creditModalOrg.id, ai || 0, wa || 0);
+    const res = await grantTenantCreditsAction(creditModalOrg.id, ai);
     setGrantingCredits(false);
     if (!res.ok) {
       toast({ variant: "destructive", title: "Failed to grant credits", description: res.message });
     } else {
       toast({
-        title: "Credits successfully granted",
-        description: `New balance: ${res.data.aiCredits} AI credits, ${res.data.whatsappCredits} WhatsApp credits.`,
+        title: "Credits granted",
+        description: `${res.data.max - res.data.used} AI credits left this month (of ${res.data.max}).`,
       });
       setHealthList((prev) =>
         prev.map((t) =>
-          t.id === creditModalOrg.id
-            ? { ...t, aiCredits: res.data.aiCredits, whatsappCredits: res.data.whatsappCredits }
-            : t
+          t.id === creditModalOrg.id ? { ...t, aiCreditsLeft: res.data.max - res.data.used, aiCreditsMax: res.data.max } : t
         )
       );
       setCreditModalOrg(null);
@@ -1309,44 +1171,6 @@ export function PlatformConsole({
       toast({ title: "Ping delivered successfully!", description: res.data.message });
     }
   }
-
-  async function handleLoadSecPolicy(orgId: string) {
-    setSecPolicyOrgId(orgId);
-    setSecPolicyLoading(true);
-    const res = await getTenantSecurityPolicyAction(orgId);
-    setSecPolicyLoading(false);
-    if (res.ok) {
-      setSecPolicy(res.data);
-      setAllowedCidrsInput(res.data.allowedCidrs.join(", "));
-    }
-  }
-
-  async function handleSaveSecPolicy() {
-    if (!secPolicyOrgId) return;
-    const cidrs = allowedCidrsInput
-      .split(",")
-      .map((c) => c.trim())
-      .filter(Boolean);
-    setSecPolicySaving(true);
-    const res = await setTenantSecurityPolicyAction(secPolicyOrgId, {
-      allowedCidrs: cidrs,
-      enforceMfa: secPolicy?.enforceMfa ?? false,
-      sessionMaxAgeHours: secPolicy?.sessionMaxAgeHours ?? 8,
-    });
-    setSecPolicySaving(false);
-    if (!res.ok) {
-      toast({ variant: "destructive", title: "Failed to update security policy", description: res.message });
-    } else {
-      setSecPolicy(res.data);
-      toast({ title: "Tenant security policy updated" });
-    }
-  }
-
-  React.useEffect(() => {
-    if (secPolicyOrgId) {
-      handleLoadSecPolicy(secPolicyOrgId);
-    }
-  }, [secPolicyOrgId]);
 
   const filteredHealth = React.useMemo(() => {
     return healthList.filter((t) => {
@@ -1514,12 +1338,12 @@ export function PlatformConsole({
           )}
         </Button>
         <Button
-          variant={tab === "flags" ? "default" : "ghost"} aria-current={tab === "flags" ? "page" : undefined}
+          variant={tab === "announcements" ? "default" : "ghost"} aria-current={tab === "announcements" ? "page" : undefined}
           size="sm"
-          onClick={() => setTab("flags")}
+          onClick={() => setTab("announcements")}
           className="gap-1.5"
         >
-          <Sliders className="h-3.5 w-3.5" /> Feature Flags
+          <Megaphone className="h-3.5 w-3.5" /> Announcements
           {maintenance.enabled && (
             <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-xs font-medium text-amber-600">
               Maint
@@ -2368,18 +2192,9 @@ export function PlatformConsole({
                     Recycle Bin (Soft-Deleted Leads)
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {metrics?.storage?.recycleBinCount ?? 0} items waiting for 30-day auto-purge
+                    {metrics?.storage?.recycleBinCount ?? 0} deleted leads, restorable by each workspace until their automatic 30-day purge
                   </div>
                 </div>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="gap-1.5 text-xs"
-                  disabled={busy === "purge_trash" || (metrics?.storage?.recycleBinCount ?? 0) === 0}
-                  onClick={handlePurgeRecycleBin}
-                >
-                  <Trash2 className="h-3.5 w-3.5" /> Purge Trash Now
-                </Button>
               </div>
             </div>
           </div>
@@ -2480,89 +2295,6 @@ export function PlatformConsole({
                     {opsAlertSaving ? "Saving..." : "Save Configuration"}
                   </Button>
                 </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Tenant Enterprise Security Policy (IP Whitelist & Enforced MFA) */}
-          <div className="rounded-2xl border bg-card p-5 space-y-4">
-            <div className="flex items-center gap-2 border-b pb-3">
-              <Lock className="h-5 w-5 text-primary" />
-              <div>
-                <h3 className="text-sm font-semibold">Tenant Enterprise Security Policy (IP Whitelisting &amp; MFA)</h3>
-                <p className="text-xs text-muted-foreground">
-                  Enforce strict network CIDR restrictions and two-factor authentication requirements for enterprise client accounts.
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-medium text-foreground">Select Organization</label>
-                <Select value={secPolicyOrgId} onValueChange={(val) => handleLoadSecPolicy(val)}>
-                  <SelectTrigger className="mt-1 h-9 text-xs">
-                    <SelectValue placeholder="Select Organization" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {orgs.map((o) => (
-                      <SelectItem key={o.id} value={o.id} className="text-xs">
-                        {o.name} ({o.slug}) — Plan: {o.plan.toUpperCase()}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-foreground">Allowed Corporate IP / CIDR Ranges</label>
-                <Input
-                  placeholder="e.g. 192.168.1.0/24, 10.0.0.1, 203.0.113.50 (leave empty for unconstrained)"
-                  value={allowedCidrsInput}
-                  onChange={(e) => setAllowedCidrsInput(e.target.value)}
-                  className="mt-1 h-9 text-xs font-mono"
-                />
-                <p className="text-[11px] text-muted-foreground mt-1">Comma-separated IPv4/IPv6 CIDR addresses.</p>
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-4 pt-1">
-                <label className="flex items-center gap-2 cursor-pointer border rounded-lg p-2.5 bg-muted/20 flex-1">
-                  <input
-                    type="checkbox"
-                    checked={secPolicy?.enforceMfa ?? false}
-                    onChange={(e) => setSecPolicy((prev) => (prev ? { ...prev, enforceMfa: e.target.checked } : null))}
-                    className="rounded border-border"
-                  />
-                  <div>
-                    <div className="text-xs font-medium">Enforce Two-Factor Authentication (2FA)</div>
-                    <div className="text-[11px] text-muted-foreground">Requires MFA for all team members under this tenant.</div>
-                  </div>
-                </label>
-
-                <div className="border rounded-lg p-2.5 bg-muted/20 w-full sm:w-48 space-y-1">
-                  <label className="text-xs font-medium">Session Max Age (Hours)</label>
-                  <Input
-                    type="number"
-                    min="1"
-                    max="168"
-                    value={secPolicy?.sessionMaxAgeHours ?? 8}
-                    onChange={(e) => {
-                      const v = parseInt(e.target.value, 10);
-                      setSecPolicy((prev) => (prev ? { ...prev, sessionMaxAgeHours: isNaN(v) ? 8 : v } : null));
-                    }}
-                    className="h-7 text-xs font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end pt-2">
-                <Button
-                  size="sm"
-                  className="h-8 text-xs"
-                  disabled={secPolicySaving || secPolicyLoading || !secPolicyOrgId}
-                  onClick={handleSaveSecPolicy}
-                >
-                  {secPolicySaving ? "Saving Policy..." : "Update Security Policy"}
-                </Button>
               </div>
             </div>
           </div>
@@ -2728,102 +2460,6 @@ export function PlatformConsole({
                               Revoke Key
                             </Button>
                           )}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* White-Label Custom Domain & CNAME SSL Manager */}
-          <div className="lg:col-span-2 rounded-2xl border bg-card shadow-sm overflow-hidden">
-            <div className="p-5 border-b flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <Globe className="h-4 w-4 text-primary" /> White-Label Custom Domains &amp; CNAME Routing
-                </h3>
-                <p className="text-xs text-muted-foreground">
-                  Manage tenant custom domain hostnames (e.g. crm.clientagency.com), automated SSL certificate status, and DNS CNAME targets.
-                </p>
-              </div>
-              <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => setDomainModalOpen(true)}>
-                <Plus className="h-3.5 w-3.5" /> Map Custom Domain
-              </Button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b bg-muted/40 text-left font-medium text-muted-foreground">
-                    <th className="p-3 pl-5">Custom Domain (FQDN)</th>
-                    <th className="p-3">Organization</th>
-                    <th className="p-3">CNAME Target</th>
-                    <th className="p-3">SSL Status</th>
-                    <th className="p-3">DNS Verified</th>
-                    <th className="p-3 pr-5 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {domains.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="p-6 text-center text-muted-foreground">
-                        No custom domains mapped yet across tenant fleet.
-                      </td>
-                    </tr>
-                  ) : (
-                    domains.map((dom) => (
-                      <tr key={dom.id} className="hover:bg-muted/30 transition-colors">
-                        <td className="p-3 pl-5 font-mono font-semibold text-foreground flex items-center gap-1.5">
-                          <Globe className="h-3.5 w-3.5 text-primary" />
-                          {dom.domain}
-                        </td>
-                        <td className="p-3 text-muted-foreground">{dom.orgName}</td>
-                        <td className="p-3 font-mono text-muted-foreground">{dom.cnameTarget}</td>
-                        <td className="p-3">
-                          <Badge
-                            className={
-                              dom.sslStatus === "active"
-                                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 text-[10px]"
-                                : "bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[10px]"
-                            }
-                          >
-                            SSL {dom.sslStatus.toUpperCase()}
-                          </Badge>
-                        </td>
-                        <td className="p-3">
-                          {dom.verified ? (
-                            <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
-                              <CheckCircle2 className="h-3.5 w-3.5" /> Verified
-                            </span>
-                          ) : (
-                            <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-medium">
-                              <AlertTriangle className="h-3.5 w-3.5" /> Pending DNS
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-3 pr-5 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {!dom.verified && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-6 px-2 text-[10px]"
-                                onClick={() => handleVerifyDomain(dom.id)}
-                              >
-                                Verify CNAME
-                              </Button>
-                            )}
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-6 px-2 text-[10px] text-destructive hover:bg-destructive/10"
-                              onClick={() => handleRemoveDomain(dom.id)}
-                            >
-                              Remove
-                            </Button>
-                          </div>
                         </td>
                       </tr>
                     ))
@@ -3200,66 +2836,37 @@ export function PlatformConsole({
             </div>
           </div>
 
-          {/* Monthly Revenue Waterfall & Revenue Dynamics Card */}
-          {revops?.waterfall && (
+          {/* Revenue at a glance — only figures we can actually compute (list-price MRR; no invented upgrade/churn flows) */}
+          {revops && (
             <div className="rounded-2xl border bg-card p-5 shadow-sm space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b pb-3 gap-2">
-                <div>
-                  <h3 className="text-sm font-semibold flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4 text-primary" /> Monthly Revenue Waterfall &amp; Revenue Expansion Dynamics
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Breakdown of monthly recurring revenue flow: baseline retention, new acquisition, tier upgrades, and churn exposure.
-                  </p>
-                </div>
-                <Badge variant="outline" className="font-mono text-xs">
-                  Net Monthly Revenue: ₹{revops.waterfall.netMrr.toLocaleString()}
-                </Badge>
+              <div className="border-b pb-3">
+                <h3 className="text-sm font-semibold flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-primary" /> Monthly revenue
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  At list price for paying workspaces. Trials and complimentary plans are excluded; coupons aren&apos;t deducted.
+                </p>
               </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-1">
-                <div className="rounded-lg bg-muted/40 p-3">
-                  <div className="text-[11px] font-medium text-muted-foreground uppercase">Starting Monthly Revenue</div>
-                  <div className="text-lg font-bold mt-1 text-foreground">
-                    ₹{revops.waterfall.startingMrr.toLocaleString()}
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">Carryover base</p>
-                </div>
-
-                <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3">
-                  <div className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 uppercase">
-                    (+) New Monthly Revenue
-                  </div>
-                  <div className="text-lg font-bold mt-1 text-emerald-600 dark:text-emerald-400">
-                    +₹{revops.waterfall.newMrr.toLocaleString()}
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">&lt;30d acquisitions</p>
-                </div>
-
-                <div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-3">
-                  <div className="text-[11px] font-medium text-blue-700 dark:text-blue-400 uppercase">
-                    (+) Expansion
-                  </div>
-                  <div className="text-lg font-bold mt-1 text-blue-600 dark:text-blue-400">
-                    +₹{revops.waterfall.expansionMrr.toLocaleString()}
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">Upgrades to Unlimited</p>
-                </div>
-
-                <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3">
-                  <div className="text-[11px] font-medium text-destructive uppercase">(-) Cancellation Risk</div>
-                  <div className="text-lg font-bold mt-1 text-destructive">
-                    -₹{revops.waterfall.churnRiskMrr.toLocaleString()}
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">At-risk tenant exposure</p>
-                </div>
-
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
                 <div className="rounded-lg bg-primary/10 border border-primary/20 p-3">
-                  <div className="text-[11px] font-medium text-primary uppercase">(=) Net Run Rate</div>
-                  <div className="text-lg font-bold mt-1 text-foreground">
-                    ₹{revops.waterfall.netMrr.toLocaleString()}
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">End of period Monthly Revenue</p>
+                  <div className="text-[11px] font-medium text-primary uppercase">MRR</div>
+                  <div className="text-lg font-bold mt-1 text-foreground">₹{revops.mrr.toLocaleString()}</div>
+                  <p className="text-[10px] text-muted-foreground">{revops.paidAccounts} paying · ARR ₹{revops.arr.toLocaleString()}</p>
+                </div>
+                <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3">
+                  <div className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 uppercase">From new workspaces</div>
+                  <div className="text-lg font-bold mt-1 text-emerald-600 dark:text-emerald-400">₹{revops.newAccountsMrr.toLocaleString()}</div>
+                  <p className="text-[10px] text-muted-foreground">Signed up in the last 30 days</p>
+                </div>
+                <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3">
+                  <div className="text-[11px] font-medium text-destructive uppercase">At risk</div>
+                  <div className="text-lg font-bold mt-1 text-destructive">₹{revops.churnRiskMrr.toLocaleString()}</div>
+                  <p className="text-[10px] text-muted-foreground">{revops.churnRiskCount} inactive 7+ days</p>
+                </div>
+                <div className="rounded-lg bg-muted/40 p-3">
+                  <div className="text-[11px] font-medium text-muted-foreground uppercase">Complimentary</div>
+                  <div className="text-lg font-bold mt-1 text-foreground">{revops.complimentaryAccounts}</div>
+                  <p className="text-[10px] text-muted-foreground">Paid plans given free</p>
                 </div>
               </div>
             </div>
@@ -3542,16 +3149,6 @@ export function PlatformConsole({
                               >
                                 Mark Paid
                               </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 px-2 text-[11px] text-muted-foreground hover:text-destructive"
-                                disabled={billingBusyId === `sim-${b.orgId}`}
-                                onClick={() => handleSimulateFailure(b.orgId)}
-                                title="Simulate payment failure to test grace period & dunning"
-                              >
-                                Test Fail
-                              </Button>
                             </div>
                           </td>
                         </tr>
@@ -3620,8 +3217,7 @@ export function PlatformConsole({
                     <th className="p-3">Health Status</th>
                     <th className="p-3">Activity</th>
                     <th className="p-3">Volume</th>
-                    <th className="p-3">AI Credits</th>
-                    <th className="p-3">WhatsApp Credits</th>
+                    <th className="p-3">AI credits left</th>
                     <th className="p-3 pr-5 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -3681,13 +3277,8 @@ export function PlatformConsole({
                         <td className="p-3">
                           <span className="inline-flex items-center gap-1 font-mono font-medium">
                             <Zap className="h-3 w-3 text-amber-500" />
-                            {tenant.aiCredits.toLocaleString()}
-                          </span>
-                        </td>
-                        <td className="p-3">
-                          <span className="inline-flex items-center gap-1 font-mono font-medium">
-                            <Radio className="h-3 w-3 text-emerald-500" />
-                            {tenant.whatsappCredits.toLocaleString()}
+                            {tenant.aiCreditsLeft.toLocaleString()}
+                            <span className="text-muted-foreground font-normal">/ {tenant.aiCreditsMax.toLocaleString()}</span>
                           </span>
                         </td>
                         <td className="p-3 pr-5 text-right">
@@ -3707,8 +3298,7 @@ export function PlatformConsole({
                               className="h-7 px-2 text-[11px] gap-1"
                               onClick={() => {
                                 setCreditModalOrg(tenant);
-                                setAiGrantAmount("500");
-                                setWhatsappGrantAmount("250");
+                                setAiGrantAmount("100");
                               }}
                             >
                               <Plus className="h-3 w-3" /> Grant Credits
@@ -4833,44 +4423,27 @@ export function PlatformConsole({
       <Dialog open={!!creditModalOrg} onOpenChange={(open) => !open && setCreditModalOrg(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Grant Usage Credits</DialogTitle>
+            <DialogTitle>Grant bonus AI credits</DialogTitle>
             <DialogDescription>
-              Add AI Copilot or WhatsApp messaging quota directly to <strong>{creditModalOrg?.name}</strong>.
+              Extra AI credits for <strong>{creditModalOrg?.name}</strong> for the rest of this month. They reset with the monthly allowance.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            <div className="rounded-lg bg-muted/40 p-3 text-xs flex justify-between">
-              <div>
-                <div className="text-muted-foreground">Current AI Balance</div>
-                <div className="font-bold text-base mt-0.5">{creditModalOrg?.aiCredits ?? 0} pts</div>
-              </div>
-              <div className="text-right">
-                <div className="text-muted-foreground">Current WhatsApp Balance</div>
-                <div className="font-bold text-base mt-0.5">{creditModalOrg?.whatsappCredits ?? 0} pts</div>
-              </div>
+            <div className="rounded-lg bg-muted/40 p-3 text-xs">
+              <div className="text-muted-foreground">Left this month</div>
+              <div className="font-bold text-base mt-0.5">{creditModalOrg?.aiCreditsLeft ?? 0} of {creditModalOrg?.aiCreditsMax ?? 0}</div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-medium text-foreground">AI Copilot Credits to Add</label>
+              <label htmlFor="ai-grant" className="text-xs font-medium text-foreground">Credits to add</label>
               <Input
+                id="ai-grant"
                 type="number"
-                min="0"
+                min="1"
                 step="50"
                 value={aiGrantAmount}
                 onChange={(e) => setAiGrantAmount(e.target.value)}
-                className="h-9 text-xs font-mono"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-foreground">WhatsApp API Credits to Add</label>
-              <Input
-                type="number"
-                min="0"
-                step="50"
-                value={whatsappGrantAmount}
-                onChange={(e) => setWhatsappGrantAmount(e.target.value)}
                 className="h-9 text-xs font-mono"
               />
             </div>
@@ -5105,63 +4678,6 @@ export function PlatformConsole({
         </DialogContent>
       </Dialog>
 
-      {/* Map Custom Domain Modal */}
-      <Dialog open={domainModalOpen} onOpenChange={(open) => !open && setDomainModalOpen(false)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Globe className="h-4 w-4 text-primary" /> Map White-Label Custom Domain
-            </DialogTitle>
-            <DialogDescription>
-              Map a custom Fully Qualified Domain Name (FQDN) to an organization and provision automated SSL routing.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-2 text-xs">
-            <div>
-              <label className="text-xs font-medium text-foreground">Target Organization</label>
-              <select
-                className="mt-1 w-full rounded-md border bg-background px-3 py-2 text-xs"
-                value={domainOrgId}
-                onChange={(e) => setDomainOrgId(e.target.value)}
-              >
-                <option value="">-- Select Organization --</option>
-                {orgs.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name} ({o.slug})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="text-xs font-medium text-foreground">Custom FQDN (Hostname)</label>
-              <Input
-                placeholder="crm.tenantbrand.com"
-                value={domainNameInput}
-                onChange={(e) => setDomainNameInput(e.target.value)}
-                className="mt-1 text-xs"
-              />
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Tenant must point a DNS CNAME record to <code className="bg-muted px-1 rounded font-mono">cname.ridhzo.com</code>.
-              </p>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setDomainModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              disabled={domainBusy || !domainOrgId || !domainNameInput.trim()}
-              onClick={handleRegisterDomain}
-            >
-              {domainBusy ? "Registering..." : "Register & Provision SSL"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Whole-Tenant Hard Delete Confirmation Dialog */}
       {(() => {

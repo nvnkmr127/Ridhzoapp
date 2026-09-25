@@ -28,19 +28,13 @@ export class PlatformAttributionService {
     organizationId: string,
     attribution: StoredAttribution
   ): Promise<TenantAttribution> {
-    const all = await PlatformConfigService.get<Record<string, TenantAttribution>>(
-      ATTRIBUTION_CONFIG_KEY,
-      {}
-    );
-
     const record: TenantAttribution = {
       ...attribution,
       organizationId,
       createdAt: new Date().toISOString(),
     };
-
-    all[organizationId] = record;
-    await PlatformConfigService.set(ATTRIBUTION_CONFIG_KEY, all);
+    // Locked: concurrent signups each add their own entry instead of one overwriting the other.
+    await PlatformConfigService.update<Record<string, TenantAttribution>>(ATTRIBUTION_CONFIG_KEY, {}, (all) => ({ ...all, [organizationId]: record }));
     return record;
   }
 

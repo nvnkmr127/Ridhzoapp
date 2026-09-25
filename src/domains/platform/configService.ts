@@ -70,8 +70,11 @@ export class PlatformConfigService {
     }
   }
 
+  // Throws on failure: a caller that reports "saved" must not be lying. (Reads above stay lenient
+  // because they have safe defaults; a failed write has none.)
   static async set<T>(key: string, value: T): Promise<void> {
     await this.ensureTable();
+    if (typeof db.execute !== "function") return; // vitest mocks without a db
     try {
       await db.execute(sql`
         INSERT INTO platform_configs (key, value, updated_at)
@@ -79,12 +82,34 @@ export class PlatformConfigService {
         ON CONFLICT (key) DO UPDATE
         SET value = EXCLUDED.value, updated_at = NOW();
       `);
-      // Drop any cached read of this key so an admin's change (maintenance toggle, broadcast) shows
-      // up on the next request instead of after the 60s TTL. No-op outside a request scope (workers).
-      try { revalidateTag(configTag(key)); } catch { /* not in a request/action context */ }
     } catch (err) {
       console.error("[PlatformConfigService] failed to set", key, err);
+      throw err;
     }
+    // Drop any cached read of this key so an admin's change (maintenance toggle, broadcast) shows
+    // up on the next request instead of after the 60s TTL. No-op outside a request scope (workers).
+    try { revalidateTag(configTag(key)); } catch { /* not in a request/action context */ }
+  }
+
+  // Read-modify-write under a row lock. Use this — never get() then set() — for any value that is a
+  // collection (invoices, tickets, coupons, per-org maps): get() falls back to the default on a read
+  // error, and writing that back would replace the whole collection; and two concurrent get/set pairs
+  // lose one update. Throws on any failure. Returns what was written.
+  static async update<T>(key: string, defaultValue: T, fn: (current: T) => T | Promise<T>): Promise<T> {
+    await this.ensureTable();
+    const next = await db.transaction(async (tx) => {
+      await tx.execute(sql`
+        INSERT INTO platform_configs (key, value, updated_at)
+        VALUES (${key}, ${JSON.stringify(defaultValue)}::jsonb, NOW())
+        ON CONFLICT (key) DO NOTHING
+      `);
+      const rows = (await tx.execute(sql`SELECT value FROM platform_configs WHERE key = ${key} FOR UPDATE`)) as any[];
+      const value = await fn(structuredClone((rows[0]?.value ?? defaultValue) as T));
+      await tx.execute(sql`UPDATE platform_configs SET value = ${JSON.stringify(value)}::jsonb, updated_at = NOW() WHERE key = ${key}`);
+      return value;
+    });
+    try { revalidateTag(configTag(key)); } catch { /* not in a request/action context */ }
+    return next;
   }
 
   // Cached read for GLOBAL, rarely-changing keys (maintenance_mode, broadcast) that the dashboard

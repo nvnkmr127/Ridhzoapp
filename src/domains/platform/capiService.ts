@@ -39,6 +39,12 @@ export class MetaCapiService {
     return { ...DEFAULT_CONFIG, ...saved };
   }
 
+  // What the console may see: the access token is write-only (never sent to the browser), only
+  // whether one is set. The page and the save action return this, not getConfig().
+  static publicConfig(c: MetaCapiConfig): Omit<MetaCapiConfig, "accessToken"> & { accessToken: ""; hasAccessToken: boolean } {
+    return { ...c, accessToken: "", hasAccessToken: !!c.accessToken };
+  }
+
   static async saveConfig(input: Partial<MetaCapiConfig>): Promise<MetaCapiConfig> {
     const current = await this.getConfig();
     const updated: MetaCapiConfig = { ...current, ...input };
@@ -53,9 +59,7 @@ export class MetaCapiService {
 
   private static async appendLog(log: CapiEventLog): Promise<void> {
     try {
-      const logs = await PlatformConfigService.get<CapiEventLog[]>(LOGS_KEY, []);
-      logs.unshift(log);
-      await PlatformConfigService.set(LOGS_KEY, logs.slice(0, 100));
+      await PlatformConfigService.update<CapiEventLog[]>(LOGS_KEY, [], (logs) => [log, ...logs].slice(0, 100));
     } catch {
       // Best-effort audit logging
     }

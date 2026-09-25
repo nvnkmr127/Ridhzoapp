@@ -19,8 +19,9 @@ export async function POST(req: NextRequest) {
   }
 
   const subscription = body?.payload?.subscription?.entity;
+  const payment = body?.payload?.payment?.entity;
   try {
-    await BillingService.handleWebhook(body?.event, subscription);
+    await BillingService.handleWebhook(body?.event, subscription, payment);
   } catch (e) {
     console.error("[razorpay] webhook handling failed", e);
     // Still 200 so Razorpay doesn't retry-storm; we've logged it.

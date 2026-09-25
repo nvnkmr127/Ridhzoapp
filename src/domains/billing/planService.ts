@@ -27,7 +27,7 @@ export function signupTrial() {
   return { plan: "starter", trialEndsAt: new Date(Date.now() + SIGNUP_TRIAL_DAYS * 86_400_000) };
 }
 
-const currentPeriod = () => new Date().toISOString().slice(0, 7); // 'YYYY-MM' (UTC)
+export const currentPeriod = () => new Date().toISOString().slice(0, 7); // 'YYYY-MM' (UTC)
 
 // Countable per-org resources capped by plan. Counts every row (active or paused) so pausing
 // one can't be used to create more.
@@ -144,7 +144,10 @@ export class PlanService {
       .select({ used: organizations.aiCreditsUsed, period: organizations.aiCreditsPeriod })
       .from(organizations)
       .where(eq(organizations.id, organizationId));
-    return { used: row?.period === currentPeriod() ? row.used : 0, max };
+    const used = row?.period === currentPeriod() ? row.used : 0;
+    // A super-admin grant drives `used` below zero (bonus credits); show it as extra allowance so
+    // the meter never reads negative: same remaining credits, used >= 0.
+    return { used: Math.max(0, used), max: max - used + Math.max(0, used) };
   }
 
   // Atomically spends one AI credit. One UPDATE that resets on a new month and refuses at the cap,

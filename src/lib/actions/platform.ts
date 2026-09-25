@@ -24,6 +24,30 @@ const orgIdSchema = z.string().guid();
 // the acting super-admin happens to have no organizationId.
 const PLATFORM_ORG_ID = "00000000-0000-0000-0000-000000000000";
 
+type Session = Awaited<ReturnType<typeof requireSuperAdmin>>;
+
+// Every super-admin mutation and every data export is recorded with WHO did it. Tenant-scoped events
+// go under the tenant (so they show in its audit trail); platform-wide ones under the system org.
+async function audit(
+  session: Session,
+  action: string,
+  opts: { organizationId?: string | null; entityType?: string; entityId?: string | null; metadata?: Record<string, unknown> } = {},
+) {
+  await AuditService.log({
+    organizationId: opts.organizationId ?? PLATFORM_ORG_ID,
+    userId: session.user.id,
+    action,
+    entityType: opts.entityType ?? "system",
+    entityId: opts.entityId ?? null,
+    metadata: { ...opts.metadata, by: "super_admin" },
+  });
+}
+
+// Ids minted by the JSON-backed services (inv_…, tkt_…, coup_…, anomaly ids).
+const refIdSchema = z.string().trim().min(1).max(120);
+const userIdSchema = z.string().guid();
+const invalid = (what: string) => fail("VALIDATION", `Invalid ${what}.`);
+
 const planSchema = z.object({
   organizationId: orgIdSchema,
   plan: z.enum(["free", "starter", "unlimited", "pro", "business"]).transform(canonicalPlan),
@@ -165,6 +189,7 @@ export async function searchGlobalUsersAction(query?: string) {
 
 export async function toggleUserActiveAction(userId: string, isActive: boolean) {
   const session = await requireSuperAdmin();
+  if (!userIdSchema.safeParse(userId).success) return invalid("user");
   if (session.user.id === userId && !isActive) {
     return fail("VALIDATION", "You cannot deactivate your own account.");
   }
@@ -188,14 +213,30 @@ export async function toggleUserActiveAction(userId: string, isActive: boolean) 
   }
 }
 
+// The most powerful change in the system: always audited against the target's org AND the platform
+// log, and pushed to the ops channel. The last super-admin can't be removed.
 export async function toggleSuperAdminAction(userId: string, isSuperAdmin: boolean) {
   const session = await requireSuperAdmin();
+  if (!userIdSchema.safeParse(userId).success) return invalid("user");
   if (session.user.id === userId && !isSuperAdmin) {
     return fail("VALIDATION", "You cannot remove super-admin status from yourself.");
   }
   try {
+    if (!isSuperAdmin && (await PlatformService.countSuperAdmins()) <= 1) {
+      return fail("VALIDATION", "At least one super-admin must remain.");
+    }
     const updated = await PlatformService.setSuperAdmin(userId, isSuperAdmin);
     if (!updated) return fail("NOT_FOUND", "User not found.");
+    const action = isSuperAdmin ? "platform.super_admin_grant" : "platform.super_admin_revoke";
+    const metadata = { email: updated.email, granted: isSuperAdmin };
+    await audit(session, action, { entityType: "user", entityId: userId, metadata });
+    if (updated.organizationId) await audit(session, action, { organizationId: updated.organizationId, entityType: "user", entityId: userId, metadata });
+    const { OpsAlertService } = await import("@/domains/platform/opsAlertService");
+    await OpsAlertService.dispatchAlert(
+      action,
+      isSuperAdmin ? "Super-admin granted" : "Super-admin revoked",
+      `${updated.email} ${isSuperAdmin ? "was granted" : "lost"} platform super-admin rights (by ${session.user.email ?? session.user.id}).`,
+    ).catch(() => false);
     revalidatePath("/admin");
     return ok({ userId, isSuperAdmin });
   } catch (e) {
@@ -205,6 +246,8 @@ export async function toggleSuperAdminAction(userId: string, isSuperAdmin: boole
 
 export async function setOrgSeatOverrideAction(organizationId: string, seats: number | null) {
   const session = await requireSuperAdmin();
+  if (!orgIdSchema.safeParse(organizationId).success) return invalid("organization");
+  if (seats !== null && !z.number().int().min(1).max(100_000).safeParse(seats).success) return fail("VALIDATION", "Seats must be a whole number from 1 to 100,000.");
   try {
     const res = await PlatformService.setSeatOverride(organizationId, seats);
     await AuditService.log({
@@ -230,6 +273,16 @@ export async function setBroadcastAction(broadcast: {
   targetOrgId?: string | null;
 }) {
   const session = await requireSuperAdmin();
+  const parsed = z.object({
+    message: z.string().trim().max(500),
+    active: z.boolean(),
+    level: z.enum(["info", "warning", "destructive"]),
+    targetPlan: z.enum(["free", "starter", "unlimited", "all"]).nullish(),
+    targetOrgId: orgIdSchema.nullish(),
+  }).safeParse(broadcast);
+  if (!parsed.success) return fail("VALIDATION", "Check the broadcast message (max 500 characters) and target.");
+  if (parsed.data.active && !parsed.data.message) return fail("VALIDATION", "Write a message before publishing.");
+  broadcast = parsed.data;
   try {
     await PlatformService.setBroadcast(broadcast);
     await AuditService.log({
@@ -264,56 +317,21 @@ export async function retryAllFailedDeliveriesAction() {
   }
 }
 
-export async function purgeRecycleBinAction() {
+// Bonus AI credits for the current month (see RevOpsService.grantCredits).
+export async function grantTenantCreditsAction(organizationId: string, aiGrant: number) {
   const session = await requireSuperAdmin();
-  try {
-    const res = await PlatformService.purgeRecycleBin();
-    await AuditService.log({
-        organizationId: session.user.organizationId ?? PLATFORM_ORG_ID,
-        userId: session.user.id,
-        action: "platform.recycle_bin_purge",
-        entityType: "lead",
-        metadata: { purgedCount: res.purgedCount, by: "super_admin" },
-      });
-    revalidatePath("/admin");
-    return ok(res);
-  } catch (e) {
-    return actionFail(e);
-  }
-}
-
-export async function toggleFeatureFlagAction(key: string, enabled: boolean) {
-  const session = await requireSuperAdmin();
-  try {
-    const { FeatureFlagService } = await import("@/domains/platform/featureFlags");
-    const flag = await FeatureFlagService.toggle(key, enabled);
-    if (!flag) return fail("NOT_FOUND", "Feature flag not found");
-    await AuditService.log({
-        organizationId: session.user.organizationId ?? PLATFORM_ORG_ID,
-        userId: session.user.id,
-        action: "platform.toggle_feature_flag",
-        entityType: "system",
-        metadata: { key, enabled, by: "super_admin" },
-      });
-    revalidatePath("/admin");
-    return ok(flag);
-  } catch (e) {
-    return actionFail(e);
-  }
-}
-
-export async function grantTenantCreditsAction(organizationId: string, aiGrant: number, whatsappGrant: number) {
-  const session = await requireSuperAdmin();
+  if (!orgIdSchema.safeParse(organizationId).success) return invalid("organization");
+  if (!z.number().int().min(1).max(100_000).safeParse(aiGrant).success) return fail("VALIDATION", "Enter a whole number of credits from 1 to 100,000.");
   try {
     const { RevOpsService } = await import("@/domains/platform/revops");
-    const credits = await RevOpsService.grantCredits(organizationId, aiGrant, whatsappGrant);
+    const credits = await RevOpsService.grantCredits(organizationId, aiGrant);
     await AuditService.log({
       organizationId,
       userId: session.user.id,
       action: "platform.grant_credits",
       entityType: "organization",
       entityId: organizationId,
-      metadata: { aiGrant, whatsappGrant, current: credits, by: "super_admin" },
+      metadata: { aiGrant, after: credits, by: "super_admin" },
     });
     revalidatePath("/admin");
     return ok(credits);
@@ -324,6 +342,7 @@ export async function grantTenantCreditsAction(organizationId: string, aiGrant: 
 
 export async function toggleMaintenanceModeAction(enabled: boolean, message?: string) {
   const session = await requireSuperAdmin();
+  if (message && message.length > 500) return fail("VALIDATION", "Keep the notice under 500 characters.");
   try {
     const { PlatformConfigService } = await import("@/domains/platform/configService");
     await PlatformConfigService.set("maintenance_mode", {
@@ -346,10 +365,14 @@ export async function toggleMaintenanceModeAction(enabled: boolean, message?: st
 }
 
 export async function searchDsrSubjectAction(query: string) {
-  await requireSuperAdmin();
+  const session = await requireSuperAdmin();
+  const q = typeof query === "string" ? query.trim() : "";
+  if (q.length < 3 || q.length > 200) return fail("VALIDATION", "Enter at least 3 characters (email, phone or name).");
   try {
     const { ComplianceService } = await import("@/domains/platform/complianceService");
-    const results = await ComplianceService.searchSubject(query);
+    const results = await ComplianceService.searchSubject(q);
+    // A cross-tenant PII lookup — recorded, like the exports.
+    await audit(session, "platform.dsr_search", { entityType: "lead", metadata: { query: q, results: results.length } });
     return ok(results);
   } catch (e) {
     return actionFail(e);
@@ -357,11 +380,13 @@ export async function searchDsrSubjectAction(query: string) {
 }
 
 export async function exportDsrDossierAction(leadId: string) {
-  await requireSuperAdmin();
+  const session = await requireSuperAdmin();
+  if (!userIdSchema.safeParse(leadId).success) return invalid("record");
   try {
     const { ComplianceService } = await import("@/domains/platform/complianceService");
     const dossier = await ComplianceService.exportDsrDossier(leadId);
     if (!dossier) return fail("NOT_FOUND", "Subject record not found");
+    await audit(session, "platform.dsr_export", { entityType: "lead", entityId: leadId });
     return ok(dossier);
   } catch (e) {
     return actionFail(e);
@@ -370,6 +395,7 @@ export async function exportDsrDossierAction(leadId: string) {
 
 export async function executeRightToBeForgottenAction(leadId: string) {
   const session = await requireSuperAdmin();
+  if (!userIdSchema.safeParse(leadId).success) return invalid("record");
   try {
     const { ComplianceService } = await import("@/domains/platform/complianceService");
     const success = await ComplianceService.executeRightToBeForgotten(leadId, session.user.id);
@@ -381,8 +407,29 @@ export async function executeRightToBeForgottenAction(leadId: string) {
   }
 }
 
-export async function saveOpsAlertConfigAction(config: any) {
+const opsAlertSchema = z.object({
+  url: z.string().trim().max(2000),
+  enabled: z.boolean(),
+  notifyOnSladeadline: z.boolean(),
+  notifyOnDlq: z.boolean(),
+  notifyOnPlanChange: z.boolean(),
+  notifyOnGdpr: z.boolean(),
+});
+
+export async function saveOpsAlertConfigAction(input: z.input<typeof opsAlertSchema>) {
   const session = await requireSuperAdmin();
+  const parsed = opsAlertSchema.safeParse(input);
+  if (!parsed.success) return fail("VALIDATION", "Check the alert settings.");
+  const config = parsed.data;
+  if (config.enabled && !config.url) return fail("VALIDATION", "Enter a webhook URL to enable alerts.");
+  if (config.url) {
+    try {
+      const { assertPublicHttpUrl } = await import("@/lib/webhooks/ssrf");
+      await assertPublicHttpUrl(config.url);
+    } catch (e) {
+      return fail("VALIDATION", e instanceof Error ? e.message : "Invalid webhook URL.");
+    }
+  }
   try {
     const { OpsAlertService } = await import("@/domains/platform/opsAlertService");
     await OpsAlertService.saveConfig(config);
@@ -412,40 +459,6 @@ export async function testOpsAlertAction() {
   }
 }
 
-export async function getTenantSecurityPolicyAction(organizationId: string) {
-  await requireSuperAdmin();
-  try {
-    const { SecurityPolicyService } = await import("@/domains/platform/securityPolicyService");
-    const policy = await SecurityPolicyService.getPolicy(organizationId);
-    return ok(policy);
-  } catch (e) {
-    return actionFail(e);
-  }
-}
-
-export async function setTenantSecurityPolicyAction(
-  organizationId: string,
-  policy: { allowedCidrs?: string[]; enforceMfa?: boolean; sessionMaxAgeHours?: number }
-) {
-  const session = await requireSuperAdmin();
-  try {
-    const { SecurityPolicyService } = await import("@/domains/platform/securityPolicyService");
-    const updated = await SecurityPolicyService.setPolicy(organizationId, policy);
-    await AuditService.log({
-      organizationId,
-      userId: session.user.id,
-      action: "platform.set_security_policy",
-      entityType: "organization",
-      entityId: organizationId,
-      metadata: { policy: updated, by: "super_admin" },
-    });
-    revalidatePath("/admin");
-    return ok(updated);
-  } catch (e) {
-    return actionFail(e);
-  }
-}
-
 export async function listBillingLifecycleAction() {
   await requireSuperAdmin();
   try {
@@ -459,6 +472,8 @@ export async function listBillingLifecycleAction() {
 
 export async function extendGracePeriodAction(organizationId: string, days = 7) {
   const session = await requireSuperAdmin();
+  if (!orgIdSchema.safeParse(organizationId).success) return invalid("organization");
+  if (!z.number().int().min(1).max(90).safeParse(days).success) return fail("VALIDATION", "Grace extension must be 1–90 days.");
   try {
     const { BillingLifecycleService } = await import("@/domains/billing/lifecycleService");
     const updated = await BillingLifecycleService.extendGracePeriod(organizationId, days);
@@ -479,6 +494,8 @@ export async function extendGracePeriodAction(organizationId: string, days = 7) 
 
 export async function markTenantManuallyPaidAction(organizationId: string, days = 30) {
   const session = await requireSuperAdmin();
+  if (!orgIdSchema.safeParse(organizationId).success) return invalid("organization");
+  if (!z.number().int().min(1).max(366).safeParse(days).success) return fail("VALIDATION", "Paid period must be 1–366 days.");
   try {
     const { BillingLifecycleService } = await import("@/domains/billing/lifecycleService");
     const updated = await BillingLifecycleService.markManuallyPaid(organizationId, days);
@@ -499,6 +516,7 @@ export async function markTenantManuallyPaidAction(organizationId: string, days 
 
 export async function sendDunningNoticeAction(organizationId: string) {
   const session = await requireSuperAdmin();
+  if (!orgIdSchema.safeParse(organizationId).success) return invalid("organization");
   try {
     const { BillingLifecycleService } = await import("@/domains/billing/lifecycleService");
     const status = await BillingLifecycleService.getTenantBillingStatus(organizationId);
@@ -524,38 +542,22 @@ export async function sendDunningNoticeAction(organizationId: string) {
   }
 }
 
-export async function simulatePaymentFailureAction(organizationId: string, reason = "Card declined (Manual Test Simulation)") {
-  const session = await requireSuperAdmin();
-  try {
-    const { BillingLifecycleService } = await import("@/domains/billing/lifecycleService");
-    await BillingLifecycleService.handlePaymentFailure(organizationId, reason);
-    await AuditService.log({
-      organizationId,
-      userId: session.user.id,
-      action: "platform.simulate_payment_failure",
-      entityType: "organization",
-      entityId: organizationId,
-      metadata: { reason },
-    });
-    revalidatePath("/admin");
-    return ok({ simulated: true });
-  } catch (e) {
-    return actionFail(e);
-  }
-}
+const invoiceSchema = z.object({
+  orgId: orgIdSchema,
+  plan: z.string().trim().min(1).max(50),
+  amount: z.number().positive("Amount must be more than zero.").max(10_000_000),
+  status: z.enum(["paid", "issued"]).optional(),
+  // 15-char GSTIN: 2-digit state code, PAN, entity, Z, checksum.
+  gstin: z.string().trim().toUpperCase().regex(/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/, "Enter a valid 15-character GSTIN.").nullish().or(z.literal("")),
+});
 
-// --- Tax Invoices ---
-export async function generateInvoiceAction(params: {
-  orgId: string;
-  plan: string;
-  amount: number;
-  status?: "paid" | "issued";
-  gstin?: string | null;
-}) {
-  await requireSuperAdmin();
+export async function generateInvoiceAction(params: z.input<typeof invoiceSchema>) {
+  const session = await requireSuperAdmin();
+  const parsed = invoiceSchema.safeParse(params);
+  if (!parsed.success) return fail("VALIDATION", parsed.error.issues[0]?.message ?? "Check the invoice details.");
   try {
     const { InvoiceService } = await import("@/domains/billing/invoiceService");
-    const inv = await InvoiceService.generateInvoice(params);
+    const inv = await InvoiceService.generateInvoice({ ...parsed.data, gstin: parsed.data.gstin || null }, session.user.id);
     revalidatePath("/admin");
     return ok(inv);
   } catch (e) {
@@ -564,10 +566,11 @@ export async function generateInvoiceAction(params: {
 }
 
 export async function voidInvoiceAction(id: string) {
-  await requireSuperAdmin();
+  const session = await requireSuperAdmin();
+  if (!refIdSchema.safeParse(id).success) return invalid("invoice");
   try {
     const { InvoiceService } = await import("@/domains/billing/invoiceService");
-    const inv = await InvoiceService.voidInvoice(id);
+    const inv = await InvoiceService.voidInvoice(id, session.user.id);
     if (!inv) return fail("NOT_FOUND", "Invoice not found");
     revalidatePath("/admin");
     return ok(inv);
@@ -577,10 +580,12 @@ export async function voidInvoiceAction(id: string) {
 }
 
 export async function issueCreditNoteAction(invoiceId: string, reason?: string) {
-  await requireSuperAdmin();
+  const session = await requireSuperAdmin();
+  if (!refIdSchema.safeParse(invoiceId).success) return invalid("invoice");
+  if (reason && reason.length > 500) return fail("VALIDATION", "Keep the reason under 500 characters.");
   try {
     const { InvoiceService } = await import("@/domains/billing/invoiceService");
-    const creditNote = await InvoiceService.issueCreditNote(invoiceId, reason);
+    const creditNote = await InvoiceService.issueCreditNote(invoiceId, reason, session.user.id);
     if (!creditNote) return fail("NOT_FOUND", "Original invoice not found");
     revalidatePath("/admin");
     return ok(creditNote);
@@ -589,20 +594,26 @@ export async function issueCreditNoteAction(invoiceId: string, reason?: string) 
   }
 }
 
+
 // --- Coupons & Promo Codes ---
-export async function createCouponAction(input: {
-  code: string;
-  discountType: "percent" | "fixed";
-  discountValue: number;
-  plans?: string[];
-  maxRedemptions?: number;
-  expiresAt?: string | null;
-  razorpayOfferId?: string | null;
-}) {
-  await requireSuperAdmin();
+const couponSchema = z.object({
+  code: z.string().trim().min(3, "Code must be 3–30 characters.").max(30, "Code must be 3–30 characters.").regex(/^[A-Za-z0-9_-]+$/, "Use letters, numbers, - or _ only."),
+  discountType: z.enum(["percent", "fixed"]),
+  discountValue: z.number().positive("Discount must be more than zero.").max(1_000_000),
+  plans: z.array(z.string().trim().min(1)).max(10).optional(),
+  maxRedemptions: z.number().int().min(0).max(1_000_000).optional(),
+  expiresAt: z.string().datetime({ offset: true }).nullish().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).or(z.literal("")),
+  razorpayOfferId: z.string().trim().max(100).nullish(),
+}).refine((c) => c.discountType !== "percent" || c.discountValue <= 100, { message: "A percentage discount can't exceed 100%." });
+
+export async function createCouponAction(input: z.input<typeof couponSchema>) {
+  const session = await requireSuperAdmin();
+  const parsed = couponSchema.safeParse(input);
+  if (!parsed.success) return fail("VALIDATION", parsed.error.issues[0]?.message ?? "Check the coupon details.");
   try {
     const { CouponService } = await import("@/domains/billing/couponService");
-    const coupon = await CouponService.create(input);
+    const coupon = await CouponService.create({ ...parsed.data, expiresAt: parsed.data.expiresAt || null });
+    await audit(session, "platform.coupon_create", { entityType: "coupon", entityId: coupon.id, metadata: { code: coupon.code, discountType: coupon.discountType, discountValue: coupon.discountValue } });
     revalidatePath("/admin");
     return ok(coupon);
   } catch (e) {
@@ -611,11 +622,13 @@ export async function createCouponAction(input: {
 }
 
 export async function toggleCouponAction(id: string, active: boolean) {
-  await requireSuperAdmin();
+  const session = await requireSuperAdmin();
+  if (!refIdSchema.safeParse(id).success) return invalid("coupon");
   try {
     const { CouponService } = await import("@/domains/billing/couponService");
     const coupon = await CouponService.toggle(id, active);
     if (!coupon) return fail("NOT_FOUND", "Coupon not found");
+    await audit(session, active ? "platform.coupon_enable" : "platform.coupon_disable", { entityType: "coupon", entityId: id, metadata: { code: coupon.code } });
     revalidatePath("/admin");
     return ok(coupon);
   } catch (e) {
@@ -624,10 +637,13 @@ export async function toggleCouponAction(id: string, active: boolean) {
 }
 
 export async function deleteCouponAction(id: string) {
-  await requireSuperAdmin();
+  const session = await requireSuperAdmin();
+  if (!refIdSchema.safeParse(id).success) return invalid("coupon");
   try {
     const { CouponService } = await import("@/domains/billing/couponService");
     const deleted = await CouponService.delete(id);
+    if (!deleted) return fail("NOT_FOUND", "Coupon not found");
+    await audit(session, "platform.coupon_delete", { entityType: "coupon", entityId: id });
     revalidatePath("/admin");
     return ok({ deleted });
   } catch (e) {
@@ -635,14 +651,19 @@ export async function deleteCouponAction(id: string) {
   }
 }
 
+
 // --- Support Desk ---
 export async function replySupportTicketAction(ticketId: string, body: string) {
   const session = await requireSuperAdmin();
+  if (!refIdSchema.safeParse(ticketId).success) return invalid("ticket");
+  const text = typeof body === "string" ? body.trim() : "";
+  if (!text || text.length > 5000) return fail("VALIDATION", "Write a reply (up to 5,000 characters).");
   try {
     const { SupportTicketService } = await import("@/domains/platform/supportService");
     const senderName = session.user.name || session.user.email || "Platform SuperAdmin";
-    const ticket = await SupportTicketService.reply(ticketId, "superadmin", senderName, body);
+    const ticket = await SupportTicketService.reply(ticketId, "superadmin", senderName, text);
     if (!ticket) return fail("NOT_FOUND", "Ticket not found");
+    await audit(session, "platform.support_reply", { organizationId: ticket.orgId, entityType: "support_ticket", entityId: ticketId });
     revalidatePath("/admin");
     return ok(ticket);
   } catch (e) {
@@ -651,11 +672,14 @@ export async function replySupportTicketAction(ticketId: string, body: string) {
 }
 
 export async function updateSupportTicketStatusAction(ticketId: string, status: "open" | "in_progress" | "resolved") {
-  await requireSuperAdmin();
+  const session = await requireSuperAdmin();
+  if (!refIdSchema.safeParse(ticketId).success) return invalid("ticket");
+  if (!z.enum(["open", "in_progress", "resolved"]).safeParse(status).success) return invalid("status");
   try {
     const { SupportTicketService } = await import("@/domains/platform/supportService");
     const ticket = await SupportTicketService.updateStatus(ticketId, status);
     if (!ticket) return fail("NOT_FOUND", "Ticket not found");
+    await audit(session, "platform.support_status", { organizationId: ticket.orgId, entityType: "support_ticket", entityId: ticketId, metadata: { status } });
     revalidatePath("/admin");
     return ok(ticket);
   } catch (e) {
@@ -663,9 +687,11 @@ export async function updateSupportTicketStatusAction(ticketId: string, status: 
   }
 }
 
+
 // --- Session Killswitch ---
 export async function revokeUserSessionsAction(userId: string) {
   const session = await requireSuperAdmin();
+  if (!userIdSchema.safeParse(userId).success) return invalid("user");
   try {
     const { SessionService } = await import("@/domains/platform/sessionService");
     const revokedAt = await SessionService.revokeUserSessions(userId, session.user.id);
@@ -678,6 +704,7 @@ export async function revokeUserSessionsAction(userId: string) {
 
 export async function revokeOrgSessionsAction(orgId: string) {
   const session = await requireSuperAdmin();
+  if (!orgIdSchema.safeParse(orgId).success) return invalid("organization");
   try {
     const { SessionService } = await import("@/domains/platform/sessionService");
     const revokedAt = await SessionService.revokeOrgSessions(orgId, session.user.id);
@@ -690,22 +717,26 @@ export async function revokeOrgSessionsAction(orgId: string) {
 
 // --- 1-Click Platform CSV Exporters ---
 export async function exportPlatformCsvAction(type: "tenants" | "financial" | "churn") {
-  await requireSuperAdmin();
+  const session = await requireSuperAdmin();
+  if (!z.enum(["tenants", "financial", "churn"]).safeParse(type).success) return invalid("export");
   try {
     const { PlatformExportService } = await import("@/domains/platform/exportService");
     let csv = "";
     if (type === "tenants") csv = await PlatformExportService.exportTenantsDirectoryCsv();
     else if (type === "financial") csv = await PlatformExportService.exportFinancialLedgerCsv();
     else if (type === "churn") csv = await PlatformExportService.exportChurnRiskCsv();
+    await audit(session, "platform.export_csv", { metadata: { type, rows: Math.max(0, csv.split("\n").length - 1) } });
     return ok({ csv, filename: `ridhzo_${type}_export_${new Date().toISOString().slice(0, 10)}.csv` });
   } catch (e) {
     return actionFail(e);
   }
 }
 
+
 // --- Tenant Audit Trail & Fleet API Keys ---
 export async function getTenantAuditLogsAction(organizationId: string) {
   await requireSuperAdmin();
+  if (!orgIdSchema.safeParse(organizationId).success) return invalid("organization");
   try {
     const logs = await PlatformService.getTenantAuditLogs(organizationId, 50);
     return ok(logs);
@@ -725,26 +756,35 @@ export async function getPlatformActivityAction() {
 }
 
 export async function revokeFleetApiKeyAction(id: string) {
-  await requireSuperAdmin();
+  const session = await requireSuperAdmin();
+  if (!userIdSchema.safeParse(id).success) return invalid("API key");
   try {
     const revoked = await PlatformService.revokeFleetApiKey(id);
+    if (!revoked) return fail("NOT_FOUND", "API key not found.");
+    await audit(session, "platform.api_key_revoke", { organizationId: revoked.organizationId, entityType: "api_key", entityId: id, metadata: { name: revoked.name } });
     revalidatePath("/admin");
-    return ok({ revoked });
+    return ok({ revoked: true });
   } catch (e) {
     return actionFail(e);
   }
 }
 
+
 // --- Executive Digest ---
-export async function saveExecutiveDigestConfigAction(config: {
-  enabled?: boolean;
-  frequency?: "daily" | "weekly";
-  recipients?: string[];
-}) {
-  await requireSuperAdmin();
+const digestSchema = z.object({
+  enabled: z.boolean().optional(),
+  frequency: z.enum(["daily", "weekly"]).optional(),
+  recipients: z.array(z.string().trim().email("Enter valid recipient emails.")).max(20).optional(),
+});
+
+export async function saveExecutiveDigestConfigAction(config: z.input<typeof digestSchema>) {
+  const session = await requireSuperAdmin();
+  const parsed = digestSchema.safeParse(config);
+  if (!parsed.success) return fail("VALIDATION", parsed.error.issues[0]?.message ?? "Check the digest settings.");
   try {
     const { ExecutiveDigestService } = await import("@/domains/platform/executiveDigestService");
-    const updated = await ExecutiveDigestService.saveConfig(config);
+    const updated = await ExecutiveDigestService.saveConfig(parsed.data);
+    await audit(session, "platform.digest_config", { metadata: { enabled: updated.enabled, frequency: updated.frequency, recipients: updated.recipients?.length ?? 0 } });
     revalidatePath("/admin");
     return ok(updated);
   } catch (e) {
@@ -754,6 +794,7 @@ export async function saveExecutiveDigestConfigAction(config: {
 
 export async function sendTestExecutiveDigestAction(targetEmail: string) {
   await requireSuperAdmin();
+  if (!z.string().trim().email().safeParse(targetEmail).success) return fail("VALIDATION", "Enter a valid email.");
   try {
     const { ExecutiveDigestService } = await import("@/domains/platform/executiveDigestService");
     await ExecutiveDigestService.sendTestDigest(targetEmail);
@@ -764,10 +805,11 @@ export async function sendTestExecutiveDigestAction(targetEmail: string) {
 }
 
 export async function triggerExecutiveDigestAction() {
-  await requireSuperAdmin();
+  const session = await requireSuperAdmin();
   try {
     const { ExecutiveDigestService } = await import("@/domains/platform/executiveDigestService");
     const res = await ExecutiveDigestService.sendDigest();
+    await audit(session, "platform.digest_send");
     revalidatePath("/admin");
     return ok(res);
   } catch (e) {
@@ -788,10 +830,11 @@ export async function listAnomaliesAction() {
 }
 
 export async function resolveAnomalyAction(id: string, action: "resolve" | "dismiss") {
-  await requireSuperAdmin();
+  const session = await requireSuperAdmin();
+  if (!refIdSchema.safeParse(id).success || !z.enum(["resolve", "dismiss"]).safeParse(action).success) return invalid("anomaly");
   try {
     const { AnomalyDetectionService } = await import("@/domains/platform/anomalyDetectionService");
-    await AnomalyDetectionService.resolveAnomaly(id, action);
+    await AnomalyDetectionService.resolveAnomaly(id, action, session.user.id);
     revalidatePath("/admin");
     return ok({ success: true });
   } catch (e) {
@@ -801,6 +844,7 @@ export async function resolveAnomalyAction(id: string, action: "resolve" | "dism
 
 export async function remediateAnomalyAction(id: string) {
   const session = await requireSuperAdmin();
+  if (!refIdSchema.safeParse(id).success) return invalid("anomaly");
   try {
     const { AnomalyDetectionService } = await import("@/domains/platform/anomalyDetectionService");
     const result = await AnomalyDetectionService.executeRemediation(id, session.user.id);
@@ -811,25 +855,15 @@ export async function remediateAnomalyAction(id: string) {
   }
 }
 
-// --- Per-Tenant Feature Overrides ---
-export async function setTenantFlagOverrideAction(key: string, organizationId: string, enabled: boolean) {
-  await requireSuperAdmin();
-  try {
-    const { FeatureFlagService } = await import("@/domains/platform/featureFlags");
-    const flag = await FeatureFlagService.setTenantOverride(key, organizationId, enabled);
-    revalidatePath("/admin");
-    return ok(flag);
-  } catch (e) {
-    return actionFail(e);
-  }
-}
-
-// --- Support Triage & Internal Notes ---
 export async function assignSupportTicketAction(ticketId: string, assignedTo: string | null) {
-  await requireSuperAdmin();
+  const session = await requireSuperAdmin();
+  if (!refIdSchema.safeParse(ticketId).success) return invalid("ticket");
+  if (assignedTo !== null && !z.string().trim().min(1).max(255).safeParse(assignedTo).success) return invalid("assignee");
   try {
     const { SupportTicketService } = await import("@/domains/platform/supportService");
     const ticket = await SupportTicketService.assignTicket(ticketId, assignedTo);
+    if (!ticket) return fail("NOT_FOUND", "Ticket not found");
+    await audit(session, "platform.support_assign", { organizationId: ticket.orgId, entityType: "support_ticket", entityId: ticketId, metadata: { assignedTo } });
     revalidatePath("/admin");
     return ok(ticket);
   } catch (e) {
@@ -839,10 +873,14 @@ export async function assignSupportTicketAction(ticketId: string, assignedTo: st
 
 export async function addSupportTicketNoteAction(ticketId: string, noteBody: string) {
   const session = await requireSuperAdmin();
+  if (!refIdSchema.safeParse(ticketId).success) return invalid("ticket");
+  const text = typeof noteBody === "string" ? noteBody.trim() : "";
+  if (!text || text.length > 5000) return fail("VALIDATION", "Write a note (up to 5,000 characters).");
   try {
     const { SupportTicketService } = await import("@/domains/platform/supportService");
     const authorName = session.user.name || session.user.email || "SuperAdmin";
-    const ticket = await SupportTicketService.addInternalNote(ticketId, authorName, noteBody);
+    const ticket = await SupportTicketService.addInternalNote(ticketId, authorName, text);
+    if (!ticket) return fail("NOT_FOUND", "Ticket not found");
     revalidatePath("/admin");
     return ok(ticket);
   } catch (e) {
@@ -850,72 +888,25 @@ export async function addSupportTicketNoteAction(ticketId: string, noteBody: str
   }
 }
 
-// --- Custom Domains ---
-export async function registerCustomDomainAction(orgId: string, domain: string) {
-  await requireSuperAdmin();
-  try {
-    const { CustomDomainService } = await import("@/domains/platform/customDomainService");
-    const record = await CustomDomainService.registerDomain(orgId, domain);
-    revalidatePath("/admin");
-    return ok(record);
-  } catch (e) {
-    return actionFail(e);
-  }
-}
+const capiSchema = z.object({
+  pixelId: z.string().trim().regex(/^\d{0,20}$/, "Pixel ID is numeric.").optional(),
+  accessToken: z.string().trim().max(1000).optional(), // blank = keep the stored token
+  testEventCode: z.string().trim().max(50).optional(),
+  enabled: z.boolean().optional(),
+});
 
-export async function verifyCustomDomainAction(id: string) {
-  await requireSuperAdmin();
-  try {
-    const { CustomDomainService } = await import("@/domains/platform/customDomainService");
-    const record = await CustomDomainService.verifyDomain(id);
-    revalidatePath("/admin");
-    return ok(record);
-  } catch (e) {
-    return actionFail(e);
-  }
-}
-
-export async function removeCustomDomainAction(id: string) {
-  await requireSuperAdmin();
-  try {
-    const { CustomDomainService } = await import("@/domains/platform/customDomainService");
-    const removed = await CustomDomainService.removeDomain(id);
-    revalidatePath("/admin");
-    return ok({ removed });
-  } catch (e) {
-    return actionFail(e);
-  }
-}
-
-// --- Meta Conversions API (CAPI) & Campaign Analytics ---
-export async function saveCapiConfigAction(input: {
-  pixelId?: string;
-  accessToken?: string;
-  testEventCode?: string;
-  enabled?: boolean;
-}) {
-  await requireSuperAdmin();
-  try {
-    const { MetaCapiService } = await import("@/domains/platform/capiService");
-    const updated = await MetaCapiService.saveConfig(input);
-    revalidatePath("/admin");
-    return ok(updated);
-  } catch (e) {
-    return actionFail(e);
-  }
-}
-
-export async function sendTestCapiPingAction() {
+// The access token is write-only: never sent back to the browser (see MetaCapiService.publicConfig).
+export async function saveCapiConfigAction(input: z.input<typeof capiSchema>) {
   const session = await requireSuperAdmin();
+  const parsed = capiSchema.safeParse(input);
+  if (!parsed.success) return fail("VALIDATION", parsed.error.issues[0]?.message ?? "Check the Conversions API settings.");
   try {
     const { MetaCapiService } = await import("@/domains/platform/capiService");
-    const res = await MetaCapiService.sendEvent({
-      eventName: "CompleteRegistration",
-      email: session.user.email || "superadmin@ridhzo.com",
-      eventSourceUrl: "https://ridhzo.com/admin?test=capi",
-    });
+    const { accessToken, ...rest } = parsed.data;
+    const updated = await MetaCapiService.saveConfig({ ...rest, ...(accessToken ? { accessToken } : {}) });
+    await audit(session, "platform.capi_config", { metadata: { enabled: updated.enabled, pixelId: updated.pixelId, tokenChanged: !!accessToken } });
     revalidatePath("/admin");
-    return ok(res);
+    return ok(MetaCapiService.publicConfig(updated));
   } catch (e) {
     return actionFail(e);
   }
@@ -933,11 +924,12 @@ export async function listCapiLogsAction(limit = 50) {
 }
 
 export async function exportTenantDossierAction(organizationId: string) {
-  await requireSuperAdmin();
+  const session = await requireSuperAdmin();
   if (!orgIdSchema.safeParse(organizationId).success) return fail("VALIDATION", "Invalid organization.");
   try {
     const dossier = await PlatformService.exportTenantDossier(organizationId);
     if (!dossier) return fail("NOT_FOUND", "Organization not found.");
+    await audit(session, "platform.tenant_dossier_export", { organizationId, entityType: "organization", entityId: organizationId, metadata: { leads: dossier.leads.length, truncated: dossier.truncated ?? false } });
     return ok(dossier);
   } catch (e) {
     return actionFail(e);
@@ -960,22 +952,11 @@ export async function hardDeleteTenantAction(organizationId: string, confirmatio
 }
 
 export async function triggerSuspensionRetentionScanAction() {
-  await requireSuperAdmin();
+  const session = await requireSuperAdmin();
   try {
     const { ComplianceService } = await import("@/domains/platform/complianceService");
     const result = await ComplianceService.processSuspensionRetention();
-    revalidatePath("/admin");
-    return ok(result);
-  } catch (e) {
-    return actionFail(e);
-  }
-}
-
-export async function triggerTrialDowngradeScanAction() {
-  await requireSuperAdmin();
-  try {
-    const { BillingLifecycleService } = await import("@/domains/billing/lifecycleService");
-    const result = await BillingLifecycleService.downgradeExpiredTrials();
+    await audit(session, "platform.retention_scan", { metadata: result });
     revalidatePath("/admin");
     return ok(result);
   } catch (e) {
@@ -985,11 +966,21 @@ export async function triggerTrialDowngradeScanAction() {
 
 export async function replayAuthFailedLeadsAction(organizationId: string, pageId: string) {
   const session = await requireSuperAdmin();
-  if (!pageId) return fail("VALIDATION", "Page ID is required.");
+  if (!orgIdSchema.safeParse(organizationId).success) return invalid("organization");
+  if (!pageId || !/^\d{1,30}$/.test(pageId)) return fail("VALIDATION", "Page ID is required.");
   try {
     const { db } = await import("@/db");
-    const { webhookEvents } = await import("@/db/schema");
-    const { and, eq, sql } = await import("drizzle-orm");
+    const { webhookEvents, leadSources } = await import("@/db/schema");
+    const { and, eq, sql, inArray } = await import("drizzle-orm");
+
+    // webhook_events carry no org: only replay a Page that belongs to THIS tenant's sources, so an
+    // operator on one tenant's page can't requeue (and mis-attribute) another tenant's events.
+    const [owned] = await db
+      .select({ id: leadSources.id })
+      .from(leadSources)
+      .where(and(eq(leadSources.organizationId, organizationId), sql`${leadSources.config}->>'pageId' = ${pageId}`))
+      .limit(1);
+    if (!owned) return fail("VALIDATION", "That Facebook Page isn't connected to this workspace.");
 
     const rows = await db
       .select({ id: webhookEvents.id })
@@ -1008,10 +999,8 @@ export async function replayAuthFailedLeadsAction(organizationId: string, pageId
     }
 
     const { ingestionQueue } = await import("@/lib/jobs/workers/ingestionWorker");
-    for (const r of rows) {
-      await db.update(webhookEvents).set({ status: "pending", errorLog: null }).where(eq(webhookEvents.id, r.id));
-      await ingestionQueue.add(`ingest-fb-replay-${r.id}`, { webhookEventId: r.id, provider: "facebook" });
-    }
+    await db.update(webhookEvents).set({ status: "pending", errorLog: null }).where(inArray(webhookEvents.id, rows.map((r) => r.id)));
+    await ingestionQueue.addBulk(rows.map((r) => ({ name: `ingest-fb-replay-${r.id}`, data: { webhookEventId: r.id, provider: "facebook" } })));
 
     await AuditService.log({
       organizationId,

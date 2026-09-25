@@ -101,7 +101,55 @@ describe("ComplianceService - Suspension Retention Policy", () => {
     );
   });
 
-  it("anonymizes tenant records when suspended >= 180 days", async () => {
+  it("never anonymizes without a prior warning — warns first, even past 180 days", async () => {
+    const suspendedDate = new Date("2026-01-01T00:00:00Z");
+    const currentDate = new Date("2026-07-15T00:00:00Z"); // 195 days, but the owner was never warned
+
+    let selectCallCount = 0;
+    vi.mocked(db.select).mockImplementation(() => {
+      selectCallCount++;
+      return {
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockImplementation(() =>
+            selectCallCount === 1
+              ? Promise.resolve([{ id: "org_late", name: "Late <b>Org</b>", slug: "late-org", suspendedAt: suspendedDate }])
+              : { limit: vi.fn().mockResolvedValue([{ email: "owner@late.com", firstName: "Bo" }]) },
+          ),
+        }),
+      } as any;
+    });
+    vi.mocked(PlatformConfigService.get).mockResolvedValue({});
+
+    const res = await ComplianceService.processSuspensionRetention(currentDate);
+    expect(res.anonymizedCount).toBe(0);
+    expect(res.warnedCount).toBe(1);
+    expect(vi.mocked(sendEmail).mock.calls[0][0].html).toContain("Late &lt;b&gt;Org&lt;/b&gt;");
+  });
+
+  it("a warning from an earlier suspension doesn't count for a new one", async () => {
+    const suspendedDate = new Date("2026-01-01T00:00:00Z");
+    const currentDate = new Date("2026-07-15T00:00:00Z");
+    let selectCallCount = 0;
+    vi.mocked(db.select).mockImplementation(() => {
+      selectCallCount++;
+      return {
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockImplementation(() =>
+            selectCallCount === 1
+              ? Promise.resolve([{ id: "org_re", name: "Re", slug: "re", suspendedAt: suspendedDate }])
+              : { limit: vi.fn().mockResolvedValue([{ email: "o@re.com", firstName: "R" }]) },
+          ),
+        }),
+      } as any;
+    });
+    vi.mocked(PlatformConfigService.get).mockResolvedValue({ suspendedAt: "2025-01-01T00:00:00.000Z", warnedAt: "2025-06-01T00:00:00.000Z" });
+
+    const res = await ComplianceService.processSuspensionRetention(currentDate);
+    expect(res.anonymizedCount).toBe(0);
+    expect(res.warnedCount).toBe(1);
+  });
+
+  it("anonymizes tenant records when suspended >= 180 days and warned >= 14 days ago", async () => {
     const suspendedDate = new Date("2026-01-01T00:00:00Z");
     const currentDate = new Date("2026-07-15T00:00:00Z"); // 195 days suspended
 
@@ -138,7 +186,7 @@ describe("ComplianceService - Suspension Retention Policy", () => {
     };
     vi.mocked(db.update).mockReturnValue(mockUpdate as any);
 
-    vi.mocked(PlatformConfigService.get).mockResolvedValue({});
+    vi.mocked(PlatformConfigService.get).mockResolvedValue({ suspendedAt: suspendedDate.toISOString(), warnedAt: "2026-06-20T00:00:00.000Z" });
 
     const res = await ComplianceService.processSuspensionRetention(currentDate);
     expect(res.anonymizedCount).toBe(1);

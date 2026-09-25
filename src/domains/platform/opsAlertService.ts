@@ -51,7 +51,11 @@ export class OpsAlertService {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 3500);
 
+      // The URL is admin-set, but still never let it reach internal addresses (same guard as webhooks).
+      const { assertPublicHttpUrl } = await import("@/lib/webhooks/ssrf");
+      await assertPublicHttpUrl(config.url);
       const res = await fetch(config.url, {
+        redirect: "manual",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -79,7 +83,11 @@ export class OpsAlertService {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 4000);
 
+      // The URL is admin-set, but still never let it reach internal addresses (same guard as webhooks).
+      const { assertPublicHttpUrl } = await import("@/lib/webhooks/ssrf");
+      await assertPublicHttpUrl(config.url);
       const res = await fetch(config.url, {
+        redirect: "manual",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

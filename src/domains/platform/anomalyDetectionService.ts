@@ -247,33 +247,24 @@ export class AnomalyDetectionService {
     return anomalies;
   }
 
-  static async resolveAnomaly(id: string, action: "resolve" | "dismiss"): Promise<void> {
-    const resolutions = await PlatformConfigService.get<Record<string, "resolved" | "dismissed">>(
-      RESOLUTIONS_CONFIG_KEY,
-      {}
+  static async resolveAnomaly(id: string, action: "resolve" | "dismiss", superAdminId?: string): Promise<void> {
+    const status = action === "resolve" ? ("resolved" as const) : ("dismissed" as const);
+    await PlatformConfigService.update<Record<string, "resolved" | "dismissed">>(RESOLUTIONS_CONFIG_KEY, {}, (r) => ({ ...r, [id]: status }));
+    await PlatformConfigService.update<SecurityAnomaly[]>(CACHED_ANOMALIES_KEY, [], (cached) =>
+      cached.map((a) => (a.id === id ? { ...a, status } : a)),
     );
-    resolutions[id] = action === "resolve" ? "resolved" : "dismissed";
-    await PlatformConfigService.set(RESOLUTIONS_CONFIG_KEY, resolutions);
-
-    const cached = await PlatformConfigService.get<SecurityAnomaly[] | null>(
-      CACHED_ANOMALIES_KEY,
-      null
-    );
-    if (Array.isArray(cached)) {
-      const updated = cached.map((a) =>
-        a.id === id ? { ...a, status: action === "resolve" ? ("resolved" as const) : ("dismissed" as const) } : a
-      );
-      await PlatformConfigService.set(CACHED_ANOMALIES_KEY, updated);
-    }
 
     await AuditService.log({
       organizationId: "00000000-0000-0000-0000-000000000000",
+      userId: superAdminId,
       action: `platform.anomaly_${action}d`,
       entityType: "security_anomaly",
       metadata: { anomalyId: id, action },
     });
   }
 
+  // Applies the anomaly's suggested action. Suspension goes through the same audited path as a manual
+  // suspend (logged against the tenant, with the operator), not a bare UPDATE.
   static async executeRemediation(anomalyId: string, superAdminId?: string): Promise<{ success: boolean; message: string }> {
     const anomalies = await this.getCachedAnomalies();
     const target = anomalies.find((a) => a.id === anomalyId);
@@ -287,6 +278,14 @@ export class AnomalyDetectionService {
       message = `Terminated all active sessions for organization ${target.organizationName}.`;
     } else if (target.suggestedAction === "suspend_org") {
       await db.update(organizations).set({ suspendedAt: new Date() }).where(eq(organizations.id, target.organizationId));
+      await AuditService.log({
+        organizationId: target.organizationId,
+        userId: superAdminId,
+        action: "platform.suspend",
+        entityType: "organization",
+        entityId: target.organizationId,
+        metadata: { by: "super_admin", reason: `anomaly remediation: ${target.title ?? target.id}`, anomalyId },
+      });
       message = `Suspended organization ${target.organizationName}.`;
     } else if (target.suggestedAction === "inspect_dlq") {
       message = `DLQ inspection flagged for organization ${target.organizationName}.`;
@@ -294,7 +293,7 @@ export class AnomalyDetectionService {
       message = `Mitigation completed for ${target.organizationName}.`;
     }
 
-    await this.resolveAnomaly(anomalyId, "resolve");
+    await this.resolveAnomaly(anomalyId, "resolve", superAdminId);
     return { success: true, message };
   }
 }

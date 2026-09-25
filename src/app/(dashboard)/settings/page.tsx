@@ -6,7 +6,7 @@ import type { PermissionKey } from "@/lib/permissions";
 import { LeadSourceService } from "@/domains/leads/sourceService";
 import { PlanService } from "@/domains/billing/planService";
 import Link from "next/link";
-import { Sliders, Database, MessageSquare, Users, ListPlus, KeyRound, ScrollText, CreditCard, Plug, Webhook, Mail, Sparkles, Share2, Store } from "lucide-react";
+import { Sliders, Database, MessageSquare, Users, ListPlus, KeyRound, ScrollText, CreditCard, Plug, Webhook, Mail, Sparkles, Share2, Store, LifeBuoy } from "lucide-react";
 
 // Grouped by what an owner is trying to do; developer/technical pages sit under "Advanced".
 // `perm` mirrors each page's own gate, so nobody is shown a link that just redirects them away.
@@ -33,6 +33,7 @@ const NAV: { group: string; items: { href: string; label: string; icon: React.El
       { href: "/settings/users", label: "Team members", icon: Users, perm: "users.manage" },
       { href: "/settings/meetings", label: "Meetings & booking", icon: Store, perm: "settings.manage" },
       { href: "/settings/email", label: "Email sending", icon: Mail, perm: "settings.manage" },
+      { href: "/settings/support", label: "Help & support", icon: LifeBuoy },
     ],
   },
   {

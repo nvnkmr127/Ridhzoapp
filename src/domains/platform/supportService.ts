@@ -101,36 +101,35 @@ export class SupportTicketService {
       updatedAt: now.toISOString(),
     };
 
-    const list = await PlatformConfigService.get<SupportTicket[]>(SUPPORT_CONFIG_KEY, []);
-    list.unshift(ticket);
-    await PlatformConfigService.set(SUPPORT_CONFIG_KEY, list);
+    await PlatformConfigService.update<SupportTicket[]>(SUPPORT_CONFIG_KEY, [], (list) => [ticket, ...list]);
     return ticket;
+  }
+
+  // Change one ticket under the config row lock (no lost updates, no whole-list overwrite on a read
+  // error). Returns the updated ticket, or null if it doesn't exist.
+  private static async mutate(ticketId: string, fn: (t: SupportTicket) => void): Promise<SupportTicket | null> {
+    let found: SupportTicket | null = null;
+    await PlatformConfigService.update<SupportTicket[]>(SUPPORT_CONFIG_KEY, [], (list) => {
+      const t = list.find((x) => x.id === ticketId);
+      if (t) {
+        fn(t);
+        t.updatedAt = new Date().toISOString();
+        found = t;
+      }
+      return list;
+    });
+    return found;
   }
 
   static async assignTicket(ticketId: string, assignedTo: string | null): Promise<SupportTicket | null> {
-    const list = await PlatformConfigService.get<SupportTicket[]>(SUPPORT_CONFIG_KEY, []);
-    const ticket = list.find((t) => t.id === ticketId);
-    if (!ticket) return null;
-    ticket.assignedTo = assignedTo;
-    ticket.updatedAt = new Date().toISOString();
-    await PlatformConfigService.set(SUPPORT_CONFIG_KEY, list);
-    return ticket;
+    return this.mutate(ticketId, (t) => { t.assignedTo = assignedTo; });
   }
 
   static async addInternalNote(ticketId: string, authorName: string, body: string): Promise<SupportTicket | null> {
-    const list = await PlatformConfigService.get<SupportTicket[]>(SUPPORT_CONFIG_KEY, []);
-    const ticket = list.find((t) => t.id === ticketId);
-    if (!ticket) return null;
-    ticket.internalNotes = ticket.internalNotes ?? [];
-    ticket.internalNotes.push({
-      id: `note_${Date.now()}`,
-      authorName,
-      body,
-      createdAt: new Date().toISOString(),
+    return this.mutate(ticketId, (t) => {
+      t.internalNotes = t.internalNotes ?? [];
+      t.internalNotes.push({ id: `note_${Date.now()}`, authorName, body, createdAt: new Date().toISOString() });
     });
-    ticket.updatedAt = new Date().toISOString();
-    await PlatformConfigService.set(SUPPORT_CONFIG_KEY, list);
-    return ticket;
   }
 
   static async reply(
@@ -139,24 +138,11 @@ export class SupportTicketService {
     senderName: string,
     body: string
   ): Promise<SupportTicket | null> {
-    const list = await PlatformConfigService.get<SupportTicket[]>(SUPPORT_CONFIG_KEY, []);
-    const ticket = list.find((t) => t.id === ticketId);
-    if (!ticket) return null;
-
-    const now = new Date().toISOString();
-    ticket.messages.push({
-      id: `msg_${Date.now()}`,
-      sender,
-      senderName,
-      body,
-      createdAt: now,
+    const ticket = await this.mutate(ticketId, (t) => {
+      t.messages.push({ id: `msg_${Date.now()}`, sender, senderName, body, createdAt: new Date().toISOString() });
+      if (sender === "superadmin" && t.status === "open") t.status = "in_progress";
     });
-    ticket.updatedAt = now;
-    if (sender === "superadmin" && ticket.status === "open") {
-      ticket.status = "in_progress";
-    }
-
-    await PlatformConfigService.set(SUPPORT_CONFIG_KEY, list);
+    if (!ticket) return null;
 
     // If superadmin replied, notify the tenant user
     if (sender === "superadmin") {
@@ -176,13 +162,8 @@ export class SupportTicketService {
   }
 
   static async updateStatus(ticketId: string, status: "open" | "in_progress" | "resolved"): Promise<SupportTicket | null> {
-    const list = await PlatformConfigService.get<SupportTicket[]>(SUPPORT_CONFIG_KEY, []);
-    const ticket = list.find((t) => t.id === ticketId);
+    const ticket = await this.mutate(ticketId, (t) => { t.status = status; });
     if (!ticket) return null;
-
-    ticket.status = status;
-    ticket.updatedAt = new Date().toISOString();
-    await PlatformConfigService.set(SUPPORT_CONFIG_KEY, list);
 
     if (status === "resolved") {
       try {

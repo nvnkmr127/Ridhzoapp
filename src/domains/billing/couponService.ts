@@ -36,13 +36,7 @@ export class CouponService {
     expiresAt?: string | null;
     razorpayOfferId?: string | null;
   }): Promise<Coupon> {
-    const list = await this.list();
     const cleanCode = input.code.trim().toUpperCase();
-
-    if (list.some((c) => c.code === cleanCode)) {
-      throw new Error(`Coupon with code "${cleanCode}" already exists.`);
-    }
-
     const coupon: Coupon = {
       id: `coup_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       code: cleanCode,
@@ -56,26 +50,32 @@ export class CouponService {
       createdAt: new Date().toISOString(),
       razorpayOfferId: input.razorpayOfferId?.trim() || null,
     };
-
-    list.unshift(coupon);
-    await PlatformConfigService.set(COUPON_CONFIG_KEY, list);
+    // Locked read-modify-write: the duplicate check and the insert see the same list.
+    await PlatformConfigService.update<Coupon[]>(COUPON_CONFIG_KEY, [], (list) => {
+      if (list.some((c) => c.code === cleanCode)) throw new Error(`Coupon with code "${cleanCode}" already exists.`);
+      return [coupon, ...list];
+    });
     return coupon;
   }
 
   static async toggle(id: string, active: boolean): Promise<Coupon | null> {
-    const list = await this.list();
-    const c = list.find((item) => item.id === id);
-    if (!c) return null;
-    c.active = active;
-    await PlatformConfigService.set(COUPON_CONFIG_KEY, list);
-    return c;
+    let found: Coupon | null = null;
+    await PlatformConfigService.update<Coupon[]>(COUPON_CONFIG_KEY, [], (list) => {
+      found = list.find((item) => item.id === id) ?? null;
+      if (found) found.active = active;
+      return list;
+    });
+    return found;
   }
 
   static async delete(id: string): Promise<boolean> {
-    const list = await this.list();
-    const filtered = list.filter((item) => item.id !== id);
-    await PlatformConfigService.set(COUPON_CONFIG_KEY, filtered);
-    return filtered.length < list.length;
+    let removed = false;
+    await PlatformConfigService.update<Coupon[]>(COUPON_CONFIG_KEY, [], (list) => {
+      const filtered = list.filter((item) => item.id !== id);
+      removed = filtered.length < list.length;
+      return filtered;
+    });
+    return removed;
   }
 
   static async validate(code: string, plan: string, basePrice: number): Promise<{
@@ -124,13 +124,13 @@ export class CouponService {
     return { ok: true, coupon, message: res.message };
   }
 
-  // Count one use, after a paid activation. ponytail: read-modify-write on a JSON config blob; move
-  // coupons to a table with an atomic increment if codes get heavy concurrent use.
+  // Count one use, after a paid activation. Atomic under the config row lock.
+  // ponytail: coupons live in one JSON config row; move to a table if codes get heavy concurrent use.
   static async redeem(code: string) {
-    const list = await this.list();
-    const c = list.find((item) => item.code === code.trim().toUpperCase());
-    if (!c) return;
-    c.redemptionsCount += 1;
-    await PlatformConfigService.set(COUPON_CONFIG_KEY, list);
+    await PlatformConfigService.update<Coupon[]>(COUPON_CONFIG_KEY, [], (list) => {
+      const c = list.find((item) => item.code === code.trim().toUpperCase());
+      if (c) c.redemptionsCount += 1;
+      return list;
+    });
   }
 }

@@ -261,59 +261,64 @@ export class ComplianceService {
     let warnedCount = 0;
     let anonymizedCount = 0;
 
+    const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+    const WARNING_NOTICE_MS = (ComplianceService.RETENTION_DAYS - ComplianceService.RETENTION_WARN_DAYS) * 86_400_000;
+
     for (const org of suspended) {
       if (!org.suspendedAt) continue;
 
-      const suspendedMs = now.getTime() - new Date(org.suspendedAt).getTime();
-      const daysSuspended = Math.floor(suspendedMs / (1000 * 60 * 60 * 24));
+      const suspendedIso = new Date(org.suspendedAt).toISOString();
+      const daysSuspended = Math.floor((now.getTime() - new Date(org.suspendedAt).getTime()) / 86_400_000);
       const stateKey = `retention_state:${org.id}`;
-      const state = await PlatformConfigService.get<{ warnedAt?: string; anonymizedAt?: string }>(stateKey, {});
+      const saved = await PlatformConfigService.get<{ suspendedAt?: string; warnedAt?: string; anonymizedAt?: string }>(stateKey, {});
+      // State belongs to ONE suspension: a tenant reactivated and later suspended again starts over
+      // (a fresh warning), instead of inheriting the old suspension's warnedAt.
+      const state = saved.suspendedAt === suspendedIso ? saved : { suspendedAt: suspendedIso };
+      if (state.anonymizedAt) continue;
 
-      // Case 1: Suspended >= 180 days -> Anonymize
-      if (daysSuspended >= ComplianceService.RETENTION_DAYS) {
-        if (!state.anonymizedAt) {
-          await ComplianceService.anonymizeTenant(org.id, "system-retention-worker");
-          await PlatformConfigService.set(stateKey, { ...state, anonymizedAt: now.toISOString() });
-          anonymizedCount++;
-        }
+      // Anonymize only after the owner was warned for THIS suspension, at least the full notice
+      // period ago — even if the scan first sees the tenant well past the retention limit.
+      if (daysSuspended >= ComplianceService.RETENTION_DAYS && state.warnedAt && now.getTime() - new Date(state.warnedAt).getTime() >= WARNING_NOTICE_MS) {
+        await ComplianceService.anonymizeTenant(org.id, "system-retention-worker");
+        await PlatformConfigService.set(stateKey, { ...state, anonymizedAt: now.toISOString() });
+        anonymizedCount++;
+        continue;
       }
-      // Case 2: Suspended >= 166 days (14 days before purge) -> Warn owner
-      else if (daysSuspended >= ComplianceService.RETENTION_WARN_DAYS) {
-        if (!state.warnedAt) {
-          const [owner] = await db
-            .select({ email: users.email, firstName: users.firstName })
-            .from(users)
-            .where(and(eq(users.organizationId, org.id), eq(users.isActive, true)))
-            .limit(1);
 
-          if (owner?.email) {
-            const daysLeft = Math.max(1, ComplianceService.RETENTION_DAYS - daysSuspended);
-            await sendEmail({
-              to: owner.email,
-              subject: `[Compliance Notice] Data retention expiry for ${org.name}`,
-              html: `
-                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
-                  <h2 style="color: #b91c1c; margin-top: 0;">Data Retention Expiry Notice</h2>
-                  <p>Hello ${owner.firstName || "there"},</p>
-                  <p>Your organization <strong>${org.name}</strong> (${org.slug}) has been suspended for ${daysSuspended} days.</p>
-                  <p>Under our compliance data retention policy, all customer records and personal data will be permanently anonymized in <strong>${daysLeft} days</strong>.</p>
-                  <p>If you wish to reactivate your account or export your data before it is anonymized, please contact support immediately.</p>
-                </div>
-              `,
-            });
-          }
+      if (daysSuspended >= ComplianceService.RETENTION_WARN_DAYS && !state.warnedAt) {
+        const [owner] = await db
+          .select({ email: users.email, firstName: users.firstName })
+          .from(users)
+          .where(and(eq(users.organizationId, org.id), eq(users.isActive, true)))
+          .limit(1);
 
-          await PlatformConfigService.set(stateKey, { ...state, warnedAt: now.toISOString() });
-          await AuditService.log({
-            organizationId: org.id,
-            userId: "00000000-0000-0000-0000-000000000000",
-            action: "compliance.retention_warning_sent",
-            entityType: "organization",
-            entityId: org.id,
-            metadata: { daysSuspended, recipient: owner?.email ?? null },
+        const daysLeft = Math.max(ComplianceService.RETENTION_DAYS - daysSuspended, Math.ceil(WARNING_NOTICE_MS / 86_400_000));
+        if (owner?.email) {
+          await sendEmail({
+            to: owner.email,
+            subject: `[Compliance Notice] Data retention expiry for ${org.name}`,
+            html: `
+              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
+                <h2 style="color: #b91c1c; margin-top: 0;">Data Retention Expiry Notice</h2>
+                <p>Hello ${esc(owner.firstName || "there")},</p>
+                <p>Your organization <strong>${esc(org.name)}</strong> (${esc(org.slug)}) has been suspended for ${daysSuspended} days.</p>
+                <p>Under our compliance data retention policy, all customer records and personal data will be permanently anonymized in <strong>${daysLeft} days</strong>.</p>
+                <p>If you wish to reactivate your account or export your data before it is anonymized, please contact support immediately.</p>
+              </div>
+            `,
           });
-          warnedCount++;
         }
+
+        await PlatformConfigService.set(stateKey, { ...state, warnedAt: now.toISOString() });
+        await AuditService.log({
+          organizationId: org.id,
+          userId: null,
+          action: "compliance.retention_warning_sent",
+          entityType: "organization",
+          entityId: org.id,
+          metadata: { daysSuspended, daysLeft, recipient: owner?.email ?? null },
+        });
+        warnedCount++;
       }
     }
 

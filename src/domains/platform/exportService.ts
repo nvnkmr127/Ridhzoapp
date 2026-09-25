@@ -2,10 +2,13 @@ import { PlatformService } from "./service";
 import { RevOpsService } from "./revops";
 import { InvoiceService } from "@/domains/billing/invoiceService";
 
+// Org names etc. are tenant-controlled and these files are opened by staff in Excel/Sheets: a cell
+// starting with = + - @ (or tab/CR) would run as a formula. Prefix it with ' like the lead exports.
 function escapeCsv(val: unknown): string {
   if (val === null || val === undefined) return '""';
-  const s = String(val).replace(/"/g, '""');
-  return `"${s}"`;
+  let s = String(val);
+  if (typeof val === "string" && /^[=+\-@\t\r]/.test(s)) s = `'${s}`; // numbers (e.g. credit-note -₹) stay numeric
+  return `"${s.replace(/"/g, '""')}"`;
 }
 
 export class PlatformExportService {
@@ -48,7 +51,7 @@ export class PlatformExportService {
 
   static async exportChurnRiskCsv(): Promise<string> {
     const list = await RevOpsService.listTenantHealth(200);
-    const headers = ["Organization", "Slug", "Plan", "Health Status", "Days Inactive", "Leads", "Users", "AI Credits", "WhatsApp Credits"];
+    const headers = ["Organization", "Slug", "Plan", "Health Status", "Days Inactive", "Leads", "Users", "AI Credits Left", "AI Credits This Month"];
     const rows = list.map((t) => [
       escapeCsv(t.name),
       escapeCsv(t.slug),
@@ -57,8 +60,8 @@ export class PlatformExportService {
       escapeCsv(t.daysInactive),
       escapeCsv(t.leadCount),
       escapeCsv(t.userCount),
-      escapeCsv(t.aiCredits),
-      escapeCsv(t.whatsappCredits),
+      escapeCsv(t.aiCreditsLeft),
+      escapeCsv(t.aiCreditsMax),
     ]);
 
     return [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
