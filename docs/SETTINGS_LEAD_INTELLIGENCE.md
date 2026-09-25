@@ -47,7 +47,7 @@ export const tenantIntegrationSettings = pgTable('tenant_integration_settings', 
   enrichmentApiUrl: varchar('enrichment_api_url', { length: 500 }),
   enrichmentAuthHeader: varchar('enrichment_auth_header', { length: 100 }), // e.g. "Authorization", "x-api-key"
   enrichmentAuthValueEnc: text('enrichment_auth_value_enc'), // AES-256-GCM encrypted
-  enrichmentTimeoutMs: integer('enrichment_timeout_ms'), // 1,000–60,000 ms; default 10,000 ms
+  enrichmentTimeoutMs: integer('enrichment_timeout_ms'), // not exposed in the UI; null = 10,000 ms
 
   // Inbound Email -> Timeline
   inboundEmailEnabled: integer('inbound_email_enabled').default(0).notNull(),
@@ -80,8 +80,8 @@ export const tenantIntegrationSettings = pgTable('tenant_integration_settings', 
      { jobId: `enrich-${p.leadId}` }
    );
    ```
-3. **Asynchronous Background Processing:** In [`src/lib/jobs/workers/enrichmentWorker.ts`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/jobs/workers/enrichmentWorker.ts), the worker processes jobs at concurrency 5 with 3 retries and exponential backoff (5s base). External API delays or provider outages never block the lead ingestion pipeline.
-4. **Provider Invocation:** [`EnrichmentService.enrichLead`](file:///Users/naveenadicharla/Documents/ridhzo/src/domains/leads/enrichmentService.ts) decrypts the stored auth credentials and issues a `POST` request with `{ email, company, name }`:
+3. **Asynchronous Background Processing:** In [`src/lib/jobs/workers/enrichmentWorker.ts`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/jobs/workers/enrichmentWorker.ts), the worker processes jobs at concurrency 5 with 3 retries and exponential backoff (5s base). `enrichLead` throws only on transient provider errors (network, timeout, 429, 5xx) so those are retried; a 404, other 4xx, non-JSON or oversized (>20 KB) response is a final skip. Already-enriched leads are skipped.
+4. **Provider Invocation:** `callProvider` in [`enrichmentService.ts`](file:///Users/naveenadicharla/Documents/ridhzo/src/domains/leads/enrichmentService.ts) checks the URL against the SSRF guard (`assertPublicHttpUrl` — private, loopback and metadata addresses are refused, redirects are not followed), then issues a `POST` with `{ email, company, name, phone }`. The URL must be https and is also checked on save:
    ```typescript
    const res = await fetch(config.url, {
      method: "POST",
@@ -111,7 +111,9 @@ Ridhzo treats third-party enrichment data as **observed evidence**, not unvetted
     }
   }
   ```
-- **Precedence Rule:** In `mergeEnrichment()`, an enriched guess **never overwrites** human-entered data. If `lead.company` is already populated, it is preserved; if `lead.company` was left blank, the enriched company name fills the primary column.
+- **Precedence Rule:** The write is a single SQL update (`customData || {_enrichment}` and a `CASE` on `company`), so an enriched guess **never overwrites** human-entered data and edits made while the provider call was in flight are not lost.
+- **Where it shows:** `LeadInsightsCard` on the lead page lists the enriched attributes.
+- **Test connection:** the settings page can look up a sample email with the unsaved form values.
 - **Activity Log Entry:** Automatically creates an activity record: `"Lead enriched from api.provider.com."`
 
 ---
@@ -120,20 +122,21 @@ Ridhzo treats third-party enrichment data as **observed evidence**, not unvetted
 
 ### 5.1 Webhook URL Generation & Security
 
-* **URL Format:** `https://app.ridhzo.com/api/webhooks/email?token=<TOKEN>`
+* **URL Format:** `<app URL>/api/webhooks/email?token=<TOKEN>` (the token may instead be sent as an `x-webhook-token` header)
 * **Token Creation:** Generated using cryptographically secure random bytes:
   ```typescript
   crypto.randomBytes(24).toString("base64url"); // 32 URL-safe characters
   ```
-* **Instant Rotation:** Reps or admins can click **Rotate** at any time. [`rotateInboundTokenAction`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/actions/tenantIntegrations.ts) generates a new token and immediately revokes the prior URL.
+* **Instant Rotation:** Users with `settings.manage` can generate a new URL (after a confirmation). [`rotateInboundTokenAction`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/actions/tenantIntegrations.ts) generates a new token and immediately revokes the prior URL.
 * **Tenant Isolation:** The webhook endpoint verifies the token against `tenant_integration_settings`. Inbound matching is strictly scoped to the authenticated tenant's `organizationId`.
 
 ### 5.2 Universal Provider Ingestion
 
-The webhook endpoint [`src/app/api/webhooks/email/route.ts`](file:///Users/naveenadicharla/Documents/ridhzo/src/app/api/webhooks/email/route.ts) normalizes payload formats across major email service providers:
+The webhook endpoint [`src/app/api/webhooks/email/route.ts`](file:///Users/naveenadicharla/Documents/ridhzo/src/app/api/webhooks/email/route.ts) accepts JSON (Postmark, Resend — whose `{ type: "email.received", data }` envelope is unwrapped) and `multipart/form-data` / urlencoded bodies (Mailgun routes, SendGrid Inbound Parse), then normalizes fields:
 - **Sender Address (`from`):** Checks `from`, `sender`, `fromEmail`, `From`. Extracts bare email address via regex `/^[^\s@]+@[^\s@]+\.[^\s@]+$/`.
 - **Subject Line:** Checks `subject`, `Subject`.
-- **Message Body:** Checks `text`, `body`, `plain`, `TextBody`, `stripped-text`.
+- **Message Body:** Checks `stripped-text`, `text`, `body-plain`, `body`, `plain`, `TextBody`.
+- **Matching:** the most recently updated non-deleted lead in the token's org with that email.
 
 ### 5.3 Downstream Automation & AI Intelligence
 
@@ -170,22 +173,26 @@ In [`src/lib/integrations/metaCapi.ts`](file:///Users/naveenadicharla/Documents/
 For leads generated via **Meta Lead Ads** (`customData.facebook_lead_id` present), Ridhzo posts CRM milestone updates back to Meta under the **Conversion Leads** program:
 - **Attribution Identifier:** Uses raw `user_data.lead_id` (the Meta leadgen ID) rather than hashed PII, tying progress directly back to the specific ad and campaign.
 - **Source Label:** Identifies `lead_event_source: "Ridhzo"`.
-- **Default Stage Mapping:**
+- **Default Stage Mapping** (used while `capi_lead_stage_map` is null; the UI hides keys the tenant has no status for):
   ```json
   {
+    "active": "contacted",
     "contacted": "contacted",
     "qualified": "qualified",
     "won": "converted"
   }
   ```
-- **Custom Mapping UI:** Administrators can define, rename, add, or delete status-to-event mappings in [`LeadIntelligenceManager.tsx`](file:///Users/naveenadicharla/Documents/ridhzo/src/components/settings/LeadIntelligenceManager.tsx) stored in `capi_lead_stage_map`.
+- **Custom Mapping UI:** Administrators pick a status from the tenant's status list and type the Meta event name, in [`LeadIntelligenceManager.tsx`](file:///Users/naveenadicharla/Documents/ridhzo/src/components/settings/LeadIntelligenceManager.tsx). Saving an empty mapping means no stage postbacks are sent.
+- **Dedup:** each stage event carries `event_id: "<leadgen id>:<event>"`.
+- **Currency:** Purchase and stage values are sent in the organization's currency (`organizations.currency`).
 
 ### 6.3 Pre-Flight Verification ("Send Test Event")
 
 Administrators can verify CAPI connectivity before activating ad traffic:
-1. Enter an optional **Test event code** (from Meta Events Manager $\rightarrow$ Test Events).
-2. Click **Send test event**.
+1. Enter a **Test event code** (from Meta Events Manager $\rightarrow$ Test Events). It is **required** for a test, so the fake lead never lands in the live dataset.
+2. Click **Send test event**. The form's current values are used (a blank token falls back to the saved one) — no need to save first.
 3. [`sendTestCapiEventAction`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/actions/tenantIntegrations.ts) triggers [`MetaCapiService.sendTest`](file:///Users/naveenadicharla/Documents/ridhzo/src/domains/leads/metaCapiService.ts), posting a sample `Lead` event (`id: test-<timestamp>`, `email: test@example.com`).
+4. **Clear the test code and save when done.** While a code is saved, *all* events go to Test Events; the page shows a warning.
 4. Meta's Test Events dashboard immediately displays the parsed event parameters and match quality diagnostic.
 
 ---
@@ -194,15 +201,15 @@ Administrators can verify CAPI connectivity before activating ad traffic:
 
 1. **AES-256-GCM Encryption:** Secret credentials (`enrichmentAuthValueEnc` and `capiAccessTokenEnc`) are encrypted at rest using the tenant master encryption key in [`src/lib/crypto/secret.ts`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/crypto/secret.ts).
 2. **Zero Plaintext Leakage:** Masked view objects return boolean flags (`hasEnrichmentAuthValue`, `hasCapiAccessToken`). Input fields show placeholder `••••••••` to prevent client-side exposure.
-3. **Leave-Blank-to-Keep Semantics:** Submitting an empty password input retains the existing encrypted secret in the database without requiring re-entry.
+3. **Save Semantics:** Every visible field is saved as shown — blanking the URL, header, Pixel ID or test code clears it. Secret inputs are the exception: blank keeps the stored secret. **Remove provider** / **Disconnect** clear the section's config and secret.
 4. **Isolated Token Authentication:** The inbound email webhook endpoint rejects any request lacking a valid, active tenant token with HTTP 401.
 
 ---
 
 ## 8. Summary Checklist for Administrators
 
-- [ ] **Enrichment:** Configure provider endpoint, select header (`Authorization` or `x-api-key`), supply token, and adjust timeout (default 10,000ms).
+- [ ] **Enrichment:** Enter the https provider URL, the API key and (if not `Authorization`) the header name, then use **Test connection**.
 - [ ] **Inbound Email:** Toggle on, copy secret webhook URL, and configure inbound forwarding / parse webhooks in Postmark, Mailgun, SendGrid, or Resend.
 - [ ] **Meta CAPI:** Input Meta Pixel / Dataset ID and System User Access Token.
 - [ ] **Meta Conversion Leads:** Review the CRM status-to-event mapping table and confirm stages match Events Manager configuration.
-- [ ] **Verify Setup:** Enter Meta Test Event Code and click **Send test event** to confirm 200 OK delivery in Meta Events Manager.
+- [ ] **Verify Setup:** Enter Meta Test Event Code and click **Send test event** to confirm delivery in Meta Events Manager — then **clear the code and save**.

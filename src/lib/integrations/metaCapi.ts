@@ -101,6 +101,8 @@ export function buildCrmLeadEvent(
   return {
     event_name: eventName,
     event_time: opts.eventTime ?? Math.floor(Date.now() / 1000),
+    // One report per lead per stage: a lead bouncing back into a status must not double-count.
+    event_id: `${opts.leadgenId}:${eventName}`,
     action_source: "system_generated",
     // Meta attributes the CRM event via the leadgen id, not hashed PII.
     user_data: { lead_id: String(opts.leadgenId) },

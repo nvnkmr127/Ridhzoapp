@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { leads } from "@/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { ActivityService } from "@/domains/activities/service";
 
 // Inbound email → lead timeline. Mirrors the WhatsApp inbound path: match the sender to a known
@@ -33,10 +33,11 @@ export class EmailInboundService {
     const email = extractEmail(input.from);
     if (!email) return { matched: false };
 
-    const conditions = [sql`lower(${leads.email}) = ${email}`];
+    const conditions = [sql`lower(${leads.email}) = ${email}`, isNull(leads.deletedAt)]; // not the recycle bin
     if (input.organizationId) conditions.push(eq(leads.organizationId, input.organizationId));
 
-    const [lead] = await db.select().from(leads).where(and(...conditions)).limit(1);
+    // Several leads can share an address; land on the most recently active one, deterministically.
+    const [lead] = await db.select().from(leads).where(and(...conditions)).orderBy(desc(leads.updatedAt)).limit(1);
     if (!lead) return { matched: false };
 
     await ActivityService.addActivity({

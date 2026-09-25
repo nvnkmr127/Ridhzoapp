@@ -26,7 +26,7 @@ export default async function IntegrationsPage() {
     TenantIntegrationsService.getView(organizationId),
     session?.user?.id ? GoogleCalendarService.isConnected(session.user.id) : Promise.resolve(false),
   ]);
-  const leadIntelOn = leadIntel.enrichmentEnabled || leadIntel.inboundEmailEnabled;
+  const leadIntelOn = leadIntel.enrichmentEnabled || leadIntel.inboundEmailEnabled || leadIntel.capiEnabled;
 
   const facebookConfigured = Boolean(process.env.NEXT_PUBLIC_FACEBOOK_APP_ID);
   const pushConfigured = Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY);
@@ -111,7 +111,7 @@ export default async function IntegrationsPage() {
 
         <IntegrationCard
           name="Lead Intelligence"
-          description="Enrich new leads from your own data provider and pull inbound email onto the lead timeline."
+          description="Enrich new leads from your data provider, log email replies on the lead timeline, and send conversions to Meta ads."
           icon={<Sparkles className="h-5 w-5 text-violet-500" />}
           status={leadIntelOn ? "configured" : "unconfigured"}
           action={<ManageLink href="/settings/lead-intelligence" />}

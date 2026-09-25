@@ -1,6 +1,19 @@
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { organizations } from "@/db/schema";
 import { LeadService } from "./service";
-import { TenantIntegrationsService } from "@/domains/organizations/tenantIntegrationsService";
+import { TenantIntegrationsService, type CapiConfig } from "@/domains/organizations/tenantIntegrationsService";
 import { buildEvent, buildCrmLeadEvent, postEvents, postEventsDetailed } from "@/lib/integrations/metaCapi";
+
+// Deal values are in the org's currency; Meta needs to be told which, or it assumes the default.
+async function orgCurrency(organizationId: string): Promise<string | null> {
+  const [org] = await db
+    .select({ currency: organizations.currency })
+    .from(organizations)
+    .where(eq(organizations.id, organizationId))
+    .limit(1);
+  return org?.currency ?? null;
+}
 
 // The CRM name reported to Meta as lead_event_source in Conversion Leads postbacks.
 const CRM_NAME = "Ridhzo";
@@ -23,6 +36,7 @@ export class MetaCapiService {
         phone: lead.phone,
         name: lead.name,
         value: lead.expectedValue != null ? Number(lead.expectedValue) : null,
+        currency: await orgCurrency(lead.organizationId),
       });
       await postEvents(config, [event]);
     } catch {
@@ -55,6 +69,7 @@ export class MetaCapiService {
         leadgenId: String(fbLeadId),
         crmName: CRM_NAME,
         value: lead.expectedValue != null ? Number(lead.expectedValue) : null,
+        currency: await orgCurrency(lead.organizationId),
       });
       await postEvents(config, [event]);
     } catch {
@@ -62,10 +77,19 @@ export class MetaCapiService {
     }
   }
 
-  /** Send a sample event using the saved config (even if not enabled) so a tenant can verify setup. */
-  static async sendTest(organizationId: string): Promise<{ ok: boolean; error?: string }> {
-    const config = await TenantIntegrationsService.getCapiConfig(organizationId, false);
-    if (!config) return { ok: false, error: "Save your Pixel/Dataset ID and access token first." };
+  /**
+   * Send a sample event so a tenant can verify setup. Uses the form's values (a blank token falls
+   * back to the saved one) and REQUIRES a test event code — without one the fake lead would land in
+   * the live dataset and count as a real conversion.
+   */
+  static async sendTest(
+    organizationId: string,
+    form: { pixelId: string | null; accessToken?: string; testEventCode: string | null },
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!form.testEventCode) return { ok: false, error: "Enter a test event code first, so the test doesn't count as a real lead." };
+    const accessToken = form.accessToken || (await TenantIntegrationsService.getSavedSecrets(organizationId)).capiAccessToken;
+    if (!form.pixelId || !accessToken) return { ok: false, error: "Enter the Pixel/Dataset ID and access token first." };
+    const config: CapiConfig = { pixelId: form.pixelId, accessToken, testEventCode: form.testEventCode };
     const event = buildEvent("Lead", {
       id: `test-${Date.now()}`,
       email: "test@example.com",

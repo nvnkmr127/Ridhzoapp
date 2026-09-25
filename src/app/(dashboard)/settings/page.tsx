@@ -37,7 +37,7 @@ const NAV: { group: string; items: { href: string; label: string; icon: React.El
     group: "Advanced",
     items: [
       { href: "/settings/integrations", label: "Integrations", icon: Plug },
-      { href: "/settings/lead-intelligence", label: "Lead enrichment & tracking", icon: Sparkles },
+      { href: "/settings/lead-intelligence", label: "Lead Intelligence", icon: Sparkles },
       { href: "/settings/api", label: "API keys", icon: KeyRound },
       { href: "/settings/webhooks", label: "Webhooks", icon: Webhook },
       { href: "/settings/audit", label: "Activity log", icon: ScrollText },

@@ -35,7 +35,8 @@ async function main() {
   let enriched = 0;
   let skipped = 0;
   for (const lead of candidates) {
-    const res = await EnrichmentService.enrichLead(lead.id);
+    // enrichLead throws on transient provider errors (so the queue retries); here, count and move on.
+    const res = await EnrichmentService.enrichLead(lead.id).catch(() => ({ status: "skipped" as const }));
     if (res.status === "enriched") enriched++;
     else skipped++;
   }

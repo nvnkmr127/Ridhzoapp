@@ -64,6 +64,7 @@ describe("buildEvent", () => {
     it("includes value + currency only when positive", () => {
       const noVal = buildCrmLeadEvent("converted", { leadgenId: "1", crmName: "Ridhzo" });
       expect((noVal.custom_data as any).value).toBeUndefined();
+      expect(buildCrmLeadEvent("converted", { leadgenId: "9", crmName: "Ridhzo" }).event_id).toBe("9:converted");
       const withVal = buildCrmLeadEvent("converted", { leadgenId: "1", crmName: "Ridhzo", value: 50000, currency: "inr" });
       expect(withVal.custom_data).toMatchObject({ value: 50000, currency: "INR" });
     });
