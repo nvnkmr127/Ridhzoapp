@@ -237,86 +237,93 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async signIn({ user, account }) {
       if (account?.provider === "google") {
-        const email = user.email?.toLowerCase();
-        if (!email) return false;
+        // Any throw here makes NextAuth redirect to /login?error=<err.message>; a DB error message is
+        // multi-line SQL, which is an invalid Location header and 500s the callback. Log it, send a code.
+        try {
+          const email = user.email?.toLowerCase();
+          if (!email) return false;
 
-        let [existingUser] = await db
-          .select()
-          .from(users)
-          .where(and(eq(users.email, email), isNull(users.deletedAt)))
-          .limit(1);
+          let [existingUser] = await db
+            .select()
+            .from(users)
+            .where(and(eq(users.email, email), isNull(users.deletedAt)))
+            .limit(1);
 
-        // "Connect Google" from Profile: attach this Google email to the logged-in user rather than
-        // signing in as / creating someone else.
-        const linkUserId = await consumeGoogleLinkCookie();
-        if (linkUserId) {
-          if (existingUser && existingUser.id !== linkUserId) return "/profile?link=google-taken";
-          if (!existingUser) {
-            const [linkUser] = await db
-              .select()
-              .from(users)
-              .where(and(eq(users.id, linkUserId), isNull(users.deletedAt)))
-              .limit(1);
-            if (!linkUser) return false;
-            // Only a phone-only account (placeholder email) can take a Google email; a real email is
-            // already its Google login.
-            if (!isPlaceholderEmail(linkUser.email)) return "/profile?link=google-mismatch";
-            [existingUser] = await db
-              .update(users)
-              .set({ email, updatedAt: new Date() })
-              .where(eq(users.id, linkUser.id))
-              .returning();
+          // "Connect Google" from Profile: attach this Google email to the logged-in user rather than
+          // signing in as / creating someone else.
+          const linkUserId = await consumeGoogleLinkCookie();
+          if (linkUserId) {
+            if (existingUser && existingUser.id !== linkUserId) return "/profile?link=google-taken";
+            if (!existingUser) {
+              const [linkUser] = await db
+                .select()
+                .from(users)
+                .where(and(eq(users.id, linkUserId), isNull(users.deletedAt)))
+                .limit(1);
+              if (!linkUser) return false;
+              // Only a phone-only account (placeholder email) can take a Google email; a real email is
+              // already its Google login.
+              if (!isPlaceholderEmail(linkUser.email)) return "/profile?link=google-mismatch";
+              [existingUser] = await db
+                .update(users)
+                .set({ email, updatedAt: new Date() })
+                .where(eq(users.id, linkUser.id))
+                .returning();
+            }
           }
+
+          if (!existingUser) {
+            const { OrgService, slugify } = await import("@/domains/organizations/service");
+            const { signupTrial } = await import("@/domains/billing/planService");
+            const adminRole = await OrgService.ensureSystemRoles();
+            const baseName = user.name || email.split("@")[0] || "My";
+            const orgName = `${baseName}'s Workspace`;
+            const slug = `${slugify(baseName)}-${Math.random().toString(36).slice(2, 7)}`;
+            const randomPasswordHash = await bcrypt.hash(crypto.randomUUID(), 10);
+
+            const [newOrg] = await db
+              .insert(organizations)
+              .values({ name: orgName, slug, ...signupTrial() })
+              .returning();
+
+            const nameParts = (user.name || "").trim().split(/\s+/);
+            const firstName = nameParts[0] || baseName;
+            const lastName = nameParts.slice(1).join(" ") || undefined;
+
+            const [created] = await db
+              .insert(users)
+              .values({
+                organizationId: newOrg.id,
+                email,
+                firstName,
+                lastName,
+                passwordHash: randomPasswordHash,
+                roleId: adminRole?.id ?? null,
+                isActive: true,
+              })
+              .returning();
+
+            existingUser = created;
+          }
+
+          if (!existingUser.isActive) return "/login?error=ACCOUNT_DISABLED";
+
+          if (existingUser.organizationId && !existingUser.isSuperAdmin) {
+            const { OrgService } = await import("@/domains/organizations/service");
+            const isSuspended = await OrgService.isSuspended(existingUser.organizationId);
+            if (isSuspended) return "/login?error=ACCOUNT_SUSPENDED";
+          }
+
+          user.id = existingUser.id;
+          user.roleId = existingUser.roleId;
+          user.organizationId = existingUser.organizationId;
+          user.isSuperAdmin = existingUser.isSuperAdmin;
+          user.phone = existingUser.phone;
+          return true;
+        } catch (err) {
+          console.error("[google-auth] sign-in failed:", err, (err as { cause?: unknown })?.cause);
+          return "/login?error=OAuthSignin";
         }
-
-        if (!existingUser) {
-          const { OrgService, slugify } = await import("@/domains/organizations/service");
-          const { signupTrial } = await import("@/domains/billing/planService");
-          const adminRole = await OrgService.ensureSystemRoles();
-          const baseName = user.name || email.split("@")[0] || "My";
-          const orgName = `${baseName}'s Workspace`;
-          const slug = `${slugify(baseName)}-${Math.random().toString(36).slice(2, 7)}`;
-          const randomPasswordHash = await bcrypt.hash(crypto.randomUUID(), 10);
-
-          const [newOrg] = await db
-            .insert(organizations)
-            .values({ name: orgName, slug, ...signupTrial() })
-            .returning();
-
-          const nameParts = (user.name || "").trim().split(/\s+/);
-          const firstName = nameParts[0] || baseName;
-          const lastName = nameParts.slice(1).join(" ") || undefined;
-
-          const [created] = await db
-            .insert(users)
-            .values({
-              organizationId: newOrg.id,
-              email,
-              firstName,
-              lastName,
-              passwordHash: randomPasswordHash,
-              roleId: adminRole?.id ?? null,
-              isActive: true,
-            })
-            .returning();
-
-          existingUser = created;
-        }
-
-        if (!existingUser.isActive) return "/login?error=ACCOUNT_DISABLED";
-
-        if (existingUser.organizationId && !existingUser.isSuperAdmin) {
-          const { OrgService } = await import("@/domains/organizations/service");
-          const isSuspended = await OrgService.isSuspended(existingUser.organizationId);
-          if (isSuspended) return "/login?error=ACCOUNT_SUSPENDED";
-        }
-
-        user.id = existingUser.id;
-        user.roleId = existingUser.roleId;
-        user.organizationId = existingUser.organizationId;
-        user.isSuperAdmin = existingUser.isSuperAdmin;
-        user.phone = existingUser.phone;
-        return true;
       }
       return true;
     },
