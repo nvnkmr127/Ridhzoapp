@@ -506,7 +506,6 @@ export async function checkLeadDuplicatesAction(leadId: string) {
 // newest pending follow-up of any kind, so scheduling a call could move a sequence's WhatsApp task,
 // and "Clear" cancelled every reminder on the lead. Meetings and site visits are booked as meetings
 // (src/domains/meetings), not here.
-const QUICK_FOLLOW_UP_TYPE = "followup";
 
 export async function updateLeadFollowUpAction(leadId: string, nextFollowUpAt: string | null) {
   const { userId, organizationId } = await assertWritable();
@@ -522,50 +521,9 @@ export async function updateLeadFollowUpAction(leadId: string, nextFollowUpAt: s
 
   try {
     await assertLeadAccess(leadId, { userId, organizationId });
-    const { db } = await import("@/db");
-    const { leads, followUps } = await import("@/db/schema");
-    const { eq, and, desc } = await import("drizzle-orm");
-
-    const [updated] = await db.update(leads)
-      .set({ nextFollowUpAt: followUpDate, updatedAt: new Date() })
-      .where(and(eq(leads.id, leadId), eq(leads.organizationId, organizationId)))
-      .returning();
-
+    const { setLeadNextFollowUp } = await import("@/domains/leads/leadActions");
+    const updated = await setLeadNextFollowUp(leadId, followUpDate, userId, organizationId);
     if (!updated) return fail("NOT_FOUND", "This lead no longer exists or was moved.");
-
-    // Sync with followUps table so follow-up appears in Follow-ups tab, list, and calendar
-    if (followUpDate) {
-      const [existing] = await db
-        .select()
-        .from(followUps)
-        .where(and(eq(followUps.leadId, leadId), eq(followUps.status, "pending"), eq(followUps.type, QUICK_FOLLOW_UP_TYPE)))
-        .orderBy(desc(followUps.createdAt))
-        .limit(1);
-
-      const title = `Follow-up with ${updated.name || "lead"}`;
-      if (existing) {
-        await db.update(followUps)
-          .set({ dueAt: followUpDate, title, overdueNotifiedAt: null, updatedAt: new Date() })
-          .where(eq(followUps.id, existing.id));
-      } else {
-        await db.insert(followUps).values({
-          leadId,
-          userId: updated.ownerId || userId,
-          type: QUICK_FOLLOW_UP_TYPE,
-          title,
-          status: "pending",
-          dueAt: followUpDate,
-        });
-      }
-    } else {
-      await db.update(followUps)
-        .set({ status: "cancelled", updatedAt: new Date() })
-        .where(and(eq(followUps.leadId, leadId), eq(followUps.status, "pending"), eq(followUps.type, QUICK_FOLLOW_UP_TYPE)));
-    }
-
-    // Normalize next_follow_up_at to the soonest pending follow-up (not just the date clicked).
-    const { syncLeadFollowUpState } = await import("@/domains/follow-ups/state");
-    await syncLeadFollowUpState(leadId);
 
     revalidatePath(`/leads/${leadId}`);
     revalidatePath('/leads');
@@ -581,35 +539,11 @@ export async function updateLeadFollowUpAction(leadId: string, nextFollowUpAt: s
 
 export async function updateLeadStageAndValueAction(leadId: string, input: { stageId?: string | null; expectedValue?: string | null }) {
   const { userId, organizationId } = await assertWritable();
-
-  // Reject a non-numeric or negative opportunity value before it hits the numeric column.
-  if (input.expectedValue) {
-    const n = Number(input.expectedValue);
-    if (Number.isNaN(n)) return fail("VALIDATION", "Opportunity value must be a number.");
-    if (n < 0) return fail("VALIDATION", "Opportunity value cannot be negative.");
-  }
-
   try {
     await assertLeadAccess(leadId, { userId, organizationId });
-    const { db } = await import("@/db");
-    const { leads } = await import("@/db/schema");
-    const { eq, and } = await import("drizzle-orm");
-    const [before] = await db.select({ stageId: leads.stageId }).from(leads).where(and(eq(leads.id, leadId), eq(leads.organizationId, organizationId))).limit(1);
-
-    const [updated] = await db.update(leads)
-      .set({
-        ...(input.stageId !== undefined ? { stageId: input.stageId || null } : {}),
-        ...(input.expectedValue !== undefined ? { expectedValue: input.expectedValue || null } : {}),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(leads.id, leadId), eq(leads.organizationId, organizationId)))
-      .returning();
-
+    const { updateLeadStageAndValue } = await import("@/domains/leads/leadActions");
+    const updated = await updateLeadStageAndValue(leadId, input, userId, organizationId);
     if (!updated) return fail("NOT_FOUND", "This lead no longer exists or was moved.");
-    if (input.stageId !== undefined && (before?.stageId ?? null) !== (updated.stageId ?? null)) {
-      const { eventBus } = await import("@/lib/events/emitter");
-      eventBus.emit("lead.stage_changed", { leadId, userId, changes: { stageId: updated.stageId, fromStageId: before?.stageId ?? null } });
-    }
     revalidatePath(`/leads/${leadId}`);
     revalidatePath('/leads');
     return ok(updated);

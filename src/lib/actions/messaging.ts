@@ -6,12 +6,9 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { messageTemplates } from "@/db/schema";
 import { and, eq, desc } from "drizzle-orm";
-import { ActivityService } from "@/domains/activities/service";
 import { ok, fail, actionFail } from "@/lib/actions/result";
 import { getActionableLead } from "@/lib/leads/access";
-import { markLeadContacted } from "@/domains/follow-ups/state";
 import { recordLeadContact, recordLeadReply } from "@/domains/leads/contactLog";
-import { escapeHtml } from "@/lib/utils";
 
 export async function listTemplates(channel?: string) {
   const { organizationId } = await requireOrg();
@@ -119,16 +116,8 @@ export async function sendEmailAction(input: z.infer<typeof emailSchema>) {
     const { lead, userId, organizationId } = access;
     if (!lead.email) return fail("VALIDATION", "This lead has no email address on file.");
 
-    const { sendEmail } = await import("@/lib/mail/mailer");
-    await sendEmail({ to: lead.email, subject: data.subject, html: `<p>${escapeHtml(data.body).replace(/\n/g, "<br/>")}</p>` }, organizationId);
-
-    await ActivityService.addActivity({
-      leadId: data.leadId,
-      userId,
-      type: "email",
-      content: `[email] ${data.subject}`,
-    });
-    await markLeadContacted(data.leadId);
+    const { sendLeadEmail } = await import("@/domains/leads/leadActions");
+    await sendLeadEmail({ leadId: data.leadId, userId, organizationId, to: lead.email, subject: data.subject, body: data.body });
     revalidatePath(`/leads/${data.leadId}`);
     return ok({ sent: true });
   } catch (e) {

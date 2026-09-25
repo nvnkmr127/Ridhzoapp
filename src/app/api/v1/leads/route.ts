@@ -84,6 +84,8 @@ const createSchema = z.object({
   phone: z.string().max(50).optional().or(z.literal("")),
   company: z.string().max(255).optional().or(z.literal("")),
   customData: z.record(z.string(), z.unknown()).optional(),
+  // "Assign to" (web Quick Add): an active teammate in this workspace; defaults to the creator.
+  ownerId: z.guid().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -95,6 +97,16 @@ export async function POST(req: NextRequest) {
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid request payload", details: parsed.error.issues }, { status: 422 });
+  }
+
+  if (parsed.data.ownerId) {
+    const { users } = await import("@/db/schema");
+    const [owner] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.id, parsed.data.ownerId), eq(users.organizationId, auth.organizationId), eq(users.isActive, true), isNull(users.deletedAt)))
+      .limit(1);
+    if (!owner) return NextResponse.json({ error: "That teammate isn't in this workspace." }, { status: 422 });
   }
 
   try {
@@ -109,6 +121,7 @@ export async function POST(req: NextRequest) {
         phone: parsed.data.phone || undefined,
         company: parsed.data.company || undefined,
         customData,
+        ...(parsed.data.ownerId ? { ownerId: parsed.data.ownerId } : {}),
       },
       auth.userId ?? null,
       auth.organizationId

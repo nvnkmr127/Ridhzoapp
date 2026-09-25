@@ -347,6 +347,8 @@ export class AnalyticsService {
   static async getRecentActivity(filters: AnalyticsFilters) {
     filters = await this.withTz(filters);
     const conditions = [eq(leads.organizationId, filters.organizationId)];
+    // A rep's "My Recent Activity" covers only their own leads (it listed the whole workspace).
+    if (filters.ownerId) conditions.push(eq(leads.ownerId, filters.ownerId));
     const { start, end } = this.getDateRangeBounds(filters);
     if (start) conditions.push(gte(activities.createdAt, start));
     if (end) conditions.push(lte(activities.createdAt, end));

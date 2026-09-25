@@ -51,6 +51,7 @@ import { modeLabel } from "@/domains/meetings/format";
 import { GoogleCalendarService } from "@/domains/integrations/googleCalendarService";
 import { isConfigured as googleConfigured } from "@/lib/integrations/google";
 import { LocalTime } from "@/components/LocalTime";
+import { ATTRIBUTION_LABELS, SOURCE_TYPE_LABELS } from "@/lib/leads/profile";
 import { db } from "@/db";
 import { leads, leadAttachments, followUps, leadPipelineStages, users } from "@/db/schema";
 import { eq, and, ne, isNull, or, desc, sql } from "drizzle-orm";
@@ -179,15 +180,6 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     (typeof cd.leadSource === "string" ? cd.leadSource : null) ||
     "Manual entry";
   // Friendly label for the source's channel/type.
-  const SOURCE_TYPE_LABELS: Record<string, string> = {
-    facebook_lead_ads: "Facebook Lead Ads",
-    google_lead_ads: "Google Lead Ads",
-    generic_webhook: "Website Webhook",
-    webform: "Web Form",
-    web_form: "Web Form",
-    linkedin_lead_gen: "LinkedIn Lead Gen",
-    whatsapp_inbound: "WhatsApp Inbound",
-  };
   const sourceType = source?.type
     ? SOURCE_TYPE_LABELS[source.type] ?? source.type.replace(/_/g, " ")
     : null;
@@ -195,26 +187,9 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   // Generic attribution: render any of these keys that a source dropped into customData. Covers
   // Facebook (meta_*), Google/UTM tracking, and web forms — new sources display for free just by
   // writing these keys. Only present values show.
-  const ATTR_LABELS: Record<string, string> = {
-    meta_campaign_name: "Campaign",
-    meta_adset_name: "Ad set",
-    meta_ad_name: "Ad",
-    utm_campaign: "Campaign",
-    utm_source: "UTM source",
-    utm_medium: "UTM medium",
-    utm_term: "Keyword",
-    utm_content: "Ad content",
-    gclid: "Google click ID",
-    campaign: "Campaign",
-    ad_group: "Ad group",
-    adgroup: "Ad group",
-    keyword: "Keyword",
-    page_url: "Page",
-    referrer: "Referrer",
-  };
   const attribution: Array<[string, string]> = [];
   const seenLabels = new Set<string>();
-  for (const [key, label] of Object.entries(ATTR_LABELS)) {
+  for (const [key, label] of Object.entries(ATTRIBUTION_LABELS)) {
     const v = cd[key];
     if (typeof v === "string" && v && !seenLabels.has(label)) {
       attribution.push([label, v]);

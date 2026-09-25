@@ -25,10 +25,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   // Owner, admin, or someone attending a meeting with this lead (same rule as the web lead page).
   const lead = await leadForApi(auth, id);
   if (!lead) return leadNotFound();
+  if (auth.userId && !(await hasPermissionForRoleId(auth.roleId ?? null, "settings.manage")) && lead.customData) {
+    const { CustomFieldService } = await import("@/domains/customFields/service");
+    const cd = { ...(lead.customData as Record<string, unknown>) };
+    for (const f of await CustomFieldService.list(auth.organizationId)) if (f.adminOnly) delete cd[f.key];
+    (lead as { customData: unknown }).customData = cd;
+  }
 
   const activities = await ActivityService.getLeadActivities(id);
   const fus = await db
-    .select({ id: followUps.id, title: followUps.title, type: followUps.type, status: followUps.status, dueAt: followUps.dueAt })
+    .select({ id: followUps.id, title: followUps.title, type: followUps.type, description: followUps.description, status: followUps.status, dueAt: followUps.dueAt })
     .from(followUps)
     .where(eq(followUps.leadId, id))
     .orderBy(asc(followUps.dueAt));
@@ -58,6 +64,11 @@ const patchSchema = z
     phone: z.string().max(50).optional().or(z.literal("")),
     company: z.string().max(255).optional().or(z.literal("")),
     customData: z.record(z.string(), z.unknown()).optional(),
+    // Pipeline stage and opportunity value ("" / null clears).
+    stageId: z.guid().nullable().optional().or(z.literal("")),
+    expectedValue: z.string().max(30).nullable().optional(),
+    // Next follow-up date (ISO) — mirrored as one pending "followup" task; null clears it.
+    nextFollowUpAt: z.string().datetime().nullable().optional(),
   })
   .refine(
     (v) =>
@@ -67,7 +78,10 @@ const patchSchema = z
       v.email !== undefined ||
       v.phone !== undefined ||
       v.company !== undefined ||
-      v.customData !== undefined,
+      v.customData !== undefined ||
+      v.stageId !== undefined ||
+      v.expectedValue !== undefined ||
+      v.nextFollowUpAt !== undefined,
     { message: "Provide at least one field to update" },
   );
 
@@ -148,6 +162,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         organizationId: auth.organizationId,
       });
     }
+    if (parsed.data.stageId !== undefined || parsed.data.expectedValue !== undefined) {
+      const { updateLeadStageAndValue } = await import("@/domains/leads/leadActions");
+      await updateLeadStageAndValue(
+        id,
+        {
+          ...(parsed.data.stageId !== undefined ? { stageId: parsed.data.stageId || null } : {}),
+          ...(parsed.data.expectedValue !== undefined ? { expectedValue: parsed.data.expectedValue || null } : {}),
+        },
+        auth.userId ?? "",
+        auth.organizationId,
+      );
+    }
+    if (parsed.data.nextFollowUpAt !== undefined) {
+      const { setLeadNextFollowUp } = await import("@/domains/leads/leadActions");
+      const at = parsed.data.nextFollowUpAt ? new Date(parsed.data.nextFollowUpAt) : null;
+      await setLeadNextFollowUp(id, at, auth.userId ?? currentLead.ownerId ?? "", auth.organizationId);
+    }
     if (parsed.data.status !== undefined) {
       await LeadService.changeStatus(id, parsed.data.status, auth.userId ?? null, auth.organizationId, parsed.data.lossReason || null);
     }
@@ -158,6 +189,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const fieldErrors = e?.fieldErrors as Record<string, string> | undefined;
     if (fieldErrors) return NextResponse.json({ error: Object.values(fieldErrors)[0], details: fieldErrors }, { status: 409 });
     if (e?.code === "CONFLICT") return NextResponse.json({ error: e.message }, { status: 409 });
+    if (e?.code === "VALIDATION") return NextResponse.json({ error: e.message }, { status: 422 });
     const { logError } = await import("@/lib/log");
     const ref = logError("api/v1/leads/[id] PATCH", e, { leadId: id });
     return NextResponse.json({ error: "Could not update lead. Please try again.", ref }, { status: 500 });

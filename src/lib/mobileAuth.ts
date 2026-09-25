@@ -97,3 +97,22 @@ export function mobileSession(user: {
     },
   };
 }
+
+// ---- Attachment download links ----
+// The app opens files in the system browser, which can't send the bearer token — so it gets a
+// 10-minute link signed for one attachment and one user.
+const FILE_SECRET = SECRET && `${SECRET}:mobile-attachment`;
+
+export function signAttachmentLink(attachmentId: string, userId: string, ttlSec = 600) {
+  const exp = Math.floor(Date.now() / 1000) + ttlSec;
+  const sig = crypto.createHmac("sha256", FILE_SECRET).update(`${attachmentId}.${userId}.${exp}`).digest("base64url");
+  return `u=${encodeURIComponent(userId)}&exp=${exp}&sig=${sig}`;
+}
+
+export function verifyAttachmentLink(attachmentId: string, userId: string, exp: string, sig: string) {
+  if (!FILE_SECRET || !/^\d+$/.test(exp) || Number(exp) < Math.floor(Date.now() / 1000)) return false;
+  const expected = crypto.createHmac("sha256", FILE_SECRET).update(`${attachmentId}.${userId}.${exp}`).digest("base64url");
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}

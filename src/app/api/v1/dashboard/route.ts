@@ -11,11 +11,13 @@ export async function GET(req: NextRequest) {
 
   const ownOnly = !!auth.userId && !(await hasPermissionForRoleId(auth.roleId ?? null, "settings.manage"));
   const filters: AnalyticsFilters = { organizationId: auth.organizationId, ownerId: ownOnly ? auth.userId : undefined };
-  const [leadMetrics, followUpMetrics, pipeline] = await Promise.all([
+  const [leadMetrics, followUpMetrics, pipeline, recentActivity, org] = await Promise.all([
     AnalyticsService.getLeadMetrics(filters),
     AnalyticsService.getFollowUpMetrics(filters),
     AnalyticsService.getPipelineDistribution(filters),
+    AnalyticsService.getRecentActivity(filters),
+    import("@/domains/organizations/service").then(({ OrgService }) => OrgService.getOrganization(auth.organizationId).catch(() => null)),
   ]);
 
-  return NextResponse.json({ data: { leadMetrics, followUpMetrics, pipeline } });
+  return NextResponse.json({ data: { leadMetrics, followUpMetrics, pipeline, recentActivity, currency: org?.currency ?? "INR" } });
 }

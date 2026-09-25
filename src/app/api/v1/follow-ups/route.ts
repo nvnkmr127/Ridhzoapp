@@ -21,6 +21,8 @@ export async function GET(req: NextRequest) {
     id: followUps.id,
     title: followUps.title,
     type: followUps.type,
+    // Personal-mode sequence steps carry the ready WhatsApp message here (type "whatsapp").
+    description: followUps.description,
     status: followUps.status,
     dueAt: followUps.dueAt,
     leadId: leads.id,
@@ -35,5 +37,10 @@ export async function GET(req: NextRequest) {
       .where(and(mine, inArray(followUps.status, ["completed", "cancelled"]))).orderBy(desc(followUps.updatedAt)).limit(50),
   ]);
 
-  return NextResponse.json({ data: [...pending, ...done] });
+  // Dialable numbers: older leads saved without a country code get the workspace's (as on the web).
+  const { normalizePhone } = await import("@/lib/leads/normalize");
+  const { orgDialCode } = await import("@/lib/leads/orgDialCode");
+  const dial = await orgDialCode(auth.organizationId);
+  const withDial = (r: (typeof pending)[number]) => ({ ...r, leadPhone: normalizePhone(r.leadPhone, dial) ?? r.leadPhone });
+  return NextResponse.json({ data: [...pending, ...done].map(withDial) });
 }
