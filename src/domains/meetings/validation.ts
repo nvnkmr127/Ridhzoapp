@@ -7,11 +7,13 @@ import { MEETING_MODE_KEYS, type MeetingMode } from "./format";
 // 00000000-0000-0000-0000-000000000001 users.
 export const guid = () => z.guid();
 export const optText = (max: number) => z.string().trim().max(max).optional().nullable();
+// Links are often pasted without the scheme ("maps.app.goo.gl/…", "meet.google.com/…") — add https://.
 export const optUrl = z
   .string()
   .trim()
   .max(2000)
-  .refine((v) => !v || /^https?:\/\//i.test(v), "Must start with http:// or https://")
+  .transform((v) => (v && !/^https?:\/\//i.test(v) && /^[\w-]+(\.[\w-]+)+/.test(v) ? `https://${v}` : v))
+  .refine((v) => !v || /^https?:\/\//i.test(v), "Enter a link like https://maps.app.goo.gl/…")
   .optional()
   .nullable();
 

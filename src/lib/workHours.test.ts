@@ -25,3 +25,18 @@ describe("business hours", () => {
     expect(isWorkDay(new Date("2026-10-04T04:30:00Z"), "Asia/Kolkata", [])).toBe(true);
   });
 });
+
+import { wallTimeToUtc, localDate } from "./workHours";
+
+describe("wall time in a zone", () => {
+  it("10:30 in India is 05:00 UTC", () => {
+    expect(wallTimeToUtc("2026-10-05", 10, 30, "Asia/Kolkata").toISOString()).toBe("2026-10-05T05:00:00.000Z");
+  });
+  it("handles zones with DST", () => {
+    expect(wallTimeToUtc("2026-07-01", 9, 0, "Europe/London").toISOString()).toBe("2026-07-01T08:00:00.000Z");
+    expect(wallTimeToUtc("2026-12-01", 9, 0, "Europe/London").toISOString()).toBe("2026-12-01T09:00:00.000Z");
+  });
+  it("reads the local date", () => {
+    expect(localDate(new Date("2026-10-04T20:00:00Z"), "Asia/Kolkata")).toBe("2026-10-05");
+  });
+});

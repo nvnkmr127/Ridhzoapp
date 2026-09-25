@@ -115,11 +115,11 @@ function NativeSelect(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   );
 }
 
-function Section({ icon: Icon, title, desc, children, action }: {
-  icon: React.ElementType; title: string; desc: string; children: React.ReactNode; action?: React.ReactNode;
+function Section({ icon: Icon, title, desc, children, action, id }: {
+  icon: React.ElementType; title: string; desc: string; children: React.ReactNode; action?: React.ReactNode; id?: string;
 }) {
   return (
-    <section className="bg-card dark:bg-secondary rounded-2xl border border-border p-6 space-y-5">
+    <section id={id} className="scroll-mt-24 bg-card dark:bg-secondary rounded-2xl border border-border p-6 space-y-5">
       <div className="flex items-start justify-between gap-3 border-b border-border pb-4">
         <div className="flex items-center gap-3">
           <Icon className="h-5 w-5 text-muted-foreground" />
@@ -545,7 +545,7 @@ export function GeneralSettingsForm({
         </Section>
 
         {/* 4. Alerts */}
-        <Section icon={BellRing} title="Business hours & alerts" desc="When you're open, and how Ridhzo reminds you so no lead is forgotten.">
+        <Section id="business-hours" icon={BellRing} title="Business hours & alerts" desc="When you're open, and how Ridhzo reminds you so no lead is forgotten.">
           <div className="space-y-2">
             <Label>Open on</Label>
             <div className="flex flex-wrap gap-2">

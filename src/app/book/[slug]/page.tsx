@@ -20,7 +20,10 @@ export default async function BookingPage({ params }: { params: Promise<{ slug: 
             </div>
           )}
         </div>
-        <BookingForm slug={slug} />
+        <BookingForm
+          slug={slug}
+          schedule={{ timezone: org.timezone, workDays: org.workDays ?? [], workStartHour: org.workStartHour, workEndHour: org.workEndHour }}
+        />
       </div>
     </div>
   );

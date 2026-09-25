@@ -88,8 +88,8 @@ export function MeetingLocationsManager({ initial }: { initial: Loc[] }) {
           <Input placeholder="Name (e.g. Banjara Hills showroom) *" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required />
           <Textarea placeholder="Address" value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} className="min-h-[60px]" />
           <div className="grid gap-3 sm:grid-cols-2">
-            <Input type="url" placeholder="Google Maps link" value={f.mapUrl} onChange={(e) => setF({ ...f, mapUrl: e.target.value })} />
-            <Input placeholder="Phone (optional)" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
+            <Input inputMode="url" placeholder="Google Maps link (Share → Copy link)" value={f.mapUrl} onChange={(e) => setF({ ...f, mapUrl: e.target.value })} />
+            <Input type="tel" placeholder="Store phone (optional)" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
           </div>
           <div className="flex justify-end gap-2">
             {initial.length > 0 && <Button type="button" variant="outline" onClick={() => setEditingId(null)} disabled={busy}>Cancel</Button>}

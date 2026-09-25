@@ -169,7 +169,9 @@ export class MeetingService {
       const [loc] = await db.select().from(meetingLocations)
         .where(and(eq(meetingLocations.id, input.locationId), eq(meetingLocations.organizationId, organizationId))).limit(1);
       if (!loc) throw new MeetingError("That location no longer exists");
-      return { locationName: loc.name, address: loc.address, mapUrl: loc.mapUrl, meetingUrl: null };
+      // The saved location's phone goes with the address so the lead can call the store for directions.
+      const address = [loc.address, loc.phone && `Phone: ${loc.phone}`].filter(Boolean).join("\n") || null;
+      return { locationName: loc.name, address, mapUrl: loc.mapUrl, meetingUrl: null };
     }
     return { locationName: input.locationName || null, address: input.address || null, mapUrl: input.mapUrl || null, meetingUrl: null };
   }

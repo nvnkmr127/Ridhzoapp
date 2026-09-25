@@ -12,7 +12,9 @@ const schema = z.object({
   name: z.string().trim().min(1, "Name is required").max(255),
   email: z.string().email("Invalid email format").optional().or(z.literal("")),
   phone: z.string().trim().max(50).optional().or(z.literal("")),
-  when: z.coerce.date(),
+  // The business's local calendar date and slot time — converted with its timezone on the server.
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date"),
+  time: z.string().regex(/^\d{2}:\d{2}$/, "Pick a time"),
   message: z.string().trim().max(1000).optional(),
   mode: z.enum(["online", "in_person"]).optional(),
 });
@@ -28,10 +30,6 @@ export async function requestMeetingAction(input: z.input<typeof schema>) {
     return fail("VALIDATION", "Please provide at least an email or phone number so we can reach you.");
   }
 
-  if (data.when.getTime() < Date.now() - 5 * 60 * 1000) {
-    return fail("VALIDATION", "Please select a date and time in the future.");
-  }
-
   const limit = await RateLimiter.checkLimit(`booking:${data.slug}`, 15, 60);
   if (!limit.success) {
     return fail("RATE_LIMIT", "Too many booking requests. Please wait a moment and try again.");
@@ -42,7 +40,8 @@ export async function requestMeetingAction(input: z.input<typeof schema>) {
       name: data.name,
       email: data.email || undefined,
       phone: data.phone || undefined,
-      when: data.when,
+      date: data.date,
+      time: data.time,
       message: data.message,
       mode: data.mode,
     });

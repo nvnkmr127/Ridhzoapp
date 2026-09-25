@@ -6,14 +6,27 @@ import { Input } from "@/components/ui/input";
 import { saveMeetingTemplatesAction } from "@/lib/actions/meetings";
 import { useToast } from "@/hooks/use-toast";
 
+// Meta template language codes most used by Indian businesses. A saved code not listed stays selectable.
+const LANGS = [
+  { code: "en", name: "English" },
+  { code: "en_US", name: "English (US)" },
+  { code: "en_GB", name: "English (UK)" },
+  { code: "hi", name: "Hindi" },
+  { code: "te", name: "Telugu" },
+  { code: "ta", name: "Tamil" },
+  { code: "kn", name: "Kannada" },
+  { code: "ml", name: "Malayalam" },
+  { code: "mr", name: "Marathi" },
+  { code: "gu", name: "Gujarati" },
+  { code: "bn", name: "Bengali" },
+];
+
 // Approved WhatsApp template names used for meeting confirmations/reminders when the lead hasn't
-// messaged in the last 24h (Business API only allows templates then).
+// messaged in the last 24h (Business API only allows templates then). Shown only in Business API mode.
 export function MeetingTemplatesForm({
   initial,
-  bspMode,
 }: {
   initial: { confirmTemplate: string | null; reminderTemplate: string | null; language: string };
-  bspMode: boolean;
 }) {
   const { toast } = useToast();
   const [f, setF] = React.useState({ confirmTemplate: initial.confirmTemplate ?? "", reminderTemplate: initial.reminderTemplate ?? "", language: initial.language });
@@ -37,9 +50,8 @@ export function MeetingTemplatesForm({
       <div>
         <h3 className="text-sm font-semibold">WhatsApp templates for meetings</h3>
         <p className="text-xs text-muted-foreground">
-          {bspMode
-            ? "When a lead hasn't messaged you in the last 24 hours, WhatsApp only allows approved templates. Enter the names of templates you've had approved and meeting confirmations and reminders go out automatically."
-            : "Only used when WhatsApp is set to Business API mode. In personal mode, reps send meeting messages from their own WhatsApp in one tap."}
+          When a customer hasn&apos;t messaged you in the last 24 hours, WhatsApp only allows approved templates. Enter the names of templates
+          you&apos;ve had approved, and meeting confirmations and reminders go out automatically. Leave blank and your team sends them by hand.
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -52,8 +64,16 @@ export function MeetingTemplatesForm({
           <Input placeholder="meeting_reminder" value={f.reminderTemplate} onChange={(e) => setF({ ...f, reminderTemplate: e.target.value })} />
         </label>
         <label className="space-y-1">
-          <span className="text-xs text-muted-foreground">Template language</span>
-          <Input placeholder="en_US" value={f.language} onChange={(e) => setF({ ...f, language: e.target.value })} />
+          <span className="text-xs text-muted-foreground">Template language (must match the approved template)</span>
+          <select
+            value={f.language}
+            onChange={(e) => setF({ ...f, language: e.target.value })}
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+          >
+            {(LANGS.some((l) => l.code === f.language) ? LANGS : [...LANGS, { code: f.language, name: f.language }]).map((l) => (
+              <option key={l.code} value={l.code}>{l.name} ({l.code})</option>
+            ))}
+          </select>
         </label>
       </div>
       <p className="text-xs text-muted-foreground">

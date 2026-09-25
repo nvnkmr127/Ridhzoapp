@@ -31,3 +31,29 @@ export function isWorkingTime(
   const { hour } = localDayHour(now, timeZone);
   return hour >= start && hour < end;
 }
+
+// A wall-clock time in `timeZone` ("2026-10-05" at 10:30 in Asia/Kolkata) → the real instant.
+// Needed wherever a person picks a time for the business (booking page): the server runs in UTC,
+// so parsing "2026-10-05T10:30" there lands 5½ hours off for India.
+export function wallTimeToUtc(date: string, hour: number, minute: number, timeZone: string): Date {
+  const [y, m, d] = date.split("-").map(Number);
+  const guess = Date.UTC(y, m - 1, d, hour, minute);
+  // Offset of the zone at that moment (what the zone's clock reads minus UTC), applied twice so a
+  // DST change between the guess and the answer settles correctly.
+  const offset = (t: number) => {
+    const p = Object.fromEntries(
+      new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+        .formatToParts(new Date(t))
+        .map((x) => [x.type, x.value]),
+    );
+    return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute) - Math.floor(t / 60_000) * 60_000;
+  };
+  let t = guess - offset(guess);
+  t = guess - offset(t);
+  return new Date(t);
+}
+
+// The org-local calendar date ("YYYY-MM-DD") of an instant.
+export function localDate(now: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+}
