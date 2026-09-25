@@ -62,9 +62,14 @@ export const organizations = pgTable('organizations', {
 
   // Billing (Razorpay). plan (above) is the source of truth for entitlements; these track the subscription.
   razorpayCustomerId: varchar('razorpay_customer_id', { length: 255 }),
+  // GST details for tax invoices (optional). Sent to Razorpay as the customer's GSTIN so invoices carry it.
+  billingName: varchar('billing_name', { length: 255 }),
+  gstin: varchar('gstin', { length: 15 }),
   razorpaySubscriptionId: varchar('razorpay_subscription_id', { length: 255 }),
   planStatus: varchar('plan_status', { length: 30 }).default('active').notNull(), // active, created, halted, cancelled
   currentPeriodEnd: timestamp('current_period_end'),
+  // 1 = customer cancelled; the paid plan runs until currentPeriodEnd, then the webhook drops it to free.
+  cancelAtPeriodEnd: integer('cancel_at_period_end').default(0).notNull(),
   trialEndsAt: timestamp('trial_ends_at'), // auto-reverts to 'free' when expired if not paying
   // Monthly AI credit meter. aiCreditsPeriod = 'YYYY-MM' the count belongs to; a new month resets it.
   aiCreditsUsed: integer('ai_credits_used').default(0).notNull(),

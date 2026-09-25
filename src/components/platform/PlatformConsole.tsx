@@ -446,6 +446,7 @@ export function PlatformConsole({
   const [couponType, setCouponType] = React.useState<"percent" | "fixed">("percent");
   const [couponValue, setCouponValue] = React.useState("25");
   const [couponMax, setCouponMax] = React.useState("100");
+  const [couponOfferId, setCouponOfferId] = React.useState("");
   const [couponSaving, setCouponSaving] = React.useState(false);
 
   const handleCreateCoupon = async () => {
@@ -457,12 +458,14 @@ export function PlatformConsole({
         discountType: couponType,
         discountValue: Number(couponValue) || 0,
         maxRedemptions: Number(couponMax) || 0,
+        razorpayOfferId: couponOfferId.trim() || null,
       });
       if (res.ok) {
         toast({ title: "Coupon Created", description: `Code ${res.data.code} is now live.` });
         setCoupons((prev) => [res.data, ...prev]);
         setCouponModalOpen(false);
         setCouponCode("");
+        setCouponOfferId("");
       } else {
         toast({ title: "Failed to create coupon", description: res.message, variant: "destructive" });
       }
@@ -4983,7 +4986,7 @@ export function PlatformConsole({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="percent">Percentage (%)</SelectItem>
-                    <SelectItem value="fixed">Fixed Amount ($)</SelectItem>
+                    <SelectItem value="fixed">Fixed Amount (₹)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -4998,6 +5001,19 @@ export function PlatformConsole({
                   className="h-9 text-xs font-mono"
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-foreground">Razorpay Offer ID</label>
+              <Input
+                value={couponOfferId}
+                onChange={(e) => setCouponOfferId(e.target.value)}
+                placeholder="offer_XXXXXXXXXXXX"
+                className="h-9 text-xs font-mono"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Create the offer (same discount) in Razorpay → Offers, enable it for subscriptions, paste its ID here. Codes without one can&apos;t be redeemed.
+              </p>
             </div>
 
             <div className="space-y-2">

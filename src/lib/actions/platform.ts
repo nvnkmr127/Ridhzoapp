@@ -585,6 +585,7 @@ export async function createCouponAction(input: {
   plans?: string[];
   maxRedemptions?: number;
   expiresAt?: string | null;
+  razorpayOfferId?: string | null;
 }) {
   await requireSuperAdmin();
   try {

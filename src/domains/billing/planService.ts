@@ -11,12 +11,13 @@ import { PlatformConfigService } from "@/domains/platform/configService";
 export type PlanLimits = {
   seats: number; leads: number; automations: number; sequences: number; sources: number;
   aiCredits: number; aiAutoTag: boolean; branding: boolean;
-  price: string; description: string;
+  /** yearlyPrice must match the RAZORPAY_PLAN_*_YEARLY plan amount (2 months free = 10× monthly). */
+  price: string; yearlyPrice: string | null; description: string;
 };
 export const PLAN_LIMITS: Record<string, PlanLimits> = {
-  free: { seats: 1, leads: 300, automations: 2, sequences: 1, sources: 1, aiCredits: 15, aiAutoTag: false, branding: true, price: "₹0", description: "For individuals getting started" },
-  starter: { seats: 3, leads: 5_000, automations: 15, sequences: 10, sources: 5, aiCredits: 300, aiAutoTag: true, branding: false, price: "₹249 / mo", description: "For solo agents & growing teams" },
-  unlimited: { seats: Infinity, leads: Infinity, automations: Infinity, sequences: Infinity, sources: Infinity, aiCredits: 2_000, aiAutoTag: true, branding: false, price: "₹449 / mo", description: "Unlimited leads, seats & full access" },
+  free: { seats: 1, leads: 300, automations: 2, sequences: 1, sources: 1, aiCredits: 15, aiAutoTag: false, branding: true, price: "₹0", yearlyPrice: null, description: "For individuals getting started" },
+  starter: { seats: 3, leads: 5_000, automations: 15, sequences: 10, sources: 5, aiCredits: 300, aiAutoTag: true, branding: false, price: "₹249 / mo", yearlyPrice: "₹2,490 / yr", description: "For solo agents & growing teams" },
+  unlimited: { seats: Infinity, leads: Infinity, automations: Infinity, sequences: Infinity, sources: Infinity, aiCredits: 2_000, aiAutoTag: true, branding: false, price: "₹449 / mo", yearlyPrice: "₹4,490 / yr", description: "Unlimited leads, seats & full access" },
 };
 
 // New workspaces start on a Starter trial; the trial-downgrade worker reverts them to Free after.

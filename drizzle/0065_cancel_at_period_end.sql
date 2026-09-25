@@ -1,0 +1,1 @@
+ALTER TABLE "organizations" ADD COLUMN IF NOT EXISTS "cancel_at_period_end" integer DEFAULT 0 NOT NULL;
