@@ -1,5 +1,6 @@
 "use client";
 
+import { canonicalPlan } from "@/domains/billing/planNames";
 import * as React from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -146,7 +147,7 @@ import type { ExecutiveDigestConfig } from "@/domains/platform/executiveDigestSe
 import type { SecurityAnomaly } from "@/domains/platform/anomalyDetectionService";
 import type { CustomDomainRecord } from "@/domains/platform/customDomainService";
 
-const PLANS = ["free", "pro", "business"];
+const PLANS = ["free", "starter", "unlimited"];
 
 export function PlatformConsole({
   initial = [],
@@ -380,7 +381,7 @@ export function PlatformConsole({
   const [invoices, setInvoices] = React.useState<TaxInvoice[]>(initialInvoices ?? []);
   const [invoiceModalOpen, setInvoiceModalOpen] = React.useState(false);
   const [invoiceOrgId, setInvoiceOrgId] = React.useState("");
-  const [invoicePlan, setInvoicePlan] = React.useState("pro");
+  const [invoicePlan, setInvoicePlan] = React.useState("starter");
   const [invoiceAmount, setInvoiceAmount] = React.useState("249");
   const [invoiceGstin, setInvoiceGstin] = React.useState("");
   const [invoiceGenerating, setInvoiceGenerating] = React.useState(false);
@@ -868,8 +869,8 @@ export function PlatformConsole({
   const [broadcastLevel, setBroadcastLevel] = React.useState<"info" | "warning" | "destructive">(
     initialBroadcast?.level ?? "info"
   );
-  const [broadcastTargetPlan, setBroadcastTargetPlan] = React.useState<"all" | "free" | "pro" | "business">(
-    (initialBroadcast?.targetPlan as any) ?? "all"
+  const [broadcastTargetPlan, setBroadcastTargetPlan] = React.useState<"all" | "free" | "starter" | "unlimited">(
+    initialBroadcast?.targetPlan && initialBroadcast.targetPlan !== "all" ? canonicalPlan(initialBroadcast.targetPlan) : "all"
   );
   const [broadcastTargetOrgId, setBroadcastTargetOrgId] = React.useState<string>(
     initialBroadcast?.targetOrgId ?? "all"
@@ -1609,8 +1610,8 @@ export function PlatformConsole({
                 <SelectContent>
                   <SelectItem value="all">All Plans</SelectItem>
                   <SelectItem value="free">Free</SelectItem>
-                  <SelectItem value="pro">Pro</SelectItem>
-                  <SelectItem value="business">Business</SelectItem>
+                  <SelectItem value="starter">Starter</SelectItem>
+                  <SelectItem value="unlimited">Unlimited</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -1722,12 +1723,12 @@ export function PlatformConsole({
                         <td className="px-4 py-3 text-right tabular-nums">{o.leadCount}</td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            <Select value={PLANS.includes(o.plan) ? o.plan : "free"} onValueChange={(v) => changePlan(o, v)}>
+                            <Select value={canonicalPlan(o.plan)} onValueChange={(v) => changePlan(o, v)}>
                               <SelectTrigger className="h-8 w-24 text-xs"><SelectValue /></SelectTrigger>
                               <SelectContent>
                                 {PLANS.map((p) => <SelectItem key={p} value={p} className="capitalize text-xs">{p}</SelectItem>)}
-                                <SelectItem value="pro_trial" className="text-xs text-amber-600 font-medium">Pro (14d)</SelectItem>
-                                <SelectItem value="business_trial" className="text-xs text-amber-600 font-medium">Biz (14d)</SelectItem>
+                                <SelectItem value="starter_trial" className="text-xs text-amber-600 font-medium">Starter (14d)</SelectItem>
+                                <SelectItem value="unlimited_trial" className="text-xs text-amber-600 font-medium">Unlimited (14d)</SelectItem>
                               </SelectContent>
                             </Select>
                             {o.trialEndsAt && new Date(o.trialEndsAt).getTime() > Date.now() && (
@@ -2269,8 +2270,8 @@ export function PlatformConsole({
                     <SelectContent>
                       <SelectItem value="all">All Plans (Global)</SelectItem>
                       <SelectItem value="free">Free Plan Only</SelectItem>
-                      <SelectItem value="pro">Pro Plan Only</SelectItem>
-                      <SelectItem value="business">Business Plan Only</SelectItem>
+                      <SelectItem value="starter">Starter Plan Only</SelectItem>
+                      <SelectItem value="unlimited">Unlimited Plan Only</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -3235,7 +3236,7 @@ export function PlatformConsole({
                   <div className="text-lg font-bold mt-1 text-blue-600 dark:text-blue-400">
                     +₹{revops.waterfall.expansionMrr.toLocaleString()}
                   </div>
-                  <p className="text-[10px] text-muted-foreground">Business tier deltas</p>
+                  <p className="text-[10px] text-muted-foreground">Upgrades to Unlimited</p>
                 </div>
 
                 <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3">
@@ -3729,7 +3730,7 @@ export function PlatformConsole({
             <div className="p-5 border-b flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h3 className="text-base font-semibold flex items-center gap-2">
-                  <Receipt className="h-4 w-4 text-primary" /> GST Tax Invoices &amp; B2B Billing Ledger
+                  <Receipt className="h-4 w-4 text-primary" /> Manual invoices (offline / bank-transfer payments)
                 </h3>
                 <p className="text-xs text-muted-foreground">
                   Sequential tax-compliant invoice generator (SAC 998313, 18% GST breakdown) with audit trails.
@@ -3759,7 +3760,7 @@ export function PlatformConsole({
                   {invoices.length === 0 ? (
                     <tr>
                       <td colSpan={9} className="p-6 text-center text-muted-foreground">
-                        No tax invoices recorded yet. Click &quot;Issue Tax Invoice&quot; to generate one.
+                        No manual invoices yet. Online (Razorpay) payments get their invoices from Razorpay automatically — use this only for customers who pay offline.
                       </td>
                     </tr>
                   ) : (
@@ -4915,8 +4916,8 @@ export function PlatformConsole({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="starter">Starter</SelectItem>
-                    <SelectItem value="pro">Pro</SelectItem>
-                    <SelectItem value="business">Business</SelectItem>
+                    <SelectItem value="starter">Starter</SelectItem>
+                    <SelectItem value="unlimited">Unlimited</SelectItem>
                     <SelectItem value="enterprise">Enterprise</SelectItem>
                   </SelectContent>
                 </Select>

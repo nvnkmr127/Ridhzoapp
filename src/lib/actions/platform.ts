@@ -1,5 +1,7 @@
 "use server";
 
+import { canonicalPlan } from "@/domains/billing/planNames";
+
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -24,7 +26,7 @@ const PLATFORM_ORG_ID = "00000000-0000-0000-0000-000000000000";
 
 const planSchema = z.object({
   organizationId: orgIdSchema,
-  plan: z.enum(["free", "pro", "business"]),
+  plan: z.enum(["free", "starter", "unlimited", "pro", "business"]).transform(canonicalPlan),
   trialDays: z.number().int().positive().nullable().optional(),
 });
 
@@ -214,7 +216,7 @@ export async function setBroadcastAction(broadcast: {
   message: string;
   active: boolean;
   level: "info" | "warning" | "destructive";
-  targetPlan?: "free" | "pro" | "business" | "all" | null;
+  targetPlan?: "free" | "starter" | "unlimited" | "all" | null;
   targetOrgId?: string | null;
 }) {
   const session = await requireSuperAdmin();

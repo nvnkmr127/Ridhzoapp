@@ -1,3 +1,4 @@
+import { canonicalPlan } from "@/domains/billing/planNames";
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { unstable_cache, revalidateTag } from "next/cache";
@@ -8,7 +9,7 @@ export interface BroadcastConfig {
   message: string;
   active: boolean;
   level: "info" | "warning" | "destructive";
-  targetPlan?: "free" | "pro" | "business" | "all" | null;
+  targetPlan?: "free" | "starter" | "unlimited" | "pro" | "business" | "all" | null;
   targetOrgId?: string | null;
   updatedAt?: string;
 }
@@ -26,7 +27,7 @@ export function shouldShowBroadcast(
 
   // Plan target
   if (broadcast.targetPlan && broadcast.targetPlan !== "all") {
-    if (!currentOrg || currentOrg.plan !== broadcast.targetPlan) return false;
+    if (!currentOrg || canonicalPlan(currentOrg.plan) !== canonicalPlan(broadcast.targetPlan)) return false;
   }
 
   return true;

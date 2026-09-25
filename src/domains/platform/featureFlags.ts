@@ -1,3 +1,4 @@
+import { canonicalPlan } from "@/domains/billing/planNames";
 import { PlatformConfigService } from "./configService";
 
 export interface FeatureFlag {
@@ -6,7 +7,7 @@ export interface FeatureFlag {
   description: string;
   enabled: boolean;
   allowedOrgIds?: string[];
-  plans?: ("free" | "pro" | "business")[];
+  plans?: string[]; // plan names; old "pro"/"business" still match via canonicalPlan
 }
 
 const DEFAULT_FLAGS: FeatureFlag[] = [
@@ -15,21 +16,21 @@ const DEFAULT_FLAGS: FeatureFlag[] = [
     name: "AI Copilot & Lead Recap",
     description: "LLM-driven smart WhatsApp drafting and lead recap generation.",
     enabled: true,
-    plans: ["pro", "business"],
+    plans: ["starter", "unlimited"],
   },
   {
     key: "bsp_whatsapp",
     name: "WhatsApp Cloud BSP API",
     description: "Server-side high-throughput WhatsApp messaging via official Meta BSP.",
     enabled: true,
-    plans: ["business"],
+    plans: ["unlimited"],
   },
   {
     key: "predictive_analytics",
     name: "Predictive Lead Scoring & LTV",
     description: "Machine learning conversion predictor and deal velocity forecasting.",
     enabled: true,
-    plans: ["pro", "business"],
+    plans: ["starter", "unlimited"],
   },
   {
     key: "advanced_webhooks",
@@ -103,7 +104,7 @@ export class FeatureFlagService {
     if (!flag.enabled) return false;
 
     // Check plan entitlement
-    if (flag.plans && plan && !flag.plans.includes(plan as any)) {
+    if (flag.plans && plan && !flag.plans.map(canonicalPlan).includes(canonicalPlan(plan))) {
       return false;
     }
 

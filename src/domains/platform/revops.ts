@@ -1,3 +1,4 @@
+import { canonicalPlan, isPaidPlan, PLAN_MONTHLY_PRICE } from "@/domains/billing/planNames";
 import { db } from "@/db";
 import { organizations, leads, users } from "@/db/schema";
 import { count, eq, isNull, max, and, gte } from "drizzle-orm";
@@ -55,11 +56,7 @@ export interface RevOpsMetrics {
   funnel?: LifecycleFunnel;
 }
 
-const PLAN_PRICES: Record<string, number> = {
-  free: 0,
-  pro: 249,
-  business: 449,
-};
+const PLAN_PRICES = PLAN_MONTHLY_PRICE;
 
 export class RevOpsService {
   static async getMetrics(): Promise<RevOpsMetrics> {
@@ -81,16 +78,17 @@ export class RevOpsService {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
     for (const org of orgs) {
-      if (org.planStatus === "active" && org.plan && PLAN_PRICES[org.plan]) {
-        const price = PLAN_PRICES[org.plan];
+      // canonicalPlan: Starter/Unlimited used to count as unpaid here (only "pro"/"business" matched).
+      if (org.planStatus === "active" && PLAN_PRICES[canonicalPlan(org.plan)]) {
+        const price = PLAN_PRICES[canonicalPlan(org.plan)];
         mrr += price;
         paidAccounts++;
 
         if (new Date(org.createdAt).getTime() >= thirtyDaysAgo.getTime()) {
           newMrr += price;
         }
-        if (org.plan === "business") {
-          expansionMrr += 200; // Expansion delta over pro tier (449 - 249)
+        if (canonicalPlan(org.plan) === "unlimited") {
+          expansionMrr += PLAN_PRICES.unlimited - PLAN_PRICES.starter; // expansion delta over Starter
         }
       } else {
         freeAccounts++;
@@ -106,7 +104,7 @@ export class RevOpsService {
     ]);
     const atRiskList = healthList.filter((t) => t.health === "at_risk" || t.health === "critical");
     const churnRiskCount = atRiskList.length;
-    const churnRiskMrr = atRiskList.reduce((acc, t) => acc + (PLAN_PRICES[t.plan] ?? 0), 0);
+    const churnRiskMrr = atRiskList.reduce((acc, t) => acc + (PLAN_PRICES[canonicalPlan(t.plan)] ?? 0), 0);
     const startingMrr = Math.max(0, mrr - newMrr);
 
     const waterfall: MrrWaterfall = {
@@ -154,7 +152,7 @@ export class RevOpsService {
     for (const r of rows) {
       if (Number(r.leadCount) > 0) totalActivated++;
       const isSuspended = !!r.suspendedAt;
-      const isPaid = (r.plan === "pro" || r.plan === "business") && r.planStatus === "active" && !isSuspended;
+      const isPaid = isPaidPlan(r.plan) && r.planStatus === "active" && !isSuspended;
       if (isPaid) totalPaid++;
       const isCancelled = r.planStatus === "cancelled" || r.planStatus === "halted";
       if (isSuspended || isCancelled) totalChurned++;

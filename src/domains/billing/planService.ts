@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { users, leads, invitations, organizations, automations, sequences, leadSources } from "@/db/schema";
 import { and, asc, count, eq, gt, isNull, sql } from "drizzle-orm";
 import { PlatformConfigService } from "@/domains/platform/configService";
+import { canonicalPlan } from "./planNames";
 
 // Per-plan ceilings. Infinity = unlimited. Enforcement lives here; charging (Stripe) is separate
 // and needs external keys — the plan column is set by that flow, which isn't wired yet.
@@ -38,9 +39,7 @@ const COUNTED = {
 export type CountedResource = keyof typeof COUNTED;
 
 export function limitsFor(plan: string) {
-  if (plan === "pro") return PLAN_LIMITS.starter;
-  if (plan === "business") return PLAN_LIMITS.unlimited;
-  return PLAN_LIMITS[plan] ?? PLAN_LIMITS.free;
+  return PLAN_LIMITS[canonicalPlan(plan)];
 }
 
 export class PlanService {

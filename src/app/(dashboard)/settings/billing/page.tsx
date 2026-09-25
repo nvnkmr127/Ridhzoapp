@@ -48,10 +48,13 @@ export default async function BillingPage() {
         cycle={cycle ?? "monthly"}
         scheduled={scheduled}
         gst={{ billingName: billing?.billingName ?? "", gstin: billing?.gstin ?? "" }}
+        supportWhatsapp={(process.env.SUPPORT_WHATSAPP ?? "").replace(/\D/g, "")}
         limits={PLAN_LIMITS}
         invoices={invoices.map((i) => ({
           id: i.id,
           date: i.date ? new Date(i.date * 1000).toISOString() : null,
+          periodStart: i.billing_start ? new Date(i.billing_start * 1000).toISOString() : null,
+          periodEnd: i.billing_end ? new Date(i.billing_end * 1000).toISOString() : null,
           amount: (i.amount_paid || i.amount) / 100,
           status: i.status,
           url: i.short_url,

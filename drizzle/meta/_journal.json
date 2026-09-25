@@ -470,6 +470,13 @@
       "when": 1790299818922,
       "tag": "0066_gst_details",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1790304437047,
+      "tag": "0067_rename_legacy_plans",
+      "breakpoints": true
     }
   ]
 }

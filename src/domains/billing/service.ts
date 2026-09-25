@@ -218,8 +218,8 @@ export class BillingService {
   // Payment receipts for the current subscription (Razorpay issues one per charge).
   static async invoices(organizationId: string) {
     const org = await this.get(organizationId);
-    if (!org?.subscriptionId) return [];
-    return razorpay.listInvoices(org.subscriptionId).catch(() => []);
+    if (!org?.subscriptionId && !org?.customerId) return [];
+    return razorpay.listInvoices({ customerId: org.customerId, subscriptionId: org.subscriptionId }).catch(() => []);
   }
 
   // Reconcile from a verified webhook. Razorpay is the source of truth for the subscription state.

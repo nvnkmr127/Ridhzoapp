@@ -1,3 +1,4 @@
+import { canonicalPlan, isPaidPlan, PLAN_MONTHLY_PRICE } from "@/domains/billing/planNames";
 import { PlatformConfigService } from "./configService";
 import { db } from "@/db";
 import { organizations } from "@/db/schema";
@@ -20,11 +21,7 @@ export interface CampaignAnalytics {
 
 const ATTRIBUTION_CONFIG_KEY = "tenant_attributions";
 
-const PLAN_MRR: Record<string, number> = {
-  free: 0,
-  pro: 249,
-  business: 449,
-};
+const PLAN_MRR = PLAN_MONTHLY_PRICE;
 
 export class PlatformAttributionService {
   static async recordAttribution(
@@ -82,8 +79,8 @@ export class PlatformAttributionService {
 
     for (const org of orgList) {
       const attr = attributions[org.id];
-      const plan = org.plan ?? "free";
-      const isPaid = plan === "pro" || plan === "business";
+      const plan = canonicalPlan(org.plan);
+      const isPaid = isPaidPlan(plan);
       const planPrice = PLAN_MRR[plan] ?? 0;
 
       const campaignName = attr?.utmCampaign || (attr?.utmSource ? `${attr.utmSource}_direct` : "Direct / Organic");

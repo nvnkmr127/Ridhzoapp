@@ -11,7 +11,18 @@ import { Label } from "@/components/ui/label";
 import type { PlanLimits } from "@/domains/billing/planService";
 
 type Limits = Record<string, PlanLimits>;
-type Invoice = { id: string; date: string | null; amount: number; status: string; url: string | null };
+type Invoice = { id: string; date: string | null; periodStart?: string | null; periodEnd?: string | null; amount: number; status: string; url: string | null };
+
+// "Sep 2026" for a month, "Oct 2026 – Sep 2027" for a year.
+function periodLabel(inv: Invoice) {
+  if (!inv.periodStart || !inv.periodEnd) return inv.date ? day(inv.date) : "—";
+  const m = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+  const days = (new Date(inv.periodEnd).getTime() - new Date(inv.periodStart).getTime()) / 86_400_000;
+  // Period ends on the first instant of the next period — step back a day for the last month covered.
+  return days > 40 ? `${m(inv.periodStart)} – ${m(new Date(new Date(inv.periodEnd).getTime() - 86_400_000).toISOString())}` : m(inv.periodStart);
+}
+
+const INVOICE_STATUS: Record<string, string> = { paid: "Paid", issued: "Due", partially_paid: "Part paid", expired: "Not paid", cancelled: "Cancelled", draft: "Draft" };
 type BillingStatus = "paid" | "pending" | "grace_period" | "locked" | "free" | "trial";
 type Cycle = "monthly" | "yearly";
 
@@ -38,8 +49,9 @@ const rupees = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency"
 
 export function BillingManager({
   plan, status, trialEndsAt, currentPeriodEnd, cancelAtPeriodEnd, configured, limits, invoices, prefill,
-  yearlyAvailable = false, cycle: currentCycle = "monthly", scheduled = null, gst,
+  yearlyAvailable = false, cycle: currentCycle = "monthly", scheduled = null, gst, supportWhatsapp = "",
 }: {
+  supportWhatsapp?: string;
   yearlyAvailable?: boolean;
   cycle?: Cycle;
   scheduled?: { plan: string; startsAt: string } | null;
@@ -343,7 +355,22 @@ export function BillingManager({
       <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
         <CalendarClock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
         Pay by UPI, debit/credit card or net banking. Renews automatically — cancel any time and keep your plan until the period you paid for ends.
-        Switching to a smaller plan starts when your current period ends, so you never pay twice.
+        Switching to a smaller plan starts when your current period ends, so you never pay twice. Upgrades start straight away; unused days of
+        the smaller plan aren&apos;t refunded.
+        {supportWhatsapp && (
+          <>
+            {" "}Questions about a payment?{" "}
+            <a
+              href={`https://wa.me/${supportWhatsapp}?text=${encodeURIComponent("Hi, I need help with my Ridhzo billing.")}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2"
+            >
+              WhatsApp billing support
+            </a>
+            .
+          </>
+        )}
       </p>
 
       <form onSubmit={saveGst} className="rounded-2xl border bg-card p-6 space-y-3">
@@ -373,16 +400,23 @@ export function BillingManager({
           <h3 className="font-semibold">Payment history</h3>
         </div>
         {invoices.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No payments yet. Receipts for every payment appear here.</p>
+          <p className="text-sm text-muted-foreground">No payments yet. An invoice for every month (or year) you pay appears here — open it to download the PDF.</p>
         ) : (
           <ul className="divide-y divide-border text-sm">
             {invoices.map((inv) => (
-              <li key={inv.id} className="flex items-center justify-between gap-3 py-2">
-                <span>{inv.date ? day(inv.date) : "—"}</span>
+              <li key={inv.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 py-2.5 sm:grid-cols-[1fr_auto_auto_auto]">
+                <div>
+                  <div className="font-medium">{periodLabel(inv)}</div>
+                  {inv.date && <div className="text-xs text-muted-foreground">Billed {day(inv.date)}</div>}
+                </div>
                 <span className="font-medium tabular-nums">{rupees(inv.amount)}</span>
-                <span className="capitalize text-muted-foreground">{inv.status}</span>
+                <span className={`hidden sm:inline text-xs ${inv.status === "paid" ? "text-emerald-600" : "text-muted-foreground"}`}>
+                  {INVOICE_STATUS[inv.status] ?? inv.status}
+                </span>
                 {inv.url ? (
-                  <a href={inv.url} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">Receipt</a>
+                  <a href={inv.url} target="_blank" rel="noopener noreferrer" className="text-sm underline underline-offset-2">
+                    Invoice
+                  </a>
                 ) : (
                   <span className="text-muted-foreground">—</span>
                 )}

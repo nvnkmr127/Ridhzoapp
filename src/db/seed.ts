@@ -27,7 +27,7 @@ async function seed() {
       id: ORG_ID,
       name: 'Acme Corp',
       slug: 'acme-corp',
-      plan: 'pro',
+      plan: 'starter',
       timezone: 'UTC',
       currency: 'USD',
     })

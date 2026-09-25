@@ -143,15 +143,34 @@ export async function cancelSubscription(subscriptionId: string, atCycleEnd = fa
   return res.json();
 }
 
-export type RazorpayInvoice = { id: string; date: number | null; amount_paid: number; amount: number; status: string; short_url: string | null };
+export type RazorpayInvoice = {
+  id: string;
+  date: number | null;
+  amount_paid: number;
+  amount: number;
+  status: string;
+  short_url: string | null; // hosted invoice page — has the PDF download
+  billing_start?: number | null; // period this charge covers (subscription invoices)
+  billing_end?: number | null;
+};
 
-// Razorpay's own invoice per charge — the customer's payment receipts.
-export async function listInvoices(subscriptionId: string): Promise<RazorpayInvoice[]> {
-  if (!isConfigured()) return [];
-  const res = await fetch(`${API}/invoices?subscription_id=${encodeURIComponent(subscriptionId)}&count=24`, { headers: { Authorization: authHeader() } });
+async function invoicesWhere(query: string): Promise<RazorpayInvoice[]> {
+  const res = await fetch(`${API}/invoices?${query}&count=100`, { headers: { Authorization: authHeader() } });
   if (!res.ok) return [];
-  const json = (await res.json()) as { items?: RazorpayInvoice[] };
-  return json.items ?? [];
+  return ((await res.json()) as { items?: RazorpayInvoice[] }).items ?? [];
+}
+
+// Every receipt for the workspace, newest first: all its subscriptions (by customer — survives
+// upgrades, yearly switches and resubscribes), plus the current subscription in case it predates
+// the customer record. Deduped by invoice id.
+export async function listInvoices(ids: { customerId?: string | null; subscriptionId?: string | null }): Promise<RazorpayInvoice[]> {
+  if (!isConfigured()) return [];
+  const lists = await Promise.all([
+    ids.customerId ? invoicesWhere(`customer_id=${encodeURIComponent(ids.customerId)}`) : [],
+    ids.subscriptionId ? invoicesWhere(`subscription_id=${encodeURIComponent(ids.subscriptionId)}`) : [],
+  ]);
+  const byId = new Map(lists.flat().map((i) => [i.id, i]));
+  return [...byId.values()].sort((a, b) => (b.date ?? 0) - (a.date ?? 0));
 }
 
 // Checkout success handshake: generated = HMAC_SHA256(payment_id + "|" + subscription_id, secret).

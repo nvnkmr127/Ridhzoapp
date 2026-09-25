@@ -54,7 +54,7 @@ interface Tenant360ViewProps {
   initialData: Tenant360Data;
 }
 
-const PLANS = ["free", "pro", "business"] as const;
+const PLANS = ["free", "starter", "unlimited"] as const;
 
 export function Tenant360View({ initialData }: Tenant360ViewProps) {
   const router = useRouter();
@@ -314,7 +314,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
     }
   };
 
-  const handleChangePlan = async (plan: "free" | "pro" | "business", trialDays?: number | null) => {
+  const handleChangePlan = async (plan: "free" | "starter" | "unlimited", trialDays?: number | null) => {
     setBusyAction("plan");
     try {
       const res = await setOrgPlanAction({ organizationId: org.id, plan, trialDays });
@@ -509,9 +509,9 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
                 value={PLANS.includes(org.plan as any) ? org.plan : "free"}
                 onValueChange={(val) => {
                   if (val === "pro_trial") {
-                    handleChangePlan("pro", 14);
+                    handleChangePlan("starter", 14);
                   } else if (val === "business_trial") {
-                    handleChangePlan("business", 14);
+                    handleChangePlan("unlimited", 14);
                   } else {
                     handleChangePlan(val as any, null);
                   }
@@ -528,10 +528,10 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
                     </SelectItem>
                   ))}
                   <SelectItem value="pro_trial" className="text-xs text-amber-600 font-medium">
-                    Pro (14d Trial)
+                    Starter (14d Trial)
                   </SelectItem>
                   <SelectItem value="business_trial" className="text-xs text-amber-600 font-medium">
-                    Business (14d Trial)
+                    Unlimited (14d Trial)
                   </SelectItem>
                 </SelectContent>
               </Select>
