@@ -15,28 +15,12 @@ import {
   listFacebookFormsAction,
   syncPastFacebookLeadsAction,
   subscribeFacebookWebhooksAction,
+  setSourceAssignmentAction,
+  regenerateSourceSecretAction,
 } from "@/lib/actions/sources";
-import {
-  Copy,
-  Globe,
-  MessageSquare,
-  ExternalLink,
-  CheckCircle2,
-  Sparkles,
-  ShieldCheck,
-  Pencil,
-  Trash2,
-  FileText,
-  Plus,
-  SlidersHorizontal,
-  Filter,
-  DownloadCloud,
-  Loader2,
-  PauseCircle,
-  PlayCircle,
-} from "lucide-react";
-import { FormFieldsEditor } from "./FormFieldsEditor";
-import { SourceFieldMappingEditor } from "./SourceFieldMappingEditor";
+import { Input } from "@/components/ui/input";
+import { SourceCard, type Source, type LeadCount, type Assignment, type Ask } from "./SourceCard";
+import { Globe, ExternalLink, CheckCircle2, Sparkles, FileText, Plus, Loader2, DownloadCloud } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -54,25 +38,6 @@ function FacebookIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-function LinkedInIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z" />
-      <rect x="2" y="9" width="4" height="12" />
-      <circle cx="4" cy="4" r="2" />
-    </svg>
-  );
-}
-
-type Source = {
-  id: string;
-  name: string;
-  type: string | null;
-  isActive: number;
-  webhookSecret: string | null;
-  config?: unknown;
-};
-
 interface IntegrationPlatformCard {
   id: string;
   name: string;
@@ -83,8 +48,7 @@ interface IntegrationPlatformCard {
   brandColor: string;
   buttonText: string;
   buttonBg: string;
-  docsUrl: string;
-  available?: boolean; // false = not implemented yet; show "Coming soon" instead of a broken connect
+  docsUrl?: string; // external setup guide, when one exists
 }
 
 const PLATFORMS: IntegrationPlatformCard[] = [
@@ -92,7 +56,7 @@ const PLATFORMS: IntegrationPlatformCard[] = [
     id: "facebook",
     name: "Facebook & Instagram Lead Ads",
     typeKey: "facebook_lead_ads",
-    description: "Instant lead pulling from Meta Graph API with automatic form field mapping & Page OAuth refresh.",
+    description: "Connect your Facebook Page once; leads from your Facebook and Instagram lead forms arrive instantly.",
     icon: FacebookIcon,
     badge: "Official Meta API",
     brandColor: "bg-muted border-border text-muted-foreground",
@@ -104,7 +68,7 @@ const PLATFORMS: IntegrationPlatformCard[] = [
     id: "google",
     name: "Google Lead Form Ads",
     typeKey: "google_lead_ads",
-    description: "Real-time webhook ingestion for Google Ads campaign forms with keyword & column normalization.",
+    description: "Get Google Ads lead form submissions the moment they're sent. You paste a URL and a key into Google Ads.",
     icon: Globe,
     badge: "Google Ads Webhook",
     brandColor: "bg-muted border-border text-foreground",
@@ -113,377 +77,43 @@ const PLATFORMS: IntegrationPlatformCard[] = [
     docsUrl: "https://support.google.com/google-ads/answer/9360341",
   },
   {
-    id: "linkedin",
-    name: "LinkedIn Lead Gen Forms",
-    typeKey: "linkedin_lead_gen",
-    available: false,
-    description: "Inbound B2B lead sync for LinkedIn sponsored content & lead generation campaigns.",
-    icon: LinkedInIcon,
-    badge: "B2B Lead Sync",
-    brandColor: "bg-muted border-border text-muted-foreground",
-    buttonText: "Connect LinkedIn Lead Gen",
-    buttonBg: "bg-secondary hover:bg-accent text-foreground",
-    docsUrl: "https://www.linkedin.com/help/linkedin/answer/a420556",
-  },
-  {
-    id: "whatsapp",
-    name: "WhatsApp Direct Inbound",
-    typeKey: "whatsapp_inbound",
-    available: false,
-    description: "Capture inbound messages as leads with automated instant reply & round-robin assignment.",
-    icon: MessageSquare,
-    badge: "WhatsApp Cloud API",
-    brandColor: "bg-muted border-border text-muted-foreground",
-    buttonText: "Connect WhatsApp Business",
-    buttonBg: "bg-secondary hover:bg-accent text-foreground",
-    docsUrl: "https://developers.facebook.com/docs/whatsapp/cloud-api",
-  },
-  {
     id: "webhook",
     name: "Website Custom Webhook",
     typeKey: "generic_webhook",
-    description: "Connect WordPress, Elementor, Webflow, or custom HTML forms using signed REST Webhooks.",
+    description: "Send leads from WordPress, Elementor, Webflow, Zapier or your own code. Paste one URL into your form tool's webhook action.",
     icon: Sparkles,
-    badge: "Universal REST Webhook",
+    badge: "Any form tool",
     brandColor: "bg-muted border-border text-muted-foreground",
-    buttonText: "Generate Webhook Endpoint",
+    buttonText: "Create webhook",
     buttonBg: "bg-secondary hover:bg-accent text-foreground",
-    docsUrl: "/docs/webhooks",
   },
 ];
-
-// One connected-source row. Memoized so a state change to ONE source (toggle/rename/delete, or
-// opening the field editor) only re-renders that row, not all N cards. The parent's setSources
-// updaters preserve object identity for untouched rows, so React.memo's shallow compare skips them.
-// Every handler prop must be stable (useCallback) or memoization is defeated.
-type SourceCardProps = {
-  s: Source;
-  origin: string;
-  isEditing: boolean;
-  onToggle: (s: Source) => void;
-  onRename: (s: Source) => void;
-  onRemove: (s: Source) => void;
-  onCopy: (text: string, what: string) => void;
-  onToggleEdit: (id: string) => void;
-  onSyncPastLeads?: (s: Source) => void;
-  isSyncing?: boolean;
-  onOpenFilter?: (s: Source) => void;
-  onSubscribe?: (s: Source) => void;
-  isSubscribing?: boolean;
-  leadCount?: { total: number; new: number; deleted: number };
-};
-
-const SourceCard = React.memo(function SourceCard({
-  s,
-  origin,
-  isEditing,
-  onToggle,
-  onRename,
-  onRemove,
-  onCopy,
-  onToggleEdit,
-  onSyncPastLeads,
-  isSyncing,
-  onOpenFilter,
-  onSubscribe,
-  isSubscribing,
-  leadCount,
-}: SourceCardProps) {
-  const webhookUrl = `${origin}/api/webhooks/${s.type}?sourceId=${s.id}`;
-  const [showFieldMapping, setShowFieldMapping] = React.useState(false);
-  const formFilter = (s.config as any)?.formFilter;
-  const hasFormFilter = Array.isArray(formFilter) && formFilter.length > 0;
-  const formFilterNames = ((s.config as any)?.formFilterNames ?? {}) as Record<string, string>;
-  const needsReconnect = Boolean((s.config as any)?.needsReconnect);
-  const webhookSubscribed = Boolean((s.config as any)?.webhookSubscribed);
-  const isFacebook = s.type === "facebook_lead_ads";
-  const lastSync = (s.config as any)?.lastSync as
-    | { ok?: boolean; importedCount?: number; deduplicatedCount?: number; skippedNoContact?: number; error?: string; finishedAt?: string; message?: string }
-    | undefined;
-  // Only the in-flight local state disables the button — never a stale config.syncStatus, or a
-  // source stuck "running" from an old queued attempt could never be re-synced.
-  const syncRunning = Boolean(isSyncing);
-
-  return (
-    <div className="border rounded-2xl p-5 bg-card space-y-3">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-3 flex-wrap">
-          <span className="font-bold text-foreground">{s.name}</span>
-          <Badge variant="secondary" className="capitalize">
-            {s.type?.replace(/_/g, " ")}
-          </Badge>
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${
-              s.isActive
-                ? "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300"
-                : "border-border bg-muted text-muted-foreground"
-            }`}
-          >
-            <span className={`h-1.5 w-1.5 rounded-full ${s.isActive ? "bg-green-500" : "bg-muted-foreground/50"}`} />
-            {s.isActive ? "Active" : "Inactive"}
-          </span>
-          {isFacebook && !needsReconnect && (
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${
-                webhookSubscribed
-                  ? "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300"
-                  : "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-              }`}
-              title={webhookSubscribed ? "Subscribed to Meta webhooks — live leads on" : "Live leads not enabled yet"}
-            >
-              <span className={`h-1.5 w-1.5 rounded-full ${webhookSubscribed ? "bg-green-500" : "bg-amber-500"}`} />
-              {webhookSubscribed ? "Live" : "Webhooks off"}
-            </span>
-          )}
-          {leadCount && (
-            <>
-              <Badge variant="outline" className="text-xs">
-                {leadCount.total.toLocaleString()} lead{leadCount.total === 1 ? "" : "s"}
-              </Badge>
-              {leadCount.new > 0 && (
-                <Badge variant="outline" className="text-xs text-primary border-primary/30">
-                  {leadCount.new.toLocaleString()} new
-                </Badge>
-              )}
-              {leadCount.deleted > 0 && (
-                <Badge variant="outline" className="text-xs text-muted-foreground">
-                  {leadCount.deleted.toLocaleString()} in recycle bin
-                </Badge>
-              )}
-            </>
-          )}
-          {s.type === "facebook_lead_ads" && hasFormFilter && (
-            <Badge variant="outline" className="text-xs text-primary border-primary/30">
-              {formFilter.length} form{formFilter.length === 1 ? "" : "s"} selected
-            </Badge>
-          )}
-          {s.type === "facebook_lead_ads" && needsReconnect && (
-            <Badge variant="destructive" className="text-xs">
-              Needs reconnect
-            </Badge>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {s.type === "facebook_lead_ads" && (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                className={`gap-1.5 rounded-2xl text-xs font-medium ${webhookSubscribed ? "text-green-600 dark:text-green-400" : "text-primary"}`}
-                onClick={() => onSubscribe?.(s)}
-                disabled={isSubscribing || needsReconnect}
-                title={
-                  needsReconnect
-                    ? "Reconnect the Page first"
-                    : webhookSubscribed
-                    ? "Live leads are on — click to re-subscribe if needed"
-                    : "Subscribe this Page to Meta webhooks so live leads are delivered instantly"
-                }
-              >
-                {isSubscribing ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : webhookSubscribed ? (
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                ) : (
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                )}
-                {isSubscribing ? "Enabling…" : webhookSubscribed ? "Live leads on" : "Enable Live Leads"}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5 rounded-2xl text-xs"
-                onClick={() => onOpenFilter?.(s)}
-                disabled={needsReconnect}
-                title={needsReconnect ? "Reconnect the Page first" : "Choose which lead forms to capture"}
-              >
-                <Filter className="h-3.5 w-3.5" />
-                Select Forms
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1.5 rounded-2xl text-xs text-primary font-medium"
-                onClick={() => onSyncPastLeads?.(s)}
-                disabled={syncRunning || needsReconnect}
-                title={needsReconnect ? "Reconnect the Page first" : "Fetch past leads from Meta Graph API for this page"}
-              >
-                {syncRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DownloadCloud className="h-3.5 w-3.5" />}
-                {syncRunning ? "Syncing..." : "Sync Past Leads"}
-              </Button>
-            </>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onToggle(s)}
-            className={`gap-1.5 rounded-2xl ${s.isActive ? "text-muted-foreground" : "text-green-600 dark:text-green-400 border-green-500/30"}`}
-            title={s.isActive ? "Pause lead capture for this source" : "Resume lead capture for this source"}
-          >
-            {s.isActive ? <PauseCircle className="h-3.5 w-3.5" /> : <PlayCircle className="h-3.5 w-3.5" />}
-            {s.isActive ? "Deactivate" : "Activate"}
-          </Button>
-          <Button variant="ghost" size="icon" onClick={() => onRename(s)} aria-label="Rename source" title="Rename">
-            <Pencil className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" onClick={() => onRemove(s)} aria-label="Delete source" title="Delete" className="text-destructive hover:text-destructive">
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
-      <div className="space-y-2 text-sm pt-1">
-        <div>
-          <span className="text-xs font-semibold text-muted-foreground block mb-1">Instant Webhook Endpoint URL</span>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 truncate bg-muted border rounded-2xl px-3 py-2 text-xs font-mono text-foreground">
-              {webhookUrl}
-            </code>
-            <Button variant="ghost" size="icon" aria-label="Copy webhook URL" onClick={() => onCopy(webhookUrl, "Webhook URL")}>
-              <Copy className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-        {s.webhookSecret && (
-          <div>
-            <span className="text-xs font-semibold text-muted-foreground block mb-1">
-              HMAC SHA-256 Signing Secret (Header <code>x-hub-signature-256</code>)
-            </span>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 truncate bg-muted border rounded-2xl px-3 py-2 text-xs font-mono text-foreground">
-                {s.webhookSecret}
-              </code>
-              <Button variant="ghost" size="icon" aria-label="Copy secret" onClick={() => onCopy(s.webhookSecret!, "Secret")}>
-                <Copy className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {(s.type === "generic_webhook" || s.type === "webform") && (
-          <div>
-            <span className="text-xs font-semibold text-muted-foreground block mb-1">Hosted form &amp; embed code</span>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 truncate bg-muted border rounded-2xl px-3 py-2 text-xs font-mono text-foreground">
-                {origin}/f/{s.id}
-              </code>
-              <Button variant="ghost" size="icon" title="Open form" onClick={() => window.open(`${origin}/f/${s.id}`, "_blank", "noopener")}>
-                <ExternalLink className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Copy embed code"
-                onClick={() => onCopy(`<iframe src="${origin}/f/${s.id}" style="border:0;width:100%;max-width:480px;height:520px" title="Lead form"></iframe>`, "Embed code")}
-              >
-                <Copy className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1 rounded-2xl"
-                onClick={() => onToggleEdit(s.id)}
-              >
-                <SlidersHorizontal className="h-3.5 w-3.5" />
-                {isEditing ? "Close" : "Customize fields"}
-              </Button>
-            </div>
-            {isEditing && <FormFieldsEditor sourceId={s.id} initialConfig={s.config} />}
-          </div>
-        )}
-
-        {s.type === "facebook_lead_ads" && needsReconnect && (
-          <div className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-xl px-3 py-2">
-            Facebook access for this Page has expired or was revoked, so leads have stopped arriving. Click <strong>Connect Facebook Lead Ads</strong> above and re-select this Page to restore it.
-          </div>
-        )}
-
-        {s.type === "facebook_lead_ads" && (
-          <div className="pt-1 border-t border-border/50">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-semibold text-muted-foreground">Lead forms:</span>
-              {hasFormFilter ? (
-                <div className="flex flex-wrap gap-1">
-                  {formFilter.map((id: string) => (
-                    <Badge key={id} variant="secondary" className="text-xs font-normal">
-                      {formFilterNames[id] || id}
-                    </Badge>
-                  ))}
-                </div>
-              ) : (
-                <span className="text-xs text-muted-foreground italic">
-                  Capturing from all forms on this Page (no selection set)
-                </span>
-              )}
-            </div>
-            {syncRunning ? (
-              <p className="mt-1.5 text-xs text-muted-foreground flex items-center gap-1.5">
-                <Loader2 className="h-3 w-3 animate-spin" /> Syncing past leads…
-              </p>
-            ) : lastSync ? (
-              <p className="mt-1.5 text-xs text-muted-foreground">
-                {lastSync.ok === false
-                  ? `Last sync failed: ${lastSync.error ?? "unknown error"}`
-                  : lastSync.message
-                  ? `Last sync: ${lastSync.message}`
-                  : `Last sync: ${lastSync.importedCount ?? 0} imported, ${lastSync.deduplicatedCount ?? 0} updated${
-                      lastSync.skippedNoContact ? `, ${lastSync.skippedNoContact} skipped` : ""
-                    }.`}
-              </p>
-            ) : null}
-
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-2 h-8 gap-1 text-xs"
-              disabled={needsReconnect}
-              title={needsReconnect ? "Reconnect the Page first" : "Map form questions to your fields"}
-              onClick={() => setShowFieldMapping((v) => !v)}
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              {showFieldMapping ? "Close field mapping" : "Map fields to custom fields"}
-            </Button>
-            {showFieldMapping && (
-              <SourceFieldMappingEditor sourceId={s.id} initialConfig={s.config} provider="facebook" />
-            )}
-          </div>
-        )}
-
-        {s.type === "google_lead_ads" && (
-          <div className="pt-1 border-t border-border/50">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1 text-xs"
-              title="Map Google form questions to your fields"
-              onClick={() => setShowFieldMapping((v) => !v)}
-            >
-              <SlidersHorizontal className="h-3.5 w-3.5" />
-              {showFieldMapping ? "Close field mapping" : "Map fields to custom fields"}
-            </Button>
-            {showFieldMapping && (
-              <SourceFieldMappingEditor sourceId={s.id} initialConfig={s.config} provider="google" />
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-});
 
 export function SourcesManager({
   initialSources,
   leadCounts = {},
+  failures = {},
+  initialAssignments = {},
+  users = [],
+  teams = [],
 }: {
   initialSources: Source[];
-  leadCounts?: Record<string, { total: number; new: number; deleted: number }>;
+  leadCounts?: Record<string, LeadCount>;
+  failures?: Record<string, number>;
+  initialAssignments?: Record<string, Assignment>;
+  users?: { id: string; name: string }[];
+  teams?: { id: string; name: string }[];
 }) {
   const { toast } = useToast();
   const { openUpgrade } = usePlan();
   const [sources, setSources] = React.useState<Source[]>(initialSources);
   React.useEffect(() => setSources(initialSources), [initialSources]);
+  const [assignments, setAssignments] = React.useState(initialAssignments);
+  React.useEffect(() => setAssignments(initialAssignments), [initialAssignments]);
+  // The one open confirm/rename dialog (replaces window.prompt / confirm).
+  const [ask, setAsk] = React.useState<{ kind: Ask | "create-form"; s?: Source; name: string } | null>(null);
+  const [askBusy, setAskBusy] = React.useState(false);
   const [connectingId, setConnectingId] = React.useState<string | null>(null);
-  const [creatingForm, setCreatingForm] = React.useState(false);
   const [editingFormId, setEditingFormId] = React.useState<string | null>(null);
   const [origin, setOrigin] = React.useState("");
 
@@ -537,25 +167,6 @@ export function SourcesManager({
         setSelectedPageIds([pages[0].pageId]);
         setPageSelectorOpen(true);
         return;
-      }
-
-      if (event.data.status === "success") {
-        const providerName = event.data.provider === "facebook" ? "Facebook Lead Ads" : event.data.provider;
-        toast({
-          title: `${providerName} Connected Successfully`,
-          description: `Page ID: ${event.data.data?.pageId || "Connected"}. Lead pulling active.`,
-        });
-
-        // Add newly connected source to local state
-        const newSource: Source = {
-          id: `src_oauth_${Date.now()}`,
-          name: `${providerName} Connection`,
-          type: event.data.provider === "facebook" ? "facebook_lead_ads" : `${event.data.provider}_lead_gen`,
-          isActive: 1,
-          webhookSecret: `sec_${Date.now()}`,
-        };
-
-        setSources((prev) => [...prev, newSource]);
       }
     }
 
@@ -840,15 +451,6 @@ export function SourcesManager({
   }, []);
 
   async function handleConnectPlatform(platform: IntegrationPlatformCard) {
-    // Honest guard: these platforms have no working ingestion yet — don't attempt a create that the
-    // server will reject with a cryptic validation error.
-    if (platform.available === false) {
-      toast({
-        title: `${platform.name} — coming soon`,
-        description: "This integration isn't available yet. Use Facebook Lead Ads or a Website Webhook to capture leads today.",
-      });
-      return;
-    }
     setConnectingId(platform.id);
     try {
       if (platform.id === "facebook") {
@@ -902,8 +504,8 @@ export function SourcesManager({
         }
         setSources((prev) => [...prev, res.data as Source]);
         toast({
-          title: `${platform.name} Connected`,
-          description: `Integration endpoint activated. Use the webhook URL below to receive leads.`,
+          title: `${platform.name} added`,
+          description: "Follow the setup steps on its card below to start receiving leads.",
         });
       }
     } catch {
@@ -913,96 +515,120 @@ export function SourcesManager({
     }
   }
 
-  async function createWebForm() {
-    const name = window.prompt("Name your web form", "Website Enquiry Form")?.trim();
-    if (!name) return;
-    setCreatingForm(true);
-    try {
-      const res = await createSourceAction({ name, type: "webform" as any });
-      if (!res.ok) {
-        if (res.code === "LIMIT") return openUpgrade(res.message);
-        toast({ variant: "destructive", title: "Couldn't create form", description: res.message });
-        return;
-      }
-      setSources((prev) => [...prev, res.data as Source]);
-      toast({ title: "Web form created", description: "Copy its hosted link or embed code from the list below." });
-    } catch {
-      toast({ variant: "destructive", title: "Couldn't create form", description: "We couldn't reach the server. Please try again." });
-    } finally {
-      setCreatingForm(false);
-    }
-  }
+  const createWebForm = () => setAsk({ kind: "create-form", name: "Website enquiry form" });
 
-  const toggle = React.useCallback(async (s: Source) => {
-    const next = s.isActive ? 0 : 1;
+  const setActive = React.useCallback(async (s: Source, on: boolean) => {
+    const next = on ? 1 : 0;
     setSources((prev) => prev.map((x) => (x.id === s.id ? { ...x, isActive: next } : x)));
     try {
-      const res = await toggleSourceAction(s.id, next === 1);
+      const res = await toggleSourceAction(s.id, on);
       if (!res.ok) {
         setSources((prev) => prev.map((x) => (x.id === s.id ? { ...x, isActive: s.isActive } : x)));
-        toast({ variant: "destructive", title: "Could not update source status", description: res.message });
+        toast({ variant: "destructive", title: on ? "Could not resume source" : "Could not pause source", description: res.message });
       }
     } catch {
       setSources((prev) => prev.map((x) => (x.id === s.id ? { ...x, isActive: s.isActive } : x)));
-      toast({ variant: "destructive", title: "Could not update source status", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not update source", description: "We couldn't reach the server. Please try again." });
+    }
+  }, [toast]);
+  const resume = React.useCallback((s: Source) => setActive(s, true), [setActive]);
+  const openAsk = React.useCallback((kind: Ask, s: Source) => setAsk({ kind, s, name: s.name }), []);
+
+  const assign = React.useCallback(async (s: Source, a: Assignment) => {
+    let prev: Record<string, Assignment> = {};
+    setAssignments((cur) => { prev = cur; return { ...cur, [s.id]: a }; });
+    try {
+      const res = await setSourceAssignmentAction(s.id, a);
+      if (!res.ok) {
+        setAssignments(prev);
+        toast({ variant: "destructive", title: "Could not save assignment", description: res.message });
+        return;
+      }
+      toast({ title: a.mode === "none" ? "New leads will stay unassigned" : "Assignment saved", description: a.mode === "none" ? undefined : "Applies to leads that arrive from now on." });
+    } catch {
+      setAssignments(prev);
+      toast({ variant: "destructive", title: "Could not save assignment", description: "We couldn't reach the server. Please try again." });
     }
   }, [toast]);
 
-  const rename = React.useCallback(async (s: Source) => {
-    const name = window.prompt("Rename source", s.name)?.trim();
-    if (!name || name === s.name) return;
-    setSources((prev) => prev.map((x) => (x.id === s.id ? { ...x, name } : x)));
-    try {
-      const res = await renameSourceAction(s.id, name);
-      if (!res.ok) {
-        setSources((prev) => prev.map((x) => (x.id === s.id ? { ...x, name: s.name } : x)));
-        toast({ variant: "destructive", title: "Could not rename source", description: res.message });
-        return;
-      }
-      toast({ title: "Source renamed" });
-    } catch {
-      setSources((prev) => prev.map((x) => (x.id === s.id ? { ...x, name: s.name } : x)));
-      toast({ variant: "destructive", title: "Could not rename source", description: "We couldn't reach the server. Please try again." });
-    }
-  }, [toast]);
+  // Stable for the memoized cards; always calls the latest connect handler.
+  const connectRef = React.useRef<(p: IntegrationPlatformCard) => void>(() => {});
+  const reconnectFacebook = React.useCallback(() => {
+    const fb = PLATFORMS.find((p) => p.id === "facebook");
+    if (fb) connectRef.current(fb);
+  }, []);
 
-  const remove = React.useCallback(async (s: Source) => {
-    if (!confirm(`Delete source "${s.name}"? Existing leads are kept but un-sourced.`)) return;
-    // Snapshot via the functional updater instead of closing over `sources`, so this callback
-    // stays stable (empty deps) and doesn't defeat SourceCard's memoization.
-    let snapshot: Source[] = [];
-    setSources((p) => { snapshot = p; return p.filter((x) => x.id !== s.id); });
+  // Runs the confirmed dialog action.
+  async function confirmAsk() {
+    if (!ask) return;
+    const { kind, s, name } = ask;
+    setAskBusy(true);
     try {
-      const res = await deleteSourceAction(s.id);
-      if (!res.ok) {
-        setSources(snapshot);
-        toast({ variant: "destructive", title: "Could not delete source", description: res.message });
-        return;
+      if (kind === "create-form") {
+        if (!name.trim()) return;
+        const res = await createSourceAction({ name: name.trim(), type: "webform" });
+        if (!res.ok) {
+          if (res.code === "LIMIT") { setAsk(null); return openUpgrade(res.message); }
+          toast({ variant: "destructive", title: "Couldn't create form", description: res.message });
+          return;
+        }
+        setSources((prev) => [...prev, res.data as Source]);
+        toast({ title: "Web form created", description: "Share its link or embed code from its card below." });
+      } else if (kind === "rename" && s) {
+        if (!name.trim() || name.trim() === s.name) { setAsk(null); return; }
+        const res = await renameSourceAction(s.id, name.trim());
+        if (!res.ok) { toast({ variant: "destructive", title: "Could not rename source", description: res.message }); return; }
+        setSources((prev) => prev.map((x) => (x.id === s.id ? { ...x, name: name.trim() } : x)));
+      } else if (kind === "pause" && s) {
+        await setActive(s, false);
+      } else if (kind === "regenerate" && s) {
+        const res = await regenerateSourceSecretAction(s.id);
+        if (!res.ok) { toast({ variant: "destructive", title: "Could not create a new key", description: res.message }); return; }
+        setSources((prev) => prev.map((x) => (x.id === s.id ? { ...x, webhookSecret: res.data.webhookSecret } : x)));
+        toast({ title: "New key created", description: "Update it wherever you pasted the old one — the old key no longer works." });
+      } else if (kind === "delete" && s) {
+        const res = await deleteSourceAction(s.id);
+        if (!res.ok) { toast({ variant: "destructive", title: "Could not delete source", description: res.message }); return; }
+        setSources((prev) => prev.filter((x) => x.id !== s.id));
+        toast({ title: "Source deleted" });
       }
-      toast({ title: "Source deleted" });
+      setAsk(null);
     } catch {
-      setSources(snapshot);
-      toast({ variant: "destructive", title: "Could not delete source", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Something went wrong", description: "We couldn't reach the server. Please try again." });
+    } finally {
+      setAskBusy(false);
     }
-  }, [toast]);
+  }
+
+  const askCopy: Record<Ask | "create-form", { title: string; body?: string; cta: string; destructive?: boolean; input?: boolean }> = {
+    "create-form": { title: "Create a web form", body: "Give it a name you'll recognise in your leads list.", cta: "Create form", input: true },
+    rename: { title: "Rename source", cta: "Save", input: true },
+    pause: {
+      title: `Pause "${ask?.s?.name ?? ""}"?`,
+      body: ask?.s?.type === "facebook_lead_ads"
+        ? "Leads that arrive while it's paused are not captured. After resuming, use “Sync past leads” to bring them in."
+        : "Leads sent while it's paused are rejected, and the sending tool will show an error. Resume any time.",
+      cta: "Pause",
+    },
+    regenerate: {
+      title: "Create a new key?",
+      body: "The current key stops working immediately. You'll need to paste the new URL/key wherever you set it up.",
+      cta: "Create new key",
+      destructive: true,
+    },
+    delete: {
+      title: `Delete "${ask?.s?.name ?? ""}"?`,
+      body: "It stops receiving leads. Its existing leads are kept (just without a source), and any alert or assignment rules for it are removed." +
+        (ask?.s?.type === "facebook_lead_ads" ? " The Facebook Page is also disconnected from Ridhzo." : ""),
+      cta: "Delete source",
+      destructive: true,
+    },
+  };
+
+  connectRef.current = handleConnectPlatform;
 
   return (
     <div className="space-y-8">
-      {/* Header & Security Badge */}
-      <div className="flex items-center justify-between bg-secondary text-foreground p-6 rounded-2xl">
-        <div>
-          <h3 className="text-xl font-bold flex items-center gap-2">
-            <ShieldCheck className="h-6 w-6 text-muted-foreground" /> Multi-Source Lead Integration Hub
-          </h3>
-          <p className="text-sm text-foreground mt-1">
-            Connect ad accounts & webhooks. Leads are instantly pulled, mapped, and allocated to your tenant users.
-          </p>
-        </div>
-        <Badge variant="outline" className="text-muted-foreground border-border/30 bg-secondary/40 py-1.5 px-3">
-          10,000 req/sec Zero Breakdown Queue
-        </Badge>
-      </div>
-
       {/* Hosted Web Form — create a no-code capture form on your own /f/<id> URL */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border rounded-2xl p-5 bg-card">
         <div className="flex items-start gap-3">
@@ -1016,19 +642,18 @@ export function SourcesManager({
             </p>
           </div>
         </div>
-        <Button onClick={createWebForm} disabled={creatingForm} className="gap-2 rounded-2xl shrink-0">
-          <Plus className="h-4 w-4" /> {creatingForm ? "Creating…" : "Create Web Form"}
+        <Button onClick={createWebForm} className="gap-2 rounded-2xl shrink-0">
+          <Plus className="h-4 w-4" /> Create web form
         </Button>
       </div>
 
       {/* Platform Cards Section */}
       <div>
-        <h4 className="text-base font-semibold text-foreground mb-4">Available Integration Platforms</h4>
+        <h4 className="text-base font-semibold text-foreground mb-4">Connect a lead source</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {PLATFORMS.map((platform) => {
             const IconComponent = platform.icon;
             const isConnected = sources.some((s) => s.type === platform.typeKey && s.isActive === 1);
-            const unavailable = platform.available === false;
 
             return (
               <div
@@ -1040,15 +665,13 @@ export function SourcesManager({
                     <div className={`p-3 rounded-2xl border ${platform.brandColor}`}>
                       <IconComponent className="h-6 w-6" />
                     </div>
-                    {isConnected && !unavailable ? (
+                    {isConnected ? (
                       <span className="inline-flex items-center gap-1.5 rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-700 dark:text-green-300">
                         <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
                         Connected
                       </span>
                     ) : (
-                      <Badge variant={unavailable ? "secondary" : "outline"} className="text-xs font-medium">
-                        {unavailable ? "Coming soon" : platform.badge}
-                      </Badge>
+                      <Badge variant="outline" className="text-xs font-medium">{platform.badge}</Badge>
                     )}
                   </div>
                   <div>
@@ -1063,31 +686,31 @@ export function SourcesManager({
                 <div className="pt-2 space-y-2">
                   <Button
                     onClick={() => handleConnectPlatform(platform)}
-                    disabled={connectingId === platform.id || unavailable}
-                    variant={isConnected && !unavailable ? "outline" : "default"}
-                    className={`w-full font-medium gap-2 rounded-2xl py-5 ${isConnected && !unavailable ? "" : platform.buttonBg}`}
+                    disabled={connectingId === platform.id}
+                    variant={isConnected ? "outline" : "default"}
+                    className={`w-full font-medium gap-2 rounded-2xl py-5 ${isConnected ? "" : platform.buttonBg}`}
                   >
-                    {isConnected && !unavailable ? (
+                    {isConnected ? (
                       <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
                     ) : (
                       <IconComponent className="h-4 w-4" />
                     )}
-                    {unavailable
-                      ? "Coming soon"
-                      : connectingId === platform.id
+                    {connectingId === platform.id
                       ? "Connecting..."
                       : isConnected
                       ? "Connected · Add another"
                       : platform.buttonText}
                   </Button>
-                  <a
-                    href={platform.docsUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs text-muted-foreground hover:text-muted-foreground flex items-center justify-center gap-1 py-1"
-                  >
-                    Setup Guide & API Documentation <ExternalLink className="h-3 w-3" />
-                  </a>
+                  {platform.docsUrl && (
+                    <a
+                      href={platform.docsUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-muted-foreground hover:text-muted-foreground flex items-center justify-center gap-1 py-1"
+                    >
+                      Setup guide <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
                 </div>
               </div>
             );
@@ -1098,7 +721,7 @@ export function SourcesManager({
       {/* Connected Sources & Webhook Endpoints */}
       <div className="space-y-4">
         <div className="flex items-baseline justify-between gap-3 flex-wrap">
-          <h4 className="text-base font-semibold text-foreground">Active Tenant Connected Endpoints ({sources.length})</h4>
+          <h4 className="text-base font-semibold text-foreground">Your sources ({sources.length})</h4>
           {(() => {
             const totals = Object.values(leadCounts).reduce(
               (a, c) => ({ total: a.total + c.total, new: a.new + c.new, deleted: a.deleted + c.deleted }),
@@ -1119,8 +742,8 @@ export function SourcesManager({
         {sources.length === 0 ? (
           <div className="text-center py-12 border rounded-2xl bg-card text-muted-foreground space-y-2">
             <Globe className="h-8 w-8 mx-auto text-foreground" />
-            <p className="font-medium text-muted-foreground">No active sources connected yet.</p>
-            <p className="text-xs text-muted-foreground">Click any platform button above to activate instant lead pulling.</p>
+            <p className="font-medium text-muted-foreground">No lead sources yet.</p>
+            <p className="text-xs text-muted-foreground">Create a web form or connect Facebook, Google or your website above.</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -1130,22 +753,53 @@ export function SourcesManager({
                 s={s}
                 origin={origin}
                 isEditing={editingFormId === s.id}
-                onToggle={toggle}
-                onRename={rename}
-                onRemove={remove}
+                leadCount={leadCounts[s.id]}
+                failures={failures[s.id]}
+                assignment={assignments[s.id]}
+                users={users}
+                teams={teams}
+                isSyncing={syncingSourceId === s.id}
+                isSubscribing={subscribingSourceId === s.id}
                 onCopy={copy}
                 onToggleEdit={toggleEdit}
+                onAsk={openAsk}
+                onResume={resume}
+                onAssign={assign}
+                onReconnect={reconnectFacebook}
+                onSubscribe={handleSubscribe}
                 onOpenFilter={handleOpenFilter}
                 onSyncPastLeads={openSyncDialog}
-                isSyncing={syncingSourceId === s.id}
-                onSubscribe={handleSubscribe}
-                isSubscribing={subscribingSourceId === s.id}
-                leadCount={leadCounts[s.id]}
               />
             ))}
           </div>
         )}
       </div>
+
+      {/* Rename / create form / pause / new key / delete */}
+      <Dialog open={!!ask} onOpenChange={(o) => !o && !askBusy && setAsk(null)}>
+        <DialogContent className="max-w-md">
+          {ask && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{askCopy[ask.kind].title}</DialogTitle>
+                {askCopy[ask.kind].body && <DialogDescription>{askCopy[ask.kind].body}</DialogDescription>}
+              </DialogHeader>
+              {askCopy[ask.kind].input && (
+                <Input autoFocus aria-label="Name" value={ask.name} maxLength={255}
+                  onChange={(e) => setAsk({ ...ask, name: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === "Enter") confirmAsk(); }} />
+              )}
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button variant="outline" onClick={() => setAsk(null)} disabled={askBusy}>Cancel</Button>
+                <Button variant={askCopy[ask.kind].destructive ? "destructive" : "default"} onClick={confirmAsk}
+                  disabled={askBusy || (!!askCopy[ask.kind].input && !ask.name.trim())}>
+                  {askBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : askCopy[ask.kind].cta}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Select Facebook Page Modal */}
       <Dialog open={pageSelectorOpen} onOpenChange={setPageSelectorOpen}>

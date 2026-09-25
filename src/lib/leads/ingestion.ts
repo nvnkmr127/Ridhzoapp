@@ -200,7 +200,10 @@ export class IngestionService {
         organizationId,
       });
     } else {
-      await AssignmentService.executeAutomaticAssignment(newLead.id, payload.sourceId, organizationId);
+      // A stale rule (e.g. its person was deactivated) must not fail ingestion: the lead then lands
+      // unassigned, and the unassigned-lead alert below tells the admins.
+      await AssignmentService.executeAutomaticAssignment(newLead.id, payload.sourceId, organizationId)
+        .catch((e) => console.warn("[ingestion] automatic assignment skipped", newLead.id, (e as Error)?.message));
     }
 
     // Notify on receipt. If the lead got an owner, the lead.assigned handler already pinged them —

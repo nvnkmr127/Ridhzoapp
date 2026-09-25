@@ -58,24 +58,27 @@ describe("Meta OAuth Callback Endpoint", () => {
     const req = new NextRequest("http://localhost:3000/api/auth/facebook/callback?error=access_denied&error_reason=user_denied");
     const res = await GET(req);
     expect(res.status).toBe(307);
-    expect(res.headers.get("location")).toContain("/settings/integrations?error=oauth_denied");
+    expect(res.headers.get("location")).toContain("/settings/sources?error=oauth_denied");
   });
 
   it("should redirect with facebook_not_configured when app credentials are absent (no fake connection)", async () => {
     delete process.env.FACEBOOK_APP_ID;
     delete process.env.FACEBOOK_APP_SECRET;
-    const req = new NextRequest("http://localhost:3000/api/auth/facebook/callback?code=auth_code_123&state=org-999");
+    const req = new NextRequest("http://localhost:3000/api/auth/facebook/callback?code=auth_code_123&state=popup_n0nce", {
+      headers: { cookie: "fb_oauth_state=n0nce" },
+    });
     const res = await GET(req);
-    expect(res.headers.get("location")).toContain("error=facebook_not_configured");
+    expect(await res.text()).toContain("facebook_not_configured");
   });
 
-  it("should process a valid code and redirect with success when configured (non-popup)", async () => {
+  it("refuses a callback without the CSRF nonce (no forged connection from a crafted link)", async () => {
     process.env.FACEBOOK_APP_ID = "real_app_id";
     process.env.FACEBOOK_APP_SECRET = "real_app_secret";
-    const req = new NextRequest("http://localhost:3000/api/auth/facebook/callback?code=auth_code_123&state=org-999&pageId=page_100200300");
+    const req = new NextRequest("http://localhost:3000/api/auth/facebook/callback?code=attacker_code&state=org-999");
     const res = await GET(req);
-    expect(res.headers.get("location")).toContain("/settings/integrations?status=facebook_connected");
-    expect(res.headers.get("location")).toContain("pageId=page_100200300");
+    expect(res.headers.get("location")).toContain("/settings/sources?error=csrf");
+    const { MetaTokenRefreshService } = await import("@/domains/leads/metaTokenRefreshService");
+    expect(MetaTokenRefreshService.exchangeCodeForToken).not.toHaveBeenCalled();
   });
 
   it("should return HTML postMessage with pages_ready in popup mode (matching CSRF nonce)", async () => {

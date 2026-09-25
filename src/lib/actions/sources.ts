@@ -1,7 +1,7 @@
 "use server";
 
 import { requireOrg, requirePermission } from "@/lib/rbac";
-import { LeadSourceService } from "@/domains/leads/sourceService";
+import { LeadSourceService, toClientSource } from "@/domains/leads/sourceService";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { ok, fail, actionFail } from "@/lib/actions/result";
@@ -46,8 +46,10 @@ export async function listSourcesAction() {
   return rows.map((s) => ({ id: s.id, name: s.name, type: s.type, isActive: s.isActive }));
 }
 
+const nameSchema = z.string().trim().min(1, "Please enter a source name.").max(255);
+
 const createSchema = z.object({
-  name: z.string().min(1).max(255),
+  name: nameSchema,
   // Must match a provider the ingestion worker knows how to normalize.
   type: z.enum(["generic_webhook", "facebook_lead_ads", "webform", "google_lead_ads"]),
 });
@@ -59,7 +61,7 @@ export async function createSourceAction(input: z.infer<typeof createSchema>) {
   try {
     const row = await LeadSourceService.createSource({ ...parsed.data, organizationId });
     revalidatePath("/settings/sources");
-    return ok(row);
+    return ok(toClientSource(row));
   } catch (e) {
     return actionFail(e);
   }
@@ -71,8 +73,7 @@ export async function updateSourceFormAction(id: string, fields: unknown) {
   if (!source || source.organizationId !== organizationId) return fail("NOT_FOUND", "This form no longer exists.");
   try {
     const clean = sanitizeFields(fields);
-    const config = { ...((source.config as Record<string, unknown>) ?? {}), formFields: clean };
-    await LeadSourceService.updateSource(id, { config }, organizationId);
+    await LeadSourceService.updateSource(id, { configPatch: { formFields: clean } }, organizationId);
     revalidatePath("/settings/sources");
     return ok({ fields: clean });
   } catch (e) {
@@ -83,7 +84,8 @@ export async function updateSourceFormAction(id: string, fields: unknown) {
 export async function toggleSourceAction(id: string, isActive: boolean) {
   const { organizationId } = await requirePermission("sources.manage");
   try {
-    await LeadSourceService.updateSource(id, { isActive: isActive ? 1 : 0 }, organizationId);
+    const row = await LeadSourceService.updateSource(id, { isActive: isActive ? 1 : 0 }, organizationId);
+    if (!row) return fail("NOT_FOUND", "This source no longer exists. Refresh the page.");
     revalidatePath("/settings/sources");
     return ok({ id, isActive });
   } catch (e) {
@@ -93,10 +95,11 @@ export async function toggleSourceAction(id: string, isActive: boolean) {
 
 export async function renameSourceAction(id: string, name: string) {
   const { organizationId } = await requirePermission("sources.manage");
-  const parsed = z.string().min(1).max(255).safeParse(name);
+  const parsed = nameSchema.safeParse(name);
   if (!parsed.success) return fail("VALIDATION", "Please enter a source name.");
   try {
     const row = await LeadSourceService.updateSource(id, { name: parsed.data }, organizationId);
+    if (!row) return fail("NOT_FOUND", "This source no longer exists. Refresh the page.");
     revalidatePath("/settings/sources");
     return ok(row);
   } catch (e) {
@@ -107,9 +110,10 @@ export async function renameSourceAction(id: string, name: string) {
 export async function deleteSourceAction(id: string) {
   const { organizationId } = await requirePermission("sources.manage");
   try {
-    const res = await LeadSourceService.deleteSource(id, organizationId);
+    const removed = await LeadSourceService.deleteSource(id, organizationId);
+    if (!removed) return fail("NOT_FOUND", "This source no longer exists. Refresh the page.");
     revalidatePath("/settings/sources");
-    return ok(res);
+    return ok({ id });
   } catch (e) {
     return actionFail(e);
   }
@@ -159,15 +163,11 @@ export async function connectFacebookPagesAction(pageIds: z.infer<typeof faceboo
         pageAccessToken: p.pageAccessToken,
         expiresAt,
       });
-      connected.push(source);
+      connected.push(toClientSource(source));
       // Subscribe the Page to leadgen webhooks — without this Meta never sends live leads.
       try {
         await MetaTokenRefreshService.subscribePageToLeadgen(p.pageId, p.pageAccessToken);
-        await LeadSourceService.updateSource(
-          source.id,
-          { config: { ...(source.config as Record<string, unknown>), webhookSubscribed: true } },
-          organizationId,
-        );
+        await LeadSourceService.updateSource(source.id, { configPatch: { webhookSubscribed: true } }, organizationId);
       } catch (e: any) {
         subscribeErrors.push(`${p.name}: ${e?.message ?? "subscription failed"}`);
       }
@@ -200,16 +200,14 @@ export async function updateSourceFormFilterAction(input: z.infer<typeof formFil
       return fail("NOT_FOUND", "Source not found");
     }
 
-    const currentConfig = (source.config as Record<string, unknown>) ?? {};
-    const newConfig = {
-      ...currentConfig,
-      formFilter: parsed.data.formFilter || [],
-      formFilterNames: parsed.data.formNames || {},
-    };
-
-    const updated = await LeadSourceService.updateSource(source.id, { config: newConfig }, organizationId);
+    const updated = await LeadSourceService.updateSource(
+      source.id,
+      { configPatch: { formFilter: parsed.data.formFilter || [], formFilterNames: parsed.data.formNames || {} } },
+      organizationId,
+    );
+    if (!updated) return fail("NOT_FOUND", "Source not found");
     revalidatePath("/settings/sources");
-    return ok(updated);
+    return ok(toClientSource(updated));
   } catch (e) {
     return actionFail(e);
   }
@@ -228,9 +226,8 @@ export async function subscribeFacebookWebhooksAction(sourceId: string) {
     }
     const { MetaTokenRefreshService } = await import("@/domains/leads/metaTokenRefreshService");
     await MetaTokenRefreshService.subscribePageToLeadgen(config.pageId, readSecret(config.pageAccessToken)!);
-    // Persist so the UI can show "Live" instead of prompting to enable it again. Keep config's
-    // encrypted token untouched (spread the stored value, don't write back the decrypted one).
-    await LeadSourceService.updateSource(source.id, { config: { ...config, webhookSubscribed: true } }, organizationId);
+    // Persist so the UI can show "Live" instead of prompting to enable it again.
+    await LeadSourceService.updateSource(source.id, { configPatch: { webhookSubscribed: true } }, organizationId);
     revalidatePath("/settings/sources");
     return ok({ subscribed: true });
   } catch (e) {
@@ -366,14 +363,10 @@ export async function updateSourceFieldMappingsAction(input: z.infer<typeof fiel
     const clean = parsed.data.fieldMappings.filter(
       (m) => m.targetField !== "customData" || (m.customDataKey && m.customDataKey.trim()),
     );
-    const currentConfig = (source.config as Record<string, unknown>) ?? {};
-    const updated = await LeadSourceService.updateSource(
-      source.id,
-      { config: { ...currentConfig, fieldMappings: clean } },
-      organizationId,
-    );
+    const updated = await LeadSourceService.updateSource(source.id, { configPatch: { fieldMappings: clean } }, organizationId);
+    if (!updated) return fail("NOT_FOUND", "Source not found");
     revalidatePath("/settings/sources");
-    return ok(updated);
+    return ok(toClientSource(updated));
   } catch (e) {
     return actionFail(e);
   }
@@ -416,9 +409,10 @@ export async function syncPastFacebookLeadsAction(sourceId: string, range?: { si
     const result = await FacebookSyncService.run(source.id, organizationId, window);
 
     // Record the outcome and clear any stale "running" flag left by a previous queued attempt.
+    // Patch only the sync keys: anything saved during the sync (forms, mappings, a reconnect flag) survives.
     await LeadSourceService.updateSource(
       source.id,
-      { config: { ...config, syncStatus: "idle", lastSync: { ...result, ok: true, finishedAt: new Date().toISOString() } } },
+      { configPatch: { syncStatus: "idle", lastSync: { ...result, ok: true, finishedAt: new Date().toISOString() } } },
       organizationId,
     ).catch(() => {});
 
@@ -430,12 +424,50 @@ export async function syncPastFacebookLeadsAction(sourceId: string, range?: { si
     await LeadSourceService.getSource(sourceId)
       .then((s) => {
         if (!s || (s.config as any)?.syncStatus !== "running") return;
-        return LeadSourceService.updateSource(sourceId, { config: { ...(s.config as any), syncStatus: "idle" } }, organizationId);
+        return LeadSourceService.updateSource(sourceId, { configPatch: { syncStatus: "idle" } }, organizationId);
       })
       .catch(() => {});
     if (await flagIfAuthError(e, sourceId)) {
       return fail("VALIDATION", "Facebook access for this Page has expired. Please reconnect the Page, then sync again.");
     }
+    return actionFail(e);
+  }
+}
+
+const assignmentSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("none") }),
+  z.object({ mode: z.literal("user"), userId: z.guid() }),
+  z.object({ mode: z.literal("team"), teamId: z.guid() }),
+]);
+
+/** Who new leads from this source are assigned to: nobody, one person, or a team taking turns. */
+export async function setSourceAssignmentAction(sourceId: string, input: z.infer<typeof assignmentSchema>) {
+  const { organizationId, userId } = await requirePermission("sources.manage");
+  const parsed = assignmentSchema.safeParse(input);
+  if (!parsed.success) return fail("VALIDATION", "Pick who new leads should go to.");
+  try {
+    const saved = await LeadSourceService.setAssignment(organizationId, sourceId, parsed.data);
+    if (!saved) return fail("NOT_FOUND", "This source no longer exists. Refresh the page.");
+    const { AuditService } = await import("@/domains/audit/service");
+    await AuditService.log({ organizationId, userId, action: "source.assignment", entityType: "lead_source", entityId: sourceId, metadata: parsed.data });
+    revalidatePath("/settings/sources");
+    return ok(saved);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+/** New webhook secret / Google key for a source. The old one stops working at once. */
+export async function regenerateSourceSecretAction(sourceId: string) {
+  const { organizationId, userId } = await requirePermission("sources.manage");
+  try {
+    const row = await LeadSourceService.regenerateSecret(sourceId, organizationId);
+    if (!row) return fail("NOT_FOUND", "This source no longer exists. Refresh the page.");
+    const { AuditService } = await import("@/domains/audit/service");
+    await AuditService.log({ organizationId, userId, action: "source.secret_rotated", entityType: "lead_source", entityId: sourceId });
+    revalidatePath("/settings/sources");
+    return ok({ webhookSecret: row.webhookSecret });
+  } catch (e) {
     return actionFail(e);
   }
 }

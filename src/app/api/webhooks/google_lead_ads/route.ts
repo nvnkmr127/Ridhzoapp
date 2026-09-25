@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { timingSafeEqual } from "crypto";
 import { LeadSourceService } from "@/domains/leads/sourceService";
 import { IngestionService } from "@/lib/leads/ingestion";
 import { applySourceFieldMappings } from "@/lib/leads/sourceFieldMapping";
@@ -39,7 +40,8 @@ export async function POST(req: NextRequest) {
   }
 
   // Google echoes the key you configured as `google_key` — validate it against the source secret.
-  if (source.webhookSecret && (body as any).google_key !== source.webhookSecret) {
+  const key = String((body as any).google_key ?? "");
+  if (source.webhookSecret && !(key.length === source.webhookSecret.length && timingSafeEqual(Buffer.from(key), Buffer.from(source.webhookSecret)))) {
     return NextResponse.json({ error: "Invalid key" }, { status: 401 });
   }
 

@@ -46,11 +46,10 @@ describe("FacebookIngestionService.processEvent", () => {
     h.isAuthError.mockReturnValue(false);
   });
 
-  it("throws when no source is connected for the Page (so it can be retried, not silently dropped)", async () => {
+  it("skips (terminally, no retries) when no source exists for the Page — e.g. its source was deleted", async () => {
     h.sources = [];
-    await expect(
-      FacebookIngestionService.processEvent(event({ page_id: "p1", form_id: "f1", leadgen_id: "lg1" })),
-    ).rejects.toThrow(/No Facebook Lead Ads source/i);
+    const res = await FacebookIngestionService.processEvent(event({ page_id: "p1", form_id: "f1", leadgen_id: "lg1" }));
+    expect(res).toMatchObject({ status: "skipped", reason: "no_source_for_page" });
   });
 
   it("refuses to route a Page connected by two organizations — terminally, not by throwing (so Meta stops retrying)", async () => {

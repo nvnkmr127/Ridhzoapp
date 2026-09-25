@@ -104,6 +104,16 @@ export class MetaTokenRefreshService {
    * webhooks for the Page and live leads never arrive — the most common "leads not importing" cause.
    * Uses the Page access token. Docs: /{page-id}/subscribed_apps.
    */
+  /** Stops Meta sending this Page's leads to this app (used when its source is deleted). */
+  static async unsubscribePageFromLeadgen(pageId: string, pageAccessToken: string): Promise<void> {
+    const url = `${GRAPH}/${encodeURIComponent(pageId)}/subscribed_apps?access_token=${encodeURIComponent(pageAccessToken)}`;
+    const res = await fetch(url, { method: "DELETE" });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      throw new Error(json?.error?.message || `Meta unsubscribe failed (${res.status})`);
+    }
+  }
+
   static async subscribePageToLeadgen(pageId: string, pageAccessToken: string): Promise<boolean> {
     if (!pageId || !pageAccessToken) throw new Error("pageId and pageAccessToken are required to subscribe the Page");
     const url =

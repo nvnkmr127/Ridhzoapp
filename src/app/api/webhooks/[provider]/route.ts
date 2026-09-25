@@ -5,6 +5,7 @@ import { webhookEvents } from "@/db/schema";
 import { ingestionQueue } from "@/lib/jobs/workers/ingestionWorker";
 
 import { z } from "zod";
+import { createHmac, timingSafeEqual } from "crypto";
 
 const webhookPayloadSchema = z.object({
   name: z.string().optional(),
@@ -12,20 +13,55 @@ const webhookPayloadSchema = z.object({
   phone: z.string().optional(),
 }).passthrough();
 
+// Only these source types receive leads on this route (the worker has an adapter for each).
+// facebook_lead_ads stays for anyone who wired a relay (e.g. Zapier) to the URL older cards showed.
+const ROUTE_PROVIDERS = new Set(["generic_webhook", "webform", "facebook_lead_ads"]);
+
+// Constant-time string compare (secrets / signatures).
+function safeEqual(a: string, b: string) {
+  const x = Buffer.from(a, "utf8");
+  const y = Buffer.from(b, "utf8");
+  return x.length === y.length && timingSafeEqual(x, y);
+}
+
+// Website form tools (WordPress, Elementor, Webflow, Contact Form 7…) post form-encoded or multipart
+// bodies; custom code usually posts JSON. Accept all three. Empty fields are dropped so a blank
+// optional "email" doesn't fail validation.
+async function readBody(req: NextRequest): Promise<{ rawText: string | null; body: Record<string, unknown> | null }> {
+  const type = req.headers.get("content-type") ?? "";
+  let rawText: string | null = null;
+  let body: Record<string, unknown> | null = null;
+  if (type.includes("multipart/form-data")) {
+    const form = await req.formData();
+    body = Object.fromEntries([...form.entries()].filter(([, v]) => typeof v === "string"));
+  } else {
+    rawText = await req.text();
+    if (type.includes("application/x-www-form-urlencoded")) {
+      body = Object.fromEntries(new URLSearchParams(rawText));
+    } else {
+      try {
+        const parsed = JSON.parse(rawText);
+        body = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+      } catch {
+        body = null;
+      }
+    }
+  }
+  if (body) for (const [k, v] of Object.entries(body)) if (v === "") delete body[k];
+  return { rawText, body };
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ provider: string }> }
 ) {
   try {
     const { provider } = await params;
-    const rawText = await req.text();
-    let rawBody;
-    try {
-      rawBody = JSON.parse(rawText);
-    } catch {
-      return NextResponse.json({ success: false, error: "Invalid JSON format" }, { status: 400 });
+    const { rawText, body: rawBody } = await readBody(req);
+    if (!rawBody) {
+      return NextResponse.json({ success: false, error: "Send the lead as JSON or as form fields" }, { status: 400 });
     }
-    
+
     // Basic validation to ensure the payload is well-formed
     const parseResult = webhookPayloadSchema.safeParse(rawBody);
     if (!parseResult.success) {
@@ -55,30 +91,33 @@ export async function POST(
     }
 
     const { LeadSourceService } = await import("@/domains/leads/sourceService");
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(sourceId))) {
+      return NextResponse.json({ success: false, error: "Invalid sourceId" }, { status: 400 });
+    }
     const source = await LeadSourceService.getSource(sourceId);
-    if (!source || !source.isActive || !source.organizationId) {
+    // The URL's provider must be this source's own type, so a lead can't be routed through a
+    // different adapter than the one its source was set up for.
+    if (!source || !source.isActive || !source.organizationId || source.type !== provider || !ROUTE_PROVIDERS.has(provider)) {
       return NextResponse.json({ success: false, error: "Invalid or inactive source" }, { status: 403 });
     }
 
-    // Signature validation (HMAC SHA-256)
+    // Authentication, either way: (a) the secret itself as `?key=` / `x-webhook-key` — for form tools
+    // that can't compute signatures — or (b) an HMAC SHA-256 signature of the raw body.
     if (source.webhookSecret) {
+      const key = req.nextUrl.searchParams.get("key") ?? req.headers.get("x-webhook-key");
       const signature = req.headers.get("x-hub-signature-256");
-      if (!signature) {
-        return NextResponse.json({ success: false, error: "Missing required signature header" }, { status: 401 });
-      }
-
-      const crypto = await import("crypto");
-      const expectedSignature = crypto
-        .createHmac("sha256", source.webhookSecret)
-        .update(rawText)
-        .digest("hex");
-
-      const cleanSig = signature.startsWith("sha256=") ? signature.slice(7) : signature;
-      const a = Buffer.from(cleanSig, "utf8");
-      const b = Buffer.from(expectedSignature, "utf8");
-
-      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-        return NextResponse.json({ success: false, error: "Invalid signature" }, { status: 401 });
+      if (key) {
+        if (!safeEqual(key, source.webhookSecret)) {
+          return NextResponse.json({ success: false, error: "Invalid key" }, { status: 401 });
+        }
+      } else if (signature && rawText !== null) {
+        const expected = createHmac("sha256", source.webhookSecret).update(rawText).digest("hex");
+        const cleanSig = signature.startsWith("sha256=") ? signature.slice(7) : signature;
+        if (!safeEqual(cleanSig, expected)) {
+          return NextResponse.json({ success: false, error: "Invalid signature" }, { status: 401 });
+        }
+      } else {
+        return NextResponse.json({ success: false, error: "Add ?key=<your secret> to the URL, or sign the body (x-hub-signature-256)" }, { status: 401 });
       }
     }
 

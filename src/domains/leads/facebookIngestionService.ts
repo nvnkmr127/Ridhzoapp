@@ -37,7 +37,10 @@ export class FacebookIngestionService {
     }
     const matchedSource = pageMatches.find((s) => s.isActive === 1) || pageMatches[0];
     if (!matchedSource || !matchedSource.organizationId) {
-      throw new Error(`No Facebook Lead Ads source configured for Page ID: ${pageId || "unknown"}`);
+      // No source for this Page (it was deleted, or never connected): nothing will ever match, so
+      // retrying only fills the failed queue. Record it as skipped and stop.
+      await this.markEvent(event.id, "skipped", { reason: "no_source_for_page", message: `No Facebook Lead Ads source for Page ${pageId || "unknown"}` });
+      return { status: "skipped", reason: "no_source_for_page" };
     }
 
     // A source the user intentionally paused (inactive, and NOT flagged for reconnect) must stop
