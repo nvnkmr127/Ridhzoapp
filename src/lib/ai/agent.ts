@@ -11,7 +11,7 @@ import { CustomStatusSchemaService } from "@/domains/leads/customStatusSchemaSer
 import { aiEnabled, generateText as simpleGenerate } from "@/lib/ai/client";
 import { changeLeadStatusAction, assignLeadAction } from "@/lib/actions/leads";
 import { addTagAction } from "@/lib/actions/tags";
-import { createReminderAction } from "@/lib/actions/reminders";
+import { createFollowUp } from "@/lib/actions/follow-ups";
 import { createMeetingAction } from "@/lib/actions/meetings";
 import { MeetingService } from "@/domains/meetings/service";
 import { MEETING_MODE_KEYS, formatMeetingTime } from "@/domains/meetings/format";
@@ -171,7 +171,7 @@ export async function runLeadAgent(
       description: "Set a follow-up reminder on a lead. dueAt is an ISO datetime.",
       inputSchema: z.object({ leadId: z.guid(), title: z.string().min(1), dueAt: z.string(), description: z.string().optional() }),
       execute: async ({ leadId, title, dueAt, description }) => {
-        const r = await createReminderAction({ leadId, title, dueAt, description, type: "followup" });
+        const r = await createFollowUp({ leadId, title, dueAt, description, type: "followup" });
         return "ok" in r && r.ok ? { ok: true } : { error: (r as { message?: string }).message ?? "failed" };
       },
     }),

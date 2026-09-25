@@ -151,12 +151,16 @@ export class MetaTokenRefreshService {
 
   /** True when an error from a Graph call means the Page token is dead (revoked/expired/invalid),
    *  i.e. retrying won't help and the source needs a reconnect. */
+  // Only errors a reconnect can fix: an invalid/expired token (190, 102) or a missing permission
+  // (10, 200-299 — the user must re-grant). NOT the error type alone: Meta labels most Graph errors
+  // "OAuthException", including "(#100) nonexisting field" request bugs, and treating those as a dead
+  // token switched sources off and demanded reconnects that could never help.
   static isAuthError(e: any): boolean {
-    return (
-      e?.metaCode === 190 ||
-      e?.metaType === "OAuthException" ||
-      /access token|session (has been )?(invalidated|expired)|permission/i.test(String(e?.message ?? ""))
-    );
+    const code = Number(e?.metaCode);
+    if (Number.isFinite(code) && code > 0) {
+      return code === 190 || code === 102 || code === 10 || (code >= 200 && code <= 299);
+    }
+    return /access token|session (has been )?(invalidated|expired)/i.test(String(e?.message ?? ""));
   }
 
   /** True if the token is within the refresh-warning buffer (e.g. < 7 days remaining). */
@@ -167,8 +171,10 @@ export class MetaTokenRefreshService {
 
   // Explicit field list for lead (leadgen) nodes. Graph's defaults don't reliably include
   // field_data / campaign info, and the webhook path needs both — so always request them.
+  // Only real Lead fields: asking for one that doesn't exist (e.g. page_id — the Page comes from the
+  // webhook payload instead) makes Meta reject the whole request with error #100.
   private static readonly LEAD_FIELDS =
-    "id,created_time,field_data,form_id,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name,page_id";
+    "id,created_time,field_data,form_id,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name";
 
   /**
    * Fetches lead details (field_data, campaign info) for a leadgen_id via Meta Graph API using the Page access token.

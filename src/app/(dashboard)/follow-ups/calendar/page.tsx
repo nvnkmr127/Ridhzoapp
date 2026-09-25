@@ -5,7 +5,7 @@ import { followUps, leads, meetings } from "@/db/schema";
 import { and, eq, or, gte, lte, isNull, ne } from "drizzle-orm";
 import {
   startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval,
-  format, addMonths, subMonths, isSameMonth, parse,
+  format, addMonths, subMonths, isSameMonth, parse, isValid,
 } from "date-fns";
 import { ChevronLeft, ChevronRight, List } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,9 @@ export default async function FollowUpCalendarPage({ searchParams }: { searchPar
   const { userId, organizationId } = await requireOrg();
   const { month } = await searchParams;
 
-  const cursor = month ? parse(month, "yyyy-MM", new Date()) : new Date();
+  // A malformed ?month= falls back to this month instead of crashing the page.
+  const parsedMonth = month && /^\d{4}-\d{2}$/.test(month) ? parse(month, "yyyy-MM", new Date()) : null;
+  const cursor = parsedMonth && isValid(parsedMonth) ? parsedMonth : new Date();
   const gridStart = startOfWeek(startOfMonth(cursor));
   const gridEnd = endOfWeek(endOfMonth(cursor));
   const days = eachDayOfInterval({ start: gridStart, end: gridEnd });
@@ -39,6 +41,7 @@ export default async function FollowUpCalendarPage({ searchParams }: { searchPar
         eq(leads.organizationId, organizationId),
         or(eq(followUps.userId, userId), eq(leads.ownerId, userId)),
         isNull(leads.deletedAt),
+        ne(followUps.status, "cancelled"),
         gte(followUps.dueAt, from),
         lte(followUps.dueAt, to),
       ),

@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { followUps, leads, meetings } from "@/db/schema";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 // Single source of truth for the denormalized lead.next_follow_up_at column.
 // The lead's "next follow-up" is ALWAYS the soonest pending follow-up or scheduled meeting (or null
@@ -40,4 +40,24 @@ export async function markLeadContacted(leadId: string, at: Date = new Date()): 
     // (a bare Date is sent as "Thu Sep 24 2026 … GMT+0530", which Postgres rejects).
     .set({ lastContactedAt: at, firstContactedAt: sql`coalesce(${leads.firstContactedAt}, ${at.toISOString()}::timestamp)`, updatedAt: new Date() })
     .where(eq(leads.id, leadId));
+}
+
+// When a lead changes owner, its pending follow-ups that belonged to the previous owner move with it —
+// otherwise the old owner keeps getting reminders for a lead they can no longer open, and the new
+// owner is never reminded. Follow-ups deliberately assigned to someone else stay put. Pass a
+// transaction to commit it together with the owner change.
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+export async function handOverFollowUps(
+  leadIds: string[],
+  fromOwnerId: string | null,
+  toOwnerId: string | null,
+  exec: Pick<typeof db, "update"> | Tx = db,
+): Promise<number> {
+  if (leadIds.length === 0 || !fromOwnerId || fromOwnerId === toOwnerId) return 0;
+  const moved = await exec
+    .update(followUps)
+    .set({ userId: toOwnerId, updatedAt: new Date() })
+    .where(and(inArray(followUps.leadId, leadIds), eq(followUps.userId, fromOwnerId), eq(followUps.status, "pending")))
+    .returning({ id: followUps.id });
+  return moved.length;
 }

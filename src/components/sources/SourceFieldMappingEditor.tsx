@@ -20,10 +20,10 @@ type SourceField = { key: string; label: string };
 // (the default when unmapped).
 const STANDARD_TARGETS: { value: string; label: string }[] = [
   { value: "", label: "— Leave as raw data —" },
-  { value: "name", label: "Name" },
-  { value: "email", label: "Email" },
-  { value: "phone", label: "Phone" },
-  { value: "expectedValue", label: "Expected value" },
+  { value: "std:name", label: "Name" },
+  { value: "std:email", label: "Email" },
+  { value: "std:phone", label: "Phone" },
+  { value: "std:expectedValue", label: "Expected value" },
 ];
 
 // Encodes a rule's target as a single <select> value: "std:email" for a lead field, "cf:<key>" for

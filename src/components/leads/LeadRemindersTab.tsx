@@ -3,17 +3,13 @@ import { SendFollowUpButton, isSendableFollowUp } from "@/components/leads/SendF
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Calendar, Clock, Plus, CheckCircle2, Circle, Trash2, Bell, Phone, Mail, Video, Pencil, MessageSquare } from "lucide-react";
+import { Calendar, Clock, Plus, CheckCircle2, Circle, X, Bell, Phone, Mail, Pencil, MessageSquare, ListTodo } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import {
-  createReminderAction,
-  updateReminderAction,
-  toggleReminderStatusAction,
-  deleteReminderAction,
-} from "@/lib/actions/reminders";
+import { createFollowUp, updateFollowUp, completeFollowUp, reopenFollowUp, cancelFollowUp } from "@/lib/actions/follow-ups";
+import { FOLLOW_UP_TYPES, normalizeFollowUpType } from "@/lib/followUps/types";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { LocalTime } from "@/components/LocalTime";
@@ -79,7 +75,7 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
     setEditingReminder(reminder);
     setEditTitle(reminder.title);
     setEditDescription(reminder.description || "");
-    setEditType((reminder.type || "followup").toLowerCase());
+    setEditType(normalizeFollowUpType(reminder.type));
     setEditDueDate(formatForDateTimeLocal(reminder.dueAt));
   };
 
@@ -89,9 +85,7 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
 
     setEditSubmitting(true);
     try {
-      const res = await updateReminderAction({
-        reminderId: editingReminder.id,
-        leadId,
+      const res = await updateFollowUp(editingReminder.id, {
         title: editTitle,
         description: editDescription,
         type: editType,
@@ -126,7 +120,7 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
 
     setSubmitting(true);
     try {
-      const res = await createReminderAction({
+      const res = await createFollowUp({
         leadId,
         title,
         description,
@@ -161,7 +155,7 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
   const handleToggle = async (id: string, currentStatus: string) => {
     const newStatus = currentStatus === "completed" ? "pending" : "completed";
     try {
-      const res = await toggleReminderStatusAction(id, leadId, newStatus);
+      const res = newStatus === "completed" ? await completeFollowUp(id) : await reopenFollowUp(id);
       if (!res.ok) {
         toast({ title: "Failed to update status", description: res.message, variant: "destructive" });
         return;
@@ -182,19 +176,21 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
     }
   };
 
-  const handleDelete = async (id: string) => {
+  // Cancelling (not deleting) keeps the follow-up in the lead's history.
+  const handleCancel = async (reminder: ReminderItem) => {
+    if (!confirm(`Cancel "${reminder.title}"? It won't remind anyone any more.`)) return;
     try {
-      const res = await deleteReminderAction(id, leadId);
+      const res = await cancelFollowUp(reminder.id);
       if (!res.ok) {
-        toast({ title: "Couldn't delete the follow-up", description: res.message, variant: "destructive" });
+        toast({ title: "Couldn't cancel the follow-up", description: res.message, variant: "destructive" });
         return;
       }
-      setReminders((prev) => prev.filter((r) => r.id !== id));
+      setReminders((prev) => prev.map((r) => (r.id === reminder.id ? { ...r, status: "cancelled" } : r)));
       router.refresh();
-      toast({ title: "Follow-up deleted" });
+      toast({ title: "Follow-up cancelled" });
     } catch {
       toast({
-        title: "Couldn't delete the follow-up",
+        title: "Couldn't cancel the follow-up",
         description: "We couldn't reach the server. Please try again.",
         variant: "destructive",
       });
@@ -202,13 +198,13 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
   };
 
   const getTypeIcon = (t: string) => {
-    switch ((t || "").toLowerCase()) {
+    switch (normalizeFollowUpType(t)) {
       case "call":
         return <Phone className="h-4 w-4 text-emerald-500" />;
       case "email":
         return <Mail className="h-4 w-4 text-blue-500" />;
-      case "meeting":
-        return <Video className="h-4 w-4 text-purple-500" />;
+      case "task":
+        return <ListTodo className="h-4 w-4 text-sky-500" />;
       case "whatsapp":
         return <MessageSquare className="h-4 w-4 text-emerald-500" />;
       default:
@@ -216,7 +212,8 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
     }
   };
 
-  const pendingReminders = reminders.filter((r) => r.status !== "completed");
+  // Cancelled follow-ups are history only (shown in the lead's activity), never "pending".
+  const pendingReminders = reminders.filter((r) => r.status === "pending");
   const completedReminders = reminders.filter((r) => r.status === "completed");
 
   return (
@@ -263,10 +260,7 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="followup">Follow-up</SelectItem>
-                  <SelectItem value="call">Phone Call</SelectItem>
-                  <SelectItem value="email">Email</SelectItem>
-                  <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                  {FOLLOW_UP_TYPES.map((t) => <SelectItem key={t.key} value={t.key}>{t.label}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -314,8 +308,8 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
 
         {pendingReminders.length === 0 ? (
           <div className="text-center py-8 border rounded-2xl bg-card text-muted-foreground text-xs space-y-1">
-            <p className="font-medium text-foreground">No pending reminders</p>
-            <p>Schedule a reminder using the button above to stay on top of follow-ups.</p>
+            <p className="font-medium text-foreground">Nothing to do for this lead</p>
+            <p>Add a follow-up above so you&apos;re reminded when it&apos;s due.</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -385,11 +379,12 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
                     <Button
                       variant="ghost"
                       size="icon"
-                      aria-label="Delete follow-up"
-                      onClick={() => handleDelete(reminder.id)}
+                      aria-label="Cancel follow-up"
+                      title="Cancel follow-up"
+                      onClick={() => handleCancel(reminder)}
                       className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <X className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
@@ -428,26 +423,6 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
                     )}
                   </div>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Edit follow-up"
-                    onClick={() => openEdit(reminder)}
-                    className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-muted shrink-0"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Delete follow-up"
-                    onClick={() => handleDelete(reminder.id)}
-                    className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
               </div>
             ))}
           </div>
@@ -479,10 +454,7 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="followup">Follow-up</SelectItem>
-                    <SelectItem value="call">Phone Call</SelectItem>
-                    <SelectItem value="email">Email</SelectItem>
-                  <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                    {FOLLOW_UP_TYPES.map((t) => <SelectItem key={t.key} value={t.key}>{t.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>

@@ -77,7 +77,7 @@ export class FacebookSyncService {
       console.log(`[FB_SYNC] form=${form.id} name="${form.name}" fetched=${rawLeads.length}`);
 
       for (const fbLead of rawLeads) {
-        const mapped = FacebookLeadMappingService.mapFacebookLeadToStandardLead(fbLead, fieldMappings);
+        const mapped = FacebookLeadMappingService.mapFacebookLeadToStandardLead({ ...fbLead, page_id: fbLead?.page_id ?? pageId }, fieldMappings);
         if (!mapped.email && !mapped.phone) {
           skippedNoContact++;
           continue;

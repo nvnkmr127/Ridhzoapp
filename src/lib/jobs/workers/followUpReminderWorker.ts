@@ -1,9 +1,9 @@
 import { Worker, Queue } from "bullmq";
-import { and, eq, gte, lte, lt, or, isNull, notExists, sql } from "drizzle-orm";
+import { and, eq, gte, lte, lt, or, isNull, notExists, inArray, sql } from "drizzle-orm";
 import { eventBus } from "@/lib/events/emitter";
 import { createRedis, quietErrors } from "../redis";
 import { db } from "@/db";
-import { followUps, leads, reminders } from "@/db/schema";
+import { followUps, leads, reminders, users } from "@/db/schema";
 import { NotificationService } from "@/domains/notifications/service";
 import { ActivityService } from "@/domains/activities/service";
 
@@ -11,11 +11,26 @@ export const FOLLOWUP_REMINDER_QUEUE_NAME = "follow-up-reminder-scan";
 
 // How far ahead of due_at we fire the "follow-up due" reminder.
 const LEAD_MINUTES = 15;
+// Don't send "due" reminders for anything older than this — after downtime (or on old data) a scan
+// must not dump every ancient follow-up on people at once. The overdue alert uses the same window.
+const LOOKBACK_MS = 3 * 24 * 60 * 60 * 1000;
+
+// Who to notify: the assignee if still an active member, else the lead's owner if active, else nobody.
+async function pickRecipients(pairs: { assignee: string | null; owner: string | null }[]): Promise<(string | null)[]> {
+  const ids = [...new Set(pairs.flatMap((p) => [p.assignee, p.owner]).filter((x): x is string => !!x))];
+  const active = new Set(
+    ids.length
+      ? (await db.select({ id: users.id }).from(users).where(and(inArray(users.id, ids), eq(users.isActive, true), isNull(users.deletedAt)))).map((u) => u.id)
+      : [],
+  );
+  return pairs.map((p) => (p.assignee && active.has(p.assignee) ? p.assignee : p.owner && active.has(p.owner) ? p.owner : null));
+}
 
 // Scans for pending follow-ups that are due (or due within LEAD_MINUTES) and haven't been reminded yet,
 // then sends one notification each. This replaces per-follow-up delayed jobs: because it reads live
 // due_at/status/snooze every run, a reschedule or completion is honoured automatically and no stale
-// job can fire. Idempotency: a follow-up is skipped once it has a reminders row with sent_at set.
+// job can fire. Idempotency: one reminder per follow-up PER DUE TIME — the reminders row records the
+// due_at it was sent for, so a snoozed or rescheduled follow-up is reminded again at its new time.
 export async function processFollowUpReminderScan() {
   const now = new Date();
   const horizon = new Date(now.getTime() + LEAD_MINUTES * 60_000);
@@ -28,20 +43,24 @@ export async function processFollowUpReminderScan() {
       and(
         eq(followUps.status, "pending"),
         lte(followUps.dueAt, horizon),
+        gte(followUps.dueAt, new Date(now.getTime() - LOOKBACK_MS)),
         or(isNull(followUps.snoozedUntil), lte(followUps.snoozedUntil, now)),
         isNull(leads.deletedAt),
         notExists(
           db
             .select({ one: sql`1` })
             .from(reminders)
-            .where(and(eq(reminders.followUpId, followUps.id), sql`${reminders.sentAt} IS NOT NULL`)),
+            .where(and(eq(reminders.followUpId, followUps.id), eq(reminders.remindAt, followUps.dueAt), sql`${reminders.sentAt} IS NOT NULL`)),
         ),
       ),
     );
 
   let sent = 0;
-  for (const { followUp, lead } of due) {
-    const targetUserId = followUp.userId || lead.ownerId;
+  const recipients = await pickRecipients(due.map(({ followUp, lead }) => ({ assignee: followUp.userId, owner: lead.ownerId })));
+  for (const [i, { followUp, lead }] of due.entries()) {
+    const targetUserId = recipients[i];
+    // Nobody active to tell (e.g. unassigned): leave it unmarked, so assigning it later still reminds.
+    // The look-back window bounds how long it's re-checked. (It shows under Follow-ups → Unassigned.)
     if (!targetUserId || !lead.organizationId) continue;
 
     await NotificationService.create({
@@ -60,7 +79,7 @@ export async function processFollowUpReminderScan() {
       content: `Reminder sent: ${followUp.title}`,
     });
     // Mark as reminded so the next scan skips it (idempotency).
-    await db.insert(reminders).values({ followUpId: followUp.id, remindAt: now, sentAt: new Date() });
+    await db.insert(reminders).values({ followUpId: followUp.id, remindAt: followUp.dueAt, sentAt: new Date() });
     sent++;
   }
 
@@ -95,14 +114,15 @@ export async function processOverdueFollowUps(now = new Date()) {
     .limit(500);
 
   let alerted = 0;
-  for (const { followUp, lead } of rows) {
+  const recipients = await pickRecipients(rows.map(({ followUp, lead }) => ({ assignee: followUp.userId, owner: lead.ownerId })));
+  for (const [i, { followUp, lead }] of rows.entries()) {
     const [claimed] = await db
       .update(followUps)
       .set({ overdueNotifiedAt: now })
       .where(and(eq(followUps.id, followUp.id), isNull(followUps.overdueNotifiedAt)))
       .returning({ id: followUps.id });
     if (!claimed) continue;
-    const target = followUp.userId || lead.ownerId;
+    const target = recipients[i];
     if (target && lead.organizationId) {
       await NotificationService.create({
         userId: target,

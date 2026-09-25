@@ -81,10 +81,14 @@ describe("MetaTokenRefreshService", () => {
   });
 
   describe("isAuthError", () => {
-    it("flags dead-token errors (code 190 / OAuthException / message)", () => {
-      expect(MetaTokenRefreshService.isAuthError(Object.assign(new Error("x"), { metaCode: 190 }))).toBe(true);
-      expect(MetaTokenRefreshService.isAuthError(Object.assign(new Error("x"), { metaType: "OAuthException" }))).toBe(true);
+    it("flags errors a reconnect fixes: dead token (190) or missing permission (10, 2xx)", () => {
+      expect(MetaTokenRefreshService.isAuthError(Object.assign(new Error("x"), { metaCode: 190, metaType: "OAuthException" }))).toBe(true);
+      expect(MetaTokenRefreshService.isAuthError(Object.assign(new Error("x"), { metaCode: 200, metaType: "OAuthException" }))).toBe(true);
       expect(MetaTokenRefreshService.isAuthError(new Error("Error validating access token: expired"))).toBe(true);
+    });
+    it("does not treat a bad request as a dead token, even though Meta types it OAuthException", () => {
+      const e = Object.assign(new Error("(#100) Tried accessing nonexisting field (page_id)"), { metaCode: 100, metaType: "OAuthException" });
+      expect(MetaTokenRefreshService.isAuthError(e)).toBe(false);
     });
     it("does not flag transient/other errors", () => {
       expect(MetaTokenRefreshService.isAuthError(new Error("Meta Graph API error (500)"))).toBe(false);

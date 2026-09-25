@@ -3,6 +3,7 @@ import { leads, assignmentRules } from "@/db/schema/leads";
 import { users, teams } from "@/db/schema/users";
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { eventBus } from "@/lib/events/emitter";
+import { handOverFollowUps } from "@/domains/follow-ups/state";
 
 // Pure round-robin step: index of the user to assign next given the last one.
 // Wraps around, and starts from 0 when there's no last user or it's no longer on the team.
@@ -212,7 +213,7 @@ export class AssignmentService {
 
     // 1. Fetch Lead and verify tenant organization
     const [lead] = await db
-      .select({ id: leads.id, organizationId: leads.organizationId })
+      .select({ id: leads.id, organizationId: leads.organizationId, ownerId: leads.ownerId })
       .from(leads)
       .where(eq(leads.id, leadId))
       .limit(1);
@@ -248,6 +249,9 @@ export class AssignmentService {
       .set(setData)
       .where(whereCondition)
       .returning();
+
+    // Pending follow-ups of the previous owner move with the lead.
+    if (updatedLead) await handOverFollowUps([leadId], lead.ownerId, ownerId);
 
     // 5. Emit canonical assignment event
     if (updatedLead) {
@@ -297,7 +301,7 @@ export class AssignmentService {
 
     // 1. Verify all leads exist and match tenant organization if provided
     const targetLeads = await db
-      .select({ id: leads.id, organizationId: leads.organizationId })
+      .select({ id: leads.id, organizationId: leads.organizationId, ownerId: leads.ownerId })
       .from(leads)
       .where(inArray(leads.id, leadIds));
 
@@ -337,6 +341,8 @@ export class AssignmentService {
 
         if (updatedLead) {
           batchUpdates.push(updatedLead);
+          const prevOwner = targetLeads.find((l) => l.id === leadId)?.ownerId ?? null;
+          await handOverFollowUps([leadId], prevOwner, ownerId, tx);
         }
       }
     });

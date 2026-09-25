@@ -1,5 +1,6 @@
 import { db } from "@/db";
 import { UserFacingError } from "@/lib/actions/result";
+import { handOverFollowUps } from "@/domains/follow-ups/state";
 import { users, roles, teams, leads } from "@/db/schema";
 import { and, count, eq, isNull, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
@@ -133,6 +134,8 @@ export class UserService {
       .set({ ownerId: toId, updatedAt: new Date() })
       .where(and(eq(leads.ownerId, fromId), eq(leads.organizationId, organizationId), isNull(leads.deletedAt)))
       .returning({ id: leads.id });
+    // Their pending follow-ups on those leads go to the new owner too (or become unassigned).
+    await handOverFollowUps(moved.map((l) => l.id), fromId, toId, tx);
     return moved.length;
   }
 

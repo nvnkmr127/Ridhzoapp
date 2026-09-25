@@ -41,7 +41,7 @@ export const followUps = pgTable('follow_ups', {
 
 export const reminders = pgTable('reminders', {
   id: uuid('id').defaultRandom().primaryKey(),
-  followUpId: uuid('follow_up_id').references(() => followUps.id).notNull(),
+  followUpId: uuid('follow_up_id').references(() => followUps.id, { onDelete: 'cascade' }).notNull(),
   remindAt: timestamp('remind_at').notNull(),
   sentAt: timestamp('sent_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
