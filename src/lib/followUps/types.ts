@@ -31,3 +31,9 @@ export function followUpTypeLabel(raw: string | null | undefined): string {
   const key = normalizeFollowUpType(raw);
   return FOLLOW_UP_TYPES.find((t) => t.key === key)!.label;
 }
+
+/** A follow-up that carries a ready-to-send WhatsApp message (e.g. a personal-mode sequence step).
+ *  Lives here, not in the "use client" button, so server pages can call it too. */
+export function isSendableFollowUp(f: { type?: string | null; description?: string | null }) {
+  return normalizeFollowUpType(f.type) === "whatsapp" && !!f.description?.trim();
+}

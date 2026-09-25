@@ -9,10 +9,6 @@ import { completeFollowUp } from "@/lib/actions/follow-ups";
 import { buildDeepLink } from "@/lib/messaging/deeplink";
 import { useToast } from "@/hooks/use-toast";
 
-/** A follow-up that carries a ready-to-send WhatsApp message (e.g. a personal-mode sequence step). */
-export function isSendableFollowUp(f: { type?: string | null; description?: string | null }) {
-  return f.type?.toLowerCase() === "whatsapp" && !!f.description?.trim();
-}
 
 // One tap: open WhatsApp with the message prefilled, log it on the lead, and mark the follow-up done.
 export function SendFollowUpButton({

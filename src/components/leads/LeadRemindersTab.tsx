@@ -1,5 +1,5 @@
 "use client";
-import { SendFollowUpButton, isSendableFollowUp } from "@/components/leads/SendFollowUpButton";
+import { SendFollowUpButton } from "@/components/leads/SendFollowUpButton";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { createFollowUp, updateFollowUp, completeFollowUp, reopenFollowUp, cancelFollowUp } from "@/lib/actions/follow-ups";
-import { FOLLOW_UP_TYPES, normalizeFollowUpType } from "@/lib/followUps/types";
+import { FOLLOW_UP_TYPES, normalizeFollowUpType, isSendableFollowUp } from "@/lib/followUps/types";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { LocalTime } from "@/components/LocalTime";
