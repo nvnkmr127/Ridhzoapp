@@ -60,7 +60,7 @@ export async function createLeadAction(
 
     // Validate + clean org-defined custom fields. Admin-only fields are gated by role.
     const isAdmin = await hasPermission("settings.manage");
-    const customData = await CustomFieldService.validate(organizationId, parsed.data.customData ?? {}, { isAdmin });
+    const customData = await CustomFieldService.validate(organizationId, parsed.data.customData ?? {}, { isAdmin, isNew: true });
 
     const lead = await LeadService.createLead({ ...data, customData }, userId, organizationId);
 
@@ -123,7 +123,7 @@ export async function updateCustomDataAction(leadId: string, data: Record<string
     const isAdmin = await hasPermission("settings.manage");
     const current = await LeadService.getLead(leadId, organizationId);
     if (!current) return fail("NOT_FOUND", "This lead no longer exists or was moved.");
-    const validated = await CustomFieldService.validate(organizationId, data, { isAdmin });
+    const validated = await CustomFieldService.validate(organizationId, data, { isAdmin, existing: (current.customData as Record<string, unknown>) ?? {} });
     // Keys the caller is allowed to edit; for these, `validated` is authoritative (a value the user
     // cleared is absent → dropped). Every other stored key (internal scoring/attribution, extra
     // webhook payload, and admin-only fields a non-admin can't see) is preserved untouched.

@@ -118,7 +118,7 @@ export class LeadImportService {
       // fails the row with the field's own message, just like the manual create form.
       if (customDefs.length > 0) {
         try {
-          cleanedCustomData = CustomFieldService.validateWith(customDefs, r.customData ?? {}, opts);
+          cleanedCustomData = CustomFieldService.validateWith(customDefs, r.customData ?? {}, { ...opts, isNew: true });
         } catch (e) {
           if (e instanceof FieldValidationError) {
             valid = false;

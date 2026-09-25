@@ -16,7 +16,7 @@ export default async function CustomFieldsPage() {
       <div className="flex items-center gap-3">
         <Link href="/settings"><Button variant="ghost" size="icon" aria-label="Go back"><ArrowLeft className="h-5 w-5" /></Button></Link>
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Custom Fields</h2>
+          <h2 className="text-2xl font-bold tracking-tight">Custom fields</h2>
           <p className="text-sm text-muted-foreground">Extra fields captured on every lead, specific to your business.</p>
         </div>
       </div>

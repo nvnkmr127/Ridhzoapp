@@ -148,6 +148,15 @@ export class IngestionService {
       throw e;
     }
 
+    // New leads only (not dedup merges): empty custom fields take their configured defaults.
+    // Best-effort, like the validation above — a lookup failure must never drop an inbound lead.
+    try {
+      const { CustomFieldService } = await import("@/domains/customFields/service");
+      payload.customData = CustomFieldService.withDefaults(await CustomFieldService.listCached(organizationId), payload.customData);
+    } catch (e) {
+      console.error("[ingestion] custom-field defaults skipped", e);
+    }
+
     let newLead;
     try {
       [newLead] = await db.insert(leads).values({

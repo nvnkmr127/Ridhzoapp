@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
     await PlanService.assertCanAddLead(auth.organizationId);
     const { hasPermissionForRoleId } = await import("@/lib/rbac");
     const isAdmin = !auth.userId || (await hasPermissionForRoleId(auth.roleId ?? null, "settings.manage"));
-    const customData = await CustomFieldService.validate(auth.organizationId, parsed.data.customData ?? {}, { isAdmin });
+    const customData = await CustomFieldService.validate(auth.organizationId, parsed.data.customData ?? {}, { isAdmin, isNew: true });
     const lead = await LeadService.createLead(
       {
         name: parsed.data.name,

@@ -67,18 +67,20 @@ export function CustomFieldInputs({
             <SelectContent>
               <SelectItem value={NONE}>— none —</SelectItem>
               {(f.options ?? []).map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+              {/* A value whose option was later removed from the field — still shown, still kept. */}
+              {val && !(f.options ?? []).includes(val) && <SelectItem value={val}>{val} (removed option)</SelectItem>}
             </SelectContent>
           </Select>
         ) : f.type === "multiselect" ? (
           <div className="flex flex-wrap gap-2">
-            {(f.options ?? []).map((o) => {
+            {[...(f.options ?? []), ...(val ? val.split(",").map((s) => s.trim()).filter((s) => s && !(f.options ?? []).includes(s)) : [])].map((o) => {
               const set = new Set((val ? val.split(",") : []).map((s) => s.trim()).filter(Boolean));
               const checked = set.has(o);
               return (
                 <label key={o} className="flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs">
                   <input type="checkbox" checked={checked}
                     onChange={(e) => { if (e.target.checked) set.add(o); else set.delete(o); onChange(f.key, [...set].join(",")); }} />
-                  {o}
+                  {o}{!(f.options ?? []).includes(o) && " (removed)"}
                 </label>
               );
             })}

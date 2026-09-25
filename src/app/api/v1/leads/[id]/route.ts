@@ -140,7 +140,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const isAdmin = !auth.userId || (await hasPermissionForRoleId(auth.roleId ?? null, "settings.manage"));
       let validated: Record<string, unknown>;
       try {
-        validated = await CustomFieldService.validate(auth.organizationId, merged, { isAdmin });
+        validated = await CustomFieldService.validate(auth.organizationId, merged, { isAdmin, existing: stored });
       } catch (e: any) {
         return NextResponse.json({ error: e?.message || "Invalid custom field value" }, { status: 422 });
       }
