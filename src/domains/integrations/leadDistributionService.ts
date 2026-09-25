@@ -1,8 +1,9 @@
 import { db } from "@/db";
-import { leadDistributionRules, leadDistributionDeliveries, leads } from "@/db/schema";
+import { leadDistributionRules, leadDistributionDeliveries, leadSources } from "@/db/schema";
 import type { DistributionRecipient, DistributionConditionGroup } from "@/db/schema";
 import { and, eq, desc, sql } from "drizzle-orm";
 import { evaluateConditionGroup } from "@/lib/leads/conditions";
+import { escapeHtml } from "@/lib/utils";
 
 type LeadForDistribution = {
   id: string;
@@ -20,10 +21,10 @@ type Rule = typeof leadDistributionRules.$inferSelect;
 
 function leadEmail(lead: LeadForDistribution, link: string) {
   const row = (label: string, value: string | null) =>
-    value ? `<tr><td style="padding:2px 12px 2px 0;color:#666">${label}</td><td style="padding:2px 0"><b>${value}</b></td></tr>` : "";
+    value ? `<tr><td style="padding:2px 12px 2px 0;color:#666">${label}</td><td style="padding:2px 0"><b>${escapeHtml(value)}</b></td></tr>` : "";
   return `
     <div style="font-family:system-ui,sans-serif;font-size:14px;color:#111">
-      <h2 style="margin:0 0 12px">New lead: ${lead.name || "Unnamed"}</h2>
+      <h2 style="margin:0 0 12px">New lead: ${escapeHtml(lead.name || "Unnamed")}</h2>
       <table style="border-collapse:collapse">
         ${row("Name", lead.name)}
         ${row("Email", lead.email)}
@@ -31,7 +32,7 @@ function leadEmail(lead: LeadForDistribution, link: string) {
         ${row("Company", lead.company)}
         ${row("Status", lead.status)}
       </table>
-      <p style="margin:16px 0 0"><a href="${link}" style="color:#2563eb">Open lead in Ridhzo →</a></p>
+      <p style="margin:16px 0 0"><a href="${escapeHtml(link)}" style="color:#2563eb">Open lead in Ridhzo →</a></p>
     </div>`;
 }
 
@@ -47,7 +48,6 @@ export type DistributionRuleInput = {
   conditions: DistributionConditionGroup;
   recipients: DistributionRecipient[];
   mode: "all" | "round_robin";
-  skipSave: boolean;
 };
 
 export class LeadDistributionService {
@@ -59,14 +59,25 @@ export class LeadDistributionService {
       .orderBy(desc(leadDistributionRules.createdAt));
   }
 
-  // Total (lead × recipient) sends per rule — powers the round-robin load display.
-  static async deliveryCounts(organizationId: string): Promise<Record<string, number>> {
+  // Real (non-test) sends per rule, per recipient ("channel:value") — the round-robin load display.
+  static async deliveryCounts(organizationId: string): Promise<Record<string, Record<string, number>>> {
     const rows = await db
-      .select({ ruleId: leadDistributionDeliveries.ruleId, n: sql<number>`count(*)::int` })
+      .select({
+        ruleId: leadDistributionDeliveries.ruleId,
+        channel: leadDistributionDeliveries.channel,
+        recipient: leadDistributionDeliveries.recipient,
+        n: sql<number>`count(*)::int`,
+      })
       .from(leadDistributionDeliveries)
-      .where(and(eq(leadDistributionDeliveries.organizationId, organizationId), eq(leadDistributionDeliveries.status, "sent")))
-      .groupBy(leadDistributionDeliveries.ruleId);
-    return Object.fromEntries(rows.map((r) => [r.ruleId, r.n]));
+      .where(and(
+        eq(leadDistributionDeliveries.organizationId, organizationId),
+        eq(leadDistributionDeliveries.status, "sent"),
+        eq(leadDistributionDeliveries.isTest, 0),
+      ))
+      .groupBy(leadDistributionDeliveries.ruleId, leadDistributionDeliveries.channel, leadDistributionDeliveries.recipient);
+    const out: Record<string, Record<string, number>> = {};
+    for (const r of rows) (out[r.ruleId] ??= {})[`${r.channel}:${r.recipient}`] = r.n;
+    return out;
   }
 
   static listDeliveries(organizationId: string, ruleId: string, limit = 20) {
@@ -76,6 +87,16 @@ export class LeadDistributionService {
       .where(and(eq(leadDistributionDeliveries.organizationId, organizationId), eq(leadDistributionDeliveries.ruleId, ruleId)))
       .orderBy(desc(leadDistributionDeliveries.createdAt))
       .limit(limit);
+  }
+
+  // A rule may only target one of the org's own sources.
+  static async ownsSource(organizationId: string, sourceId: string) {
+    const [row] = await db
+      .select({ id: leadSources.id })
+      .from(leadSources)
+      .where(and(eq(leadSources.id, sourceId), eq(leadSources.organizationId, organizationId)))
+      .limit(1);
+    return !!row;
   }
 
   static async create(organizationId: string, input: DistributionRuleInput) {
@@ -88,7 +109,6 @@ export class LeadDistributionService {
         conditions: input.conditions,
         recipients: input.recipients,
         mode: input.mode,
-        skipSave: input.skipSave ? 1 : 0,
       })
       .returning();
     return row;
@@ -103,7 +123,6 @@ export class LeadDistributionService {
         conditions: input.conditions,
         recipients: input.recipients,
         mode: input.mode,
-        skipSave: input.skipSave ? 1 : 0,
       })
       .where(and(eq(leadDistributionRules.id, id), eq(leadDistributionRules.organizationId, organizationId)))
       .returning();
@@ -125,11 +144,11 @@ export class LeadDistributionService {
       .where(and(eq(leadDistributionRules.id, id), eq(leadDistributionRules.organizationId, organizationId)));
   }
 
-  // Active team-member ids — used to drop paused/deleted in_app recipients from rotation.
+  // Active team-member ids — used to drop deactivated/deleted in_app recipients from rotation.
   private static async activeUserIds(organizationId: string): Promise<Set<string>> {
     const { UserService } = await import("@/domains/users/service");
     const users = await UserService.list(organizationId);
-    return new Set(users.map((u: any) => u.id));
+    return new Set(users.filter((u) => u.isActive !== false).map((u) => u.id));
   }
 
   // Drop in_app recipients whose user is no longer active; other channels pass through.
@@ -137,23 +156,24 @@ export class LeadDistributionService {
     return (rule.recipients ?? []).filter((r) => r.channel !== "in_app" || activeUsers.has(r.value));
   }
 
-  // Choose recipients for this lead: 'all' → everyone live; 'round_robin' → the next live one,
-  // advancing the cursor. ponytail: cursor bump isn't locked; fine at CRM lead volume.
+  // Choose recipients for this lead: 'all' → everyone live; 'round_robin' → the next live one.
+  // The cursor bump is a single atomic increment, so concurrent leads never read the same slot.
   private static async selectRecipients(rule: Rule, live: DistributionRecipient[]): Promise<DistributionRecipient[]> {
     if (live.length === 0) return [];
     if (rule.mode !== "round_robin") return live;
-    const target = live[rule.rrCursor % live.length];
-    await db
+    const [row] = await db
       .update(leadDistributionRules)
-      .set({ rrCursor: (rule.rrCursor + 1) % live.length })
-      .where(eq(leadDistributionRules.id, rule.id));
-    return [target];
+      .set({ rrCursor: sql`${leadDistributionRules.rrCursor} + 1` })
+      .where(eq(leadDistributionRules.id, rule.id))
+      .returning({ n: leadDistributionRules.rrCursor });
+    const slot = (row?.n ?? rule.rrCursor + 1) - 1;
+    return [live[slot % live.length]];
   }
 
   private static async dispatch(
     recipient: DistributionRecipient,
     lead: LeadForDistribution,
-    ctx: { subject: string; html: string },
+    ctx: { subject: string; html: string; isTest?: boolean },
   ): Promise<{ status: "sent" | "skipped" | "failed"; error?: string }> {
     try {
       if (recipient.channel === "email") {
@@ -169,7 +189,8 @@ export class LeadDistributionService {
           title: "New lead: {name}",
           titleVars: { name: lead.name ?? "Unknown" },
           body: lead.phone || lead.email || undefined,
-          leadId: lead.id,
+          // A test lead doesn't exist, and notifications.lead_id is a FK — omit it for tests.
+          leadId: ctx.isTest ? undefined : lead.id,
         });
         return { status: "sent" };
       }
@@ -241,24 +262,18 @@ export class LeadDistributionService {
       html: leadEmail(lead, appUrl(`/leads/${lead.id}`)),
     };
 
+    // Each recipient gets a lead once, even if several rules match. Already-notified recipients are
+    // removed before round-robin picks, so a rule's turn is never spent on a duplicate.
     const seen = new Set<string>();
+    const key = (r: DistributionRecipient) => `${r.channel}:${r.value}`;
     for (const rule of matching) {
-      const live = this.liveRecipients(rule, activeUsers);
-      const targets = (await this.selectRecipients(rule, live)).filter((r) => {
-        const key = `${r.channel}:${r.value}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
+      const live = this.liveRecipients(rule, activeUsers).filter((r) => !seen.has(key(r)));
+      const targets = await this.selectRecipients(rule, live);
+      targets.forEach((r) => seen.add(key(r)));
       const results = await Promise.all(
         targets.map(async (r) => ({ recipient: r, ...(await this.dispatch(r, lead, ctx)) })),
       );
       await this.logDeliveries(lead.organizationId, rule.id, lead.id, false, results);
-    }
-
-    if (matching.some((r) => r.skipSave)) {
-      // ponytail: created-then-soft-deleted, so lead.created side-effects fire once.
-      await db.update(leads).set({ deletedAt: new Date() }).where(eq(leads.id, lead.id));
     }
   }
 
@@ -289,6 +304,7 @@ export class LeadDistributionService {
     const ctx = {
       subject: `[TEST] New lead: ${lead.name}`,
       html: leadEmail(lead, appUrl(`/leads`)),
+      isTest: true,
     };
     // A test always goes to every recipient (ignore round-robin), so you can confirm each one.
     const results = await Promise.all(live.map(async (r) => ({ recipient: r, ...(await this.dispatch(r, lead, ctx)) })));

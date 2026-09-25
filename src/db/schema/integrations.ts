@@ -58,7 +58,7 @@ export const leadDistributionRules = pgTable('lead_distribution_rules', {
   recipients: jsonb('recipients').$type<DistributionRecipient[]>().default([]).notNull(),
   mode: varchar('mode', { length: 20 }).default('all').notNull(), // 'all' | 'round_robin'
   rrCursor: integer('rr_cursor').default(0).notNull(), // round-robin rotation position
-  skipSave: integer('skip_save').default(0).notNull(), // 1 = forward only, drop from the CRM
+  skipSave: integer('skip_save').default(0).notNull(), // unused: "forward only" was removed (it trashed leads after every side effect ran); drop in a later migration
   isActive: integer('is_active').default(1).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (t) => ({

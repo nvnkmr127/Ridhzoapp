@@ -11,6 +11,7 @@ import { ok, fail, actionFail } from "@/lib/actions/result";
 import { getActionableLead } from "@/lib/leads/access";
 import { markLeadContacted } from "@/domains/follow-ups/state";
 import { ScoringService } from "@/domains/leads/scoringService";
+import { escapeHtml } from "@/lib/utils";
 
 export async function listTemplates(channel?: string) {
   const { organizationId } = await requireOrg();
@@ -106,8 +107,6 @@ const emailSchema = z.object({
   body: z.string().min(1),
 });
 
-const escapeHtml = (s: string) =>
-  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 export async function sendEmailAction(input: z.infer<typeof emailSchema>) {
   const parsed = emailSchema.safeParse(input);

@@ -1,5 +1,6 @@
 import { db } from "@/db";
 import { leadSources, leads, assignmentRules } from "@/db/schema/leads";
+import { leadDistributionRules } from "@/db/schema/integrations";
 import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import crypto from "crypto";
 import { encryptSecret } from "@/lib/crypto/secret";
@@ -60,11 +61,14 @@ export class LeadSourceService {
   }
 
   // Deletes a source after detaching it from existing leads (FK is NO ACTION, so we null it)
-  // and removing its assignment rules. Existing leads are kept, just un-sourced.
+  // and removing its assignment + alert rules (FKs are NO ACTION). Existing leads are kept, just un-sourced.
+  // Alert rules are deleted, not widened to "any source", so recipients don't suddenly get every lead.
   static async deleteSource(id: string, organizationId: string) {
     await db.update(leads).set({ sourceId: null })
       .where(and(eq(leads.sourceId, id), eq(leads.organizationId, organizationId)));
     await db.delete(assignmentRules).where(eq(assignmentRules.sourceId, id));
+    await db.delete(leadDistributionRules)
+      .where(and(eq(leadDistributionRules.sourceId, id), eq(leadDistributionRules.organizationId, organizationId)));
     await db.delete(leadSources).where(and(eq(leadSources.id, id), eq(leadSources.organizationId, organizationId)));
     return { ok: true };
   }

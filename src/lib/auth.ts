@@ -78,97 +78,101 @@ export const authOptions: NextAuthOptions = {
         orgName: { label: "Workspace Name", type: "text" },
       },
       async authorize(credentials) {
-        const phone = (credentials?.phoneNumber || "").trim();
-        if (!phone) return null;
+        try {
+          const phone = (credentials?.phoneNumber || "").trim();
+          if (!phone) return null;
 
-        let verified = false;
+          let verified = false;
 
-        // 1. WhatsApp OTP via Watxio
-        if (credentials?.otp) {
-          const { verifyPhoneOtp } = await import("@/lib/auth/phoneOtp");
-          const result = await verifyPhoneOtp(phone, credentials.otp);
-          // Surfaced to the client as result.error so it can say "request a new code" instead of "invalid".
-          if (result === "locked") throw new Error("OTP_LOCKED");
-          if (result !== "ok") return null;
-          verified = true;
-        }
-        // 2. Legacy fallback: Firebase ID Token
-        else if (credentials?.idToken) {
-          const { verifyFirebaseIdToken } = await import("@/lib/auth/firebaseTokenVerifier");
-          try {
-            const res = await verifyFirebaseIdToken(credentials.idToken);
-            if (!res.phoneNumber || res.phoneNumber === phone) verified = true;
-          } catch (err) {
-            console.error("[phone-auth] verification failed:", err);
-            return null;
+          // 1. WhatsApp OTP via Watxio
+          if (credentials?.otp) {
+            const { verifyPhoneOtp } = await import("@/lib/auth/phoneOtp");
+            const result = await verifyPhoneOtp(phone, credentials.otp);
+            // Surfaced to the client as result.error so it can say "request a new code" instead of "invalid".
+            if (result === "locked") throw new Error("OTP_LOCKED");
+            if (result !== "ok") return null;
+            verified = true;
           }
+          // 2. Legacy fallback: Firebase ID Token
+          else if (credentials?.idToken) {
+            const { verifyFirebaseIdToken } = await import("@/lib/auth/firebaseTokenVerifier");
+            try {
+              const res = await verifyFirebaseIdToken(credentials.idToken);
+              if (!res.phoneNumber || res.phoneNumber === phone) verified = true;
+            } catch (err) {
+              console.error("[phone-auth] verification failed:", err);
+              return null;
+            }
+          }
+
+          if (!verified) return null;
+
+          let [existingUser] = await db
+            .select()
+            .from(users)
+            .where(and(eq(users.phone, phone), isNull(users.deletedAt)))
+            .limit(1);
+
+          if (!existingUser) {
+            const { OrgService, slugify } = await import("@/domains/organizations/service");
+            const { signupTrial } = await import("@/domains/billing/planService");
+            const adminRole = await OrgService.ensureSystemRoles();
+            const cleanDigits = phone.replace(/[^0-9]/g, "");
+            const baseName = credentials?.name?.trim() || `User ${cleanDigits.slice(-4)}`;
+            const workspaceName = credentials?.orgName?.trim() || `${baseName}'s Workspace`;
+            const slug = `${slugify(workspaceName)}-${Math.random().toString(36).slice(2, 7)}`;
+            const randomPasswordHash = await bcrypt.hash(crypto.randomUUID(), 10);
+            const syntheticEmail = `${cleanDigits}${PHONE_EMAIL_DOMAIN}`;
+
+            const [newOrg] = await db
+              .insert(organizations)
+              .values({ name: workspaceName, slug, ...signupTrial() })
+              .returning();
+
+            const nameParts = baseName.split(/\s+/);
+            const firstName = nameParts[0] || baseName;
+            const lastName = nameParts.slice(1).join(" ") || undefined;
+
+            const [created] = await db
+              .insert(users)
+              .values({
+                organizationId: newOrg.id,
+                email: syntheticEmail,
+                phone,
+                firstName,
+                lastName,
+                passwordHash: randomPasswordHash,
+                roleId: adminRole?.id ?? null,
+                isActive: true,
+              })
+              .returning();
+
+            existingUser = created;
+          }
+
+          if (!existingUser) return null;
+          // Identity is proven at this point, so it's safe to say why sign-in is refused (surfaced as
+          // result.error on the client instead of a misleading "invalid code").
+          if (!existingUser.isActive) throw new Error("ACCOUNT_DISABLED");
+
+          if (existingUser.organizationId && !existingUser.isSuperAdmin) {
+            const { OrgService } = await import("@/domains/organizations/service");
+            const isSuspended = await OrgService.isSuspended(existingUser.organizationId);
+            if (isSuspended) throw new Error("ACCOUNT_SUSPENDED");
+          }
+
+          return {
+            id: existingUser.id,
+            email: existingUser.email,
+            name: [existingUser.firstName, existingUser.lastName].filter(Boolean).join(" ") || phone,
+            roleId: existingUser.roleId,
+            organizationId: existingUser.organizationId,
+            isSuperAdmin: existingUser.isSuperAdmin,
+            phone: existingUser.phone,
+          };
+        } catch (err: any) {
+          throw new Error(err.message?.replace(/\r?\n/g, " ") || "Unknown error");
         }
-
-        if (!verified) return null;
-
-        let [existingUser] = await db
-          .select()
-          .from(users)
-          .where(and(eq(users.phone, phone), isNull(users.deletedAt)))
-          .limit(1);
-
-        if (!existingUser) {
-          const { OrgService, slugify } = await import("@/domains/organizations/service");
-          const { signupTrial } = await import("@/domains/billing/planService");
-          const adminRole = await OrgService.ensureSystemRoles();
-          const cleanDigits = phone.replace(/[^0-9]/g, "");
-          const baseName = credentials?.name?.trim() || `User ${cleanDigits.slice(-4)}`;
-          const workspaceName = credentials?.orgName?.trim() || `${baseName}'s Workspace`;
-          const slug = `${slugify(workspaceName)}-${Math.random().toString(36).slice(2, 7)}`;
-          const randomPasswordHash = await bcrypt.hash(crypto.randomUUID(), 10);
-          const syntheticEmail = `${cleanDigits}${PHONE_EMAIL_DOMAIN}`;
-
-          const [newOrg] = await db
-            .insert(organizations)
-            .values({ name: workspaceName, slug, ...signupTrial() })
-            .returning();
-
-          const nameParts = baseName.split(/\s+/);
-          const firstName = nameParts[0] || baseName;
-          const lastName = nameParts.slice(1).join(" ") || undefined;
-
-          const [created] = await db
-            .insert(users)
-            .values({
-              organizationId: newOrg.id,
-              email: syntheticEmail,
-              phone,
-              firstName,
-              lastName,
-              passwordHash: randomPasswordHash,
-              roleId: adminRole?.id ?? null,
-              isActive: true,
-            })
-            .returning();
-
-          existingUser = created;
-        }
-
-        if (!existingUser) return null;
-        // Identity is proven at this point, so it's safe to say why sign-in is refused (surfaced as
-        // result.error on the client instead of a misleading "invalid code").
-        if (!existingUser.isActive) throw new Error("ACCOUNT_DISABLED");
-
-        if (existingUser.organizationId && !existingUser.isSuperAdmin) {
-          const { OrgService } = await import("@/domains/organizations/service");
-          const isSuspended = await OrgService.isSuspended(existingUser.organizationId);
-          if (isSuspended) throw new Error("ACCOUNT_SUSPENDED");
-        }
-
-        return {
-          id: existingUser.id,
-          email: existingUser.email,
-          name: [existingUser.firstName, existingUser.lastName].filter(Boolean).join(" ") || phone,
-          roleId: existingUser.roleId,
-          organizationId: existingUser.organizationId,
-          isSuperAdmin: existingUser.isSuperAdmin,
-          phone: existingUser.phone,
-        };
       },
     }),
     CredentialsProvider({
@@ -178,59 +182,63 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials, req) {
-        const parsed = z
-          .object({
-            email: z.string().trim().email(),
-            password: z.string().min(1),
-          })
-          .safeParse(credentials);
+        try {
+          const parsed = z
+            .object({
+              email: z.string().trim().email(),
+              password: z.string().min(1),
+            })
+            .safeParse(credentials);
 
-        if (!parsed.success) return null;
+          if (!parsed.success) return null;
 
-        const email = parsed.data.email.trim().toLowerCase();
-        const { password } = parsed.data;
+          const email = parsed.data.email.trim().toLowerCase();
+          const { password } = parsed.data;
 
-        // Brute-force guard: per account and per client IP, before touching bcrypt.
-        const fwd = (req?.headers as Record<string, string | undefined> | undefined)?.["x-forwarded-for"];
-        const ip = (Array.isArray(fwd) ? fwd[0] : fwd)?.split(",")[0]?.trim() || "unknown";
-        const [byEmail, byIp] = await Promise.all([
-          RateLimiter.checkLimit(`auth:login:email:${email}`, 8, 15 * 60),
-          RateLimiter.checkLimit(`auth:login:ip:${ip}`, 40, 15 * 60),
-        ]);
-        if (!byEmail.success || !byIp.success) throw new Error("RATE_LIMITED");
+          // Brute-force guard: per account and per client IP, before touching bcrypt.
+          const fwd = (req?.headers as Record<string, string | undefined> | undefined)?.["x-forwarded-for"];
+          const ip = (Array.isArray(fwd) ? fwd[0] : fwd)?.split(",")[0]?.trim() || "unknown";
+          const [byEmail, byIp] = await Promise.all([
+            RateLimiter.checkLimit(`auth:login:email:${email}`, 8, 15 * 60),
+            RateLimiter.checkLimit(`auth:login:ip:${ip}`, 40, 15 * 60),
+          ]);
+          if (!byEmail.success || !byIp.success) throw new Error("RATE_LIMITED");
 
-        const [user] = await db
-          .select()
-          .from(users)
-          .where(and(eq(users.email, email), isNull(users.deletedAt)))
-          .limit(1);
-
-        if (!user) return null;
-
-        const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
-        if (!isPasswordValid) return null;
-        // Only after the password checks out, so these never reveal whether an email is registered.
-        if (!user.isActive) throw new Error("ACCOUNT_DISABLED");
-
-        // Block sign-in for a suspended org (super-admins are exempt — they operate cross-tenant).
-        if (user.organizationId && !user.isSuperAdmin) {
-          const [org] = await db
-            .select({ suspendedAt: organizations.suspendedAt })
-            .from(organizations)
-            .where(eq(organizations.id, user.organizationId))
+          const [user] = await db
+            .select()
+            .from(users)
+            .where(and(eq(users.email, email), isNull(users.deletedAt)))
             .limit(1);
-          if (org?.suspendedAt) throw new Error("ACCOUNT_SUSPENDED");
-        }
 
-        return {
-          id: user.id,
-          email: user.email,
-          name: [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email,
-          roleId: user.roleId,
-          organizationId: user.organizationId,
-          isSuperAdmin: user.isSuperAdmin,
-          phone: user.phone,
-        };
+          if (!user) return null;
+
+          const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+          if (!isPasswordValid) return null;
+          // Only after the password checks out, so these never reveal whether an email is registered.
+          if (!user.isActive) throw new Error("ACCOUNT_DISABLED");
+
+          // Block sign-in for a suspended org (super-admins are exempt — they operate cross-tenant).
+          if (user.organizationId && !user.isSuperAdmin) {
+            const [org] = await db
+              .select({ suspendedAt: organizations.suspendedAt })
+              .from(organizations)
+              .where(eq(organizations.id, user.organizationId))
+              .limit(1);
+            if (org?.suspendedAt) throw new Error("ACCOUNT_SUSPENDED");
+          }
+
+          return {
+            id: user.id,
+            email: user.email,
+            name: [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email,
+            roleId: user.roleId,
+            organizationId: user.organizationId,
+            isSuperAdmin: user.isSuperAdmin,
+            phone: user.phone,
+          };
+        } catch (err: any) {
+          throw new Error(err.message?.replace(/\r?\n/g, " ") || "Unknown error");
+        }
       },
     }),
   ],

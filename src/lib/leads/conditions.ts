@@ -52,9 +52,3 @@ export function evaluateConditionGroup(lead: any, group: Condition | null | unde
   if (leaf.field && leaf.operator) return evaluateCondition(lead, leaf);
   return true; // Fallback: empty/unknown node passes.
 }
-
-// Convenience for a flat AND list of leaves (lead-distribution rules store criteria this way).
-export function evaluateAllConditions(lead: any, conditions: LeafCondition[] | null | undefined): boolean {
-  if (!conditions || conditions.length === 0) return true;
-  return conditions.every((c) => evaluateCondition(lead, c));
-}

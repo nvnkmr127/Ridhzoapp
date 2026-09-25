@@ -26,7 +26,6 @@ const ruleSchema = z.object({
   }),
   recipients: z.array(recipientSchema).min(1, "Add at least one recipient").max(50),
   mode: z.enum(["all", "round_robin"]),
-  skipSave: z.boolean(),
 }).superRefine((val, ctx) => {
   // Validate each recipient value against its channel.
   val.recipients.forEach((r, i) => {
@@ -36,6 +35,9 @@ const ruleSchema = z.object({
     if (r.channel === "in_app" && !z.guid().safeParse(r.value).success) {
       ctx.addIssue({ code: "custom", message: "Pick a valid team member", path: ["recipients", i, "value"] });
     }
+    if (r.channel === "whatsapp" && !/^\+[1-9]\d{7,14}$/.test(r.value)) {
+      ctx.addIssue({ code: "custom", message: `"${r.value}" isn't a valid WhatsApp number — use international format, e.g. +919876543210`, path: ["recipients", i, "value"] });
+    }
   });
 });
 
@@ -44,10 +46,20 @@ export async function listDistributionRulesAction() {
   return LeadDistributionService.list(organizationId);
 }
 
-export async function createDistributionRuleAction(input: DistributionRuleInput) {
-  const { organizationId } = await requirePermission("api.manage");
+// Validate shape, then that the source (if any) belongs to this org.
+async function parseRule(organizationId: string, input: DistributionRuleInput) {
   const parsed = ruleSchema.safeParse(input);
   if (!parsed.success) return fail("VALIDATION", parsed.error.issues[0]?.message ?? "Please provide a valid rule.");
+  if (parsed.data.sourceId && !(await LeadDistributionService.ownsSource(organizationId, parsed.data.sourceId))) {
+    return fail("VALIDATION", "That lead source no longer exists. Pick another one.");
+  }
+  return ok(parsed.data);
+}
+
+export async function createDistributionRuleAction(input: DistributionRuleInput) {
+  const { organizationId } = await requirePermission("api.manage");
+  const parsed = await parseRule(organizationId, input);
+  if (!parsed.ok) return parsed;
   try {
     const row = await LeadDistributionService.create(organizationId, parsed.data);
     revalidatePath("/settings/distribution");
@@ -59,8 +71,8 @@ export async function createDistributionRuleAction(input: DistributionRuleInput)
 
 export async function updateDistributionRuleAction(id: string, input: DistributionRuleInput) {
   const { organizationId } = await requirePermission("api.manage");
-  const parsed = ruleSchema.safeParse(input);
-  if (!parsed.success) return fail("VALIDATION", parsed.error.issues[0]?.message ?? "Please provide a valid rule.");
+  const parsed = await parseRule(organizationId, input);
+  if (!parsed.ok) return parsed;
   try {
     const row = await LeadDistributionService.update(organizationId, id, parsed.data);
     if (!row) return fail("NOT_FOUND", "This rule no longer exists.");
@@ -107,5 +119,9 @@ export async function testDistributionRuleAction(id: string) {
 
 export async function listDistributionDeliveriesAction(ruleId: string) {
   const { organizationId } = await requirePermission("api.manage");
-  return LeadDistributionService.listDeliveries(organizationId, ruleId);
+  try {
+    return ok(await LeadDistributionService.listDeliveries(organizationId, ruleId));
+  } catch (e) {
+    return actionFail(e);
+  }
 }

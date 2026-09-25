@@ -71,7 +71,7 @@ Provides instant jumping across all 12 platform administrative surfaces:
 7. **Email (SMTP)** (`/settings/email`)
 8. **Lead Intelligence** (`/settings/lead-intelligence`)
 9. **Webhooks** (`/settings/webhooks`)
-10. **Lead Distribution** (`/settings/distribution`)
+10. **New-lead alerts** (`/settings/distribution`)
 11. **Audit Log** (`/settings/audit`)
 12. **Billing & Plan** (`/settings/billing`)
 13. **Integrations** (`/settings/integrations`)

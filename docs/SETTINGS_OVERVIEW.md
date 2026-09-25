@@ -36,7 +36,7 @@ Settings Hub (/settings)
  ├── 7. Email (SMTP) (/settings/email) ─── Custom SMTP host/port/creds with Resend fallback
  ├── 8. Lead Intelligence (/settings/lead-intelligence) ─── Data enrichment, inbound email, Meta CAPI
  ├── 9. Outbound Webhooks (/settings/webhooks) ─── Event subscriptions, HMAC-SHA256 signing, DLQ
- ├── 10. Lead Distribution (/settings/distribution) ─── Automated lead routing rules & round-robin
+ ├── 10. New-lead alerts (/settings/distribution) ─── Alert people (email / in-app / WhatsApp) about matching new leads
  ├── 11. Audit Log (/settings/audit) ─── Chronological compliance trail for security events
  ├── 12. Billing & Plan (/settings/billing) ─── Subscription tiers, seat count, invoices
  └── 13. Integrations (/settings/integrations) ─── Connected apps and ecosystem connectors
@@ -55,7 +55,7 @@ Settings Hub (/settings)
 | **Email (SMTP)** | `/settings/email` | [`SETTINGS_EMAIL_SMTP.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_EMAIL_SMTP.md) | Custom SMTP transport, AES-256-GCM encryption, dual-transport mailer with Resend fallback. |
 | **Lead Intelligence** | `/settings/lead-intelligence` | [`SETTINGS_LEAD_INTELLIGENCE.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_LEAD_INTELLIGENCE.md) | Third-party enrichment, inbound email webhook parse, Meta CAPI & Conversion Leads postbacks. |
 | **Outbound Webhooks** | `/settings/webhooks` | [`SETTINGS_OUTBOUND_WEBHOOKS.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_OUTBOUND_WEBHOOKS.md) | Outbound JSON webhook POSTs, SSRF protection, HMAC signing, BullMQ retries, DLQ management. |
-| **Lead Distribution** | `/settings/distribution` | *(Planned)* | Lead assignment rules by source/tags, round-robin load distribution. |
+| **New-lead alerts** | `/settings/distribution` | — | Rules (source + conditions) that alert recipients by email, in-app or WhatsApp when a matching lead arrives; "everyone" or taking turns. Alerts only — owner assignment lives on Sources. Requires `api.manage`. |
 | **Audit Log** | `/settings/audit` | *(Planned)* | Immutable record of user actions, auth events, secret reveals, and configuration changes. |
 | **Billing & Plan** | `/settings/billing` | *(Planned)* | Stripe billing portal, seat allocation, subscription tiers. |
 | **Integrations** | `/settings/integrations` | *(Planned)* | Master dashboard for active third-party connections. |

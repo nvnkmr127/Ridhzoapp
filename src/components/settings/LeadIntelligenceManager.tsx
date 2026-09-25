@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Sparkles, Mail, Copy, RefreshCw, Target, X, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
@@ -24,24 +25,6 @@ import {
 
 type Status = { key: string; label: string };
 type FieldErrors = Record<string, string>;
-
-function Toggle({ checked, onChange, label, disabled }: { checked: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
-  return (
-    <label className={`relative inline-flex items-center ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}>
-      <input
-        type="checkbox"
-        role="switch"
-        aria-label={label}
-        className="peer sr-only"
-        checked={checked}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-      <div className="h-6 w-11 rounded-full bg-muted transition-colors peer-checked:bg-primary peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2" />
-      <div className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-background transition-transform peer-checked:translate-x-5" />
-    </label>
-  );
-}
 
 function FieldError({ msg }: { msg?: string }) {
   return msg ? <p className="mt-1 text-xs text-destructive">{msg}</p> : null;
@@ -248,7 +231,7 @@ export function LeadIntelligenceManager({ initial, webhookBase, statuses }: { in
           <p className="text-sm font-medium flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-violet-500" /> Lead enrichment
           </p>
-          <Toggle label="Lead enrichment" checked={v.enrichmentEnabled} onChange={saveEnrichment} disabled={busyEnrich !== null} />
+          <Switch label="Lead enrichment" checked={v.enrichmentEnabled} onChange={saveEnrichment} disabled={busyEnrich !== null} />
         </div>
         <p className="text-xs text-muted-foreground">
           When on, each new lead&apos;s email and company are sent to your data provider. What it finds
@@ -317,7 +300,7 @@ export function LeadIntelligenceManager({ initial, webhookBase, statuses }: { in
           <p className="text-sm font-medium flex items-center gap-2">
             <Mail className="h-4 w-4 text-blue-500" /> Email replies → lead timeline
           </p>
-          <Toggle label="Email replies to lead timeline" checked={v.inboundEmailEnabled} onChange={toggleInbound} disabled={busyInbound} />
+          <Switch label="Email replies to lead timeline" checked={v.inboundEmailEnabled} onChange={toggleInbound} disabled={busyInbound} />
         </div>
         <p className="text-xs text-muted-foreground">
           When a lead replies to your email, the reply shows on their timeline, any running sequence
@@ -345,7 +328,7 @@ export function LeadIntelligenceManager({ initial, webhookBase, statuses }: { in
           <p className="text-sm font-medium flex items-center gap-2">
             <Target className="h-4 w-4 text-blue-600" /> Meta Conversions API
           </p>
-          <Toggle label="Meta Conversions API" checked={v.capiEnabled} onChange={saveCapi} disabled={busyCapi !== null} />
+          <Switch label="Meta Conversions API" checked={v.capiEnabled} onChange={saveCapi} disabled={busyCapi !== null} />
         </div>
         <p className="text-xs text-muted-foreground">
           Tell Meta which leads you got and which ones you won, so your ads find more people like

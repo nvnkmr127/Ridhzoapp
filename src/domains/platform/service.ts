@@ -16,6 +16,8 @@ import {
   leadStatusHistory,
   leadSources,
   assignmentRules,
+  leadDistributionRules,
+  leadDistributionDeliveries,
   automations,
   sequences,
   savedViews,
@@ -1196,7 +1198,9 @@ export class PlatformService {
         await tx.delete(leads).where(eq(leads.organizationId, organizationId));
       }
 
-      // 2. Sources & Assignment
+      // 2. Sources, Assignment & lead alerts (alert rules reference sources and the org, NO ACTION FKs)
+      await tx.delete(leadDistributionDeliveries).where(eq(leadDistributionDeliveries.organizationId, organizationId));
+      await tx.delete(leadDistributionRules).where(eq(leadDistributionRules.organizationId, organizationId));
       const sources = await tx
         .select({ id: leadSources.id })
         .from(leadSources)
