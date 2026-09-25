@@ -61,3 +61,25 @@ export async function assertPublicHttpUrl(rawUrl: string): Promise<void> {
     throw new Error("Webhook URL resolves to a private or reserved address.");
   }
 }
+
+// Same guard for non-HTTP outbound connections (tenant SMTP). Resolves `host` and returns the address
+// to connect to — callers connect to THAT address (not the hostname) so a DNS answer can't change
+// between this check and the connection (rebinding).
+export async function resolvePublicHost(host: string): Promise<string> {
+  const h = host.trim().replace(/^\[|\]$/g, "");
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(h) || h.includes(":")) {
+    if (isBlockedAddress(h)) throw new Error("This host is a private or reserved address.");
+    return h;
+  }
+  const { lookup } = await import("dns/promises");
+  let records: { address: string }[];
+  try {
+    records = await lookup(h, { all: true });
+  } catch {
+    throw new Error(`Host "${h}" could not be resolved.`);
+  }
+  if (records.length === 0 || records.some((r) => isBlockedAddress(r.address))) {
+    throw new Error("This host resolves to a private or reserved address.");
+  }
+  return records[0].address;
+}

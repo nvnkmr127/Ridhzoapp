@@ -11,10 +11,15 @@ export const emailSettings = pgTable('email_settings', {
   fromEmail: varchar('from_email', { length: 255 }),
   smtpHost: varchar('smtp_host', { length: 255 }),
   smtpPort: integer('smtp_port'),
-  smtpSecure: integer('smtp_secure').default(1).notNull(), // 1 = TLS (465), 0 = STARTTLS/none
+  // Legacy: TLS is now derived from the port (465 = implicit TLS, else STARTTLS). Kept in sync on write.
+  smtpSecure: integer('smtp_secure').default(1).notNull(),
   smtpUser: varchar('smtp_user', { length: 255 }),
   smtpPasswordEnc: text('smtp_password_enc'), // AES-256-GCM ciphertext
+  replyTo: varchar('reply_to', { length: 255 }),
   enabled: integer('enabled').default(0).notNull(),
+  verifiedAt: timestamp('verified_at'), // last successful test of the CURRENT credentials; null after a change
+  lastError: text('last_error'), // last failed send through this server, cleared by the next success
+  lastErrorAt: timestamp('last_error_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

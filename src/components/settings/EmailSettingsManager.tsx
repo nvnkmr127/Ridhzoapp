@@ -1,153 +1,196 @@
 "use client";
 
 import * as React from "react";
-import { Mail, Send } from "lucide-react";
+import { Mail, Send, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { StatusMessage, type Status } from "@/components/ui/status-message";
 import { useToast } from "@/hooks/use-toast";
-import { updateEmailSettingsAction, sendTestEmailAction } from "@/lib/actions/emailSettings";
+import { updateEmailSettingsAction, sendTestEmailAction, removeEmailSettingsAction } from "@/lib/actions/emailSettings";
+import type { EmailSettingsView } from "@/domains/organizations/emailSettingsService";
 
-type View = {
-  fromName: string | null;
-  fromEmail: string | null;
-  smtpHost: string | null;
-  smtpPort: number | null;
-  smtpSecure: boolean;
-  smtpUser: string | null;
-  hasPassword: boolean;
-  enabled: boolean;
-};
+// Common providers: fills host + port. TLS mode follows the port, so nothing else to pick.
+const PRESETS = [
+  { label: "Google Workspace", host: "smtp.gmail.com", port: 587 },
+  { label: "Microsoft 365", host: "smtp.office365.com", port: 587 },
+  { label: "Zoho", host: "smtp.zoho.com", port: 587 },
+  { label: "SendGrid", host: "smtp.sendgrid.net", port: 587 },
+];
 
-export function EmailSettingsManager({ initial }: { initial: View }) {
-  const { toast } = useToast();
-  const [f, setF] = React.useState({
-    fromName: initial.fromName ?? "",
-    fromEmail: initial.fromEmail ?? "",
-    smtpHost: initial.smtpHost ?? "",
-    smtpPort: initial.smtpPort ? String(initial.smtpPort) : "587",
-    smtpSecure: initial.smtpSecure,
-    smtpUser: initial.smtpUser ?? "",
+function toForm(v: EmailSettingsView) {
+  return {
+    fromName: v.fromName ?? "",
+    fromEmail: v.fromEmail ?? "",
+    replyTo: v.replyTo ?? "",
+    smtpHost: v.smtpHost ?? "",
+    smtpPort: v.smtpPort ? String(v.smtpPort) : "587",
+    smtpUser: v.smtpUser ?? "",
     smtpPassword: "", // never prefilled
-    enabled: initial.enabled,
+    enabled: v.enabled,
+  };
+}
+type Form = ReturnType<typeof toForm>;
+
+const when = (d: Date | string) => new Date(d).toLocaleString();
+
+function Field({ id, label, error, hint, children }: { id: string; label: string; error?: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <Label htmlFor={id}>{label}</Label>
+      {children}
+      {error ? <p id={`${id}-error`} className="text-xs text-destructive">{error}</p> : hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+    </div>
+  );
+}
+
+export function EmailSettingsManager({ initial }: { initial: EmailSettingsView }) {
+  const { toast } = useToast();
+  const [view, setView] = React.useState(initial);
+  const [f, setF] = React.useState(() => toForm(initial));
+  const [errors, setErrors] = React.useState<Record<string, string>>({});
+  const [status, setStatus] = React.useState<Status>(null);
+  const [busy, setBusy] = React.useState<null | "save" | "test" | "remove">(null);
+  const set = (k: keyof Form) => (v: string | boolean) => {
+    setF((s) => ({ ...s, [k]: v }));
+    setErrors((e) => ({ ...e, [k]: "" }));
+  };
+  const input = (k: keyof Form) => ({
+    id: k,
+    value: f[k] as string,
+    onChange: (e: React.ChangeEvent<HTMLInputElement>) => set(k)(e.target.value),
+    "aria-invalid": !!errors[k] || undefined,
+    "aria-describedby": errors[k] ? `${k}-error` : undefined,
   });
-  const [hasPassword, setHasPassword] = React.useState(initial.hasPassword);
-  const [saving, setSaving] = React.useState(false);
-  const [testing, setTesting] = React.useState(false);
-  const set = (k: keyof typeof f) => (v: string | boolean) => setF((s) => ({ ...s, [k]: v }));
+  const payload = () => ({ ...f, smtpPassword: f.smtpPassword || undefined });
 
-  async function save() {
-    setSaving(true);
+  function applyView(v: EmailSettingsView) {
+    setView(v);
+    setF(toForm(v));
+    setErrors({});
+  }
+
+  async function run<T extends { view: EmailSettingsView }>(
+    kind: "save" | "test" | "remove",
+    call: () => Promise<{ ok: true; data: T } | { ok: false; message: string; fieldErrors?: Record<string, string> }>,
+    success: (d: T) => string,
+  ) {
+    setBusy(kind);
+    setStatus(null);
     try {
-      const res = await updateEmailSettingsAction({
-        fromName: f.fromName,
-        fromEmail: f.fromEmail,
-        smtpHost: f.smtpHost,
-        smtpPort: f.smtpPort ? Number(f.smtpPort) : undefined,
-        smtpSecure: f.smtpSecure,
-        smtpUser: f.smtpUser,
-        smtpPassword: f.smtpPassword || undefined,
-        enabled: f.enabled,
-      });
+      const res = await call();
       if (!res.ok) {
-        toast({ variant: "destructive", title: "Couldn't save", description: res.message });
+        setErrors(res.fieldErrors ?? {});
+        setStatus({ kind: "error", text: res.message });
         return;
       }
-      setF((s) => ({ ...s, smtpPassword: "" }));
-      setHasPassword(res.data.hasPassword);
-      toast({ title: "Email settings saved" });
+      applyView(res.data.view);
+      toast({ title: success(res.data) });
     } catch {
-      toast({ variant: "destructive", title: "Couldn't save", description: "We couldn't reach the server. Please try again." });
+      setStatus({ kind: "error", text: "We couldn't reach the server. Please try again." });
     } finally {
-      setSaving(false);
+      setBusy(null);
     }
   }
 
-  async function test() {
-    setTesting(true);
-    try {
-      const res = await sendTestEmailAction();
-      if (!res.ok) {
-        toast({ variant: "destructive", title: "Test failed", description: res.message });
-        return;
-      }
-      toast({ title: "Test email sent", description: `Check ${res.data.sentTo}.` });
-    } catch {
-      toast({ variant: "destructive", title: "Test failed", description: "We couldn't reach the server. Please try again." });
-    } finally {
-      setTesting(false);
-    }
-  }
+  const save = () =>
+    run("save", () => updateEmailSettingsAction(payload()), (d) => (d.tested ? "Test email sent and settings saved" : "Email settings saved"));
+  const test = () => run("test", () => sendTestEmailAction(payload()), (d) => `Test email sent to ${d.sentTo} — settings saved`);
+  const remove = () => {
+    if (!window.confirm("Remove your SMTP settings? Emails will go from Ridhzo's default address.")) return;
+    run("remove", () => removeEmailSettingsAction(), () => "SMTP settings removed");
+  };
+
+  const port = Number(f.smtpPort);
+  const configured = !!(view.smtpHost || view.hasPassword || view.passwordUnreadable);
 
   return (
     <div className="space-y-5">
+      <StatusMessage status={status} />
+
+      {/* Current state, so the admin knows whether mail is actually going out through their server. */}
+      {view.lastError ? (
+        <StatusMessage status={{ kind: "error", text: `Last send failed${view.lastErrorAt ? ` (${when(view.lastErrorAt)})` : ""}: ${view.lastError}` }} />
+      ) : view.passwordUnreadable ? (
+        <StatusMessage status={{ kind: "error", text: "The saved password can no longer be read. Re-enter it and save." }} />
+      ) : view.enabled ? (
+        <StatusMessage status={{ kind: "success", text: `Active: lead emails are sent from ${view.fromEmail}${view.verifiedAt ? `. Last tested ${when(view.verifiedAt)}` : ""}.` }} />
+      ) : null}
+
       <div className="rounded-2xl border p-5 space-y-4">
         <p className="text-sm font-medium flex items-center gap-2"><Mail className="h-4 w-4" /> Sender</p>
         <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <Label>From name</Label>
-            <Input value={f.fromName} onChange={(e) => set("fromName")(e.target.value)} placeholder="Acme Sales" />
-          </div>
-          <div>
-            <Label>From email</Label>
-            <Input value={f.fromEmail} onChange={(e) => set("fromEmail")(e.target.value)} placeholder="sales@acme.com" autoCapitalize="none" />
-          </div>
+          <Field id="fromName" label="From name" error={errors.fromName}>
+            <Input {...input("fromName")} placeholder="Acme Sales" />
+          </Field>
+          <Field id="fromEmail" label="From email" error={errors.fromEmail}>
+            <Input {...input("fromEmail")} type="email" placeholder="sales@acme.com" autoCapitalize="none" />
+          </Field>
+          <Field id="replyTo" label="Reply-to (optional)" error={errors.replyTo} hint="Where lead replies go, if not the from email.">
+            <Input {...input("replyTo")} type="email" placeholder="team@acme.com" autoCapitalize="none" />
+          </Field>
         </div>
+        <p className="text-xs text-muted-foreground">
+          Use an address on a domain your mail server is allowed to send for (SPF/DKIM), or messages may land in spam.
+        </p>
       </div>
 
       <div className="rounded-2xl border p-5 space-y-4">
-        <p className="text-sm font-medium">SMTP server</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm font-medium mr-auto">SMTP server</p>
+          {PRESETS.map((p) => (
+            <Button key={p.label} type="button" variant="outline" size="sm" onClick={() => { set("smtpHost")(p.host); set("smtpPort")(String(p.port)); }}>
+              {p.label}
+            </Button>
+          ))}
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <Label>Host</Label>
-            <Input value={f.smtpHost} onChange={(e) => set("smtpHost")(e.target.value)} placeholder="smtp.acme.com" autoCapitalize="none" />
-          </div>
-          <div>
-            <Label>Port</Label>
-            <Input value={f.smtpPort} onChange={(e) => set("smtpPort")(e.target.value)} placeholder="587" inputMode="numeric" />
-          </div>
-          <div>
-            <Label>Username</Label>
-            <Input value={f.smtpUser} onChange={(e) => set("smtpUser")(e.target.value)} placeholder="apikey / user@acme.com" autoCapitalize="none" />
-          </div>
-          <div>
-            <Label>Password</Label>
+          <Field id="smtpHost" label="Host" error={errors.smtpHost}>
+            <Input {...input("smtpHost")} placeholder="smtp.acme.com" autoCapitalize="none" />
+          </Field>
+          <Field id="smtpPort" label="Port" error={errors.smtpPort} hint={port === 465 ? "465 uses SSL/TLS." : "Uses STARTTLS. Use 465 for SSL/TLS."}>
+            <Input {...input("smtpPort")} placeholder="587" inputMode="numeric" />
+          </Field>
+          <Field id="smtpUser" label="Username" error={errors.smtpUser}>
+            <Input {...input("smtpUser")} placeholder="apikey / user@acme.com" autoCapitalize="none" />
+          </Field>
+          <Field id="smtpPassword" label="Password" error={errors.smtpPassword} hint="Encrypted and never shown again.">
             <PasswordInput
-              value={f.smtpPassword}
-              onChange={(e) => set("smtpPassword")(e.target.value)}
-              placeholder={hasPassword ? "•••••••• (leave blank to keep)" : "SMTP password"}
+              {...input("smtpPassword")}
+              placeholder={view.hasPassword ? "•••••••• (leave blank to keep)" : "SMTP password"}
               autoCapitalize="none"
+              autoComplete="new-password"
             />
-          </div>
+          </Field>
         </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={f.smtpSecure} onChange={(e) => set("smtpSecure")(e.target.checked)} />
-          Use TLS (SSL) — on for port 465, off for 587/STARTTLS
-        </label>
       </div>
 
-      <div className="rounded-2xl border p-5 flex items-center justify-between">
+      <div className="rounded-2xl border p-5 flex items-center justify-between gap-4">
         <div>
-          <p className="text-sm font-medium">Use my SMTP server</p>
-          <p className="text-xs text-muted-foreground">When off, emails send via the built-in transport.</p>
+          <p className="text-sm font-medium">Send from my SMTP server</p>
+          <p className="text-xs text-muted-foreground">
+            Covers emails to leads (manual emails, sequences, meeting confirmations), new-lead alerts and daily summaries.
+            When off, they go from Ridhzo&apos;s default address. Turning it on sends you a test email first.
+          </p>
         </div>
-        <label className="relative inline-flex cursor-pointer items-center">
-          <input type="checkbox" className="peer sr-only" checked={f.enabled} onChange={(e) => set("enabled")(e.target.checked)} />
-          <div className="h-6 w-11 rounded-full bg-muted peer-checked:bg-primary transition-colors" />
-          <div className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-background transition-transform peer-checked:translate-x-5" />
-        </label>
+        <Switch label="Send from my SMTP server" checked={f.enabled} onChange={(v) => set("enabled")(v)} />
       </div>
 
-      <div className="flex items-center gap-2">
-        <Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</Button>
-        <Button variant="outline" onClick={test} disabled={testing} className="gap-2">
-          <Send className="h-4 w-4" /> {testing ? "Sending…" : "Send test email"}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={save} disabled={!!busy}>{busy === "save" ? "Saving…" : "Save"}</Button>
+        <Button variant="outline" onClick={test} disabled={!!busy} className="gap-2">
+          <Send className="h-4 w-4" /> {busy === "test" ? "Sending…" : "Send test email"}
         </Button>
+        {configured && (
+          <Button variant="ghost" onClick={remove} disabled={!!busy} className="gap-2 ml-auto text-destructive">
+            <Trash2 className="h-4 w-4" /> {busy === "remove" ? "Removing…" : "Remove"}
+          </Button>
+        )}
       </div>
       <p className="text-xs text-muted-foreground">
-        The password is encrypted at rest and never shown again. Test sends to your own account email
-        using the saved settings — do this before turning the toggle on.
+        The test uses what&apos;s in the form (unsaved changes included), sends to your own account email, and saves the settings if it works.
       </p>
     </div>
   );

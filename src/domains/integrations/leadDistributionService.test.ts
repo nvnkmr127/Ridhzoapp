@@ -7,7 +7,8 @@ const updateSet = vi.fn();
 const insertValues = vi.fn();
 vi.mock("@/db", () => ({
   db: {
-    select: () => ({ from: () => ({ where: () => Promise.resolve(ruleRows) }) }),
+    // `.limit` → no org SMTP row: concurrent dynamic imports can reach the real mailer despite vi.mock.
+    select: () => ({ from: () => ({ where: () => Object.assign(Promise.resolve(ruleRows), { limit: () => Promise.resolve([]) }) }) }),
     update: () => ({ set: (v: any) => { updateSet(v); return { where: () => ({ returning: () => Promise.resolve(updateReturn) }) }; } }),
     insert: () => ({ values: (v: any) => { insertValues(v); return Promise.resolve(); } }),
   },

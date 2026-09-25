@@ -16,9 +16,9 @@ export default async function EmailSettingsPage() {
       <div className="flex items-center gap-3">
         <Link href="/settings"><Button variant="ghost" size="icon" aria-label="Go back"><ArrowLeft className="h-5 w-5" /></Button></Link>
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Email (SMTP)</h2>
+          <h2 className="text-2xl font-bold tracking-tight">Email sending</h2>
           <p className="text-sm text-muted-foreground">
-            Send lead emails from your own mail server. When off, the built-in transport is used.
+            Send emails to your leads from your own mail server (SMTP), so they come from your address.
           </p>
         </div>
       </div>

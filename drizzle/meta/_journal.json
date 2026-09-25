@@ -512,6 +512,13 @@
       "when": 1790354640111,
       "tag": "0072_follow_ups_cleanup",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1790355593573,
+      "tag": "0073_email_settings_status",
+      "breakpoints": true
     }
   ]
 }

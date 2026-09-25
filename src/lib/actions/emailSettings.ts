@@ -3,74 +3,120 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/rbac";
-import { EmailSettingsService } from "@/domains/organizations/emailSettingsService";
+import { EmailSettingsService, type EmailSettingsInput } from "@/domains/organizations/emailSettingsService";
+import { AuditService } from "@/domains/audit/service";
+import { RateLimiter } from "@/lib/rate-limit";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
+import { ok, fail, actionFail, zodFieldErrors, type ActionError } from "@/lib/actions/result";
 
-export async function getEmailSettingsAction() {
-  const { organizationId } = await requirePermission("settings.manage");
-  return EmailSettingsService.getView(organizationId);
-}
+const blank = (v: unknown) => (typeof v === "string" && v.trim() === "" ? null : v);
+const optText = z.preprocess(blank, z.string().trim().max(255).nullable());
+const optEmail = (msg: string) => z.preprocess(blank, z.string().trim().email(msg).max(255).nullable());
 
 const schema = z.object({
-  fromName: z.string().trim().max(255).optional().or(z.literal("")),
-  fromEmail: z.string().trim().email("Enter a valid from-address").optional().or(z.literal("")),
-  smtpHost: z.string().trim().max(255).optional().or(z.literal("")),
-  smtpPort: z.coerce.number().int().min(1).max(65535).optional(),
-  smtpSecure: z.boolean().optional(),
-  smtpUser: z.string().trim().max(255).optional().or(z.literal("")),
+  fromName: optText,
+  fromEmail: optEmail("Enter a valid from-address."),
+  replyTo: optEmail("Enter a valid reply-to address."),
+  // Just the hostname — no scheme, port or path.
+  smtpHost: z.preprocess(blank, z.string().trim().max(255).regex(/^[A-Za-z0-9.-]+$/, "Enter just the hostname, e.g. smtp.acme.com.").nullable()),
+  smtpPort: z.preprocess(blank, z.coerce.number({ message: "Port must be a number." }).int("Port must be a number.").min(1, "Port must be 1–65535.").max(65535, "Port must be 1–65535.").nullable()),
+  smtpUser: optText,
   smtpPassword: z.string().max(512).optional(), // blank = keep existing
-  enabled: z.boolean().optional(),
+  enabled: z.boolean(),
 });
+export type EmailSettingsForm = z.input<typeof schema>;
 
-export async function updateEmailSettingsAction(input: z.infer<typeof schema>) {
-  const { organizationId } = await requirePermission("settings.manage");
+function parse(input: EmailSettingsForm): EmailSettingsInput | ActionError {
   const parsed = schema.safeParse(input);
   if (!parsed.success) {
-    return fail("VALIDATION", "Please check the highlighted fields.", zodFieldErrors(parsed.error));
+    const fieldErrors = zodFieldErrors(parsed.error);
+    return fail("VALIDATION", Object.values(fieldErrors)[0] ?? "Please check the form.", fieldErrors);
   }
-  const d = parsed.data;
+  return parsed.data as EmailSettingsInput;
+}
 
-  // Turning it on requires a complete config.
-  if (d.enabled) {
-    const missing = !d.smtpHost || !d.smtpPort || !d.smtpUser || !d.fromEmail;
-    const existing = await EmailSettingsService.getView(organizationId);
-    const willHavePassword = (d.smtpPassword && d.smtpPassword.length > 0) || existing.hasPassword;
-    if (missing || !willHavePassword) {
-      return fail("VALIDATION", "To enable sending, fill in host, port, username, password and from-email.");
-    }
-  }
+// SMTP host/credential errors belong on the form fields where possible.
+function smtpFail(e: unknown): ActionError {
+  const msg = e instanceof Error ? e.message : "SMTP send failed";
+  const fieldErrors = (e as { fieldErrors?: Record<string, string> })?.fieldErrors;
+  if (fieldErrors) return fail("VALIDATION", msg, fieldErrors);
+  if (/private or reserved|could not be resolved/i.test(msg)) return fail("VALIDATION", msg, { smtpHost: msg });
+  return fail("SERVER", `Test failed: ${msg}`);
+}
 
+// Sends a test of `input` (unsaved edits included) to the caller. Throttled: it makes an outbound
+// connection to an admin-chosen host.
+async function runTest(organizationId: string, userId: string, input: EmailSettingsInput): Promise<ActionError | { sentTo: string }> {
+  const limit = await RateLimiter.checkLimit(`smtp-test:${organizationId}`, 5, 60);
+  if (!limit.success) return fail("RATE_LIMIT", "Too many test emails. Please wait a minute and try again.");
+  const [u] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
+  if (!u?.email) return fail("VALIDATION", "Your account has no email address to send the test to.");
   try {
-    const view = await EmailSettingsService.upsert(organizationId, {
-      fromName: d.fromName || null,
-      fromEmail: d.fromEmail || null,
-      smtpHost: d.smtpHost || null,
-      smtpPort: d.smtpPort ?? null,
-      smtpSecure: d.smtpSecure,
-      smtpUser: d.smtpUser || null,
-      smtpPassword: d.smtpPassword,
-      enabled: d.enabled,
-    });
-    revalidatePath("/settings/email");
-    return ok(view);
+    const cfg = await EmailSettingsService.resolveConfig(organizationId, input);
+    await EmailSettingsService.sendTest(cfg, u.email);
+    return { sentTo: u.email };
+  } catch (e) {
+    return smtpFail(e);
+  }
+}
+
+async function save(organizationId: string, userId: string, input: EmailSettingsInput, verified: boolean) {
+  const existing = await EmailSettingsService.getRaw(organizationId);
+  const view = await EmailSettingsService.upsert(organizationId, input, { verified });
+  await AuditService.log({
+    organizationId,
+    userId,
+    action: "settings.email_updated",
+    entityType: "email_settings",
+    metadata: { enabled: input.enabled, host: input.smtpHost, credentialsChanged: EmailSettingsService.credentialsChanged(existing, input) },
+  });
+  revalidatePath("/settings/email");
+  return view;
+}
+
+export async function updateEmailSettingsAction(form: EmailSettingsForm) {
+  const { organizationId, userId } = await requirePermission("settings.manage");
+  const input = parse(form);
+  if ("ok" in input) return input;
+  try {
+    // Turning it on (or changing credentials while on) must pass a test first — a broken config
+    // never goes live. A config already verified and unchanged saves without re-sending.
+    const existing = await EmailSettingsService.getRaw(organizationId);
+    const needsTest = input.enabled && (!existing?.verifiedAt || EmailSettingsService.credentialsChanged(existing, input));
+    if (needsTest) {
+      const res = await runTest(organizationId, userId, input);
+      if ("ok" in res) return res;
+    }
+    return ok({ view: await save(organizationId, userId, input, needsTest), tested: needsTest });
   } catch (e) {
     return actionFail(e);
   }
 }
 
-export async function sendTestEmailAction() {
+// Tests the form as it is now; on success saves it and marks it verified.
+export async function sendTestEmailAction(form: EmailSettingsForm) {
   const { organizationId, userId } = await requirePermission("settings.manage");
-  const [u] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
-  if (!u?.email) return fail("VALIDATION", "Your account has no email address to send the test to.");
+  const input = parse(form);
+  if ("ok" in input) return input;
+  const res = await runTest(organizationId, userId, input);
+  if ("ok" in res) return res;
   try {
-    await EmailSettingsService.sendTest(organizationId, u.email);
-    return ok({ sentTo: u.email });
+    return ok({ sentTo: res.sentTo, view: await save(organizationId, userId, input, true) });
   } catch (e) {
-    // Surface the SMTP error text so the tenant can fix host/port/credentials.
-    const msg = e instanceof Error ? e.message : "SMTP send failed";
-    return fail("SERVER", `Test failed: ${msg}`);
+    return actionFail(e);
+  }
+}
+
+export async function removeEmailSettingsAction() {
+  const { organizationId, userId } = await requirePermission("settings.manage");
+  try {
+    await EmailSettingsService.remove(organizationId);
+    await AuditService.log({ organizationId, userId, action: "settings.email_removed", entityType: "email_settings" });
+    revalidatePath("/settings/email");
+    return ok({ view: await EmailSettingsService.getView(organizationId) });
+  } catch (e) {
+    return actionFail(e);
   }
 }
