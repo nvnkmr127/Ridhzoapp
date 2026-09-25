@@ -8,6 +8,7 @@ import { LeadService } from "@/domains/leads/service";
 import { ActivityService } from "@/domains/activities/service";
 import { AuditService } from "@/domains/audit/service";
 import { hasPermissionForRoleId } from "@/lib/rbac";
+import { canEditLeads, leadForApi, leadNotFound, readOnly } from "@/lib/meetingsApi";
 
 const idSchema = z.guid();
 
@@ -21,15 +22,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "Invalid lead ID format. Expected a valid UUID." }, { status: 400 });
   }
 
-  const lead = await LeadService.getLead(id, auth.organizationId);
-  if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
-
-  if (auth.userId) {
-    const isAdmin = await hasPermissionForRoleId(auth.roleId ?? null, "settings.manage");
-    if (!isAdmin && lead.ownerId !== auth.userId) {
-      return NextResponse.json({ error: "Lead not found" }, { status: 404 });
-    }
-  }
+  // Owner, admin, or someone attending a meeting with this lead (same rule as the web lead page).
+  const lead = await leadForApi(auth, id);
+  if (!lead) return leadNotFound();
 
   const activities = await ActivityService.getLeadActivities(id);
   const fus = await db
@@ -54,6 +49,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 const patchSchema = z
   .object({
     status: z.string().min(1).optional(),
+    // Why a lead was closed as lost (one of /api/v1/me → lossReasons, or free text); ignored otherwise.
+    lossReason: z.string().trim().max(200).optional(),
     ownerId: z.guid().nullable().optional(),
     // Contact-field edits (used by the mobile "Edit lead" screen).
     name: z.string().min(1).max(255).optional(),
@@ -88,13 +85,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Invalid body", details: parsed.error.issues }, { status: 422 });
 
-  const currentLead = await LeadService.getLead(id, auth.organizationId);
-  if (!currentLead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+  const currentLead = await leadForApi(auth, id);
+  if (!currentLead) return leadNotFound();
+  if (!(await canEditLeads(auth))) return readOnly();
 
-  if (auth.userId) {
-    const isAdmin = await hasPermissionForRoleId(auth.roleId ?? null, "settings.manage");
-    if (!isAdmin && currentLead.ownerId !== auth.userId) {
-      return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+  // Only this workspace's statuses (GET /api/v1/statuses) — an unknown key would strand the lead
+  // outside every pipeline view and report.
+  if (parsed.data.status !== undefined) {
+    const { CustomStatusSchemaService } = await import("@/domains/leads/customStatusSchemaService");
+    const schema = await CustomStatusSchemaService.getTenantStatusSchema(auth.organizationId);
+    if (!schema.some((s) => s.key === parsed.data.status)) {
+      return NextResponse.json({ error: `Unknown status "${parsed.data.status}". Use one of: ${schema.map((s) => s.key).join(", ")}.` }, { status: 422 });
     }
   }
 
@@ -105,9 +106,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         id,
         {
           ...(name !== undefined ? { name } : {}),
-          ...(email !== undefined ? { email: email || undefined } : {}),
-          ...(phone !== undefined ? { phone: phone || undefined } : {}),
-          ...(company !== undefined ? { company: company || undefined } : {}),
+          // "" clears the field (updateLead stores it as null).
+          ...(email !== undefined ? { email } : {}),
+          ...(phone !== undefined ? { phone } : {}),
+          ...(company !== undefined ? { company } : {}),
         },
         auth.userId ?? "",
         auth.organizationId,
@@ -118,14 +120,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const current = await LeadService.getLead(id, auth.organizationId);
       if (!current) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
       const { CustomFieldService } = await import("@/domains/customFields/service");
-      const merged = { ...((current.customData as Record<string, unknown>) ?? {}), ...parsed.data.customData };
-      let clean: Record<string, unknown>;
+      // A partial patch over the stored values; "" / null clears a field.
+      const stored = (current.customData as Record<string, unknown>) ?? {};
+      const merged = { ...stored, ...parsed.data.customData };
+      const isAdmin = !auth.userId || (await hasPermissionForRoleId(auth.roleId ?? null, "settings.manage"));
+      let validated: Record<string, unknown>;
       try {
-        clean = await CustomFieldService.validate(auth.organizationId, merged);
+        validated = await CustomFieldService.validate(auth.organizationId, merged, { isAdmin });
       } catch (e: any) {
         return NextResponse.json({ error: e?.message || "Invalid custom field value" }, { status: 422 });
       }
-      await LeadService.updateCustomData(id, clean, auth.organizationId);
+      // Same as the web save: validated is authoritative for fields this caller may edit; every other
+      // stored key (AI recap, scoring/attribution data, admin-only fields for non-admins) is kept.
+      const defs = await CustomFieldService.list(auth.organizationId);
+      const editable = new Set(defs.filter((d) => !d.disabled && (isAdmin || !d.adminOnly)).map((d) => d.key));
+      const result: Record<string, unknown> = { ...validated };
+      for (const [k, v] of Object.entries(stored)) if (!(k in result) && !editable.has(k)) result[k] = v;
+      await LeadService.updateCustomData(id, result, auth.organizationId);
     }
     if (parsed.data.ownerId !== undefined) {
       const { AssignmentService } = await import("@/domains/leads/assignmentService");
@@ -138,12 +149,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       });
     }
     if (parsed.data.status !== undefined) {
-      await LeadService.changeStatus(id, parsed.data.status, auth.userId ?? null, auth.organizationId);
+      await LeadService.changeStatus(id, parsed.data.status, auth.userId ?? null, auth.organizationId, parsed.data.lossReason || null);
     }
     const lead = await LeadService.getLead(id, auth.organizationId);
     if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     return NextResponse.json({ data: lead });
-  } catch (e) {
+  } catch (e: any) {
+    const fieldErrors = e?.fieldErrors as Record<string, string> | undefined;
+    if (fieldErrors) return NextResponse.json({ error: Object.values(fieldErrors)[0], details: fieldErrors }, { status: 409 });
+    if (e?.code === "CONFLICT") return NextResponse.json({ error: e.message }, { status: 409 });
     const { logError } = await import("@/lib/log");
     const ref = logError("api/v1/leads/[id] PATCH", e, { leadId: id });
     return NextResponse.json({ error: "Could not update lead. Please try again.", ref }, { status: 500 });

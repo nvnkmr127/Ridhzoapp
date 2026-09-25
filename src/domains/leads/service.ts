@@ -136,8 +136,10 @@ export class LeadService {
       }).returning();
     } catch (e: any) {
       // If constraint violation occurs due to a soft-deleted lead, clear it and retry once
-      if (e?.code === "23505") {
-        const constraint = String(e?.constraint || e?.detail || e?.message || "");
+      // Drizzle wraps the driver error ("Failed query: …"); the Postgres code lives on e.cause.
+      const pg = e?.cause?.code ? e.cause : e;
+      if (pg?.code === "23505") {
+        const constraint = String(pg?.constraint_name || pg?.constraint || pg?.detail || pg?.message || "");
         if (constraint.includes("email")) {
           if (cleanEmail) {
             const [trashed] = await db
@@ -231,8 +233,9 @@ export class LeadService {
       if (updatedLead) eventBus.emit('lead.updated', { leadId, userId: updatedById, changes: data });
       return updatedLead;
     } catch (e: any) {
-      if (e?.code === "23505") {
-        const constraint = String(e?.constraint || e?.detail || e?.message || "");
+      const pg = e?.cause?.code ? e.cause : e;
+      if (pg?.code === "23505") {
+        const constraint = String(pg?.constraint_name || pg?.constraint || pg?.detail || pg?.message || "");
         if (constraint.includes("email")) {
           const err = new Error("Duplicate email: a lead with this email already exists");
           (err as any).fieldErrors = { email: "A lead with this email already exists." };

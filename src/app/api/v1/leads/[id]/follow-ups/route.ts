@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeApiRequest } from "@/lib/apiAuth";
 import { FollowUpService } from "@/domains/follow-ups/service";
+import { canEditLeads, leadForApi, leadNotFound, readOnly } from "@/lib/meetingsApi";
 
 const schema = z.object({
-  title: z.string().min(1),
+  title: z.string().trim().min(1).max(255),
   dueAt: z.string().datetime(),
   type: z.enum(["follow_up", "task"]).optional(),
   description: z.string().optional(),
@@ -16,6 +17,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if ("error" in auth) return auth.error;
   if (!auth.userId) return NextResponse.json({ error: "A user session is required" }, { status: 403 });
   const { id } = await params;
+  if (!(await leadForApi(auth, id))) return leadNotFound();
+  if (!(await canEditLeads(auth))) return readOnly();
 
   const body = await req.json().catch(() => null);
   const parsed = schema.safeParse(body);

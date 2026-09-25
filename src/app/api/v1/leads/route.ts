@@ -7,6 +7,7 @@ import { LeadService } from "@/domains/leads/service";
 import { CustomFieldService, FieldValidationError } from "@/domains/customFields/service";
 import { PlanService } from "@/domains/billing/planService";
 import { authorizeApiRequest } from "@/lib/apiAuth";
+import { canEditLeads, readOnly } from "@/lib/meetingsApi";
 
 const authorize = authorizeApiRequest;
 
@@ -16,11 +17,16 @@ export async function GET(req: NextRequest) {
 
   const sp = new URL(req.url).searchParams;
   const limit = Math.min(Number(sp.get("limit")) || 50, 200);
+  const offset = Math.max(Number(sp.get("offset")) || 0, 0);
   const search = (sp.get("search") || "").trim();
   const status = (sp.get("status") || "").trim();
 
   // Recycle bin: the soft-deleted leads, most-recently-deleted first.
   if (sp.get("deleted") === "1") {
+    const { hasPermissionForRoleId } = await import("@/lib/rbac");
+    if (auth.userId && !(await hasPermissionForRoleId(auth.roleId ?? null, "leads.delete"))) {
+      return NextResponse.json({ error: "You don't have permission to view the recycle bin." }, { status: 403 });
+    }
     const deleted = await LeadService.listDeletedLeads(auth.organizationId);
     return NextResponse.json({
       data: deleted.map((l) => ({
@@ -57,12 +63,17 @@ export async function GET(req: NextRequest) {
       phone: leads.phone,
       company: leads.company,
       status: leads.status,
+      ownerId: leads.ownerId,
+      score: leads.score,
+      lastContactedAt: leads.lastContactedAt,
+      nextFollowUpAt: leads.nextFollowUpAt,
       createdAt: leads.createdAt,
     })
     .from(leads)
     .where(and(...where))
-    .orderBy(desc(leads.createdAt))
-    .limit(limit);
+    .orderBy(desc(leads.createdAt), desc(leads.id))
+    .limit(limit)
+    .offset(offset);
 
   return NextResponse.json({ data: rows });
 }
@@ -78,6 +89,7 @@ const createSchema = z.object({
 export async function POST(req: NextRequest) {
   const auth = await authorize(req);
   if ("error" in auth) return auth.error;
+  if (!(await canEditLeads(auth))) return readOnly();
 
   const body = await req.json().catch(() => null);
   const parsed = createSchema.safeParse(body);
@@ -87,7 +99,9 @@ export async function POST(req: NextRequest) {
 
   try {
     await PlanService.assertCanAddLead(auth.organizationId);
-    const customData = await CustomFieldService.validate(auth.organizationId, parsed.data.customData ?? {});
+    const { hasPermissionForRoleId } = await import("@/lib/rbac");
+    const isAdmin = !auth.userId || (await hasPermissionForRoleId(auth.roleId ?? null, "settings.manage"));
+    const customData = await CustomFieldService.validate(auth.organizationId, parsed.data.customData ?? {}, { isAdmin });
     const lead = await LeadService.createLead(
       {
         name: parsed.data.name,

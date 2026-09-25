@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeApiRequest } from "@/lib/apiAuth";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { followUps } from "@/db/schema";
 import { FollowUpService } from "@/domains/follow-ups/service";
+import { canEditLeads, leadForApi, readOnly } from "@/lib/meetingsApi";
 
 const idSchema = z.guid();
 
@@ -19,6 +23,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!idSchema.safeParse(id).success) {
     return NextResponse.json({ error: "Invalid follow-up ID format. Expected a valid UUID." }, { status: 400 });
   }
+
+  // Your own follow-up, or one on a lead you may act on (admins: any in the org).
+  const [fu] = await db.select({ userId: followUps.userId, leadId: followUps.leadId }).from(followUps).where(eq(followUps.id, id)).limit(1);
+  if (!fu || (auth.userId && fu.userId !== auth.userId && !(await leadForApi(auth, fu.leadId)))) {
+    return NextResponse.json({ error: "Follow-up not found" }, { status: 404 });
+  }
+  if (!(await canEditLeads(auth))) return readOnly();
 
   const body = await req.json().catch(() => null);
   const parsed = schema.safeParse(body);

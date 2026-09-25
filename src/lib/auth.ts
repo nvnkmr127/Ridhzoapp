@@ -55,6 +55,106 @@ const SESSION_MAX_AGE_SEC = 30 * 24 * 60 * 60;
 // cost against a remote database for no benefit at sub-minute granularity.
 const SESSION_REFRESH_INTERVAL_MS = 60_000;
 
+// WhatsApp OTP (or legacy Firebase token) sign-in: verifies the code, creates the user + workspace on
+// first login, and returns the NextAuth user. Shared by the web "phone-otp" provider and the mobile API.
+export async function authorizePhoneOtp(credentials?: Record<string, string>) {
+  try {
+    const phone = (credentials?.phoneNumber || "").trim();
+    if (!phone) return null;
+
+    let verified = false;
+
+    // 1. WhatsApp OTP via Watxio
+    if (credentials?.otp) {
+      const { verifyPhoneOtp } = await import("@/lib/auth/phoneOtp");
+      const result = await verifyPhoneOtp(phone, credentials.otp);
+      // Surfaced to the client as result.error so it can say "request a new code" instead of "invalid".
+      if (result === "locked") throw new Error("OTP_LOCKED");
+      if (result !== "ok") return null;
+      verified = true;
+    }
+    // 2. Legacy fallback: Firebase ID Token
+    else if (credentials?.idToken) {
+      const { verifyFirebaseIdToken } = await import("@/lib/auth/firebaseTokenVerifier");
+      try {
+        const res = await verifyFirebaseIdToken(credentials.idToken);
+        if (!res.phoneNumber || res.phoneNumber === phone) verified = true;
+      } catch (err) {
+        console.error("[phone-auth] verification failed:", err);
+        return null;
+      }
+    }
+
+    if (!verified) return null;
+
+    let [existingUser] = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.phone, phone), isNull(users.deletedAt)))
+      .limit(1);
+
+    if (!existingUser) {
+      const { OrgService, slugify } = await import("@/domains/organizations/service");
+      const { signupTrial } = await import("@/domains/billing/planService");
+      const adminRole = await OrgService.ensureSystemRoles();
+      const cleanDigits = phone.replace(/[^0-9]/g, "");
+      const baseName = credentials?.name?.trim() || `User ${cleanDigits.slice(-4)}`;
+      const workspaceName = credentials?.orgName?.trim() || `${baseName}'s Workspace`;
+      const slug = `${slugify(workspaceName)}-${Math.random().toString(36).slice(2, 7)}`;
+      const randomPasswordHash = await bcrypt.hash(crypto.randomUUID(), 10);
+      const syntheticEmail = `${cleanDigits}${PHONE_EMAIL_DOMAIN}`;
+
+      const [newOrg] = await db
+        .insert(organizations)
+        .values({ name: workspaceName, slug, ...signupTrial() })
+        .returning();
+
+      const nameParts = baseName.split(/\s+/);
+      const firstName = nameParts[0] || baseName;
+      const lastName = nameParts.slice(1).join(" ") || undefined;
+
+      const [created] = await db
+        .insert(users)
+        .values({
+          organizationId: newOrg.id,
+          email: syntheticEmail,
+          phone,
+          firstName,
+          lastName,
+          passwordHash: randomPasswordHash,
+          roleId: adminRole?.id ?? null,
+          isActive: true,
+        })
+        .returning();
+
+      existingUser = created;
+    }
+
+    if (!existingUser) return null;
+    // Identity is proven at this point, so it's safe to say why sign-in is refused (surfaced as
+    // result.error on the client instead of a misleading "invalid code").
+    if (!existingUser.isActive) throw new Error("ACCOUNT_DISABLED");
+
+    if (existingUser.organizationId && !existingUser.isSuperAdmin) {
+      const { OrgService } = await import("@/domains/organizations/service");
+      const isSuspended = await OrgService.isSuspended(existingUser.organizationId);
+      if (isSuspended) throw new Error("ACCOUNT_SUSPENDED");
+    }
+
+    return {
+      id: existingUser.id,
+      email: existingUser.email,
+      name: [existingUser.firstName, existingUser.lastName].filter(Boolean).join(" ") || phone,
+      roleId: existingUser.roleId,
+      organizationId: existingUser.organizationId,
+      isSuperAdmin: existingUser.isSuperAdmin,
+      phone: existingUser.phone,
+    };
+  } catch (err: any) {
+    throw new Error(err.message?.replace(/\r?\n/g, " ") || "Unknown error");
+  }
+}
+
 export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt", maxAge: SESSION_MAX_AGE_SEC },
   providers: [
@@ -77,103 +177,7 @@ export const authOptions: NextAuthOptions = {
         name: { label: "Full Name", type: "text" },
         orgName: { label: "Workspace Name", type: "text" },
       },
-      async authorize(credentials) {
-        try {
-          const phone = (credentials?.phoneNumber || "").trim();
-          if (!phone) return null;
-
-          let verified = false;
-
-          // 1. WhatsApp OTP via Watxio
-          if (credentials?.otp) {
-            const { verifyPhoneOtp } = await import("@/lib/auth/phoneOtp");
-            const result = await verifyPhoneOtp(phone, credentials.otp);
-            // Surfaced to the client as result.error so it can say "request a new code" instead of "invalid".
-            if (result === "locked") throw new Error("OTP_LOCKED");
-            if (result !== "ok") return null;
-            verified = true;
-          }
-          // 2. Legacy fallback: Firebase ID Token
-          else if (credentials?.idToken) {
-            const { verifyFirebaseIdToken } = await import("@/lib/auth/firebaseTokenVerifier");
-            try {
-              const res = await verifyFirebaseIdToken(credentials.idToken);
-              if (!res.phoneNumber || res.phoneNumber === phone) verified = true;
-            } catch (err) {
-              console.error("[phone-auth] verification failed:", err);
-              return null;
-            }
-          }
-
-          if (!verified) return null;
-
-          let [existingUser] = await db
-            .select()
-            .from(users)
-            .where(and(eq(users.phone, phone), isNull(users.deletedAt)))
-            .limit(1);
-
-          if (!existingUser) {
-            const { OrgService, slugify } = await import("@/domains/organizations/service");
-            const { signupTrial } = await import("@/domains/billing/planService");
-            const adminRole = await OrgService.ensureSystemRoles();
-            const cleanDigits = phone.replace(/[^0-9]/g, "");
-            const baseName = credentials?.name?.trim() || `User ${cleanDigits.slice(-4)}`;
-            const workspaceName = credentials?.orgName?.trim() || `${baseName}'s Workspace`;
-            const slug = `${slugify(workspaceName)}-${Math.random().toString(36).slice(2, 7)}`;
-            const randomPasswordHash = await bcrypt.hash(crypto.randomUUID(), 10);
-            const syntheticEmail = `${cleanDigits}${PHONE_EMAIL_DOMAIN}`;
-
-            const [newOrg] = await db
-              .insert(organizations)
-              .values({ name: workspaceName, slug, ...signupTrial() })
-              .returning();
-
-            const nameParts = baseName.split(/\s+/);
-            const firstName = nameParts[0] || baseName;
-            const lastName = nameParts.slice(1).join(" ") || undefined;
-
-            const [created] = await db
-              .insert(users)
-              .values({
-                organizationId: newOrg.id,
-                email: syntheticEmail,
-                phone,
-                firstName,
-                lastName,
-                passwordHash: randomPasswordHash,
-                roleId: adminRole?.id ?? null,
-                isActive: true,
-              })
-              .returning();
-
-            existingUser = created;
-          }
-
-          if (!existingUser) return null;
-          // Identity is proven at this point, so it's safe to say why sign-in is refused (surfaced as
-          // result.error on the client instead of a misleading "invalid code").
-          if (!existingUser.isActive) throw new Error("ACCOUNT_DISABLED");
-
-          if (existingUser.organizationId && !existingUser.isSuperAdmin) {
-            const { OrgService } = await import("@/domains/organizations/service");
-            const isSuspended = await OrgService.isSuspended(existingUser.organizationId);
-            if (isSuspended) throw new Error("ACCOUNT_SUSPENDED");
-          }
-
-          return {
-            id: existingUser.id,
-            email: existingUser.email,
-            name: [existingUser.firstName, existingUser.lastName].filter(Boolean).join(" ") || phone,
-            roleId: existingUser.roleId,
-            organizationId: existingUser.organizationId,
-            isSuperAdmin: existingUser.isSuperAdmin,
-            phone: existingUser.phone,
-          };
-        } catch (err: any) {
-          throw new Error(err.message?.replace(/\r?\n/g, " ") || "Unknown error");
-        }
-      },
+      authorize: authorizePhoneOtp,
     }),
     CredentialsProvider({
       name: "Credentials",

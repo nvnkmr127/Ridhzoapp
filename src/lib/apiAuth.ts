@@ -25,13 +25,15 @@ export async function authorizeApiRequest(req: NextRequest): Promise<ApiAuth | {
   if (mobile) {
     // A 30-day token outlives membership changes, so re-check the user is still active and still in
     // the token's org on every request — a removed/deactivated user is locked out immediately.
-    if (!(await userStillValid(mobile.sub, mobile.org))) {
+    const live = await liveUser(mobile.sub, mobile.org);
+    if (!live) {
       return { error: NextResponse.json({ error: "Invalid or missing credentials" }, { status: 401 }) };
     }
     if (await suspended(mobile.org)) return { error: suspendedResponse() };
     const limited = await rateLimited(`mobile:${mobile.sub}`);
     if (limited) return { error: limited };
-    return { organizationId: mobile.org, userId: mobile.sub, roleId: mobile.role };
+    // The live role, not the one baked into the token — a demoted admin loses admin rights at once.
+    return { organizationId: mobile.org, userId: mobile.sub, roleId: live.roleId };
   }
 
   const key = await ApiKeyService.verify(raw);
@@ -71,16 +73,17 @@ async function rateLimited(principal: string): Promise<NextResponse | null> {
   );
 }
 
-async function userStillValid(userId: string, organizationId: string): Promise<boolean> {
+// The token's user, if still active and still in the token's org (else null → 401).
+async function liveUser(userId: string, organizationId: string): Promise<{ roleId: string | null } | null> {
   const { db } = await import("@/db");
   const { users } = await import("@/db/schema");
   const { eq } = await import("drizzle-orm");
   const [u] = await db
-    .select({ isActive: users.isActive, organizationId: users.organizationId })
+    .select({ isActive: users.isActive, organizationId: users.organizationId, roleId: users.roleId })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
-  return !!u && u.isActive !== false && u.organizationId === organizationId;
+  return u && u.isActive !== false && u.organizationId === organizationId ? { roleId: u.roleId } : null;
 }
 
 async function suspended(organizationId: string): Promise<boolean> {

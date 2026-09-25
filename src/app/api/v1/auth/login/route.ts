@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { signMobileToken } from "@/lib/mobileAuth";
+import { mobileSession } from "@/lib/mobileAuth";
 import { RateLimiter } from "@/lib/rate-limit";
 
 const schema = z.object({ email: z.string().email(), password: z.string().min(1) });
@@ -54,15 +54,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "This workspace has been suspended. Contact support." }, { status: 403 });
   }
 
-  const token = signMobileToken({ sub: user.id, org: user.organizationId, role: user.roleId, email: user.email });
-
-  return NextResponse.json({
-    token,
-    user: {
-      id: user.id,
-      email: user.email,
-      name: [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email,
-      organizationId: user.organizationId,
-    },
-  });
+  return NextResponse.json(mobileSession({ ...user, organizationId: user.organizationId }));
 }

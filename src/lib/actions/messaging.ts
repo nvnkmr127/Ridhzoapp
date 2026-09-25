@@ -4,13 +4,13 @@ import { requireOrg, requirePermission } from "@/lib/rbac";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { messageTemplates, whatsappMessages } from "@/db/schema";
+import { messageTemplates } from "@/db/schema";
 import { and, eq, desc } from "drizzle-orm";
 import { ActivityService } from "@/domains/activities/service";
 import { ok, fail, actionFail } from "@/lib/actions/result";
 import { getActionableLead } from "@/lib/leads/access";
 import { markLeadContacted } from "@/domains/follow-ups/state";
-import { ScoringService } from "@/domains/leads/scoringService";
+import { recordLeadContact, recordLeadReply } from "@/domains/leads/contactLog";
 import { escapeHtml } from "@/lib/utils";
 
 export async function listTemplates(channel?: string) {
@@ -140,13 +140,6 @@ export async function sendEmailAction(input: z.infer<typeof emailSchema>) {
 // WhatsApp (personal mode opens wa.me), or an email from their own mail app. Without this, personal-
 // mode contact left no trace: no timeline entry and no last_contacted_at, so response-time/SLA
 // metrics, the Next Best Action and cold-lead detection all treated contacted leads as untouched.
-const CALL_OUTCOMES = {
-  answered: "Answered",
-  no_answer: "No answer",
-  busy: "Busy / call back later",
-  wrong_number: "Wrong number",
-} as const;
-
 const logContactSchema = z.object({
   leadId: z.guid(),
   channel: z.enum(["call", "whatsapp", "email"]),
@@ -164,40 +157,7 @@ export async function logLeadContactAction(input: z.infer<typeof logContactSchem
     const access = await getActionableLead(leadId);
     if (!access) return fail("NOT_FOUND", "This lead no longer exists or isn't assigned to you.");
 
-    let content: string;
-    if (channel === "call") {
-      content = `Called — ${outcome ? CALL_OUTCOMES[outcome] : "outcome not recorded"}`;
-    } else if (channel === "whatsapp") {
-      content = message ? `WhatsApp opened with message: ${message}` : "Opened WhatsApp chat";
-    } else {
-      content = "Opened email to lead";
-    }
-    if (note) content += `\nNote: ${note}`;
-
-    await ActivityService.addActivity({
-      leadId,
-      userId: access.userId,
-      type: channel === "call" ? "call" : channel === "email" ? "email" : "message",
-      content,
-    });
-
-    // A wrong number isn't contact with the lead; everything else (even an unanswered call) is an
-    // outreach attempt, which is what first-response/SLA timing measures.
-    if (outcome !== "wrong_number") await markLeadContacted(leadId);
-
-    // Show personal-mode WhatsApp messages in the lead's WhatsApp thread too. "sent" = handed to the
-    // rep's WhatsApp; we can't see delivery for messages that don't go through the Business API.
-    if (channel === "whatsapp" && message) {
-      await db.insert(whatsappMessages).values({
-        leadId,
-        userId: access.userId,
-        direction: "outbound",
-        body: message,
-        status: "sent",
-      });
-    }
-
-    void ScoringService.updateLeadScore(leadId).catch(() => {});
+    await recordLeadContact({ leadId, userId: access.userId, channel, outcome, note, message });
     revalidatePath(`/leads/${leadId}`);
     revalidatePath("/");
     return ok({ logged: true });
@@ -223,18 +183,7 @@ export async function logLeadReplyAction(input: z.infer<typeof logReplySchema>) 
     const access = await getActionableLead(leadId);
     if (!access) return fail("NOT_FOUND", "This lead no longer exists or isn't assigned to you.");
 
-    if (channel === "whatsapp") {
-      await db.insert(whatsappMessages).values({ leadId, userId: access.userId, direction: "inbound", body: message, status: "read" });
-    }
-    await ActivityService.addActivity({
-      leadId,
-      userId: access.userId,
-      type: channel === "email" ? "email" : "message",
-      content: `Lead replied${channel === "whatsapp" ? " on WhatsApp" : channel === "email" ? " by email" : ""}: ${message}`,
-    });
-    const { SequenceService } = await import("@/domains/leads/sequenceService");
-    await SequenceService.stopForLead(leadId, "lead replied").catch(() => {});
-    void ScoringService.updateLeadScore(leadId).catch(() => {});
+    await recordLeadReply({ leadId, userId: access.userId, channel, message });
 
     revalidatePath(`/leads/${leadId}`);
     return ok({ logged: true });

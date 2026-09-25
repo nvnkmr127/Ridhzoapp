@@ -7,9 +7,9 @@ import { MeetingService, type Meeting } from "@/domains/meetings/service";
 import type { ApiAuth } from "@/lib/apiAuth";
 import { attendsMeetingWith } from "@/lib/leads/access";
 
-// Shared access rules for /api/v1 meeting routes — the same ones the web app uses:
-// API keys see the whole org; a mobile user sees meetings they attend or booked, or whose lead
-// they may act on (own lead, or admin).
+// Shared access rules for the /api/v1 lead and meeting routes — the same ones the web app uses:
+// API keys see the whole org; a mobile user sees their own leads (all of them if admin), leads they
+// attend a meeting with, and meetings they attend or booked.
 
 export const idOk = (id: string) => z.guid().safeParse(id).success;
 
@@ -17,7 +17,18 @@ export async function canSeeAllLeads(auth: ApiAuth) {
   return !auth.userId || (await hasPermissionForRoleId(auth.roleId ?? null, "settings.manage"));
 }
 
+// Mobile users need leads.edit to change leads (a "Viewer" role is read-only, as on the web). API keys
+// are gated by their own read_only/full scope in authorizeApiRequest.
+export async function canEditLeads(auth: ApiAuth) {
+  return !auth.userId || (await hasPermissionForRoleId(auth.roleId ?? null, "leads.edit"));
+}
+
+export const leadNotFound = () => NextResponse.json({ error: "Lead not found" }, { status: 404 });
+export const readOnly = () => NextResponse.json({ error: "Your role can view leads but not change them." }, { status: 403 });
+
+// The lead this caller may open/act on, or null (→ 404, never revealing someone else's lead exists).
 export async function leadForApi(auth: ApiAuth, leadId: string) {
+  if (!idOk(leadId)) return null;
   const lead = await LeadService.getLead(leadId, auth.organizationId);
   if (!lead) return null;
   if (auth.userId && lead.ownerId !== auth.userId && !(await canSeeAllLeads(auth)) && !(await attendsMeetingWith(leadId, auth.userId))) return null;

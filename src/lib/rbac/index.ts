@@ -204,6 +204,17 @@ function grantedKeys(role: { name: string; permissions: string[]; organizationId
   return ALL_PERMISSIONS.filter((k) => roleGrants(role, k));
 }
 
+// Every permission a role id grants (for clients that hide actions the user can't take).
+export async function permissionsForRoleId(roleId: string | null): Promise<PermissionKey[]> {
+  if (!roleId) return [];
+  const [role] = await db
+    .select({ name: roles.name, permissions: roles.permissions, organizationId: roles.organizationId })
+    .from(roles)
+    .where(eq(roles.id, roleId))
+    .limit(1);
+  return role ? grantedKeys({ ...role, permissions: role.permissions ?? [] }) : [];
+}
+
 // Can the caller give `roleId` to someone? The role must be a system role or one of this org's own,
 // and — unless the caller can manage roles — it may not grant anything the caller doesn't hold, so
 // users.manage alone can't mint admins. Returns an error message, or null when allowed.

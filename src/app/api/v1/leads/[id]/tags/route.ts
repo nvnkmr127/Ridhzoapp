@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeApiRequest } from "@/lib/apiAuth";
 import { TagService } from "@/domains/tags/service";
-import { assertLeadInOrg } from "@/domains/leads/ownership";
+import { canEditLeads, leadForApi, leadNotFound, readOnly } from "@/lib/meetingsApi";
 
 const idSchema = z.guid();
 
@@ -13,12 +13,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params;
   if (!idSchema.safeParse(id).success) return NextResponse.json({ error: "Invalid lead ID" }, { status: 400 });
 
-  try {
-    await assertLeadInOrg(id, auth.organizationId);
-    return NextResponse.json({ data: await TagService.getForLead(id) });
-  } catch {
-    return NextResponse.json({ error: "Lead not found" }, { status: 404 });
-  }
+  if (!(await leadForApi(auth, id))) return leadNotFound();
+  return NextResponse.json({ data: await TagService.getForLead(id) });
 }
 
 // Add a tag (by name; find-or-create) to this lead.
@@ -27,6 +23,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if ("error" in auth) return auth.error;
   const { id } = await params;
   if (!idSchema.safeParse(id).success) return NextResponse.json({ error: "Invalid lead ID" }, { status: 400 });
+  if (!(await leadForApi(auth, id))) return leadNotFound();
+  if (!(await canEditLeads(auth))) return readOnly();
 
   const body = await req.json().catch(() => null);
   const parsed = z.object({ name: z.string().trim().min(1).max(100) }).safeParse(body);
@@ -48,6 +46,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if ("error" in auth) return auth.error;
   const { id } = await params;
   if (!idSchema.safeParse(id).success) return NextResponse.json({ error: "Invalid lead ID" }, { status: 400 });
+  if (!(await leadForApi(auth, id))) return leadNotFound();
+  if (!(await canEditLeads(auth))) return readOnly();
 
   const body = await req.json().catch(() => null);
   const parsed = z.object({ tagId: z.guid() }).safeParse(body);

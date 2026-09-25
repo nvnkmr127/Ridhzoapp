@@ -15,9 +15,10 @@ vi.mock("@/lib/rate-limit", () => ({
 vi.mock("@/domains/organizations/service", () => ({
   OrgService: { isSuspended: vi.fn().mockResolvedValue(false) },
 }));
-// userStillValid only runs on the mobile path; default it to a valid, active, same-org user.
+// The live-user lookup only runs on the mobile path; default it to a valid, active, same-org user.
+const dbUser = vi.hoisted(() => ({ row: { isActive: true, organizationId: "org-1", roleId: null as string | null } }));
 vi.mock("@/db", () => ({
-  db: { select: () => ({ from: () => ({ where: () => ({ limit: () => [{ isActive: true, organizationId: "org-1" }] }) }) }) },
+  db: { select: () => ({ from: () => ({ where: () => ({ limit: () => [dbUser.row] }) }) }) },
 }));
 vi.mock("@/db/schema", () => ({ users: {} }));
 
@@ -94,5 +95,20 @@ describe("authorizeApiRequest — mobile token", () => {
     expect(auth).toEqual({ organizationId: "org-1", userId: "u1", roleId: null });
     // Mobile tokens carry full write access regardless of HTTP method.
     expect(verify).not.toHaveBeenCalled();
+  });
+
+  it("uses the user's current role, not the one in the token", async () => {
+    mobile.mockReturnValue({ sub: "u1", org: "org-1", role: "admin-role", email: "a@b.c" });
+    dbUser.row = { isActive: true, organizationId: "org-1", roleId: "rep-role" };
+    const auth = await authorizeApiRequest(req("GET", "Bearer jwt"));
+    expect(auth).toEqual({ organizationId: "org-1", userId: "u1", roleId: "rep-role" });
+  });
+
+  it("rejects a deactivated user", async () => {
+    mobile.mockReturnValue({ sub: "u1", org: "org-1", role: null, email: "a@b.c" });
+    dbUser.row = { isActive: false, organizationId: "org-1", roleId: null };
+    const auth = (await authorizeApiRequest(req("GET", "Bearer jwt"))) as { error: Response };
+    expect(auth.error.status).toBe(401);
+    dbUser.row = { isActive: true, organizationId: "org-1", roleId: null };
   });
 });
