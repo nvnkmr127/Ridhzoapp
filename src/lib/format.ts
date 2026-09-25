@@ -3,7 +3,7 @@
 // This module is client-safe (pure Intl, no db import); server fetch lives in format.server.ts.
 export type OrgFormat = { currency: string; locale: string; dateFormat: string; timezone: string };
 
-export const DEFAULT_FORMAT: OrgFormat = { currency: "USD", locale: "en", dateFormat: "MM/DD/YYYY", timezone: "UTC" };
+export const DEFAULT_FORMAT: OrgFormat = { currency: "INR", locale: "en-IN", dateFormat: "DD/MM/YYYY", timezone: "Asia/Kolkata" };
 
 // Money in the org's currency + locale. Falls back to a plain grouped number if the runtime rejects
 // the currency/locale, so a bad setting never throws in a render path.

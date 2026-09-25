@@ -13,6 +13,12 @@ export default async function BookingPage({ params }: { params: Promise<{ slug: 
         <div>
           <h1 className="text-2xl font-bold">Book a meeting with {org.name}</h1>
           <p className="text-sm text-muted-foreground mt-1">Pick a time and we&apos;ll get back to you to confirm.</p>
+          {(org.addressLine1 || org.city || org.phone) && (
+            <div className="mt-3 space-y-0.5 text-sm text-muted-foreground">
+              {(org.addressLine1 || org.city) && <p>📍 {[org.addressLine1, org.city].filter(Boolean).join(", ")}</p>}
+              {org.phone && <p>📞 <a href={`tel:${org.phone.replace(/[^\d+]/g, "")}`} className="underline underline-offset-2">{org.phone}</a></p>}
+            </div>
+          )}
         </div>
         <BookingForm slug={slug} />
       </div>

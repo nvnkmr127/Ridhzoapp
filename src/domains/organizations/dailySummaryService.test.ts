@@ -25,7 +25,8 @@ describe("daily summary", () => {
 
   it("builds a personal morning line only when there's something to do", () => {
     expect(personalLine({ overdue: 0, dueToday: 0, newLeads: 0 })).toBeNull();
-    expect(personalLine({ overdue: 1, dueToday: 3, newLeads: 2 })).toBe("3 follow-ups due today · 1 overdue · 2 new leads since yesterday");
+    expect(personalLine({ overdue: 1, dueToday: 3, newLeads: 2 })).toBe("Follow-ups due today: 3 · Overdue follow-ups: 1 · New leads since yesterday: 2");
+    expect(personalLine({ overdue: 0, dueToday: 2, newLeads: 0 }, "hi")).toBe("आज के फॉलो-अप: 2");
   });
 
   it("sends the week-one recap on local day 7 and the trial warning the day before it ends", () => {

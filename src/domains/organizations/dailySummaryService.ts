@@ -3,6 +3,8 @@ import { followUps, leads, meetings, organizations, roles, users } from "@/db/sc
 import { and, count, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import { appUrl, sendEmail } from "@/lib/mail/mailer";
 import { HabitService, recapLine, type Recap } from "@/domains/organizations/habitService";
+import { isWorkDay } from "@/lib/workHours";
+import { t, type Lang } from "@/lib/i18n";
 
 // Morning team summary for workspace admins: what needs attention today. Sent once per org-local
 // day between 8 and 11 AM, only when something is actionable, to admins who haven't opted out of email.
@@ -23,6 +25,7 @@ export interface Person {
   userId: string;
   firstName: string | null;
   phone: string | null;
+  language: string;
   optedOut: boolean;
   overdue: number;
   dueToday: number;
@@ -30,11 +33,11 @@ export interface Person {
 }
 
 /** Pure: the personal morning line, or null when this person has nothing to do today. */
-export function personalLine(p: Pick<Person, "overdue" | "dueToday" | "newLeads">): string | null {
+export function personalLine(p: Pick<Person, "overdue" | "dueToday" | "newLeads">, lang: Lang | string = "en"): string | null {
   const parts = [
-    p.dueToday && `${plural(p.dueToday, "follow-up")} due today`,
-    p.overdue && `${p.overdue} overdue`,
-    p.newLeads && `${plural(p.newLeads, "new lead")} since yesterday`,
+    p.dueToday && t(lang, "Follow-ups due today: {n}", { n: p.dueToday }),
+    p.overdue && t(lang, "Overdue follow-ups: {n}", { n: p.overdue }),
+    p.newLeads && t(lang, "New leads since yesterday: {n}", { n: p.newLeads }),
   ].filter(Boolean);
   return parts.length ? parts.join(" · ") : null;
 }
@@ -148,7 +151,7 @@ export class DailySummaryService {
               and m.start_at >= ${new Date(now.getTime() - 14 * 24 * H).toISOString()}::timestamp) as need_outcome
         from ${users} u where u.organization_id = ${organizationId} and u.is_active = true and u.deleted_at is null`),
       db.execute(sql`
-        select u.id, u.first_name, u.phone, coalesce(jsonb_exists(u.email_opt_out, 'daily_summary'), false) as opted_out,
+        select u.id, u.first_name, u.phone, u.language, coalesce(jsonb_exists(u.email_opt_out, 'daily_summary'), false) as opted_out,
           (select count(*)::int from ${followUps} f join ${leads} l on l.id = f.lead_id
             where f.user_id = u.id and f.status = 'pending' and l.deleted_at is null
               and f.due_at < ${now.toISOString()}::timestamp) as overdue,
@@ -164,6 +167,7 @@ export class DailySummaryService {
       userId: String(r.id),
       firstName: (r.first_name as string | null) ?? null,
       phone: (r.phone as string | null) ?? null,
+      language: String(r.language ?? "en"),
       optedOut: Boolean(r.opted_out),
       overdue: Number(r.overdue),
       dueToday: Number(r.due_today),
@@ -203,7 +207,7 @@ export class DailySummaryService {
     const orgs = await db
       .select({
         id: organizations.id, name: organizations.name, timezone: organizations.timezone, sentOn: organizations.dailySummarySentOn,
-        createdAt: organizations.createdAt, trialEndsAt: organizations.trialEndsAt,
+        createdAt: organizations.createdAt, trialEndsAt: organizations.trialEndsAt, workDays: organizations.workDays,
       })
       .from(organizations)
       .where(and(eq(organizations.dailySummary, 1), isNull(organizations.suspendedAt)));
@@ -223,6 +227,8 @@ export class DailySummaryService {
         // Day-7 recap / trial-ends-tomorrow go out even on a quiet day — they're the proof of value.
         const milestone = milestoneFor(today, org.timezone, org.createdAt, org.trialEndsAt);
         if (milestone) await this.sendMilestone(org.id, milestone, org.createdAt);
+        // No "your day" nudges on the business's day off (milestones above still go — they're one-off).
+        if (!isWorkDay(now, org.timezone, org.workDays)) continue;
 
         const stats = await this.stats(org.id, now);
         if (!isActionable(stats)) continue;
@@ -256,9 +262,16 @@ export class DailySummaryService {
     const template = process.env.WATXIO_DAILY_SUMMARY_TEMPLATE;
     const { WatxioClient, isConfigured } = await import("@/lib/messaging/whatsapp/client");
     for (const p of people) {
-      const line = personalLine(p);
+      const line = personalLine(p, p.language);
       if (!line || p.optedOut) continue;
-      await NotificationService.create({ userId: p.userId, type: "daily_summary", title: `☀️ Good morning${p.firstName ? `, ${p.firstName}` : ""}`, body: line });
+      // Already in their language, so it passes through create()'s translation unchanged.
+      await NotificationService.create({
+        userId: p.userId,
+        type: "daily_summary",
+        title: p.firstName ? "☀️ Good morning, {name}" : "☀️ Good morning",
+        titleVars: p.firstName ? { name: p.firstName } : undefined,
+        body: line,
+      });
       if (template && p.phone && isConfigured()) {
         await WatxioClient.sendTemplate(p.phone, template, [p.firstName || "there", line], process.env.WATXIO_TEMPLATE_LANG || "en_US", `daily-${p.userId}-${today}`)
           .catch((e) => console.warn(`[daily-summary] WhatsApp to ${p.userId} failed`, e?.message || e));

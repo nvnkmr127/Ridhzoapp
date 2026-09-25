@@ -161,7 +161,8 @@ eventBus.on('lead.assigned', async (p) => {
     await NotificationService.create({
       userId: p.ownerId,
       type: 'new_lead',
-      title: `New lead: ${lead?.name ?? 'Unknown'}`,
+      title: "New lead: {name}",
+      titleVars: { name: lead?.name ?? "Unknown" },
       body: lead?.phone || lead?.email || undefined,
       leadId: p.leadId,
     });

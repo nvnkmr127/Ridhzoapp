@@ -901,7 +901,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
                 <div className="grid grid-cols-2 gap-2 border-b pb-2">
                   <span className="text-muted-foreground">Location:</span>
                   <span>
-                    {[org.city, org.state, org.country].filter(Boolean).join(", ") || "Not configured"}
+                    {[org.city, org.country].filter(Boolean).join(", ") || "Not configured"}
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-2">

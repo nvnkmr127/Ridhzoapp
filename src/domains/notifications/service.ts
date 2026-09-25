@@ -5,8 +5,20 @@ import { and, desc, eq, isNull, inArray } from "drizzle-orm";
 // High-signal notification types that also warrant an email. Chatty ones (self-completions) don't.
 const EMAIL_TYPES = new Set(["new_lead", "lead_assigned", "follow_up_due", "follow_up_overdue", "sla_escalation", "meeting_scheduled", "meeting_reminder"]);
 
+type Vars = Record<string, string | number>;
+
 export class NotificationService {
-  static async create(data: { userId: string; type: string; title: string; body?: string; leadId?: string }) {
+  // title/body are English source text (see lib/i18n); pass titleVars/bodyVars for {placeholders}.
+  // They're translated into the recipient's language before storing and pushing.
+  static async create(input: { userId: string; type: string; title: string; body?: string; leadId?: string; titleVars?: Vars; bodyVars?: Vars }) {
+    const { titleVars, bodyVars, ...rest } = input;
+    const [u] = await db.select({ language: users.language }).from(users).where(eq(users.id, input.userId)).limit(1);
+    const { t } = await import("@/lib/i18n");
+    const data = {
+      ...rest,
+      title: t(u?.language, rest.title, titleVars),
+      body: rest.body == null ? undefined : t(u?.language, rest.body, bodyVars),
+    };
     const [row] = await db.insert(notifications).values(data).returning();
     // Best-effort browser push for closed-tab delivery; the in-app bell is the source of truth.
     const { PushService } = await import("@/lib/push/service");
@@ -31,7 +43,7 @@ export class NotificationService {
   // who already gets their own "assigned" alert, so a solo owner isn't pinged twice for one lead.
   static async notifyOrgAdmins(
     organizationId: string,
-    payload: { type: string; title: string; body?: string; leadId?: string },
+    payload: { type: string; title: string; body?: string; leadId?: string; titleVars?: Vars; bodyVars?: Vars },
     excludeUserId?: string,
   ) {
     const rows = await db

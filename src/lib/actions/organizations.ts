@@ -53,8 +53,6 @@ const updateOrgSchema = z.object({
     }, "Enter a valid website URL"),
   addressLine1: opt(255),
   city: opt(120),
-  state: opt(120),
-  postalCode: opt(20),
   // Blank is allowed (→ null); a 2-letter code otherwise. Without the "" branch an empty
   // country field fails length(2) and blocks the whole settings save.
   country: z.string().trim().length(2).or(z.literal("")).nullish().transform((v) => v || null),
@@ -68,6 +66,10 @@ const updateOrgSchema = z.object({
   whatsappMode: z.enum(["personal", "bsp"]).default("personal"),
   // Morning team summary email to admins: 1 on, 0 off.
   dailySummary: z.coerce.number().int().min(0).max(1).optional(),
+  // Business days (0=Sun…6=Sat) + hours (end exclusive, > start). Drives summary days and alert timing.
+  workDays: z.array(z.number().int().min(0).max(6)).max(7).transform((d) => [...new Set(d)].sort()).optional(),
+  workStartHour: z.coerce.number().int().min(0).max(23).optional(),
+  workEndHour: z.coerce.number().int().min(1).max(24).optional(),
   // "name" is always required; keep only known fields and force-include name.
   requiredLeadFields: z
     .array(z.enum(LEAD_FIELDS))
@@ -75,6 +77,9 @@ const updateOrgSchema = z.object({
     .transform((arr) => Array.from(new Set(["name", ...arr]))),
   // ISO timestamp the form loaded the org with — enables optimistic concurrency (see service).
   expectedUpdatedAt: z.string().optional().or(z.literal("")),
+}).refine((d) => d.workStartHour == null || d.workEndHour == null || d.workStartHour < d.workEndHour, {
+  message: "Closing time must be after opening time.",
+  path: ["workEndHour"],
 });
 
 export async function getOrganizationAction() {
@@ -88,6 +93,7 @@ export async function getOrganizationAction() {
 const SETTINGS_VALUE_FIELDS = [
   "timezone", "locale", "currency", "dateFormat", "slaHours", "whatsappMode",
   "requiredLeadFields", "sequenceWindowStart", "sequenceWindowEnd", "dailySummary",
+  "workDays", "workStartHour", "workEndHour",
 ] as const;
 
 export async function updateOrganizationAction(input: z.input<typeof updateOrgSchema>) {
@@ -102,6 +108,8 @@ export async function updateOrganizationAction(input: z.input<typeof updateOrgSc
     const expected = expectedUpdatedAt ? new Date(expectedUpdatedAt) : undefined;
     const before = await OrgService.getOrganization(organizationId);
     const updated = await OrgService.updateOrganization(organizationId, data, expected);
+    const { forgetOrgDialCode } = await import("@/lib/leads/orgDialCode");
+    forgetOrgDialCode(organizationId);
 
     const changedFields: string[] = [];
     const values: Record<string, { old: unknown; new: unknown }> = {};

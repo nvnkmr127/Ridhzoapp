@@ -9,9 +9,18 @@ import { useToast } from "@/hooks/use-toast";
 
 const DISMISS_KEY = "ridhzo:tz-banner-dismissed";
 
-// Shown to admins while the workspace is still on the default UTC. Meeting confirmations, reminders
-// and the morning summary all use the workspace timezone, so UTC means wrong times for leads.
-export function TimezoneBanner() {
+// Shown to admins when the workspace timezone gives a different clock than their device (e.g. the
+// India default for a Dubai business). Meeting confirmations, reminders and the morning summary all
+// use the workspace timezone. Same-clock aliases (Asia/Calcutta vs Asia/Kolkata) don't count.
+const clockIn = (tz: string) => {
+  try {
+    return new Date().toLocaleString("en-US", { timeZone: tz, hour: "numeric", minute: "numeric" });
+  } catch {
+    return null;
+  }
+};
+
+export function TimezoneBanner({ workspaceTz }: { workspaceTz: string }) {
   const router = useRouter();
   const { toast } = useToast();
   const [browserTz, setBrowserTz] = React.useState<string | null>(null);
@@ -23,8 +32,8 @@ export function TimezoneBanner() {
       dismissed = localStorage.getItem(DISMISS_KEY) === "1";
     } catch {}
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (!dismissed && tz && tz !== "UTC" && !tz.startsWith("Etc/")) setBrowserTz(tz);
-  }, []);
+    if (!dismissed && tz && tz !== "UTC" && !tz.startsWith("Etc/") && clockIn(tz) !== clockIn(workspaceTz)) setBrowserTz(tz);
+  }, [workspaceTz]);
 
   if (!browserTz) return null;
 
@@ -56,7 +65,7 @@ export function TimezoneBanner() {
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm">
       <Globe className="h-4 w-4 shrink-0 text-amber-600" />
       <span className="min-w-0 flex-1">
-        Your workspace timezone is <b>UTC</b>, so meeting times and reminders sent to leads will be off.
+        Your workspace time zone is <b>{workspaceTz}</b>, but your device is on <b>{browserTz}</b>. Meeting times and reminders follow the workspace.
       </span>
       <Button size="sm" onClick={apply} disabled={busy}>Use {browserTz}</Button>
       <button type="button" aria-label="Dismiss" onClick={dismiss} className="rounded p-1 text-muted-foreground hover:text-foreground">

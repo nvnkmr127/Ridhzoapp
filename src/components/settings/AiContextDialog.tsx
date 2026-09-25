@@ -39,7 +39,7 @@ export function AiContextDialog({
   children,
 }: {
   initial: string;
-  onSaved: (text: string) => void;
+  onSaved: (text: string, updatedAt: string | null) => void;
   children: React.ReactNode;
 }) {
   const { toast } = useToast();
@@ -106,7 +106,7 @@ export function AiContextDialog({
         toast({ variant: "destructive", title: "Couldn't save", description: res.message });
         return;
       }
-      onSaved(res.data.text);
+      onSaved(res.data.text, res.data.updatedAt);
       toast({ title: "Business context saved" });
       setOpen(false);
     } catch {

@@ -13,6 +13,26 @@ import { PlanService } from "@/domains/billing/planService";
 // Attribution keys are FIRST-TOUCH: once a lead is created with the ad/campaign/leadgen that
 // originated it, a later re-submission must not overwrite them with a newer ad's values, or the
 // originating attribution (and the leadgen id Meta's Conversion Leads postback keys on) is lost.
+// A lead turned away at the plan cap is invisible to the owner unless we say so — and it's the most
+// honest upgrade prompt there is. ponytail: per-process hourly throttle (a burst of ad leads = one
+// alert); move to a DB-backed throttle if workers scale out.
+const blockedAlertAt = new Map<string, number>();
+async function alertLeadBlocked(organizationId: string, leadName?: string | null) {
+  const last = blockedAlertAt.get(organizationId) ?? 0;
+  if (Date.now() - last < 60 * 60 * 1000) return;
+  blockedAlertAt.set(organizationId, Date.now());
+  try {
+    const { NotificationService } = await import("@/domains/notifications/service");
+    await NotificationService.notifyOrgAdmins(organizationId, {
+      type: "lead_limit_blocked",
+      title: "A new lead couldn't be saved",
+      body: `${leadName || "A new lead"} arrived, but your plan's lead limit is full. Upgrade in Settings → Plan & billing to keep receiving leads.`,
+    });
+  } catch (e) {
+    console.error("[ingestion] lead-blocked alert failed (non-fatal)", e);
+  }
+}
+
 export const FIRST_TOUCH_KEYS = [
   "leadSource",
   "facebook_lead_id",
@@ -104,10 +124,9 @@ export class IngestionService {
       return this.applyDedup(existingLead, payload, organizationId);
     }
 
-    // Enforce the org's required-field configuration on genuinely NEW inbound leads (dedup hits
-    // above merge into an already-valid lead, so they're exempt). A miss is logged as "failed" —
-    // the same visible, auditable outcome ingestion already uses for "email or phone required" —
-    // rather than silently creating a lead that violates the tenant's capture rules.
+    // Required fields apply to leads your team types in. An inbound lead (ad form, web form, API)
+    // missing one is still SAVED — the customer can't be asked again, and dropping a paid ad lead
+    // over a blank "company" loses the sale. It's flagged instead (note + "missing-info" tag).
     const [orgRow] = await db
       .select({ requiredLeadFields: organizations.requiredLeadFields })
       .from(organizations)
@@ -118,11 +137,6 @@ export class IngestionService {
       phone,
       company: payload.company,
     });
-    if (missing.length) {
-      const reason = `Missing required field(s): ${missing.join(", ")}`;
-      await this.logIngestion(null, payload.sourceId, payload, "failed", reason);
-      throw new Error(reason);
-    }
 
     // 3. Check plan lead limit and insert with organizationId.
     try {
@@ -130,6 +144,7 @@ export class IngestionService {
     } catch (e: any) {
       const reason = e?.message || "Lead capacity limit reached for your plan.";
       await this.logIngestion(null, payload.sourceId, payload, "failed", reason);
+      await alertLeadBlocked(organizationId, payload.name);
       throw e;
     }
 
@@ -154,6 +169,17 @@ export class IngestionService {
     }
 
     await this.logIngestion(newLead.id, payload.sourceId, payload, "success", null);
+
+    if (missing.length) {
+      try {
+        const { ActivityService } = await import("@/domains/activities/service");
+        const { TagService } = await import("@/domains/tags/service");
+        await ActivityService.addActivity({ leadId: newLead.id, type: "note", content: `Lead came in without: ${missing.join(", ")}. Ask for it on your first call or message.` });
+        await TagService.addToLead(newLead.id, "missing-info", organizationId);
+      } catch (e) {
+        console.error("[ingestion] missing-field flag failed (non-fatal)", e);
+      }
+    }
 
     // Seed the status timeline with the opening state (system-created → no user), so inbound leads
     // are measured in stage-duration analytics the same as manually-created ones.

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Sparkles } from "lucide-react";
 import { visibleRoutes, navGroups, superAdminRoutes } from "./nav";
+import { useT } from "@/components/LanguageProvider";
 
 function SuperAdminNavLinks({ pathname }: { pathname: string }) {
   const searchParams = useSearchParams();
@@ -50,6 +51,7 @@ export function Sidebar({
   allowed?: string[];
 }) {
   const pathname = usePathname();
+  const t = useT();
 
   // Hidden on mobile — the Header's hamburger opens the same nav as an overlay drawer there.
   return (
@@ -91,7 +93,7 @@ export function Sidebar({
         {navGroups.map((group) => (
           <div key={group} className="space-y-1">
             <p className="px-3 mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
-              {group}
+              {t(group)}
             </p>
             {visibleRoutes(allowed, isSuperAdmin).filter((r) => r.group === group).map((route) => {
               const active = pathname === route.href;
@@ -108,7 +110,7 @@ export function Sidebar({
                   )}
                 >
                   <route.icon className="h-[18px] w-[18px] shrink-0" strokeWidth={1.75} />
-                  {route.label}
+                  {t(route.label)}
                 </Link>
               );
             })}

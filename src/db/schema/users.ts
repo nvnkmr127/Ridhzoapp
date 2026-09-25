@@ -28,6 +28,8 @@ export const users = pgTable('users', {
   organizationId: uuid('organization_id').references(() => organizations.id), // required in practice; backfilled
   email: varchar('email', { length: 255 }).notNull().unique(),
   phone: varchar('phone', { length: 30 }),
+  // App language for this person's menu and phone notifications ('en' | 'hi' | 'te'). See lib/i18n.
+  language: varchar('language', { length: 5 }).default('en').notNull(),
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
   firstName: varchar('first_name', { length: 255 }),
   lastName: varchar('last_name', { length: 255 }),

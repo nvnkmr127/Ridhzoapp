@@ -6,6 +6,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Menu, X } from "lucide-react";
 import { visibleRoutes, navGroups, superAdminRoutes } from "./nav";
+import { useT } from "@/components/LanguageProvider";
 
 function MobileSuperAdminNavLinks({
   pathname,
@@ -47,6 +48,7 @@ function MobileSuperAdminNavLinks({
 export function MobileSidebar({ isSuperAdmin = false, plan, allowed = [] }: { isSuperAdmin?: boolean; plan?: string; allowed?: string[] }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const t = useT();
 
   return (
     <>
@@ -108,7 +110,7 @@ export function MobileSidebar({ isSuperAdmin = false, plan, allowed = [] }: { is
               {navGroups.map((group) => (
                 <div key={group} className="space-y-1">
                   <p className="px-3 mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
-                    {group}
+                    {t(group)}
                   </p>
                   {visibleRoutes(allowed, isSuperAdmin).filter((r) => r.group === group).map((route) => {
                     const active = pathname === route.href;
@@ -126,7 +128,7 @@ export function MobileSidebar({ isSuperAdmin = false, plan, allowed = [] }: { is
                         )}
                       >
                         <route.icon className="h-[18px] w-[18px] shrink-0" strokeWidth={1.75} />
-                        {route.label}
+                        {t(route.label)}
                       </Link>
                     );
                   })}

@@ -47,8 +47,10 @@ export async function processFollowUpReminderScan() {
     await NotificationService.create({
       userId: targetUserId,
       type: "follow_up_due",
-      title: `Follow-up due: ${followUp.title}`,
-      body: `Follow up with ${lead.name} (${followUp.type})`,
+      title: "Follow-up due: {title}",
+      titleVars: { title: followUp.title },
+      body: "Follow up with {name} ({type})",
+      bodyVars: { name: lead.name, type: followUp.type },
       leadId: lead.id,
     });
     await ActivityService.addActivity({
@@ -105,8 +107,10 @@ export async function processOverdueFollowUps(now = new Date()) {
       await NotificationService.create({
         userId: target,
         type: "follow_up_overdue",
-        title: `Overdue: ${followUp.title}`,
-        body: `Follow-up with ${lead.name} was due and hasn't been done.`,
+        title: "Overdue: {title}",
+        titleVars: { title: followUp.title },
+        body: "Follow-up with {name} was due and hasn't been done.",
+        bodyVars: { name: lead.name },
         leadId: lead.id,
       });
     }

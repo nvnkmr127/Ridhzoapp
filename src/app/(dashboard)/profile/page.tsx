@@ -6,6 +6,9 @@ import { users } from "@/db/schema";
 import { Button } from "@/components/ui/button";
 import { getEmailOptOutAction } from "@/lib/actions/notificationPrefs";
 import { NotificationPreferences } from "@/components/settings/NotificationPreferences";
+import { AlertSoundPicker } from "@/components/settings/AlertSoundPicker";
+import { LanguagePicker } from "@/components/settings/LanguagePicker";
+import { isLang } from "@/lib/i18n";
 import { LoginMethods } from "@/components/settings/LoginMethods";
 import { isPlaceholderEmail } from "@/lib/auth/googleLink";
 
@@ -30,7 +33,7 @@ export default async function ProfilePage({
 
   const [emailOptOut, [me], params] = await Promise.all([
     getEmailOptOutAction(),
-    db.select({ email: users.email, phone: users.phone }).from(users).where(eq(users.id, session.user.id)).limit(1),
+    db.select({ email: users.email, phone: users.phone, language: users.language }).from(users).where(eq(users.id, session.user.id)).limit(1),
     searchParams,
   ]);
   const email = me && !isPlaceholderEmail(me.email) ? me.email : null;
@@ -48,6 +51,8 @@ export default async function ProfilePage({
       <LoginMethods email={email} phone={me?.phone ?? null} notice={linkKey ? LINK_NOTICES[linkKey] : undefined} />
 
       <NotificationPreferences initialOptOut={emailOptOut} />
+      <LanguagePicker initial={isLang(me?.language) ? me.language : "en"} />
+      <AlertSoundPicker />
       <form action="/api/auth/signout" method="POST">
         <Button variant="outline" type="submit">Logout</Button>
       </form>

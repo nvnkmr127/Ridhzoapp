@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PlusCircle, Search, User, PieChart, Sparkles } from "lucide-react";
+import { useT } from "@/components/LanguageProvider";
 import { signOut } from "next-auth/react";
 import Image from "next/image";
 import Link from "next/link";
@@ -41,6 +42,7 @@ export function Header({
   usageStats?: UsageStats | null;
 }) {
   const [searchOpen, setSearchOpen] = React.useState(false);
+  const t = useT();
   const [shortcutLabel, setShortcutLabel] = React.useState("⌘K");
 
   // Cmd/Ctrl+K toggles the global command palette & detect operating system for shortcut badge.
@@ -103,7 +105,7 @@ export function Header({
           className="relative w-full max-w-md hidden md:flex items-center rounded-md border border-border bg-card px-3 py-2 text-sm text-muted-foreground hover:bg-accent/50 transition-colors"
         >
           <Search className="mr-2 h-4 w-4" />
-          Search leads, team members, or jump to…
+          {t("Search leads, team members, or jump to…")}
           <kbd suppressHydrationWarning className="ml-auto text-xs bg-muted text-muted-foreground rounded px-1.5 py-0.5 font-mono">{shortcutLabel}</kbd>
         </button>
       </div>
@@ -163,7 +165,7 @@ export function Header({
           <QuickAddLeadDrawer organizationId={organizationId}>
             <Button size="sm" className="gap-1">
               <PlusCircle className="h-4 w-4" />
-              Quick Add
+              {t("Quick Add")}
             </Button>
           </QuickAddLeadDrawer>
         </div>

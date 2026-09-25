@@ -428,6 +428,34 @@
       "when": 1790269503706,
       "tag": "0060_ai_credits",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1790271030458,
+      "tag": "0061_india_defaults",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1790298540110,
+      "tag": "0062_drop_state_postal",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1790298592046,
+      "tag": "0063_business_hours",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1790298833876,
+      "tag": "0064_user_language",
+      "breakpoints": true
     }
   ]
 }

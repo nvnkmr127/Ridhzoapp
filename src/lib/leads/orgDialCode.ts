@@ -21,3 +21,8 @@ export async function orgDialCode(organizationId: string | null | undefined): Pr
   cache.set(organizationId, { code, at: Date.now() });
   return code;
 }
+
+// Called when settings change so a new Country takes effect now, not after the cache TTL.
+export function forgetOrgDialCode(organizationId: string) {
+  cache.delete(organizationId);
+}

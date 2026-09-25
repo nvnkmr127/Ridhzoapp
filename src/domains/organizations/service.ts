@@ -118,8 +118,6 @@ export class OrgService {
       website: string | null;
       addressLine1: string | null;
       city: string | null;
-      state: string | null;
-      postalCode: string | null;
       country: string | null;
       requiredLeadFields: string[];
       slaHours: number | null;
@@ -128,6 +126,9 @@ export class OrgService {
       sequenceWindowStart: number | null;
       sequenceWindowEnd: number | null;
       dailySummary: number;
+      workDays: number[];
+      workStartHour: number;
+      workEndHour: number;
     }>,
     expectedUpdatedAt?: Date,
   ) {

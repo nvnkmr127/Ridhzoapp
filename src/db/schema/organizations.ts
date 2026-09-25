@@ -9,10 +9,11 @@ export const organizations = pgTable('organizations', {
   suspendedAt: timestamp('suspended_at'), // set by a platform super-admin; blocks the org's logins
 
   // Localisation
-  timezone: varchar('timezone', { length: 64 }).default('UTC').notNull(),
-  locale: varchar('locale', { length: 10 }).default('en').notNull(),
-  currency: varchar('currency', { length: 3 }).default('USD').notNull(),
-  dateFormat: varchar('date_format', { length: 20 }).default('MM/DD/YYYY').notNull(),
+  // India defaults — Ridhzo's market. The admin banner offers the device timezone if it differs.
+  timezone: varchar('timezone', { length: 64 }).default('Asia/Kolkata').notNull(),
+  locale: varchar('locale', { length: 10 }).default('en-IN').notNull(),
+  currency: varchar('currency', { length: 3 }).default('INR').notNull(),
+  dateFormat: varchar('date_format', { length: 20 }).default('DD/MM/YYYY').notNull(),
 
   // Company information
   industry: varchar('industry', { length: 120 }),
@@ -23,8 +24,6 @@ export const organizations = pgTable('organizations', {
   website: varchar('website', { length: 255 }),
   addressLine1: varchar('address_line1', { length: 255 }),
   city: varchar('city', { length: 120 }),
-  state: varchar('state', { length: 120 }),
-  postalCode: varchar('postal_code', { length: 20 }),
   country: varchar('country', { length: 2 }),
 
   // Which lead fields are required at capture. "name" is always required by the column NOT NULL.
@@ -54,6 +53,11 @@ export const organizations = pgTable('organizations', {
   // Morning team summary email to admins (overdue follow-ups, meetings without outcome, new leads…).
   // 1 = on. dailySummarySentOn = the org-local date it last went out, so it sends once per day.
   dailySummary: integer('daily_summary').default(1).notNull(),
+  // Business days (0=Sun … 6=Sat) and hours, org-local. The morning summary skips days off and
+  // "not contacted" alerts wait for opening time. Default Mon–Sat, 9 AM–8 PM.
+  workDays: jsonb('work_days').$type<number[]>().default([1, 2, 3, 4, 5, 6]).notNull(),
+  workStartHour: integer('work_start_hour').default(9).notNull(),
+  workEndHour: integer('work_end_hour').default(20).notNull(),
   dailySummarySentOn: varchar('daily_summary_sent_on', { length: 10 }),
 
   // Billing (Razorpay). plan (above) is the source of truth for entitlements; these track the subscription.

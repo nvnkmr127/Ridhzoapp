@@ -8,6 +8,7 @@ import {
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { listNotificationsAction, unreadCountAction, markNotificationsReadAction } from "@/lib/actions/notifications"
+import { playAlertSound } from "@/lib/alertSound"
 
 type Notif = { id: string; title: string; body: string | null; leadId: string | null; readAt: Date | null };
 
@@ -16,8 +17,17 @@ export function NotificationBell() {
   const [items, setItems] = React.useState<Notif[]>([]);
 
   // Poll the unread badge — the "New Lead Alert" surfacing. 30s is plenty for a web CRM.
+  // A rise in unread (not the first load) plays the user's chosen alert sound.
+  const last = React.useRef<number | null>(null);
   React.useEffect(() => {
-    const tick = () => unreadCountAction().then(setCount).catch(() => {});
+    const tick = () =>
+      unreadCountAction()
+        .then((n) => {
+          if (last.current != null && n > last.current) void playAlertSound();
+          last.current = n;
+          setCount(n);
+        })
+        .catch(() => {});
     tick();
     const t = setInterval(tick, 30_000);
     return () => clearInterval(t);
@@ -31,6 +41,7 @@ export function NotificationBell() {
     if (count > 0) {
       await markNotificationsReadAction().catch(() => {});
       setCount(0);
+      last.current = 0;
     }
   }
 

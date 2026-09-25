@@ -166,7 +166,8 @@ export class LeadDistributionService {
         await NotificationService.create({
           userId: recipient.value,
           type: "new_lead",
-          title: `New lead: ${lead.name ?? "Unknown"}`,
+          title: "New lead: {name}",
+          titleVars: { name: lead.name ?? "Unknown" },
           body: lead.phone || lead.email || undefined,
           leadId: lead.id,
         });

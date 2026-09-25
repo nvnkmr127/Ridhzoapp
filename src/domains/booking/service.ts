@@ -5,9 +5,9 @@ import { LeadService } from "@/domains/leads/service";
 import { MeetingService } from "@/domains/meetings/service";
 
 export class BookingService {
-  // Public info for the booking page — just the org name, resolved by slug.
+  // Public info for the booking page (name, address, business phone), resolved by slug.
   static async getOrgBySlug(slug: string) {
-    const [org] = await db.select({ id: organizations.id, name: organizations.name, addressLine1: organizations.addressLine1, city: organizations.city }).from(organizations).where(eq(organizations.slug, slug)).limit(1);
+    const [org] = await db.select({ id: organizations.id, name: organizations.name, addressLine1: organizations.addressLine1, city: organizations.city, phone: organizations.phone }).from(organizations).where(eq(organizations.slug, slug)).limit(1);
     return org ?? null;
   }
 

@@ -147,6 +147,8 @@ export interface BusinessLike {
   name: string;
   industry: string | null;
   website: string | null;
+  phone?: string | null;
+  city?: string | null;
   /** Optional free-text description the tenant writes ("what we sell"). See organizations.aiContext. */
   aiContext?: string | null;
 }
@@ -160,7 +162,10 @@ export function businessPreamble(org: BusinessLike): string {
   let s = `You work for "${org.name}"`;
   if (org.industry) s += `, a business in ${org.industry}`;
   if (org.website) s += ` (${org.website})`;
+  if (org.city) s += `, based in ${org.city}`;
   s += ".";
+  // Lets drafts end with a real "call us on …" instead of a placeholder.
+  if (org.phone) s += ` Business phone: ${org.phone}.`;
   if (org.aiContext?.trim()) s += ` About the business: ${org.aiContext.trim()}`;
   s +=
     " Represent ONLY this business's own products and services. The lead's name, company, or stated" +

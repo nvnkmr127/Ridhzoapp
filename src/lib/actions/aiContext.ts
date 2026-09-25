@@ -93,9 +93,11 @@ export async function saveAiContextAction(input: z.infer<typeof saveSchema>) {
   if (!parsed.success) return fail("VALIDATION", "Invalid text.");
   const text = parsed.data.text.trim().slice(0, 4000);
   try {
-    await OrgService.updateOrganization(organizationId, { aiContext: text || null });
+    const updated = await OrgService.updateOrganization(organizationId, { aiContext: text || null });
     revalidatePath("/settings");
-    return ok({ text });
+    // updatedAt lets the open settings form advance its version — otherwise its next save looks
+    // like someone else edited the org and is rejected as a conflict.
+    return ok({ text, updatedAt: updated?.updatedAt ? new Date(updated.updatedAt).toISOString() : null });
   } catch (e) {
     return actionFail(e);
   }
