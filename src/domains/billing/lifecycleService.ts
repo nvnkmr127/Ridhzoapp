@@ -477,6 +477,46 @@ export class BillingLifecycleService {
     return results;
   }
 
+  // Complimentary plans with an end date move to Free once it passes; the owner is told how to keep it.
+  static async endExpiredComplimentary(now: Date = new Date()): Promise<number> {
+    const ended = await db
+      .update(organizations)
+      .set({ plan: "free", complimentary: 0, complimentaryUntil: null, updatedAt: new Date() })
+      .where(and(eq(organizations.complimentary, 1), isNotNull(organizations.complimentaryUntil), lte(organizations.complimentaryUntil, now)))
+      .returning({ id: organizations.id, name: organizations.name, note: organizations.complimentaryNote });
+
+    for (const org of ended) {
+      await AuditService.log({
+        organizationId: org.id,
+        userId: "00000000-0000-0000-0000-000000000000",
+        action: "billing.complimentary_ended",
+        entityType: "organization",
+        entityId: org.id,
+        metadata: { note: org.note },
+      });
+      try {
+        const [owner] = await db
+          .select({ email: users.email, firstName: users.firstName })
+          .from(users)
+          .where(and(eq(users.organizationId, org.id), eq(users.isActive, true)))
+          .limit(1);
+        if (owner?.email) {
+          await sendEmail({
+            to: owner.email,
+            subject: `Your free Ridhzo plan for ${org.name} has ended`,
+            html: `<div style="font-family:sans-serif;font-size:14px;line-height:1.5">
+<p>Hello ${owner.firstName || "there"},</p>
+<p>The free plan you were given for <b>${org.name}</b> has ended, so the workspace is now on Free. Your leads and follow-ups are safe.</p>
+<p>To keep AI replies, automations and all your lead sources: <a href="${appUrl("/settings/billing")}">choose a plan</a> (from ${PLAN_LIMITS.starter.price.replace(" / mo", "")} a month).</p></div>`,
+          });
+        }
+      } catch {
+        // non-blocking
+      }
+    }
+    return ended.length;
+  }
+
   static async downgradeExpiredTrials(now: Date = new Date()): Promise<{
     downgradedCount: number;
     downgradedOrgs: Array<{ id: string; name: string; slug: string; previousPlan: string }>;

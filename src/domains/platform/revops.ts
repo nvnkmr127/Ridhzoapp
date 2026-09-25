@@ -1,4 +1,4 @@
-import { canonicalPlan, isPaidPlan, PLAN_MONTHLY_PRICE } from "@/domains/billing/planNames";
+import { canonicalPlan, isPayingOrg, PLAN_MONTHLY_PRICE } from "@/domains/billing/planNames";
 import { db } from "@/db";
 import { organizations, leads, users } from "@/db/schema";
 import { count, eq, isNull, max, and, gte } from "drizzle-orm";
@@ -50,6 +50,8 @@ export interface RevOpsMetrics {
   arr: number;
   arpu: number;
   paidAccounts: number;
+  /** Paid plans given free by an admin (e.g. agency clients) — not in MRR. */
+  complimentaryAccounts: number;
   freeAccounts: number;
   churnRiskCount: number;
   waterfall: MrrWaterfall;
@@ -66,20 +68,24 @@ export class RevOpsService {
         plan: organizations.plan,
         planStatus: organizations.planStatus,
         createdAt: organizations.createdAt,
+        complimentary: organizations.complimentary,
+        trialEndsAt: organizations.trialEndsAt,
       })
       .from(organizations);
 
     let mrr = 0;
     let paidAccounts = 0;
     let freeAccounts = 0;
+    let complimentaryAccounts = 0;
     let newMrr = 0;
     let expansionMrr = 0;
 
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
     for (const org of orgs) {
-      // canonicalPlan: Starter/Unlimited used to count as unpaid here (only "pro"/"business" matched).
-      if (org.planStatus === "active" && PLAN_PRICES[canonicalPlan(org.plan)]) {
+      // Revenue = real payers only: trials and free-for-client (complimentary) plans aren't MRR.
+      if (org.complimentary === 1) complimentaryAccounts++;
+      if (isPayingOrg(org)) {
         const price = PLAN_PRICES[canonicalPlan(org.plan)];
         mrr += price;
         paidAccounts++;
@@ -120,6 +126,7 @@ export class RevOpsService {
       arr,
       arpu,
       paidAccounts,
+      complimentaryAccounts,
       freeAccounts,
       churnRiskCount,
       waterfall,
@@ -137,6 +144,8 @@ export class RevOpsService {
         plan: organizations.plan,
         planStatus: organizations.planStatus,
         suspendedAt: organizations.suspendedAt,
+        complimentary: organizations.complimentary,
+        trialEndsAt: organizations.trialEndsAt,
         leadCount: count(leads.id),
       })
       .from(organizations)
@@ -152,7 +161,7 @@ export class RevOpsService {
     for (const r of rows) {
       if (Number(r.leadCount) > 0) totalActivated++;
       const isSuspended = !!r.suspendedAt;
-      const isPaid = isPaidPlan(r.plan) && r.planStatus === "active" && !isSuspended;
+      const isPaid = isPayingOrg(r) && !isSuspended;
       if (isPaid) totalPaid++;
       const isCancelled = r.planStatus === "cancelled" || r.planStatus === "halted";
       if (isSuspended || isCancelled) totalChurned++;

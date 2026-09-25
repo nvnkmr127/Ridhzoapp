@@ -20,3 +20,12 @@ export function canonicalPlan(plan: string | null | undefined): PlanName {
 }
 
 export const isPaidPlan = (plan: string | null | undefined) => canonicalPlan(plan) !== "free";
+
+// Actually paying (counts as revenue): a paid plan, active, not given free by an admin, not in a trial.
+export function isPayingOrg(
+  org: { plan: string | null; planStatus?: string | null; complimentary?: number | null; trialEndsAt?: Date | string | null },
+  now = Date.now(),
+): boolean {
+  if (!isPaidPlan(org.plan) || org.planStatus !== "active" || org.complimentary === 1) return false;
+  return !(org.trialEndsAt && new Date(org.trialEndsAt).getTime() > now);
+}

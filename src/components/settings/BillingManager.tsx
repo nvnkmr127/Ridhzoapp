@@ -49,8 +49,10 @@ const rupees = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency"
 
 export function BillingManager({
   plan, status, trialEndsAt, currentPeriodEnd, cancelAtPeriodEnd, configured, limits, invoices, prefill,
-  yearlyAvailable = false, cycle: currentCycle = "monthly", scheduled = null, gst, supportWhatsapp = "",
+  yearlyAvailable = false, cycle: currentCycle = "monthly", scheduled = null, gst, supportWhatsapp = "", complimentary = null,
 }: {
+  /** Plan given free by Ridhzo (e.g. through your marketing agency). until null = no end date. */
+  complimentary?: { until: string | null } | null;
   supportWhatsapp?: string;
   yearlyAvailable?: boolean;
   cycle?: Cycle;
@@ -96,7 +98,7 @@ export function BillingManager({
   const inTrial = status === "trial" && !!trialEndsAt;
   const trialDays = inTrial ? Math.max(1, Math.ceil((new Date(trialEndsAt!).getTime() - Date.now()) / 86_400_000)) : 0;
   const paymentProblem = status === "grace_period" || status === "locked";
-  const paying = plan !== "free" && !inTrial;
+  const paying = plan !== "free" && !inTrial && !complimentary;
 
   // Billing unconfigured (dev/testing): switch the plan directly, no payment. This path is refused
   // server-side once Razorpay is configured, so it's not a free-upgrade route in production.
@@ -199,7 +201,9 @@ export function BillingManager({
   }
 
   // One line under the plan name that says exactly where the customer stands.
-  const standing = scheduled && scheduled.plan !== plan
+  const standing = complimentary
+    ? `Free ${NAMES[plan] ?? plan} plan given to you — nothing to pay${complimentary.until ? ` until ${day(complimentary.until)}. After that you can choose to subscribe` : ""}.`
+    : scheduled && scheduled.plan !== plan
     ? `Switching to ${NAMES[scheduled.plan] ?? scheduled.plan} on ${day(scheduled.startsAt)} — you keep ${NAMES[plan] ?? plan} until then.`
     : scheduled
       ? `Subscribed — first charge on ${day(scheduled.startsAt)}.`
@@ -231,7 +235,11 @@ export function BillingManager({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="text-sm text-muted-foreground">Your plan</div>
-            <div className="text-2xl font-bold">{NAMES[plan] ?? plan}{inTrial && <span className="ml-2 text-sm font-medium text-primary">Trial</span>}</div>
+            <div className="text-2xl font-bold">
+              {NAMES[plan] ?? plan}
+              {inTrial && <span className="ml-2 text-sm font-medium text-primary">Trial</span>}
+              {complimentary && <span className="ml-2 text-sm font-medium text-emerald-600">Free</span>}
+            </div>
             {standing && (
               <p className={`mt-1 flex items-center gap-1.5 text-sm ${paymentProblem ? "text-destructive" : "text-muted-foreground"}`}>
                 {paymentProblem && <AlertTriangle className="h-4 w-4 shrink-0" />}

@@ -28,6 +28,9 @@ const planSchema = z.object({
   organizationId: orgIdSchema,
   plan: z.enum(["free", "starter", "unlimited", "pro", "business"]).transform(canonicalPlan),
   trialDays: z.number().int().positive().nullable().optional(),
+  // Complimentary grant (paid plan, no trial): how long, and why. months null = no end date.
+  months: z.number().int().min(1).max(60).nullable().optional(),
+  note: z.string().trim().max(255).nullable().optional(),
 });
 
 export async function setOrgPlanAction(input: z.infer<typeof planSchema>) {
@@ -38,7 +41,8 @@ export async function setOrgPlanAction(input: z.infer<typeof planSchema>) {
     const row = await PlatformService.setPlan(
       parsed.data.organizationId,
       parsed.data.plan,
-      parsed.data.trialDays
+      parsed.data.trialDays,
+      { months: parsed.data.months, note: parsed.data.note },
     );
     if (!row) return fail("NOT_FOUND", "That organization no longer exists.");
     await AuditService.log({
@@ -51,6 +55,9 @@ export async function setOrgPlanAction(input: z.infer<typeof planSchema>) {
         plan: parsed.data.plan,
         trialDays: parsed.data.trialDays ?? null,
         trialEndsAt: row.trialEndsAt ? new Date(row.trialEndsAt).toISOString() : null,
+        complimentary: row.complimentary === 1,
+        complimentaryUntil: row.complimentaryUntil ? new Date(row.complimentaryUntil).toISOString() : null,
+        note: row.complimentaryNote,
         by: "super_admin",
       },
     });
@@ -58,6 +65,9 @@ export async function setOrgPlanAction(input: z.infer<typeof planSchema>) {
     return ok({
       plan: parsed.data.plan,
       trialEndsAt: row.trialEndsAt ? new Date(row.trialEndsAt).toISOString() : null,
+      complimentary: row.complimentary === 1,
+      complimentaryUntil: row.complimentaryUntil ? new Date(row.complimentaryUntil).toISOString() : null,
+      complimentaryNote: row.complimentaryNote,
     });
   } catch (e) {
     return actionFail(e);

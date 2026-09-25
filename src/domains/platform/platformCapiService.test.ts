@@ -14,10 +14,10 @@ vi.mock("@/db", () => ({
   db: {
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockResolvedValue([
-        { id: "org_1", plan: "business", createdAt: new Date() },
-        { id: "org_2", plan: "pro", createdAt: new Date() },
-        { id: "org_3", plan: "free", createdAt: new Date() },
-        { id: "org_4", plan: "free", createdAt: new Date() },
+        { id: "org_1", plan: "business", planStatus: "active", createdAt: new Date() },
+        { id: "org_2", plan: "pro", planStatus: "active", createdAt: new Date() },
+        { id: "org_3", plan: "free", planStatus: "active", createdAt: new Date() },
+        { id: "org_4", plan: "free", planStatus: "active", createdAt: new Date() },
       ]),
     }),
   },

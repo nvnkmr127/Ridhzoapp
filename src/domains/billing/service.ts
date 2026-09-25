@@ -25,6 +25,8 @@ export class BillingService {
         trialEndsAt: organizations.trialEndsAt,
         cancelAtPeriodEnd: organizations.cancelAtPeriodEnd,
         customerId: organizations.razorpayCustomerId,
+        complimentary: organizations.complimentary,
+        complimentaryUntil: organizations.complimentaryUntil,
         billingName: organizations.billingName,
         gstin: organizations.gstin,
         name: organizations.name,
@@ -178,6 +180,8 @@ export class BillingService {
         razorpaySubscriptionId: sub.id,
         trialEndsAt: null, // paid → trial over, never auto-downgrade
         cancelAtPeriodEnd: 0,
+        complimentary: 0, // paying now — no longer a free/complimentary account
+        complimentaryUntil: null,
         ...(periodEnd && !scheduled ? { currentPeriodEnd: periodEnd } : {}),
       })
       .where(eq(organizations.id, organizationId));

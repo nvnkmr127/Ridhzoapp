@@ -71,6 +71,11 @@ export const organizations = pgTable('organizations', {
   // 1 = customer cancelled; the paid plan runs until currentPeriodEnd, then the webhook drops it to free.
   cancelAtPeriodEnd: integer('cancel_at_period_end').default(0).notNull(),
   trialEndsAt: timestamp('trial_ends_at'), // auto-reverts to 'free' when expired if not paying
+  // Paid plan given free by a Ridhzo admin (e.g. agency clients). Not billed, not counted as revenue.
+  // complimentaryUntil null = no end date; when set, the hourly scan moves the org to Free after it.
+  complimentary: integer('complimentary').default(0).notNull(),
+  complimentaryUntil: timestamp('complimentary_until'),
+  complimentaryNote: varchar('complimentary_note', { length: 255 }),
   // Monthly AI credit meter. aiCreditsPeriod = 'YYYY-MM' the count belongs to; a new month resets it.
   aiCreditsUsed: integer('ai_credits_used').default(0).notNull(),
   aiCreditsPeriod: varchar('ai_credits_period', { length: 7 }),

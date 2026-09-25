@@ -65,6 +65,10 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
 
   // Credit Grant Modal
   const [creditModalOpen, setCreditModalOpen] = React.useState(false);
+  // "Give a free plan" (complimentary) dialog — e.g. agency clients.
+  const [compPlan, setCompPlan] = React.useState<"starter" | "unlimited" | null>(null);
+  const [compMonths, setCompMonths] = React.useState<string>("none");
+  const [compNote, setCompNote] = React.useState("");
   const [aiGrant, setAiGrant] = React.useState("500");
   const [whatsappGrant, setWhatsappGrant] = React.useState("250");
   const [granting, setGranting] = React.useState(false);
@@ -314,16 +318,31 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
     }
   };
 
-  const handleChangePlan = async (plan: "free" | "starter" | "unlimited", trialDays?: number | null) => {
+  const handleChangePlan = async (
+    plan: "free" | "starter" | "unlimited",
+    trialDays?: number | null,
+    comp?: { months: number | null; note: string },
+  ) => {
     setBusyAction("plan");
     try {
-      const res = await setOrgPlanAction({ organizationId: org.id, plan, trialDays });
+      const res = await setOrgPlanAction({ organizationId: org.id, plan, trialDays, months: comp?.months ?? null, note: comp?.note || null });
       if (res.ok) {
         const trialMsg = trialDays ? ` (14-day trial)` : "";
-        toast({ title: "Plan Updated", description: `${org.name} plan changed to ${plan}${trialMsg}.` });
+        const compMsg = res.data.complimentary
+          ? ` — free for this client${res.data.complimentaryUntil ? ` until ${new Date(res.data.complimentaryUntil).toLocaleDateString("en-IN")}` : ", no end date"}`
+          : "";
+        toast({ title: "Plan Updated", description: `${org.name} is now on ${plan}${trialMsg}${compMsg}.` });
+        setCompPlan(null);
         setData((prev) => ({
           ...prev,
-          org: { ...prev.org, plan, trialEndsAt: res.data.trialEndsAt ? new Date(res.data.trialEndsAt) : null } as any,
+          org: {
+            ...prev.org,
+            plan,
+            trialEndsAt: res.data.trialEndsAt ? new Date(res.data.trialEndsAt) : null,
+            complimentary: res.data.complimentary ? 1 : 0,
+            complimentaryUntil: res.data.complimentaryUntil ? new Date(res.data.complimentaryUntil) : null,
+            complimentaryNote: res.data.complimentaryNote ?? null,
+          } as any,
           health: prev.health ? { ...prev.health, plan } : null,
           billing: prev.billing ? { ...prev.billing, plan, trialEndsAt: res.data.trialEndsAt } : null,
         }));
@@ -451,6 +470,15 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
                 ) : (
                   <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20">Active</Badge>
                 )}
+                {(org as any).complimentary === 1 && (
+                  <Badge
+                    className="bg-sky-500/10 text-sky-600 border-sky-500/20 font-medium"
+                    title={(org as any).complimentaryNote ?? undefined}
+                  >
+                    Free for client
+                    {(org as any).complimentaryUntil ? ` (until ${new Date((org as any).complimentaryUntil).toLocaleDateString("en-IN")})` : " (no end date)"}
+                  </Badge>
+                )}
                 {(org as any).trialEndsAt && new Date((org as any).trialEndsAt).getTime() > Date.now() && (
                   <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20 font-medium">
                     Trial (ends {new Date((org as any).trialEndsAt).toLocaleDateString()})
@@ -512,8 +540,13 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
                     handleChangePlan("starter", 14);
                   } else if (val === "business_trial") {
                     handleChangePlan("unlimited", 14);
+                  } else if (val === "starter" || val === "unlimited") {
+                    // A paid plan without payment is a free (complimentary) grant — ask how long and why.
+                    setCompMonths("none");
+                    setCompNote("");
+                    setCompPlan(val);
                   } else {
-                    handleChangePlan(val as any, null);
+                    handleChangePlan("free", null);
                   }
                 }}
                 disabled={busyAction === "plan"}
@@ -524,7 +557,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
                 <SelectContent>
                   {PLANS.map((p) => (
                     <SelectItem key={p} value={p} className="capitalize text-xs">
-                      {p} tier
+                      {p === "free" ? "Free tier" : `${p} — free for client`}
                     </SelectItem>
                   ))}
                   <SelectItem value="pro_trial" className="text-xs text-amber-600 font-medium">
@@ -1697,6 +1730,47 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
       </Tabs>
 
       {/* Grant Credits Modal */}
+      <Dialog open={compPlan !== null} onOpenChange={(o) => !o && setCompPlan(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Give {org.name} a free {compPlan === "unlimited" ? "Unlimited" : "Starter"} plan</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm">
+            <p className="text-muted-foreground">
+              Full plan features with nothing to pay. Not counted as revenue. If they were paying through Razorpay, that subscription is
+              cancelled so they aren&apos;t charged.
+            </p>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">How long</label>
+              <Select value={compMonths} onValueChange={setCompMonths}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No end date (while they&apos;re our client)</SelectItem>
+                  <SelectItem value="1">1 month</SelectItem>
+                  <SelectItem value="3">3 months</SelectItem>
+                  <SelectItem value="6">6 months</SelectItem>
+                  <SelectItem value="12">12 months</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">With an end date they move to Free automatically and get an email to subscribe.</p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">Note (only admins see this)</label>
+              <Input value={compNote} onChange={(e) => setCompNote(e.target.value)} maxLength={255} placeholder="e.g. Meta ads client — Sai Properties, retainer till Mar" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCompPlan(null)}>Cancel</Button>
+            <Button
+              disabled={busyAction === "plan"}
+              onClick={() => compPlan && handleChangePlan(compPlan, null, { months: compMonths === "none" ? null : Number(compMonths), note: compNote })}
+            >
+              {busyAction === "plan" ? "Saving…" : "Give free plan"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={creditModalOpen} onOpenChange={setCreditModalOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>

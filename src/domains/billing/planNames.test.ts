@@ -15,3 +15,16 @@ describe("plan names", () => {
     expect(isPaidPlan("free")).toBe(false);
   });
 });
+
+import { isPayingOrg } from "./planNames";
+
+describe("isPayingOrg", () => {
+  const future = new Date(Date.now() + 86_400_000);
+  it("excludes free-for-clients, trials and inactive", () => {
+    expect(isPayingOrg({ plan: "starter", planStatus: "active" })).toBe(true);
+    expect(isPayingOrg({ plan: "starter", planStatus: "active", complimentary: 1 })).toBe(false);
+    expect(isPayingOrg({ plan: "starter", planStatus: "active", trialEndsAt: future })).toBe(false);
+    expect(isPayingOrg({ plan: "starter", planStatus: "halted" })).toBe(false);
+    expect(isPayingOrg({ plan: "free", planStatus: "active" })).toBe(false);
+  });
+});

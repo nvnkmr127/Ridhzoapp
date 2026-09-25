@@ -43,6 +43,11 @@ export default async function BillingPage() {
         trialEndsAt={billing?.trialEndsAt ? new Date(billing.trialEndsAt).toISOString() : null}
         currentPeriodEnd={billing?.currentPeriodEnd ? new Date(billing.currentPeriodEnd).toISOString() : null}
         cancelAtPeriodEnd={billing?.cancelAtPeriodEnd === 1}
+        complimentary={
+          billing?.complimentary === 1
+            ? { until: billing.complimentaryUntil ? new Date(billing.complimentaryUntil).toISOString() : null }
+            : null
+        }
         configured={isConfigured()}
         yearlyAvailable={isConfigured() && yearlyAvailable()}
         cycle={cycle ?? "monthly"}

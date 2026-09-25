@@ -1726,7 +1726,11 @@ export function PlatformConsole({
                             <Select value={canonicalPlan(o.plan)} onValueChange={(v) => changePlan(o, v)}>
                               <SelectTrigger className="h-8 w-24 text-xs"><SelectValue /></SelectTrigger>
                               <SelectContent>
-                                {PLANS.map((p) => <SelectItem key={p} value={p} className="capitalize text-xs">{p}</SelectItem>)}
+                                {PLANS.map((p) => (
+                                  <SelectItem key={p} value={p} className="capitalize text-xs">
+                                    {p === "free" ? "free" : `${p} (free for client)`}
+                                  </SelectItem>
+                                ))}
                                 <SelectItem value="starter_trial" className="text-xs text-amber-600 font-medium">Starter (14d)</SelectItem>
                                 <SelectItem value="unlimited_trial" className="text-xs text-amber-600 font-medium">Unlimited (14d)</SelectItem>
                               </SelectContent>
@@ -3179,7 +3183,10 @@ export function PlatformConsole({
                   / {(revops?.paidAccounts ?? 0) + (revops?.freeAccounts ?? 0)}
                 </span>
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">{revops?.freeAccounts ?? 0} on free tier</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {revops?.freeAccounts ?? 0} not paying (free, trials, clients)
+                {(revops?.complimentaryAccounts ?? 0) > 0 && ` · ${revops?.complimentaryAccounts} on a free plan for clients`}
+              </p>
             </div>
 
             <div className="rounded-xl border bg-card p-4 shadow-sm">

@@ -6,6 +6,8 @@ export const TRIAL_DOWNGRADE_QUEUE_NAME = "trial-downgrade-scan";
 
 export async function processTrialDowngradeJob() {
   const result = await BillingLifecycleService.downgradeExpiredTrials();
+  const compEnded = await BillingLifecycleService.endExpiredComplimentary();
+  if (compEnded > 0) console.log(`[TRIAL_DOWNGRADE_WORKER] Ended ${compEnded} expired complimentary plans`);
   if (result.downgradedCount > 0) {
     console.log(`[TRIAL_DOWNGRADE_WORKER] Reverted ${result.downgradedCount} expired trials to free`);
   }

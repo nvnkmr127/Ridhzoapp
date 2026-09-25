@@ -230,6 +230,16 @@ export interface TenantDossier {
   auditLogs: unknown[];
 }
 
+// Calendar months, clamped to the month's last day (Jan 31 + 1 month = Feb 28/29).
+function addMonths(d: Date, months: number) {
+  const r = new Date(d);
+  const day = r.getDate();
+  r.setDate(1);
+  r.setMonth(r.getMonth() + months);
+  r.setDate(Math.min(day, new Date(r.getFullYear(), r.getMonth() + 1, 0).getDate()));
+  return r;
+}
+
 export class PlatformService {
   static async listOrganizations(): Promise<OrgSummary[]> {
     const orgs = await db.select().from(organizations).orderBy(desc(organizations.createdAt));
@@ -530,11 +540,36 @@ export class PlatformService {
     }));
   }
 
-  static async setPlan(organizationId: string, plan: string, trialDays?: number | null) {
-    const trialEndsAt =
-      trialDays && trialDays > 0
-        ? new Date(Date.now() + trialDays * 86_400_000)
-        : null;
+  // Admin plan change. Three cases:
+  //  - Free: back to free, nothing complimentary.
+  //  - trialDays: a timed trial (auto-reverts to Free).
+  //  - otherwise a paid plan with no payment = COMPLIMENTARY (e.g. agency clients): not billed, not
+  //    counted as revenue, optionally until a date (months), with a note saying why.
+  // A client who was paying is taken off Razorpay first, so they aren't charged for a free plan.
+  static async setPlan(
+    organizationId: string,
+    plan: string,
+    trialDays?: number | null,
+    comp: { months?: number | null; note?: string | null } = {},
+  ) {
+    const trialEndsAt = trialDays && trialDays > 0 ? new Date(Date.now() + trialDays * 86_400_000) : null;
+    const complimentary = plan !== "free" && !trialEndsAt;
+    const complimentaryUntil = complimentary && comp.months ? addMonths(new Date(), comp.months) : null;
+
+    const [before] = await db
+      .select({ subscriptionId: organizations.razorpaySubscriptionId })
+      .from(organizations)
+      .where(eq(organizations.id, organizationId))
+      .limit(1);
+    if (!before) return null;
+    if (before.subscriptionId) {
+      const razorpay = await import("@/lib/billing/razorpay");
+      if (razorpay.isConfigured()) {
+        await razorpay.cancelSubscription(before.subscriptionId).catch((e) =>
+          console.error(`[platform] could not cancel Razorpay subscription ${before.subscriptionId} for ${organizationId}`, e),
+        );
+      }
+    }
 
     const [row] = await db
       .update(organizations)
@@ -542,6 +577,12 @@ export class PlatformService {
         plan,
         planStatus: "active",
         trialEndsAt,
+        razorpaySubscriptionId: null,
+        cancelAtPeriodEnd: 0,
+        currentPeriodEnd: null,
+        complimentary: complimentary ? 1 : 0,
+        complimentaryUntil,
+        complimentaryNote: complimentary ? comp.note?.trim() || null : null,
         updatedAt: new Date(),
       })
       .where(eq(organizations.id, organizationId))
@@ -549,6 +590,9 @@ export class PlatformService {
         id: organizations.id,
         plan: organizations.plan,
         trialEndsAt: organizations.trialEndsAt,
+        complimentary: organizations.complimentary,
+        complimentaryUntil: organizations.complimentaryUntil,
+        complimentaryNote: organizations.complimentaryNote,
       });
     return row ?? null;
   }

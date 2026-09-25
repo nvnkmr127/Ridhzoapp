@@ -1,4 +1,4 @@
-import { canonicalPlan, isPaidPlan, PLAN_MONTHLY_PRICE } from "@/domains/billing/planNames";
+import { canonicalPlan, isPayingOrg, PLAN_MONTHLY_PRICE } from "@/domains/billing/planNames";
 import { PlatformConfigService } from "./configService";
 import { db } from "@/db";
 import { organizations } from "@/db/schema";
@@ -64,7 +64,10 @@ export class PlatformAttributionService {
     attributedMrr: number;
   }> {
     const [orgList, attributions] = await Promise.all([
-      db.select({ id: organizations.id, plan: organizations.plan, createdAt: organizations.createdAt }).from(organizations),
+      db.select({
+        id: organizations.id, plan: organizations.plan, createdAt: organizations.createdAt,
+        planStatus: organizations.planStatus, complimentary: organizations.complimentary, trialEndsAt: organizations.trialEndsAt,
+      }).from(organizations),
       this.listAllAttributions(),
     ]);
 
@@ -80,8 +83,8 @@ export class PlatformAttributionService {
     for (const org of orgList) {
       const attr = attributions[org.id];
       const plan = canonicalPlan(org.plan);
-      const isPaid = isPaidPlan(plan);
-      const planPrice = PLAN_MRR[plan] ?? 0;
+      const isPaid = isPayingOrg(org);
+      const planPrice = isPaid ? PLAN_MRR[plan] ?? 0 : 0; // trials / free-for-clients bring no revenue
 
       const campaignName = attr?.utmCampaign || (attr?.utmSource ? `${attr.utmSource}_direct` : "Direct / Organic");
       const source = attr?.utmSource || "Direct";

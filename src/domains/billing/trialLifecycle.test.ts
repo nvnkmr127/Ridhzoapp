@@ -59,44 +59,49 @@ describe("Trial Lifecycle", () => {
   });
 
   describe("PlatformService.setPlan with trial window", () => {
-    it("sets trialEndsAt when trialDays is provided", async () => {
+    function mockDb(returned: Record<string, unknown>) {
+      // setPlan first looks up any Razorpay subscription to cancel.
+      vi.mocked(db.select).mockReturnValue({
+        from: () => ({ where: () => ({ limit: () => Promise.resolve([{ subscriptionId: null }]) }) }),
+      } as any);
       const mockUpdate = {
         set: vi.fn().mockReturnThis(),
         where: vi.fn().mockReturnThis(),
-        returning: vi.fn().mockResolvedValue([
-          { id: "org_1", plan: "pro", trialEndsAt: new Date(Date.now() + 14 * 86_400_000) },
-        ]),
+        returning: vi.fn().mockResolvedValue([{ id: "org_1", ...returned }]),
       };
       vi.mocked(db.update).mockReturnValue(mockUpdate as any);
+      return mockUpdate;
+    }
 
-      const res = await PlatformService.setPlan("org_1", "pro", 14);
-      expect(res?.plan).toBe("pro");
+    it("sets trialEndsAt when trialDays is provided (a trial is not complimentary)", async () => {
+      const mockUpdate = mockDb({ plan: "starter", trialEndsAt: new Date(Date.now() + 14 * 86_400_000) });
+      const res = await PlatformService.setPlan("org_1", "starter", 14);
+      expect(res?.plan).toBe("starter");
       expect(res?.trialEndsAt).toBeDefined();
       expect(mockUpdate.set).toHaveBeenCalledWith(
+        expect.objectContaining({ plan: "starter", trialEndsAt: expect.any(Date), complimentary: 0 })
+      );
+    });
+
+    it("a paid plan with no trial is a free-for-client grant, optionally until a date", async () => {
+      const mockUpdate = mockDb({ plan: "starter", trialEndsAt: null });
+      await PlatformService.setPlan("org_1", "starter", null, { months: 6, note: "Agency client" });
+      expect(mockUpdate.set).toHaveBeenCalledWith(
         expect.objectContaining({
-          plan: "pro",
-          trialEndsAt: expect.any(Date),
+          plan: "starter",
+          trialEndsAt: null,
+          complimentary: 1,
+          complimentaryUntil: expect.any(Date),
+          complimentaryNote: "Agency client",
+          razorpaySubscriptionId: null,
         })
       );
     });
 
-    it("clears trialEndsAt when no trialDays is provided", async () => {
-      const mockUpdate = {
-        set: vi.fn().mockReturnThis(),
-        where: vi.fn().mockReturnThis(),
-        returning: vi.fn().mockResolvedValue([
-          { id: "org_1", plan: "pro", trialEndsAt: null },
-        ]),
-      };
-      vi.mocked(db.update).mockReturnValue(mockUpdate as any);
-
-      await PlatformService.setPlan("org_1", "pro");
-      expect(mockUpdate.set).toHaveBeenCalledWith(
-        expect.objectContaining({
-          plan: "pro",
-          trialEndsAt: null,
-        })
-      );
+    it("moving to free clears the grant", async () => {
+      const mockUpdate = mockDb({ plan: "free", trialEndsAt: null });
+      await PlatformService.setPlan("org_1", "free");
+      expect(mockUpdate.set).toHaveBeenCalledWith(expect.objectContaining({ plan: "free", complimentary: 0, complimentaryUntil: null }));
     });
   });
 
