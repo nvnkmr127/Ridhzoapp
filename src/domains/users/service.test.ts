@@ -22,7 +22,7 @@ describe("UserService tenant scoping", () => {
     const values = vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([{ id: "u1" }]) });
     (db.insert as any).mockReturnValue({ values });
 
-    await UserService.create("org-1", { email: "a@b.com", password: "secret6" });
+    await UserService.create("org-1", { email: "a@b.com", password: "secret6", roleId: "role-1" });
 
     expect(values).toHaveBeenCalledWith(expect.objectContaining({ organizationId: "org-1" }));
   });

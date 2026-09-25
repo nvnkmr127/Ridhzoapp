@@ -9,6 +9,7 @@ vi.mock("@/lib/rbac", () => ({
   requireOrg: vi.fn().mockResolvedValue({ organizationId: "org-a", userId: "admin-a" }),
   requirePermission: vi.fn().mockResolvedValue({ organizationId: "org-a", userId: "admin-a" }),
   hasPermission: vi.fn().mockResolvedValue(true),
+  roleAssignmentError: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn(), unstable_cache: (fn: unknown) => fn }));
 vi.mock("@/domains/audit/service", () => ({ AuditService: { log: vi.fn() } }));

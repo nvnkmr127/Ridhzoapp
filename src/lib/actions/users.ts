@@ -1,6 +1,6 @@
 "use server";
 
-import { requireOrg, requirePermission } from "@/lib/rbac";
+import { requireOrg, requirePermission, roleAssignmentError } from "@/lib/rbac";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
@@ -47,16 +47,18 @@ const createUserSchema = z.object({
   firstName: z.string().trim().max(255).optional(),
   lastName: z.string().trim().max(255).optional(),
   password: z.string().min(6, "Password must be at least 6 characters"),
-  roleId: z.guid().nullable().optional(),
+  roleId: z.guid({ message: "Pick a role for this person." }),
 });
 
 export async function createUserAction(input: z.infer<typeof createUserSchema>) {
   const { organizationId, userId } = await requirePermission("users.manage");
   const parsed = createUserSchema.safeParse(input);
   if (!parsed.success) {
-    return fail("VALIDATION", "Please provide a valid email and a password of at least 6 characters.", zodFieldErrors(parsed.error));
+    return fail("VALIDATION", parsed.error.issues[0]?.message ?? "Please provide a valid email and a password of at least 6 characters.", zodFieldErrors(parsed.error));
   }
   const data = parsed.data;
+  const roleErr = await roleAssignmentError(organizationId, data.roleId);
+  if (roleErr) return fail("FORBIDDEN", roleErr);
   try {
     await PlanService.assertCanAddSeat(organizationId);
     const user = await UserService.create(organizationId, data);
@@ -73,26 +75,30 @@ export async function createUserAction(input: z.infer<typeof createUserSchema>) 
   }
 }
 
-export async function setUserActiveAction(id: string, isActive: boolean) {
+// `reassignTo` (deactivate only): undefined = leave their leads alone, null = unassign them,
+// a user id = hand them to that active member.
+export async function setUserActiveAction(id: string, isActive: boolean, reassignTo?: string | null) {
   const { organizationId, userId } = await requirePermission("users.manage");
   if (id === userId && !isActive) return fail("VALIDATION", "You can't deactivate your own account.");
   try {
-    const u = await UserService.setActive(organizationId, id, isActive);
+    const u = await UserService.setActive(organizationId, id, isActive, isActive ? undefined : reassignTo);
     if (!u) return fail("NOT_FOUND", "That user no longer exists. Refresh the page.");
-    await AuditService.log({ organizationId, userId, action: isActive ? "user.activate" : "user.deactivate", entityType: "user", entityId: id });
+    const leadsMoved = "leadsMoved" in u ? u.leadsMoved : 0;
+    await AuditService.log({ organizationId, userId, action: isActive ? "user.activate" : "user.deactivate", entityType: "user", entityId: id, metadata: leadsMoved ? { leadsMoved, reassignTo } : undefined });
     revalidateTag("active-users");
     revalidatePath("/settings/users");
-    return ok({ id, isActive });
+    return ok({ id, isActive, leadsMoved });
   } catch (e) {
     return actionFail(e);
   }
 }
 
 export async function setUserTeamAction(id: string, teamId: string | null) {
-  const { organizationId } = await requirePermission("users.manage");
+  const { organizationId, userId } = await requirePermission("users.manage");
   try {
     const u = await UserService.setTeam(organizationId, id, teamId);
     if (!u) return fail("NOT_FOUND", "That user no longer exists. Refresh the page.");
+    await AuditService.log({ organizationId, userId, action: "user.team_change", entityType: "user", entityId: id, metadata: { teamId } });
     revalidatePath("/settings/users");
     return ok({ id, teamId });
   } catch (e) {
@@ -100,9 +106,12 @@ export async function setUserTeamAction(id: string, teamId: string | null) {
   }
 }
 
-export async function setUserRoleAction(id: string, roleId: string | null) {
+export async function setUserRoleAction(id: string, roleId: string) {
   const { organizationId, userId } = await requirePermission("users.manage");
   if (id === userId) return fail("VALIDATION", "You can't change your own role.");
+  if (!roleId) return fail("VALIDATION", "Pick a role for this person.");
+  const roleErr = await roleAssignmentError(organizationId, roleId);
+  if (roleErr) return fail("FORBIDDEN", roleErr);
   try {
     const u = await UserService.setRole(organizationId, id, roleId);
     if (!u) return fail("NOT_FOUND", "That user no longer exists. Refresh the page.");
@@ -114,16 +123,16 @@ export async function setUserRoleAction(id: string, roleId: string | null) {
   }
 }
 
-export async function deleteUserAction(id: string) {
+export async function deleteUserAction(id: string, reassignTo?: string | null) {
   const { organizationId, userId } = await requirePermission("users.manage");
   if (id === userId) return fail("VALIDATION", "You can't delete your own account.");
   try {
-    const u = await UserService.remove(organizationId, id);
+    const u = await UserService.remove(organizationId, id, reassignTo);
     if (!u) return fail("NOT_FOUND", "That user no longer exists. Refresh the page.");
     revalidateTag("active-users");
-    await AuditService.log({ organizationId, userId, action: "user.delete", entityType: "user", entityId: id });
+    await AuditService.log({ organizationId, userId, action: "user.delete", entityType: "user", entityId: id, metadata: u.leadsMoved ? { leadsMoved: u.leadsMoved, reassignTo } : undefined });
     revalidatePath("/settings/users");
-    return ok({ id });
+    return ok({ id, leadsMoved: u.leadsMoved });
   } catch (e) {
     return actionFail(e);
   }

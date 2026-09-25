@@ -114,11 +114,13 @@ export class PlanService {
     };
   }
 
-  // Counts active users + still-open invitations against the seat limit.
-  static async assertCanAddSeat(organizationId: string) {
+  // Counts active users + still-open invitations against the seat limit. `alreadyCounted` is the
+  // number of seats the caller's own operation is already holding — the invite being accepted, or the
+  // pending invite a re-invite replaces — so it isn't counted against itself.
+  static async assertCanAddSeat(organizationId: string, alreadyCounted = 0) {
     const stats = await this.getUsageStats(organizationId);
     if (stats.seats.max === Infinity) return;
-    if (stats.seats.current >= stats.seats.max) {
+    if (stats.seats.current - alreadyCounted >= stats.seats.max) {
       throw new Error(`Your plan allows ${stats.seats.max} seats. Upgrade to add more.`);
     }
   }

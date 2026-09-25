@@ -27,6 +27,15 @@
         "env DATABASE_URL=postgresql://postgres@localhost:5544/ridhzo RESEND_API_KEY= REDIS_URL= NEXTAUTH_URL=http://localhost:3002 NEXT_PUBLIC_APP_URL=http://localhost:3002 npx next dev -p 3002"
       ],
       "port": 3002
+    },
+    {
+      "name": "ridhzo-website",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "cd /Users/naveenadicharla/Documents/ridhzo-website && npx next start -p 3100"
+      ],
+      "port": 3100
     }
   ]
 }

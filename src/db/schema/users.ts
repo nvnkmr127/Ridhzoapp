@@ -1,6 +1,6 @@
-import { pgTable, uuid, varchar, text, timestamp, boolean, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, timestamp, boolean, jsonb, uniqueIndex } from 'drizzle-orm/pg-core';
 // jsonb used for role permissions and user email opt-out list.
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import { organizations } from './organizations';
 
 // organizationId null = shared system role (admin/member). Non-null = a custom role owned by that org.
@@ -21,7 +21,10 @@ export const teams = pgTable('teams', {
   name: varchar('name', { length: 255 }).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
+}, (t) => ({
+  // One team per name per org, ignoring case (TeamService also checks, for a friendly message).
+  orgNameUnique: uniqueIndex('teams_org_name_unique').on(t.organizationId, sql`lower(${t.name})`),
+}));
 
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),

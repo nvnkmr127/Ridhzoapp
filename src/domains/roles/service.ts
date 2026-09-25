@@ -1,6 +1,7 @@
 import { db } from "@/db";
-import { roles, users } from "@/db/schema";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { UserFacingError } from "@/lib/actions/result";
+import { roles, users, invitations } from "@/db/schema";
+import { and, count, eq, gt, isNull, or } from "drizzle-orm";
 import { ALL_PERMISSIONS } from "@/lib/permissions";
 
 const cols = { id: roles.id, name: roles.name, permissions: roles.permissions, organizationId: roles.organizationId };
@@ -61,10 +62,32 @@ export class RoleService {
     return r;
   }
 
+  // Live members per role in this org — shown next to each role, and blocks deleting a role in use.
+  static async memberCounts(organizationId: string): Promise<Record<string, number>> {
+    const rows = await db
+      .select({ roleId: users.roleId, n: count() })
+      .from(users)
+      .where(and(eq(users.organizationId, organizationId), isNull(users.deletedAt)))
+      .groupBy(users.roleId);
+    return Object.fromEntries(rows.filter((r) => r.roleId).map((r) => [r.roleId!, Number(r.n)]));
+  }
+
   // Returns the deleted row (undefined if no such role existed in this org) so the caller can
-  // tell a real deletion from a no-op — e.g. before writing an audit entry.
+  // tell a real deletion from a no-op — e.g. before writing an audit entry. Refuses while anyone
+  // (member or open invite) still holds the role: silently un-roling them would change their access.
   static async remove(organizationId: string, id: string) {
-    // Unassign the role from users first so no one is left pointing at a deleted role.
+    const [{ n: members }] = await db
+      .select({ n: count() })
+      .from(users)
+      .where(and(eq(users.roleId, id), eq(users.organizationId, organizationId), isNull(users.deletedAt)));
+    const [{ n: invites }] = await db
+      .select({ n: count() })
+      .from(invitations)
+      .where(and(eq(invitations.roleId, id), eq(invitations.organizationId, organizationId), isNull(invitations.acceptedAt), gt(invitations.expiresAt, new Date())));
+    if (Number(members) + Number(invites) > 0) {
+      throw new UserFacingError(`This role is still used by ${Number(members)} member(s) and ${Number(invites)} pending invite(s). Give them another role first.`);
+    }
+    // Deleted members keep a tombstoned roleId; detach it so the FK doesn't block the delete.
     await db
       .update(users)
       .set({ roleId: null, updatedAt: new Date() })

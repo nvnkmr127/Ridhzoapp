@@ -491,6 +491,20 @@
       "when": 1790304978604,
       "tag": "0069_clear_abandoned_checkouts",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1790316966109,
+      "tag": "0070_teams_unique_name",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1790316971325,
+      "tag": "0071_backfill_null_roles",
+      "breakpoints": true
     }
   ]
 }

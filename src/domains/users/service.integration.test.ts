@@ -12,6 +12,7 @@ const RUN = !!process.env.DATABASE_URL?.includes("localhost");
 const stamp = Date.now();
 const orgId = crypto.randomUUID();
 let adminRoleId = "";
+let repRoleId = "";
 
 describe.runIf(RUN)("UserService — /settings/users regressions", () => {
   beforeAll(async () => {
@@ -19,6 +20,10 @@ describe.runIf(RUN)("UserService — /settings/users regressions", () => {
     [{ id: adminRoleId }] = await db
       .insert(roles)
       .values({ organizationId: orgId, name: "Manager", permissions: ["*"] })
+      .returning({ id: roles.id });
+    [{ id: repRoleId }] = await db
+      .insert(roles)
+      .values({ organizationId: orgId, name: "Rep", permissions: ["leads.edit"] })
       .returning({ id: roles.id });
   });
 
@@ -43,14 +48,14 @@ describe.runIf(RUN)("UserService — /settings/users regressions", () => {
 
   it("BUG-B: does not block removing a non-admin", async () => {
     const admin = await UserService.create(orgId, { email: `adm-${stamp}@it.test`, password: "secret6", roleId: adminRoleId });
-    const member = await UserService.create(orgId, { email: `mem-${stamp}@it.test`, password: "secret6", roleId: null });
+    const member = await UserService.create(orgId, { email: `mem-${stamp}@it.test`, password: "secret6", roleId: repRoleId });
     const removed = await UserService.remove(orgId, member.id);
     expect(removed?.id).toBe(member.id);
     await UserService.remove(orgId, admin.id).catch(() => {}); // ignore last-admin guard on cleanup
   });
 
   it("BUG-C: mutations no-op on a soft-deleted user and never clear the tombstone", async () => {
-    const m = await UserService.create(orgId, { email: `c-${stamp}@it.test`, password: "secret6", roleId: null });
+    const m = await UserService.create(orgId, { email: `c-${stamp}@it.test`, password: "secret6", roleId: repRoleId });
     await UserService.remove(orgId, m.id);
     expect(await UserService.setActive(orgId, m.id, true)).toBeUndefined();
     expect(await UserService.setRole(orgId, m.id, adminRoleId)).toBeUndefined();
@@ -62,7 +67,7 @@ describe.runIf(RUN)("UserService — /settings/users regressions", () => {
 
   it("BUG-A: re-inviting a soft-deleted email restores the same row instead of failing", async () => {
     const email = `reinvite-${stamp}@it.test`;
-    const u = await UserService.create(orgId, { email, password: "secret6", roleId: null });
+    const u = await UserService.create(orgId, { email, password: "secret6", roleId: repRoleId });
     await UserService.remove(orgId, u.id);
     const { token } = await InvitationService.create(orgId, email, adminRoleId, u.id);
     const accepted = await InvitationService.accept(token, { password: "secret6", firstName: "Restored" });
@@ -76,5 +81,23 @@ describe.runIf(RUN)("UserService — /settings/users regressions", () => {
   it("BUG-D: RoleService rejects reserved names", async () => {
     await expect(RoleService.create(orgId, "Admin", ["*"])).rejects.toThrow(/reserved/i);
     await expect(RoleService.create(orgId, "member", [])).rejects.toThrow(/reserved/i);
+  });
+
+  it("refuses to delete a role that members still hold (they'd silently change access)", async () => {
+    const m = await UserService.create(orgId, { email: `role-${stamp}@it.test`, password: "secret6", roleId: repRoleId });
+    await expect(RoleService.remove(orgId, repRoleId)).rejects.toThrow(/still used/);
+    await UserService.remove(orgId, m.id);
+  });
+
+  it("hands a removed member's leads to the chosen active member", async () => {
+    const { leads } = await import("@/db/schema");
+    const keeper = await UserService.create(orgId, { email: `keep-${stamp}@it.test`, password: "secret6", roleId: adminRoleId });
+    const leaver = await UserService.create(orgId, { email: `leave-${stamp}@it.test`, password: "secret6", roleId: repRoleId });
+    const [lead] = await db.insert(leads).values({ organizationId: orgId, name: "L", ownerId: leaver.id } as any).returning({ id: leads.id });
+    const removed = await UserService.remove(orgId, leaver.id, keeper.id);
+    expect(removed?.leadsMoved).toBe(1);
+    const [row] = await db.select({ ownerId: leads.ownerId }).from(leads).where(eq(leads.id, lead.id));
+    expect(row.ownerId).toBe(keeper.id);
+    await db.delete(leads).where(eq(leads.id, lead.id));
   });
 });

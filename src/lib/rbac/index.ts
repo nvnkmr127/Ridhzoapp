@@ -4,9 +4,9 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/db";
 import { roles, users } from "@/db/schema";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, or } from "drizzle-orm";
 import type { PermissionKey } from "@/lib/permissions";
-import { SYSTEM_ROLE_PERMISSIONS } from "@/lib/permissions";
+import { SYSTEM_ROLE_PERMISSIONS, ALL_PERMISSIONS } from "@/lib/permissions";
 
 // A single dashboard render calls into rbac many times (layout + page each do requireOrg/isSuperAdmin/
 // hasPermission). Memoize per request so the session decode and each DB round-trip (role, suspension)
@@ -104,28 +104,32 @@ const currentRole = cache(async function currentRole(): Promise<{ name: string; 
     if (u?.roleId) roleId = u.roleId;
   }
 
-  // If still no role assigned, fallback to shared system 'admin' role so workspace owner isn't locked out
+  // No role → least privilege (the shared system 'member' role), never admin. Owners always get the
+  // admin role at signup, and roleless users were backfilled (migration 0071), so nobody is locked out.
   if (!roleId) {
-    const [admin] = await db
+    const [member] = await db
       .select({ name: roles.name, permissions: roles.permissions, organizationId: roles.organizationId })
       .from(roles)
-      .where(and(eq(roles.name, "admin"), isNull(roles.organizationId)))
+      .where(and(eq(roles.name, "member"), isNull(roles.organizationId)))
       .limit(1);
-    if (admin) return { name: admin.name, permissions: admin.permissions ?? [], organizationId: null };
+    if (member) return { name: member.name, permissions: member.permissions ?? [], organizationId: null };
     return null;
   }
 
   const now = Date.now();
   const cached = roleCache.get(roleId);
-  if (cached && cached.exp > now) return cached.role;
-
-  const [role] = await db
-    .select({ name: roles.name, permissions: roles.permissions, organizationId: roles.organizationId })
-    .from(roles)
-    .where(eq(roles.id, roleId))
-    .limit(1);
-  const res = role ? { name: role.name, permissions: role.permissions ?? [], organizationId: role.organizationId } : null;
-  roleCache.set(roleId, { role: res, exp: now + 60_000 });
+  let res = cached && cached.exp > now ? cached.role : undefined;
+  if (res === undefined) {
+    const [role] = await db
+      .select({ name: roles.name, permissions: roles.permissions, organizationId: roles.organizationId })
+      .from(roles)
+      .where(eq(roles.id, roleId))
+      .limit(1);
+    res = role ? { name: role.name, permissions: role.permissions ?? [], organizationId: role.organizationId } : null;
+    roleCache.set(roleId, { role: res, exp: now + 60_000 });
+  }
+  // Defense in depth: a tenant role only counts inside its own org (writes already enforce this).
+  if (res?.organizationId && res.organizationId !== session?.user?.organizationId && !session?.user?.isSuperAdmin) return null;
   return res;
 });
 
@@ -193,6 +197,28 @@ export async function assertWritable() {
     throw new Error("This is a read-only session. Exit read-only impersonation to make changes.");
   }
   return ctx;
+}
+
+// Everything a role grants, as permission keys (system admin / "*" → all).
+function grantedKeys(role: { name: string; permissions: string[]; organizationId: string | null }): PermissionKey[] {
+  return ALL_PERMISSIONS.filter((k) => roleGrants(role, k));
+}
+
+// Can the caller give `roleId` to someone? The role must be a system role or one of this org's own,
+// and — unless the caller can manage roles — it may not grant anything the caller doesn't hold, so
+// users.manage alone can't mint admins. Returns an error message, or null when allowed.
+export async function roleAssignmentError(organizationId: string, roleId: string): Promise<string | null> {
+  const [role] = await db
+    .select({ name: roles.name, permissions: roles.permissions, organizationId: roles.organizationId })
+    .from(roles)
+    .where(and(eq(roles.id, roleId), or(isNull(roles.organizationId), eq(roles.organizationId, organizationId))))
+    .limit(1);
+  if (!role) return "That role doesn't exist. Refresh the page and pick another.";
+  if (await hasPermission("roles.manage")) return null;
+  for (const key of grantedKeys({ ...role, permissions: role.permissions ?? [] })) {
+    if (!(await hasPermission(key))) return "You can't give someone a role with more access than you have.";
+  }
+  return null;
 }
 
 // Throws "Forbidden" unless the caller holds the permission; returns the tenant scope on success.

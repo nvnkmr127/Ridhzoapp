@@ -31,8 +31,11 @@ export async function createRoleAction(input: z.infer<typeof roleSchema>) {
   }
 }
 
-export async function updateRoleAction(id: string, input: Partial<z.infer<typeof roleSchema>>) {
+export async function updateRoleAction(id: string, raw: Partial<z.infer<typeof roleSchema>>) {
   const { organizationId, userId } = await requirePermission("roles.manage");
+  const parsed = roleSchema.partial().safeParse(raw);
+  if (!parsed.success) return fail("VALIDATION", "Please enter a role name.");
+  const input = parsed.data;
   try {
     const before = await RoleService.getById(organizationId, id);
     const role = await RoleService.update(organizationId, id, input);

@@ -4,7 +4,7 @@ export const PERMISSIONS = {
   "users.manage": "Manage users & teams",
   "roles.manage": "Manage roles & permissions",
   "settings.manage": "Edit organization settings",
-  "sources.manage": "Manage lead sources & webhooks",
+  "sources.manage": "Manage lead sources & automatic assignment",
   "templates.manage": "Manage message templates",
   "automations.manage": "Manage automations",
   "sequences.manage": "Create, edit & delete follow-up sequences",
@@ -13,7 +13,7 @@ export const PERMISSIONS = {
   "leads.purge": "Permanently delete leads / empty recycle bin",
   "leads.merge": "Merge duplicate leads",
   "audit.view": "View the audit log",
-  "api.manage": "Manage API keys",
+  "api.manage": "Manage API keys, webhooks & new-lead alerts",
   "billing.manage": "Manage billing & subscription",
 } as const;
 

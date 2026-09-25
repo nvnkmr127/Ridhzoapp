@@ -410,8 +410,8 @@ export const authOptions: NextAuthOptions = {
           // Revocation store unreachable — don't lock everyone out on a transient config-read error.
         }
         if (!u || u.isActive === false || u.deletedAt || revoked) {
-          // Fail closed: requireOrg() redirects to /login when organizationId is null, and every
-          // permission check refuses without a roleId — this doesn't force a client-side sign-out,
+          // Fail closed: requireOrg() redirects to /login when organizationId is null (a null roleId
+          // alone would only drop to member access) — this doesn't force a client-side sign-out,
           // but it stops the session from acting as anyone from the next request onward.
           token.roleId = null;
           token.organizationId = null;

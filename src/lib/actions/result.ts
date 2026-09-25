@@ -76,3 +76,8 @@ export function actionFail(e: unknown): ActionError {
   const ref = logError("action", e);
   return fail("SERVER", `Something went wrong on our end. Please try again. (Ref: ${ref})`, fieldErrors);
 }
+
+// Throw from a service for an expected, user-caused refusal; actionFail passes the message through verbatim.
+export class UserFacingError extends Error {
+  code = "VALIDATION" as const;
+}

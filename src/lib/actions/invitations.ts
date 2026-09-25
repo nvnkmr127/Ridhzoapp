@@ -1,13 +1,10 @@
 "use server";
 
-import { requirePermission } from "@/lib/rbac";
+import { requirePermission, roleAssignmentError } from "@/lib/rbac";
 import { InvitationService } from "@/domains/invitations/service";
 import { OrgService } from "@/domains/organizations/service";
 import { AuditService } from "@/domains/audit/service";
-
-// Escape a tenant-controlled string before putting it in email HTML.
-const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-import { PlanService } from "@/domains/billing/planService";
+import { escapeHtml } from "@/lib/utils";
 import { sendEmail, appUrl } from "@/lib/mail/mailer";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -15,26 +12,27 @@ import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
 
 const inviteSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
-  roleId: z.guid().nullable().optional(),
+  roleId: z.guid({ message: "Pick a role for this person." }),
 });
 
 export async function inviteUserAction(input: z.infer<typeof inviteSchema>) {
   const { organizationId, userId } = await requirePermission("users.manage");
   const parsed = inviteSchema.safeParse(input);
   if (!parsed.success) {
-    return fail("VALIDATION", "Please enter a valid email address.", zodFieldErrors(parsed.error));
+    return fail("VALIDATION", parsed.error.issues[0]?.message ?? "Please enter a valid email address.", zodFieldErrors(parsed.error));
   }
   const data = parsed.data;
+  const roleErr = await roleAssignmentError(organizationId, data.roleId);
+  if (roleErr) return fail("FORBIDDEN", roleErr);
 
   try {
-    await PlanService.assertCanAddSeat(organizationId);
-
-    const { token, invite } = await InvitationService.create(organizationId, data.email, data.roleId ?? null, userId);
+    // Seat check happens inside create (a resend reuses the replaced invite's seat).
+    const { token, invite } = await InvitationService.create(organizationId, data.email, data.roleId, userId);
     const link = appUrl(`/invite/${token}`);
 
     // Tenant-branded: name the inviting workspace, not the platform.
     const org = await OrgService.getOrganization(organizationId);
-    const orgName = esc(org?.name || "your workspace");
+    const orgName = escapeHtml(org?.name || "your workspace");
 
     // Email delivery is best-effort: the invite already exists in the DB, so a mail failure
     // must not roll it back or report the whole invite as failed. Surface `emailed` + `link`
@@ -43,7 +41,7 @@ export async function inviteUserAction(input: z.infer<typeof inviteSchema>) {
     try {
       await sendEmail({
         to: data.email,
-        subject: `You've been invited to ${orgName}`,
+        subject: `You've been invited to ${org?.name || "your workspace"}`, // plain text: no escaping
         html: `<p>You've been invited to join <strong>${orgName}</strong>.</p><p><a href="${link}">Accept your invitation</a> (expires in 7 days).</p>`,
       }, organizationId);
     } catch (mailErr) {
@@ -104,6 +102,9 @@ export async function acceptInvitationAction(input: z.infer<typeof acceptSchema>
     // of showing the misleading "invalid or expired" copy.
     if (/already exists/i.test(msg)) {
       return fail("CONFLICT", "An account with this email already exists. Please sign in instead.");
+    }
+    if (/plan allows/i.test(msg)) {
+      return fail("LIMIT", "This workspace has no free seats right now. Ask the admin who invited you to free a seat or upgrade the plan.");
     }
     if (/expired|invalid|not found|used|already/i.test(msg)) {
       return fail("NOT_FOUND", "This invitation is invalid or has expired. Ask an admin to send a new one.");
