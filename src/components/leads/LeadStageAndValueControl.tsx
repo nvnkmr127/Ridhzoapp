@@ -18,12 +18,15 @@ interface LeadStageAndValueControlProps {
   leadId: string;
   stageId?: string | null;
   stages?: PipelineStage[];
+  /** Hide the built-in label and help text when the caller renders its own label. */
+  compact?: boolean;
 }
 
 export function LeadStageAndValueControl({
   leadId,
   stageId,
   stages = [],
+  compact = false,
 }: LeadStageAndValueControlProps) {
   const [currentStage, setCurrentStage] = useState<string>(stageId || "none");
   const [loading, setLoading] = useState(false);
@@ -51,16 +54,20 @@ export function LeadStageAndValueControl({
     <div className="space-y-4">
       {/* Lead Stage Selector */}
       <div>
-        <label className="text-xs text-muted-foreground block mb-1 font-semibold uppercase tracking-wider">
-          Pipeline stage
-        </label>
-        <p className="mb-1.5 text-[11px] text-muted-foreground">
-          Where the deal is on your pipeline board. Status (at the top) says if the lead is open, won or lost.
-        </p>
+        {!compact && (
+          <>
+          <label className="text-xs text-muted-foreground block mb-1 font-semibold uppercase tracking-wider">
+            Pipeline stage
+          </label>
+          <p className="mb-1.5 text-[11px] text-muted-foreground">
+            Where the deal is on your pipeline board. Status (at the top) says if the lead is open, won or lost.
+          </p>
+          </>
+        )}
         <Select value={currentStage} onValueChange={handleStageChange} disabled={loading}>
-          <SelectTrigger className="w-full h-9">
-            <div className="flex items-center gap-2">
-              <Layers className="h-4 w-4 text-muted-foreground" />
+          <SelectTrigger className="w-full h-9" aria-label="Pipeline stage">
+            <div className="flex min-w-0 items-center gap-2">
+              <Layers className="h-4 w-4 shrink-0 text-muted-foreground" />
               <SelectValue placeholder="Click to select stage..." />
             </div>
           </SelectTrigger>

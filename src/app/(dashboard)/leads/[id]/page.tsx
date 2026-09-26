@@ -307,7 +307,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               <h2 className="break-words text-xl font-bold tracking-tight sm:text-2xl">{lead.name}</h2>
               <LeadStatusControl leadId={lead.id} status={lead.status} className="h-8 w-auto min-w-[130px] text-xs" />
               {stageName && (
-                <span className="text-xs text-muted-foreground" title="Pipeline stage — change it in Lead Management">
+                <span className="text-xs text-muted-foreground lg:hidden" title="Pipeline stage — change it in Lead Management">
                   Stage: <span className="font-medium text-foreground">{stageName}</span>
                 </span>
               )}
@@ -356,18 +356,28 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             </p>
           </div>
           </div>
-          <div className="hidden lg:flex shrink-0 items-start gap-4">
-             <div className="w-[140px]">
-                <LeadAssignControl leadId={lead.id} ownerId={lead.ownerId} initialUsers={usersList} currentUserId={userId} canSeeAllLeads={isFieldAdmin} />
-             </div>
-             <div className="w-[140px]">
-                <LeadStageAndValueControl leadId={lead.id} stageId={lead.stageId} stages={stagesList} />
-             </div>
-             <div className="w-[160px]">
-                <LeadTags leadId={lead.id} initialTags={leadTags} />
-             </div>
-          </div>
           <LeadPager leadId={lead.id} />
+        </div>
+
+        {/* Desktop: ownership, pipeline stage and tags as one labelled row (phones get them in Lead Management). */}
+        <div className="hidden gap-4 rounded-xl border bg-muted/20 p-3 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
+          <div className="min-w-0 space-y-1.5">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Owner</p>
+            <LeadAssignControl leadId={lead.id} ownerId={lead.ownerId} initialUsers={usersList} currentUserId={userId} canSeeAllLeads={isFieldAdmin} />
+          </div>
+          <div className="min-w-0 space-y-1.5">
+            <p
+              className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
+              title="Where the deal is on your pipeline board. Status (next to the name) says if the lead is open, won or lost."
+            >
+              Pipeline stage
+            </p>
+            <LeadStageAndValueControl leadId={lead.id} stageId={lead.stageId} stages={stagesList} compact />
+          </div>
+          <div className="min-w-0 space-y-1.5">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Tags</p>
+            <LeadTags leadId={lead.id} initialTags={leadTags} />
+          </div>
         </div>
 
         <LeadHeaderQuickActions lead={{ ...lead, phone: dialPhone ?? null }} />

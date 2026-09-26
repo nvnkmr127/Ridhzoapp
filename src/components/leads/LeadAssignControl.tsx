@@ -85,7 +85,7 @@ export function LeadAssignControl({
   return (
     <>
       <Select value={value} onValueChange={choose} disabled={busy}>
-        <SelectTrigger className="w-full" aria-label="Assignee">
+        <SelectTrigger className="h-9 w-full" aria-label="Assignee">
           <SelectValue placeholder="Unassigned" />
         </SelectTrigger>
         <SelectContent>
