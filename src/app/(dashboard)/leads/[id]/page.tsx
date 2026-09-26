@@ -355,6 +355,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               {lead.createdAt ? <LocalTime iso={lead.createdAt} mode="date" fallback="recently" /> : "recently"}
             </p>
           </div>
+          </div>
           <div className="hidden lg:flex shrink-0 items-start gap-4">
              <div className="w-[140px]">
                 <LeadAssignControl leadId={lead.id} ownerId={lead.ownerId} initialUsers={usersList} currentUserId={userId} canSeeAllLeads={isFieldAdmin} />
