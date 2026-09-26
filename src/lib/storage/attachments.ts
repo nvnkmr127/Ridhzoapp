@@ -34,11 +34,17 @@ export const ALLOWED_TYPES: Record<string, string> = {
   zip: "application/zip",
   mp3: "audio/mpeg",
   m4a: "audio/mp4",
+  wav: "audio/wav",
+  amr: "audio/amr",
+  aac: "audio/aac",
+  "3gp": "audio/3gpp",
+  ogg: "audio/ogg",
+  opus: "audio/opus",
   mp4: "video/mp4",
   mov: "video/quicktime",
 };
 /** Types safe to show inline in the browser (images/PDF); everything else downloads. */
-export const INLINE_TYPES = new Set(["application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp"]);
+export const INLINE_TYPES = new Set(["application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp", "audio/mpeg", "audio/mp4", "audio/wav", "audio/amr", "audio/aac", "audio/3gpp", "audio/ogg", "audio/opus"]);
 
 export function contentTypeFor(fileName: string): string | null {
   const ext = path.extname(fileName).slice(1).toLowerCase();

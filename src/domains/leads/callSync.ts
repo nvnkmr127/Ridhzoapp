@@ -21,7 +21,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const NOTIFY_WITHIN_MS = DAY_MS;
 // An unknown caller the rep adds as a lead afterwards: that call belongs on the new lead's timeline.
 // Anything older predates the lead and is skipped.
-const BEFORE_LEAD_MS = DAY_MS;
+const BEFORE_LEAD_MS = 30 * DAY_MS;
 
 // The match key the phone filters its call log with: the last 8 digits, so every way of writing a
 // number agrees — "+91 98765 43210" / "098765 43210", "+971 50 123 4567" / "050 123 4567", and

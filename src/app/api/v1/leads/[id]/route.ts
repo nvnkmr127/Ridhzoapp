@@ -72,7 +72,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         createdAt: a.createdAt,
         occurredAt: a.occurredAt,
         userId: a.userId,
-        userName: a.userName 
+        userName: a.userName,
+        durationSec: a.durationSec
       })),
       followUps: fus,
       tags,
