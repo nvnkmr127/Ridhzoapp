@@ -32,7 +32,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     (lead as { customData: unknown }).customData = cd;
   }
 
-  const activities = await ActivityService.getLeadActivities(id);
+  // ponytail: newest 500 only — bounds the payload on years-old leads; page it if anyone hits the cap.
+  const activities = await ActivityService.getLeadActivities(id, 500);
   const fus = await db
     .select({ id: followUps.id, title: followUps.title, type: followUps.type, description: followUps.description, status: followUps.status, dueAt: followUps.dueAt })
     .from(followUps)

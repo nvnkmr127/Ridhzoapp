@@ -23,6 +23,10 @@ export async function authorizeApiRequest(req: NextRequest): Promise<ApiAuth | {
 
   const mobile = verifyMobileToken(raw);
   if (mobile) {
+    const { isMobileTokenRevoked } = await import("@/lib/mobileRevocation");
+    if (await isMobileTokenRevoked(mobile)) {
+      return { error: NextResponse.json({ error: "Invalid or missing credentials" }, { status: 401 }) };
+    }
     // A 30-day token outlives membership changes, so re-check the user is still active and still in
     // the token's org on every request — a removed/deactivated user is locked out immediately.
     const live = await liveUser(mobile.sub, mobile.org);

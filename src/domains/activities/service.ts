@@ -14,7 +14,7 @@ export class ActivityService {
     return activity;
   }
 
-  static async getLeadActivities(leadId: string) {
+  static async getLeadActivities(leadId: string, limit?: number) {
     const rows = await db
       .select({
         id: activities.id,
@@ -32,7 +32,8 @@ export class ActivityService {
       .from(activities)
       .leftJoin(users, eq(activities.userId, users.id))
       .where(eq(activities.leadId, leadId))
-      .orderBy(desc(activities.createdAt));
+      .orderBy(desc(activities.createdAt))
+      .limit(limit ?? Number.MAX_SAFE_INTEGER);
 
     const assignRegex = /Lead was assigned to user ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi;
     const mentionedUuids = new Set<string>();

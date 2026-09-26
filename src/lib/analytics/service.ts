@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { leads, followUps, leadSources, users, teams, activities } from "@/db/schema";
-import { eq, and, gte, lte, desc, isNull, sql } from "drizzle-orm";
+import { eq, and, gte, lt, lte, desc, isNull, or, sql } from "drizzle-orm";
 import { startOfZonedDay, startOfZonedMonth } from "@/lib/tz";
 
 export interface AnalyticsFilters {
@@ -152,39 +152,40 @@ export class AnalyticsService {
     filters = await this.withTz(filters);
     const conditions = [eq(leads.organizationId, filters.organizationId), isNull(leads.deletedAt)];
     if (filters.ownerId) {
-      conditions.push(eq(followUps.userId, filters.ownerId));
+      // Same scope as the Follow-ups list: ones the user created, or on leads they own.
+      conditions.push(or(eq(followUps.userId, filters.ownerId), eq(leads.ownerId, filters.ownerId))!);
     }
 
     const { start, end } = this.getDateRangeBounds(filters);
     if (start) conditions.push(gte(followUps.createdAt, start));
     if (end) conditions.push(lte(followUps.createdAt, end));
-    
-    const rows = await db
-      .select({ followUp: followUps })
+
+    const now = new Date();
+    const endOfToday = startOfZonedDay(now, filters.timeZone || "UTC", 1);
+    // Counted in SQL (was: every follow-up row loaded into memory). Overdue and due-today don't
+    // overlap: "due today" is what's still ahead today, so the two add up without double counting.
+    const [r] = await db
+      .select({
+        total: sql<number>`count(*)::int`,
+        completed: sql<number>`count(*) filter (where ${eq(followUps.status, "completed")})::int`,
+        // Column-aware operators, so the Date params get encoded like any other timestamp filter.
+        overdue: sql<number>`count(*) filter (where ${and(eq(followUps.status, "pending"), lt(followUps.dueAt, now))})::int`,
+        dueToday: sql<number>`count(*) filter (where ${and(eq(followUps.status, "pending"), gte(followUps.dueAt, now), lt(followUps.dueAt, endOfToday))})::int`,
+        upcoming: sql<number>`count(*) filter (where ${and(eq(followUps.status, "pending"), gte(followUps.dueAt, endOfToday))})::int`,
+      })
       .from(followUps)
       .innerJoin(leads, eq(followUps.leadId, leads.id))
       .where(and(...conditions));
-    
-    const allFollowUps = rows.map(r => r.followUp);
-    const now = new Date();
-    const startOfToday = startOfZonedDay(now, filters.timeZone || "UTC");
-    const endOfToday = new Date(startOfZonedDay(now, filters.timeZone || "UTC", 1).getTime() - 1);
-    
-    const total = allFollowUps.length;
-    const completed = allFollowUps.filter(f => f.status === 'completed').length;
-    const overdue = allFollowUps.filter(f => f.status === 'pending' && new Date(f.dueAt) < now).length;
-    const dueToday = allFollowUps.filter(f => f.status === 'pending' && new Date(f.dueAt) >= startOfToday && new Date(f.dueAt) <= endOfToday).length;
-    const upcoming = allFollowUps.filter(f => f.status === 'pending' && new Date(f.dueAt) > endOfToday).length;
-    
-    const completionRate = total > 0 ? (completed / total) * 100 : 0;
-    
+
+    const total = r?.total ?? 0;
+    const completed = r?.completed ?? 0;
     return {
       total,
-      dueToday,
-      overdue,
-      upcoming,
+      dueToday: r?.dueToday ?? 0,
+      overdue: r?.overdue ?? 0,
+      upcoming: r?.upcoming ?? 0,
       completed,
-      completionRate
+      completionRate: total > 0 ? (completed / total) * 100 : 0,
     };
   }
 

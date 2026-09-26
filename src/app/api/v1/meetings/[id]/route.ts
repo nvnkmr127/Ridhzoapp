@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeApiRequest } from "@/lib/apiAuth";
 import { MeetingService } from "@/domains/meetings/service";
 import { parseMeetingInput } from "@/domains/meetings/validation";
-import { invalid, meetingForApi, notFound, serializeMeeting, serverError } from "@/lib/meetingsApi";
+import { canEditLeads, readOnly, invalid, meetingForApi, notFound, serializeMeeting, serverError } from "@/lib/meetingsApi";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -20,6 +20,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   if ("error" in auth) return auth.error;
   const m = await meetingForApi(auth, (await params).id);
   if (!m) return notFound();
+  if (!(await canEditLeads(auth))) return readOnly();
   const p = parseMeetingInput({ ...(await req.json().catch(() => ({}))), autoMeet: false }, true);
   if (p.error) return invalid(p.error);
   try {

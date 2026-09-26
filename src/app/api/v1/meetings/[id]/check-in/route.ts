@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authorizeApiRequest } from "@/lib/apiAuth";
 import { MeetingService } from "@/domains/meetings/service";
 import { coordsSchema } from "@/domains/meetings/validation";
-import { meetingForApi, notFound, serializeMeeting, serverError } from "@/lib/meetingsApi";
+import { canEditLeads, readOnly, meetingForApi, notFound, serializeMeeting, serverError } from "@/lib/meetingsApi";
 
 // Field check-in from the mobile app: { lat, lng } (or {} when location isn't available).
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -11,6 +11,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!auth.userId) return NextResponse.json({ error: "A user session is required" }, { status: 403 });
   const m = await meetingForApi(auth, (await params).id);
   if (!m) return notFound();
+  if (!(await canEditLeads(auth))) return readOnly(); // Viewers can see meetings, not close them
   const body = await req.json().catch(() => ({}));
   const parsed = coordsSchema.safeParse(body && typeof body.lat === "number" ? { lat: body.lat, lng: body.lng } : null);
   if (!parsed.success) return NextResponse.json({ error: "lat/lng out of range" }, { status: 422 });

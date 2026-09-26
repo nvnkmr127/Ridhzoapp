@@ -7,7 +7,7 @@ import { LeadService } from "@/domains/leads/service";
 import { CustomFieldService, FieldValidationError } from "@/domains/customFields/service";
 import { PlanService } from "@/domains/billing/planService";
 import { authorizeApiRequest } from "@/lib/apiAuth";
-import { canEditLeads, readOnly } from "@/lib/meetingsApi";
+import { canEditLeads, idOk, readOnly } from "@/lib/meetingsApi";
 
 const authorize = authorizeApiRequest;
 
@@ -45,6 +45,15 @@ export async function GET(req: NextRequest) {
     }
   }
   if (status) where.push(eq(leads.status, status));
+  // "Mine" for admins, who otherwise see the whole workspace.
+  if (auth.userId && sp.get("owner") === "me") where.push(eq(leads.ownerId, auth.userId));
+  // Keyset paging: rows after the last lead the client has (newest-first). Unlike offset, new leads
+  // arriving while someone scrolls don't shift pages into duplicates or gaps. Offset still works.
+  const cursor = sp.get("cursor");
+  if (cursor) {
+    if (!idOk(cursor)) return NextResponse.json({ error: "Invalid cursor" }, { status: 422 });
+    where.push(sql`(${leads.createdAt}, ${leads.id}) < (select c.created_at, c.id from leads c where c.id = ${cursor})`);
+  }
   if (search) {
     // Match name/email/company (case-insensitive) or phone digits, so mobile can search the
     // whole org, not just the first page it happened to load.
@@ -73,7 +82,7 @@ export async function GET(req: NextRequest) {
     .where(and(...where))
     .orderBy(desc(leads.createdAt), desc(leads.id))
     .limit(limit)
-    .offset(offset);
+    .offset(cursor ? 0 : offset);
 
   return NextResponse.json({ data: rows });
 }

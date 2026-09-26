@@ -30,6 +30,9 @@ export async function GET(req: NextRequest) {
     to: date(q.get("to"), new Date(Date.now() + 90 * day)),
   });
   return NextResponse.json({
-    data: rows.map((r) => ({ ...serializeMeeting(r.meeting), lead: { id: r.lead.id, name: r.lead.name, phone: r.lead.phone } })),
+    data: rows.map((r) => ({ ...serializeMeeting(r.meeting), lead: { id: r.lead.id, name: r.lead.name, phone: r.lead.phone },
+      // Admins see everyone's meetings — say whose it is.
+      assigneeName: [r.assignee?.firstName, r.assignee?.lastName].filter(Boolean).join(" ") || r.assignee?.email || null,
+    })),
   });
 }

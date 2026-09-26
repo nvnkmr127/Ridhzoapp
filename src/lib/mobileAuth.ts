@@ -12,6 +12,7 @@ export interface MobileTokenPayload {
   org: string;            // organizationId
   role: string | null;   // roleId
   email: string;
+  jti?: string;           // per-token id, so one phone's sign-out can revoke just its token
   iat?: number;
   exp?: number;
 }
@@ -49,8 +50,8 @@ function verify<T extends { exp?: number }>(token: string, key: string): T | nul
   }
 }
 
-export function signMobileToken(payload: Omit<MobileTokenPayload, "iat" | "exp">, expiresInSec = 60 * 60 * 24 * 30) {
-  return sign(payload, SECRET, expiresInSec);
+export function signMobileToken(payload: Omit<MobileTokenPayload, "iat" | "exp" | "jti">, expiresInSec = 60 * 60 * 24 * 30) {
+  return sign({ ...payload, jti: crypto.randomUUID() }, SECRET, expiresInSec);
 }
 
 export function verifyMobileToken(token: string): MobileTokenPayload | null {
