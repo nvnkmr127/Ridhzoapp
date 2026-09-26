@@ -47,6 +47,15 @@ export function Header({
   const { data: session } = useSession() || {};
   const [shortcutLabel, setShortcutLabel] = React.useState("⌘K");
 
+  const getUserInitials = (name?: string | null) => {
+    if (!name) return null;
+    const parts = name.split(" ").filter(Boolean);
+    if (parts.length === 0) return null;
+    if (parts.length === 1) return parts[0][0].toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+  const initials = getUserInitials(session?.user?.name);
+
   // Cmd/Ctrl+K toggles the global command palette & detect operating system for shortcut badge.
   React.useEffect(() => {
     const isMac =
@@ -125,19 +134,26 @@ export function Header({
         <NotificationBell />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="secondary" size="icon" className="rounded-full">
-              <User className="h-5 w-5" />
+            <Button variant="secondary" size="icon" className="rounded-full overflow-hidden">
+              {initials ? (
+                <span className="text-sm font-semibold text-primary">{initials}</span>
+              ) : (
+                <User className="h-5 w-5" />
+              )}
               <span className="sr-only">Toggle user menu</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
-            <div className="flex flex-col space-y-1 p-2">
-              <p className="text-sm font-medium leading-none">{session?.user?.name || "My Account"}</p>
-              <p className="text-xs leading-none text-muted-foreground">
-                {session?.user?.email && !isPlaceholderEmail(session.user.email)
-                  ? session.user.email
-                  : session?.user?.phone || ""}
-              </p>
+            <div className="flex flex-col space-y-1.5 p-2">
+              <p className="text-sm font-semibold leading-none">My Account</p>
+              <div className="flex flex-col space-y-0.5">
+                {session?.user?.name && <p className="text-sm font-medium">{session.user.name}</p>}
+                <p className="text-xs leading-none text-muted-foreground truncate">
+                  {session?.user?.email && !isPlaceholderEmail(session.user.email)
+                    ? session.user.email
+                    : session?.user?.phone || "No contact info"}
+                </p>
+              </div>
             </div>
             <DropdownMenuSeparator />
             {usageStats && <UsageMenuSection usageStats={usageStats} />}
