@@ -11,10 +11,19 @@ const markLeadContacted = vi.fn();
 vi.mock("@/domains/follow-ups/state", () => ({ markLeadContacted: (...a: unknown[]) => markLeadContacted(...a) }));
 
 // Every insert lands here; activity inserts dedupe on externalRef (dupe = the ref is already logged).
+// selects: queued results for the "already have this call?" and "hand-logged match?" lookups.
 const waInsert = vi.fn();
+const update = vi.fn();
 let dupe = false;
+let selectResults: unknown[][] = [];
 vi.mock("@/db", () => ({
   db: {
+    select: () => {
+      const rows = async () => selectResults.shift() ?? [];
+      const chain = { from: () => chain, where: () => chain, orderBy: () => chain, limit: rows };
+      return chain;
+    },
+    update: () => ({ set: (v: unknown) => ({ where: async () => update(v) }) }),
     insert: () => ({
       values: (v: unknown) => {
         waInsert(v);
@@ -84,6 +93,7 @@ describe("calls read from the phone's call log", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     dupe = false;
+    selectResults = [];
   });
   const at = new Date("2026-09-26T10:00:00Z");
 
@@ -99,6 +109,22 @@ describe("calls read from the phone's call log", () => {
     const res = await recordLeadContact({ leadId: LEAD, userId: "u1", channel: "call", durationSec: 0, externalRef: "c1" });
     expect(res.logged).toBe(false);
     expect(markLeadContacted).not.toHaveBeenCalled();
+  });
+
+  it("fills in the rep's hand-logged entry instead of adding the same call twice", async () => {
+    selectResults = [[], [{ id: "manual-1", content: "Called — Busy / call back later\nNote: in a meeting" }]];
+    const res = await recordLeadContact({ leadId: LEAD, userId: "u1", channel: "call", direction: "outgoing", durationSec: 75, startedAt: at, externalRef: "c9" });
+    expect(res.logged).toBe(false);
+    expect(waInsert).not.toHaveBeenCalled();
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ externalRef: "c9", durationSec: 75, occurredAt: at, content: "Called — Busy / call back later (1m 15s)\nNote: in a meeting" }));
+  });
+
+  it("skips a call it already has without looking for a manual entry", async () => {
+    selectResults = [[{ id: "known" }]];
+    const res = await recordLeadContact({ leadId: LEAD, userId: "u1", channel: "call", durationSec: 30, startedAt: at, externalRef: "c1" });
+    expect(res.logged).toBe(false);
+    expect(update).not.toHaveBeenCalled();
+    expect(waInsert).not.toHaveBeenCalled();
   });
 
   it("a missed call from the lead is logged but isn't outreach", async () => {

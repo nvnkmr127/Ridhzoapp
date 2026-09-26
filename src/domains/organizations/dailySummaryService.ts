@@ -1,6 +1,8 @@
 import { db } from "@/db";
-import { followUps, leads, meetings, organizations, roles, users } from "@/db/schema";
-import { and, count, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
+import { activities, followUps, leads, meetings, organizations, roles, users } from "@/db/schema";
+import { and, count, eq, gte, isNull, lt, or, sql, sum } from "drizzle-orm";
+import { callCounts } from "@/domains/leads/callStats";
+import { formatCallDuration } from "@/domains/leads/contactLog";
 import { appUrl, sendEmail } from "@/lib/mail/mailer";
 import { HabitService, recapLine, type Recap } from "@/domains/organizations/habitService";
 import { isWorkDay } from "@/lib/workHours";
@@ -17,8 +19,27 @@ export interface DailySummaryStats {
   uncontactedLeads: number;
   unassignedLeads: number;
   byRep: { name: string; overdue: number; needOutcome: number }[];
+  /** Calls per rep in the last 24h, busiest first. A recap, not a to-do: never makes a day actionable. */
+  calls: RepCalls[];
   /** Per-user "your day" for the personal push / WhatsApp nudge. */
   people: Person[];
+}
+
+export interface RepCalls {
+  name: string;
+  calls: number;
+  attempts: number; // outgoing
+  answered: number; // outgoing that connected
+  talkSec: number;
+}
+
+/** Pure: "34 calls · 12 of 30 answered · 1h 50m talk time" (talk time only when the phone logged it). */
+export function callsLine(r: RepCalls) {
+  return [
+    plural(r.calls, "call"),
+    r.attempts ? `${r.answered} of ${r.attempts} answered` : null,
+    r.talkSec ? `${formatCallDuration(r.talkSec)} talk time` : null,
+  ].filter(Boolean).join(" · ");
 }
 
 export interface Person {
@@ -119,6 +140,7 @@ export function renderSummaryHtml(orgName: string, s: DailySummaryStats) {
     row("Unassigned leads", s.unassignedLeads, "/leads"),
   ].join("")}</table>
 ${reps ? `<p style="margin-top:16px"><b>By team member</b></p><ul>${reps}</ul>` : ""}
+${s.calls.length ? `<p style="margin-top:16px"><b>Calls in the last 24 hours</b></p><ul>${s.calls.map((r) => `<li>${esc(r.name)}: ${callsLine(r)}</li>`).join("")}</ul>` : ""}
 <p style="color:#888;font-size:12px;margin-top:24px">Turn this email off in <a href="${appUrl("/settings")}">Settings → General</a>.</p>
 </div>`;
 }
@@ -129,7 +151,7 @@ export class DailySummaryService {
     const live = and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt));
     const meetingEnded = sql`${meetings.startAt} + ${meetings.durationMinutes} * interval '1 minute' < ${now.toISOString()}::timestamp`;
 
-    const [[overdue], [needOutcome], [today], [fresh], [uncontacted], [unassigned], repRows, peopleRows] = await Promise.all([
+    const [[overdue], [needOutcome], [today], [fresh], [uncontacted], [unassigned], repRows, peopleRows, callRows] = await Promise.all([
       db.select({ n: count() }).from(followUps).innerJoin(leads, eq(followUps.leadId, leads.id))
         .where(and(live, eq(followUps.status, "pending"), lt(followUps.dueAt, now))),
       db.select({ n: count() }).from(meetings).innerJoin(leads, eq(meetings.leadId, leads.id))
@@ -161,6 +183,12 @@ export class DailySummaryService {
           (select count(*)::int from ${leads} l where l.owner_id = u.id and l.deleted_at is null
               and l.created_at >= ${new Date(now.getTime() - 24 * H).toISOString()}::timestamp) as new_leads
         from ${users} u where u.organization_id = ${organizationId} and u.is_active = true and u.deleted_at is null`),
+      db
+        .select({ firstName: users.firstName, lastName: users.lastName, email: users.email, total: count(), talk: sum(activities.durationSec), ...callCounts })
+        .from(activities)
+        .innerJoin(users, eq(activities.userId, users.id))
+        .where(and(eq(users.organizationId, organizationId), eq(activities.type, "call"), gte(activities.occurredAt, new Date(now.getTime() - 24 * H))))
+        .groupBy(activities.userId, users.firstName, users.lastName, users.email),
     ]);
 
     const people: Person[] = [...(peopleRows as unknown as Record<string, unknown>[])].map((r) => ({
@@ -187,6 +215,16 @@ export class DailySummaryService {
       uncontactedLeads: uncontacted.n,
       unassignedLeads: unassigned.n,
       byRep,
+      calls: callRows
+        .map((r) => ({
+          name: [r.firstName, r.lastName].filter(Boolean).join(" ") || r.email,
+          calls: Number(r.total),
+          attempts: Number(r.attempts),
+          answered: Number(r.answered),
+          talkSec: Number(r.talk ?? 0),
+        }))
+        .sort((a, b) => b.calls - a.calls)
+        .slice(0, 8),
       people,
     };
   }

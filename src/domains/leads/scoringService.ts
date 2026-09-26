@@ -19,6 +19,10 @@ export interface LeadScoreInput {
   answeredCalls?: number;
   /** Calls in a row with no answer / busy since the lead last engaged. */
   unansweredStreak?: number;
+  /** Total talk time on connected calls (from the phone's call log). */
+  talkTimeSec?: number;
+  /** Times the lead called the rep (answered or missed). */
+  incomingCalls?: number;
   /** Total opens of content shared with the lead. */
   contentViews?: number;
   /** The lead filled in form questions (budget, requirement…). */
@@ -64,6 +68,11 @@ export class ScoringService {
     // Intent — the lead's own actions
     if (input.hasInboundMsg) factors.push({ label: "Replied to you", points: 25 });
     if (input.answeredCalls) factors.push({ label: `Picked up ${input.answeredCalls} call${input.answeredCalls === 1 ? "" : "s"}`, points: 15 });
+    if (input.incomingCalls) factors.push({ label: `Called you ${input.incomingCalls}×`, points: 10 });
+    // A real conversation, not a 20-second "call me later".
+    const talkMin = Math.floor((input.talkTimeSec ?? 0) / 60);
+    if (talkMin >= 5) factors.push({ label: `Talked ${talkMin} min`, points: 10 });
+    else if (talkMin >= 1) factors.push({ label: `Talked ${talkMin} min`, points: 5 });
     if (input.contentViews) factors.push({ label: `Opened your content ${input.contentViews}×`, points: 15 });
     if (input.hasFormAnswers) factors.push({ label: "Shared their requirements", points: 5 });
 
@@ -97,23 +106,28 @@ export class ScoringService {
     return this.breakdown(input).score;
   }
 
-  /** Counts answered calls and the current run of unanswered ones from call activity content. */
-  static callStats(acts: { type: string; content: string | null }[]) {
-    // acts newest-first. "Called — Answered" / "Called — No answer" / "Called — Busy…" (see logLeadContactAction)
+  /** Call signals from call activities: answered, the current unanswered run, talk time, lead-initiated. */
+  static callStats(acts: { type: string; content: string | null; durationSec?: number | null }[]) {
+    // acts newest-first. Content as written by recordLeadContact: "Called — Answered (3m 12s)",
+    // "Called — No answer", "Called — Busy…", "Incoming call — Answered (45s)", "Missed call from lead".
     let answeredCalls = 0;
     let unansweredStreak = 0;
+    let talkTimeSec = 0;
+    let incomingCalls = 0;
     let streakOpen = true;
     for (const a of acts) {
       if (a.type !== "call") continue;
-      const answered = /Called — Answered/.test(a.content ?? "");
-      if (answered) {
-        answeredCalls++;
-        streakOpen = false;
-      } else if (streakOpen && /Called — (No answer|Busy)/.test(a.content ?? "")) {
-        unansweredStreak++;
-      }
+      const text = a.content ?? "";
+      const incoming = /^(Incoming call|Missed call from lead)/.test(text);
+      const answered = (a.durationSec ?? 0) > 0 || /^(Called|Incoming call) — Answered/.test(text);
+      talkTimeSec += a.durationSec ?? 0;
+      if (incoming) incomingCalls++;
+      if (answered) answeredCalls++;
+      // The lead picking up or calling back ends a run of unanswered calls.
+      if (answered || incoming) streakOpen = false;
+      else if (streakOpen && /^Called — (No answer|Busy)/.test(text)) unansweredStreak++;
     }
-    return { answeredCalls, unansweredStreak };
+    return { answeredCalls, unansweredStreak, talkTimeSec, incomingCalls };
   }
 
   /**
@@ -126,7 +140,7 @@ export class ScoringService {
     const { CustomStatusSchemaService } = await import("./customStatusSchemaService");
     const { hasFormAnswers } = await import("@/lib/leads/formAnswers");
     const [acts, [inbound], [views], statusCategory] = await Promise.all([
-      db.select({ type: activities.type, content: activities.content }).from(activities).where(eq(activities.leadId, leadId)).orderBy(activities.createdAt),
+      db.select({ type: activities.type, content: activities.content, durationSec: activities.durationSec }).from(activities).where(eq(activities.leadId, leadId)).orderBy(activities.occurredAt),
       db
         .select({ id: whatsappMessages.id })
         .from(whatsappMessages)

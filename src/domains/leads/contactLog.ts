@@ -1,3 +1,4 @@
+import { and, eq, gte, isNull, like, lte } from "drizzle-orm";
 import { db } from "@/db";
 import { activities, whatsappMessages } from "@/db/schema";
 import { ActivityService } from "@/domains/activities/service";
@@ -20,9 +21,43 @@ export type CallDirection = "outgoing" | "incoming";
 
 // "3m 12s" / "45s" — talk time as shown on the timeline.
 export function formatCallDuration(sec: number): string {
-  const m = Math.floor(sec / 60);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
-  return m ? `${m}m ${s}s` : `${s}s`;
+  return h ? `${h}h ${m}m` : m ? `${m}m ${s}s` : `${s}s`;
+}
+
+// How close a hand-logged call must be to the phone's record of it to be the same call: the rep logs
+// it during or just after the call, so from the call's start to 10 min after it ended.
+const MERGE_WINDOW_MS = 10 * 60 * 1000;
+
+// The rep logged this call by hand (no call-log id — e.g. the app couldn't read the call log in time),
+// and now the phone's record of it arrives. Attach the duration and id to that entry instead of adding
+// a second one. Returns true when merged. The rep's own outcome and note are kept.
+async function mergeIntoManualLog(input: { leadId: string; userId: string; startedAt: Date; durationSec: number; externalRef: string }) {
+  const { leadId, userId, startedAt, durationSec, externalRef } = input;
+  const from = new Date(startedAt.getTime() - MERGE_WINDOW_MS);
+  const to = new Date(startedAt.getTime() + durationSec * 1000 + MERGE_WINDOW_MS);
+  const [manual] = await db
+    .select({ id: activities.id, content: activities.content })
+    .from(activities)
+    .where(
+      and(
+        eq(activities.leadId, leadId),
+        eq(activities.userId, userId),
+        eq(activities.type, "call"),
+        isNull(activities.externalRef),
+        like(activities.content, "Called — %"),
+        gte(activities.occurredAt, from),
+        lte(activities.occurredAt, to),
+      ),
+    )
+    .orderBy(activities.occurredAt)
+    .limit(1);
+  if (!manual) return false;
+  const content = durationSec > 0 ? (manual.content ?? "").replace(/^([^\n]*)/, `$1 (${formatCallDuration(durationSec)})`) : manual.content;
+  await db.update(activities).set({ externalRef, durationSec, occurredAt: startedAt, content, updatedAt: new Date() }).where(eq(activities.id, manual.id));
+  return true;
 }
 
 // Without this, personal-mode contact left no trace: no timeline entry and no last_contacted_at, so
@@ -59,6 +94,16 @@ export async function recordLeadContact(input: {
     content = "Opened email to lead";
   }
   if (note) content += `\nNote: ${note}`;
+
+  if (channel === "call" && !incoming && externalRef && startedAt && durationSec != null) {
+    // Already have this exact call → nothing to do; a hand-logged entry for it → fill that in.
+    const [known] = await db
+      .select({ id: activities.id })
+      .from(activities)
+      .where(and(eq(activities.userId, userId), eq(activities.externalRef, externalRef)))
+      .limit(1);
+    if (known || (await mergeIntoManualLog({ leadId, userId, startedAt, durationSec, externalRef }))) return { logged: false };
+  }
 
   const inserted = await db
     .insert(activities)

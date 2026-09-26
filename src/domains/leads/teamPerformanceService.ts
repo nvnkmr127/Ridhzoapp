@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { CustomStatusSchemaService } from "./customStatusSchemaService";
 import { leads, users, followUps, activities } from "@/db/schema";
 import { and, eq, gte, inArray, count, sum } from "drizzle-orm";
+import { answerRate, callCounts } from "./callStats";
 
 export interface RepPerformanceMetric {
   userId: string;
@@ -14,6 +15,7 @@ export interface RepPerformanceMetric {
   completedFollowUps: number;
   calls: number; // logged calls (manual + phone call log)
   talkTimeSec: number; // from the Android call log; manual logs carry no duration
+  answerRate: number | null; // % of outgoing calls answered; null = no outgoing calls
   rank: number;
 }
 
@@ -91,11 +93,11 @@ export class TeamPerformanceService {
     const callConditions = [eq(activities.type, "call"), inArray(activities.userId, userIds)];
     if (startDate) callConditions.push(gte(activities.occurredAt, startDate));
     const callRows = await db
-      .select({ userId: activities.userId, count: count(), talk: sum(activities.durationSec) })
+      .select({ userId: activities.userId, count: count(), talk: sum(activities.durationSec), ...callCounts })
       .from(activities)
       .where(and(...callConditions))
       .groupBy(activities.userId);
-    const callsMap = new Map(callRows.map((r) => [r.userId, { calls: Number(r.count), talk: Number(r.talk ?? 0) }]));
+    const callsMap = new Map(callRows.map((r) => [r.userId, { calls: Number(r.count), talk: Number(r.talk ?? 0), rate: answerRate(Number(r.answered ?? 0), Number(r.attempts ?? 0)) }]));
 
     const statsMap: Record<
       string,
@@ -135,6 +137,7 @@ export class TeamPerformanceService {
         completedFollowUps,
         calls: callsMap.get(u.id)?.calls ?? 0,
         talkTimeSec: callsMap.get(u.id)?.talk ?? 0,
+        answerRate: callsMap.get(u.id)?.rate ?? null,
         rank: 0,
       };
     });

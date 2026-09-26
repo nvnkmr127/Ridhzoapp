@@ -68,6 +68,24 @@ describe("ScoringService", () => {
       { type: "call", content: "Called — Answered" },
       { type: "call", content: "Called — No answer" },
     ];
-    expect(ScoringService.callStats(newestFirst)).toEqual({ answeredCalls: 1, unansweredStreak: 2 });
+    expect(ScoringService.callStats(newestFirst)).toEqual({ answeredCalls: 1, unansweredStreak: 2, talkTimeSec: 0, incomingCalls: 0 });
+  });
+
+  it("counts talk time from the call log and calls the lead made", () => {
+    const newestFirst = [
+      { type: "call", content: "Called — No answer", durationSec: 0 },
+      { type: "call", content: "Missed call from lead", durationSec: 0 }, // lead reached out: ends the run
+      { type: "call", content: "Called — No answer", durationSec: 0 },
+      { type: "call", content: "Incoming call — Answered (4m 0s)", durationSec: 240 },
+      { type: "call", content: "Called — Answered (2m 0s)", durationSec: 120 },
+    ];
+    expect(ScoringService.callStats(newestFirst)).toEqual({ answeredCalls: 2, unansweredStreak: 1, talkTimeSec: 360, incomingCalls: 2 });
+  });
+
+  it("rewards a real conversation and the lead calling in", () => {
+    const labels = (i: Parameters<typeof ScoringService.breakdown>[0]) => ScoringService.breakdown(i).factors.map((f) => `${f.label}:${f.points}`);
+    expect(labels({ status: "new", talkTimeSec: 360, incomingCalls: 1 })).toEqual(expect.arrayContaining(["Called you 1×:10", "Talked 6 min:10"]));
+    expect(labels({ status: "new", talkTimeSec: 90 })).toContain("Talked 1 min:5");
+    expect(labels({ status: "new", talkTimeSec: 30 }).some((l) => l.startsWith("Talked"))).toBe(false);
   });
 });

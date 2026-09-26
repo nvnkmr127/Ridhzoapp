@@ -16,6 +16,7 @@ import { LeadGeoAnalyticsService } from "@/domains/leads/leadGeoAnalyticsService
 import { ChannelAnalyticsService } from "@/domains/leads/channelAnalyticsService";
 import { TeamPerformanceService } from "@/domains/leads/teamPerformanceService";
 import { formatCallDuration } from "@/domains/leads/contactLog";
+import { answerRateBySource } from "@/domains/leads/callStats";
 import { ActivityDigestService } from "@/domains/leads/activityDigestService";
 import { PipelineScorecardService } from "@/domains/leads/pipelineScorecardService";
 import { CapacityAssignmentService } from "@/domains/leads/capacityAssignmentService";
@@ -65,7 +66,7 @@ export default async function InsightsPage() {
     PipelineAgingService.getPipelineAgingMatrix(organizationId, tenantLeads),
   ]);
 
-  const [stagnant, cohorts, ltv, geo, channels, team, digest] = await Promise.all([
+  const [stagnant, cohorts, ltv, geo, channels, team, digest, sourceAnswer] = await Promise.all([
     StageStagnationService.getStagnantLeads(organizationId, 10, tenantLeads),
     LeadCohortAnalyticsService.getCohortAnalytics(organizationId, tenantLeads),
     CustomerLtvAnalyticsService.getLtvAnalytics(organizationId, tenantLeads),
@@ -73,6 +74,7 @@ export default async function InsightsPage() {
     ChannelAnalyticsService.getChannelMetrics(organizationId),
     TeamPerformanceService.getTeamLeaderboard(organizationId, undefined, tenantUsers),
     ActivityDigestService.getDailyActivityDigest(organizationId, undefined, tenantUsers),
+    answerRateBySource(organizationId),
   ]);
 
   const [capacities, overdue, sla] = await Promise.all([
@@ -329,6 +331,7 @@ export default async function InsightsPage() {
                     <TableHead className="text-right">Win %</TableHead>
                     <TableHead className="text-right">Revenue</TableHead>
                     <TableHead className="text-right">Calls</TableHead>
+                    <TableHead className="text-right" title="Outgoing calls that connected">Answer %</TableHead>
                     <TableHead className="text-right">Talk time</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -341,6 +344,7 @@ export default async function InsightsPage() {
                       <TableCell className="text-right tabular-nums">{r.winRatePercentage.toFixed(0)}%</TableCell>
                       <TableCell className="text-right tabular-nums">{money(r.totalRevenue)}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.calls}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.answerRate == null ? "—" : `${r.answerRate}%`}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.talkTimeSec ? formatCallDuration(r.talkTimeSec) : "—"}</TableCell>
                     </TableRow>
                   ))}
@@ -540,6 +544,7 @@ export default async function InsightsPage() {
                   <TableHead className="text-right">Win rate</TableHead>
                   <TableHead className="text-right">Revenue</TableHead>
                   <TableHead className="text-right">Avg deal</TableHead>
+                  <TableHead className="text-right" title="Outgoing calls that connected — low means bad numbers">Answer %</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -554,6 +559,7 @@ export default async function InsightsPage() {
                     <TableCell className="text-right tabular-nums">{s.winRatePercentage.toFixed(0)}%</TableCell>
                     <TableCell className="text-right tabular-nums">{money(s.totalRevenue)}</TableCell>
                     <TableCell className="text-right tabular-nums">{money(s.avgDealValue)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{sourceAnswer.get(s.sourceId) == null ? "—" : `${sourceAnswer.get(s.sourceId)}%`}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

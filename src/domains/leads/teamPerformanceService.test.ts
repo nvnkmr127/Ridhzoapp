@@ -73,14 +73,14 @@ describe("TeamPerformanceService", () => {
     (db.select as any).mockImplementationOnce(() => ({
       from: () => ({
         where: () => ({
-          groupBy: () => Promise.resolve([{ userId: "user-1", count: 5, talk: "600" }]),
+          groupBy: () => Promise.resolve([{ userId: "user-1", count: 5, talk: "600", attempts: 4, answered: 3 }]),
         }),
       }),
     }));
 
     const leaderboard = await TeamPerformanceService.getTeamLeaderboard("org-1");
-    expect(leaderboard.find((r) => r.userId === "user-1")).toMatchObject({ calls: 5, talkTimeSec: 600 });
-    expect(leaderboard.find((r) => r.userId === "user-2")).toMatchObject({ calls: 0, talkTimeSec: 0 });
+    expect(leaderboard.find((r) => r.userId === "user-1")).toMatchObject({ calls: 5, talkTimeSec: 600, answerRate: 75 });
+    expect(leaderboard.find((r) => r.userId === "user-2")).toMatchObject({ calls: 0, talkTimeSec: 0, answerRate: null });
 
     expect(leaderboard.length).toBe(2);
     // Bob should be Rank 1 due to higher revenue ($25,000)
