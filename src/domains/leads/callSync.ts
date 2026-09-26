@@ -13,6 +13,7 @@ export type DeviceCall = {
   direction: CallDirection;
   startedAt: Date;
   durationSec: number; // 0 = not answered
+  alertedOnDevice?: boolean; // the phone already showed "Missed call from …" when the call ended
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -166,6 +167,9 @@ export async function syncDeviceCalls(input: {
           titleVars: { name: lead.name },
           body: to === userId ? "Tap to reply on WhatsApp or call back" : "They called a teammate's phone — tap to follow up",
           leadId: lead.id,
+          // The rep's phone alerted them the moment the call ended: keep the bell entry, skip a
+          // second push. The owner (someone else) still gets theirs.
+          mobilePush: !(to === userId && call.alertedOnDevice),
         }).catch(() => {});
       }
     }

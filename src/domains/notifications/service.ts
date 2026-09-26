@@ -10,8 +10,10 @@ type Vars = Record<string, string | number>;
 export class NotificationService {
   // title/body are English source text (see lib/i18n); pass titleVars/bodyVars for {placeholders}.
   // They're translated into the recipient's language before storing and pushing.
-  static async create(input: { userId: string; type: string; title: string; body?: string; leadId?: string; titleVars?: Vars; bodyVars?: Vars }) {
-    const { titleVars, bodyVars, ...rest } = input;
+  // mobilePush: false = in-app bell (and browser push) only — for an alert the phone already showed
+  // itself (a missed call the app's call receiver notified about the moment it ended).
+  static async create(input: { userId: string; type: string; title: string; body?: string; leadId?: string; titleVars?: Vars; bodyVars?: Vars; mobilePush?: boolean }) {
+    const { titleVars, bodyVars, mobilePush = true, ...rest } = input;
     const [u] = await db.select({ language: users.language }).from(users).where(eq(users.id, input.userId)).limit(1);
     const { t } = await import("@/lib/i18n");
     const data = {
@@ -29,7 +31,7 @@ export class NotificationService {
     });
     // Best-effort mobile push (Expo + FCM) — same event, native devices. The app routes taps by
     // type/leadId, marks the notification read by id, and shows the unread count on its icon.
-    void (async () => {
+    if (mobilePush) void (async () => {
       const [{ MobilePushService }, { pushChannelFor }, badge] = await Promise.all([
         import("@/lib/push/mobile"),
         import("@/lib/push/channels"),

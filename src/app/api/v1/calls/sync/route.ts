@@ -16,6 +16,7 @@ const schema = z.object({
         direction: z.enum(["outgoing", "incoming"]),
         startedAt: z.iso.datetime({ offset: true }),
         durationSec: z.number().int().min(0).max(86_400),
+        alertedOnDevice: z.boolean().optional(),
       }),
     )
     .max(200),

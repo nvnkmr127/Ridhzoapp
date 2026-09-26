@@ -92,6 +92,12 @@ describe("syncDeviceCalls", () => {
     expect(notify).toHaveBeenCalledWith(expect.objectContaining({ userId: "u2", leadId: "lead-other" }));
   });
 
+  it("skips the push to the rep whose phone already alerted, not the bell entry or the owner's push", async () => {
+    await run([call({ number: "+919000000001", direction: "incoming", durationSec: 0, alertedOnDevice: true })], async () => true);
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ userId: "u1", mobilePush: false }));
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ userId: "u2", mobilePush: true }));
+  });
+
   it("doesn't re-notify a call that was already logged", async () => {
     recordLeadContact.mockResolvedValueOnce({ logged: false });
     const res = await run([call({ direction: "incoming", durationSec: 0 })]);
