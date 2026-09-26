@@ -44,7 +44,7 @@ export function Header({
 }) {
   const [searchOpen, setSearchOpen] = React.useState(false);
   const t = useT();
-  const { data: session } = useSession();
+  const { data: session } = useSession() || {};
   const [shortcutLabel, setShortcutLabel] = React.useState("⌘K");
 
   // Cmd/Ctrl+K toggles the global command palette & detect operating system for shortcut badge.
