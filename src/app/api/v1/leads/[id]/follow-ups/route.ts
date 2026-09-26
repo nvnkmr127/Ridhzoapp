@@ -8,7 +8,8 @@ import { canEditLeads, leadForApi, leadNotFound, readOnly } from "@/lib/meetings
 const schema = z.object({
   title: z.string().trim().min(1).max(255),
   dueAt: z.string().datetime(),
-  type: z.enum(["follow_up", "task"]).optional(),
+  // "call": the app's "Call back at…" after a call — completed by the next call that reaches the lead.
+  type: z.enum(["follow_up", "task", "call"]).optional(),
   description: z.string().optional(),
 });
 

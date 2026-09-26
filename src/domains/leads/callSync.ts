@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, gte, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, gte, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { leads, users, activities, organizations } from "@/db/schema";
 import { normalizePhone } from "@/lib/leads/normalize";
@@ -100,6 +100,11 @@ export async function syncDeviceCalls(input: {
   const keysFor = (n: string) => [...new Set([normalizePhone(n, dial), n.replace(/\D/g, "")].filter((k): k is string => !!k))];
   const allKeys = [...new Set(calls.flatMap((c) => keysFor(c.number)))];
   if (!allKeys.length) return { matched: 0, logged: 0 };
+  // The phone picked these calls by the last 8 digits (phoneKey), like caller ID. Match that way too,
+  // or a lead saved as "98765 43210" / with another prefix passes the phone's filter, gets uploaded,
+  // and is dropped here. An exact match on the stored number still wins over a last-8 one.
+  const lastEight = [...new Set(calls.map((c) => phoneKey(c.number)).filter((k): k is string => !!k))];
+  const phoneLastEight = sql<string>`right(regexp_replace(${leads.phone}, '\\D', '', 'g'), 8)`;
 
   // The same number can sit on several leads (a duplicate, a colleague's copy). Pick like caller ID
   // does: the most recently active lead this rep may open — so the call lands on the lead whose name
@@ -107,10 +112,12 @@ export async function syncDeviceCalls(input: {
   const rows = await db
     .select({ id: leads.id, name: leads.name, phone: leads.phone, ownerId: leads.ownerId, createdAt: leads.createdAt, updatedAt: leads.updatedAt })
     .from(leads)
-    .where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt), inArray(leads.phone, allKeys)))
+    .where(and(
+      eq(leads.organizationId, organizationId),
+      isNull(leads.deletedAt),
+      or(inArray(leads.phone, allKeys), lastEight.length ? inArray(phoneLastEight, lastEight) : undefined),
+    ))
     .orderBy(desc(leads.updatedAt));
-  const byPhone = new Map<string, typeof rows>();
-  for (const r of rows) byPhone.set(r.phone!, [...(byPhone.get(r.phone!) ?? []), r]);
 
   const allowed = new Map<string, boolean>();
   let matched = 0;
@@ -121,10 +128,12 @@ export async function syncDeviceCalls(input: {
     return allowed.get(id)!;
   };
   for (const call of calls) {
-    const candidates = keysFor(call.number)
-      .flatMap((k) => byPhone.get(k) ?? [])
+    const exact = new Set(keysFor(call.number));
+    const key = phoneKey(call.number);
+    const candidates = rows
+      .filter((l) => exact.has(l.phone!) || (!!key && phoneKey(l.phone) === key))
       .filter((l) => call.startedAt.getTime() >= l.createdAt.getTime() - BEFORE_LEAD_MS)
-      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+      .sort((a, b) => Number(!exact.has(a.phone!)) - Number(!exact.has(b.phone!)) || b.updatedAt.getTime() - a.updatedAt.getTime());
     let lead: (typeof candidates)[number] | undefined;
     for (const c of candidates) if (await mayOpen(c.id)) { lead = c; break; }
     if (!lead) continue;

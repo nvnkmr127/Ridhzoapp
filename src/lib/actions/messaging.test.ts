@@ -148,16 +148,31 @@ describe("calls read from the phone's call log", () => {
   });
 
   it("a missed call from the lead is logged but isn't outreach, and books one callback", async () => {
-    // recent calls, no open callback yet, then the lead's name/owner
-    selectResults = [[], [], [{ name: "Ravi Kumar", ownerId: "u2" }]];
+    // recent calls, workspace timezone, no open callback yet, then the lead's name/owner
+    selectResults = [[], [{ timezone: "Asia/Kolkata" }], [], [{ name: "Ravi Kumar", ownerId: "u2" }]];
     await recordLeadContact({ leadId: LEAD, userId: "u1", channel: "call", direction: "incoming", durationSec: 0, externalRef: "c2" });
     expect(waInsert).toHaveBeenCalledWith(expect.objectContaining({ content: "Missed call from lead" }));
     expect(markLeadContacted).not.toHaveBeenCalled();
     expect(createFollowUp).toHaveBeenCalledWith(expect.objectContaining({ leadId: LEAD, type: "call", title: "Call back Ravi Kumar", userId: "u2" }));
   });
 
+  it("doesn't book a callback for a week-old missed call (first sync backfills the last week)", async () => {
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    await recordLeadContact({ leadId: LEAD, userId: "u1", channel: "call", direction: "incoming", durationSec: 0, startedAt: weekAgo, externalRef: "c5" });
+    expect(waInsert).toHaveBeenCalledWith(expect.objectContaining({ content: "Missed call from lead" }));
+    expect(createFollowUp).not.toHaveBeenCalled();
+  });
+
+  it("puts the rep's outcome and note on a call the background sync already logged", async () => {
+    selectResults = [[{ id: "synced", content: "Called — Answered (1m 15s)" }]];
+    const res = await recordLeadContact({ leadId: LEAD, userId: "u1", channel: "call", direction: "outgoing", outcome: "busy", note: "in a meeting", durationSec: 75, startedAt: at, externalRef: "c6" });
+    expect(res.logged).toBe(false);
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ content: "Called — Busy / call back later (1m 15s)\nNote: in a meeting" }));
+    expect(waInsert).not.toHaveBeenCalled();
+  });
+
   it("doesn't pile up callbacks when the lead calls again before the rep calls back", async () => {
-    selectResults = [[], [{ id: "open-callback" }]];
+    selectResults = [[], [{ timezone: "Asia/Kolkata" }], [{ id: "open-callback" }]];
     await recordLeadContact({ leadId: LEAD, userId: "u1", channel: "call", direction: "incoming", durationSec: 0, externalRef: "c4" });
     expect(waInsert).toHaveBeenCalledWith(expect.objectContaining({ content: "Missed call from lead" }));
     expect(createFollowUp).not.toHaveBeenCalled();

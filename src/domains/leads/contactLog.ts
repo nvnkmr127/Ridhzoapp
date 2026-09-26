@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNull, like, lt, lte } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, like, lt, lte, or } from "drizzle-orm";
 import { db } from "@/db";
 import { activities, whatsappMessages, followUps, leads, organizations } from "@/db/schema";
 import { ActivityService } from "@/domains/activities/service";
@@ -33,6 +33,8 @@ export function formatCallDuration(sec: number): string {
 // How close a hand-logged call must be to the phone's record of it to be the same call: the rep logs
 // it during or just after the call, so from the call's start to 10 min after it ended.
 const MERGE_WINDOW_MS = 10 * 60 * 1000;
+// A missed call older than this is history, not a callback to book now (sync backfills a week).
+const CALLBACK_WITHIN_MS = 48 * 60 * 60 * 1000;
 
 // The rep logged this call by hand (no call-log id — e.g. the app couldn't read the call log in time),
 // and now the phone's record of it arrives. Attach the duration and id to that entry instead of adding
@@ -99,13 +101,22 @@ export async function recordLeadContact(input: {
   if (note) content += `\nNote: ${note}`;
 
   if (channel === "call" && !incoming && externalRef && startedAt && durationSec != null) {
-    // Already have this exact call → nothing to do; a hand-logged entry for it → fill that in.
+    // Already have this exact call. Usually the background sync got it first — it runs as the rep
+    // comes back from the dialer, while the "How did it go?" sheet is still open. The rep's outcome
+    // and note are what they said about the call: put them on that entry rather than dropping them.
     const [known] = await db
-      .select({ id: activities.id })
+      .select({ id: activities.id, content: activities.content })
       .from(activities)
       .where(and(eq(activities.userId, userId), eq(activities.externalRef, externalRef)))
       .limit(1);
-    if (known || (await mergeIntoManualLog({ leadId, userId, startedAt, durationSec, externalRef }))) {
+    if (known) {
+      if ((input.outcome || note) && known.content !== content) {
+        await db.update(activities).set({ content, updatedAt: new Date() }).where(eq(activities.id, known.id));
+      }
+      return { logged: false };
+    }
+    // A hand-logged entry for it → fill in the duration and call id.
+    if (await mergeIntoManualLog({ leadId, userId, startedAt, durationSec, externalRef })) {
       return { logged: false };
     }
   }
@@ -148,57 +159,78 @@ export async function recordLeadContact(input: {
     });
   }
 
+  // Day boundaries in the workspace's timezone (follow-up "due today", callback dedupe).
+  const at = startedAt ?? new Date();
+  let tz: string | null = null;
+  const endOfDay = async (d: Date) => {
+    if (!tz) {
+      const [org] = await db
+        .select({ timezone: organizations.timezone })
+        .from(leads)
+        .innerJoin(organizations, eq(organizations.id, leads.organizationId))
+        .where(eq(leads.id, leadId))
+        .limit(1);
+      tz = org?.timezone || DEFAULT_FORMAT.timezone;
+    }
+    return startOfZonedDay(d, tz, 1);
+  };
+
   // A wrong number isn't contact with the lead, and neither is a call from them we missed; everything
   // else (even an unanswered outgoing call) is an outreach attempt, which is what SLA timing measures.
   if (outcome !== "wrong_number" && !missed) {
     await markLeadContacted(leadId, startedAt);
 
-    // Auto-complete the follow-ups this contact answers, so reps don't tick them off by hand: ones of
-    // the same kind (a call completes "call", WhatsApp completes "whatsapp") plus generic "follow-up"s,
-    // due by the end of today in the workspace's timezone — next week's follow-up still stands.
-    const kinds = channel === "call" ? ["call", "followup"] : channel === "email" ? ["email", "followup"] : ["whatsapp", "followup"];
-    const [org] = await db
-      .select({ timezone: organizations.timezone })
-      .from(leads)
-      .innerJoin(organizations, eq(organizations.id, leads.organizationId))
-      .where(eq(leads.id, leadId))
-      .limit(1);
-    const timezone = org?.timezone || DEFAULT_FORMAT.timezone;
-    const endOfToday = startOfZonedDay(startedAt ?? new Date(), timezone, 1);
-    const pending = await db
-      .select({ id: followUps.id })
-      .from(followUps)
-      .where(and(
-        eq(followUps.leadId, leadId),
-        inArray(followUps.type, kinds),
-        eq(followUps.status, "pending"),
-        lt(followUps.dueAt, endOfToday),
-      ));
+    // Auto-complete the follow-ups this contact answers, so reps don't tick them off by hand. Only when
+    // the lead was actually reached: an unanswered call (often from the phone's own dialer, synced in
+    // the background with no one asked) must leave "Call Ravi" open, or the lead silently drops.
+    // Which ones: same kind (call → "call", WhatsApp → "whatsapp") or generic "follow-up"s, due by the
+    // end of that day — and ones that existed before the contact or were already due then, so a call
+    // synced late never completes a follow-up the rep booked after it ("call again at 3pm").
+    const reached = channel !== "call" || outcome === "answered";
+    if (reached) {
+      const kinds = channel === "call" ? ["call", "followup"] : channel === "email" ? ["email", "followup"] : ["whatsapp", "followup"];
+      const pending = await db
+        .select({ id: followUps.id })
+        .from(followUps)
+        .where(and(
+          eq(followUps.leadId, leadId),
+          inArray(followUps.type, kinds),
+          eq(followUps.status, "pending"),
+          lt(followUps.dueAt, await endOfDay(at)),
+          or(lte(followUps.createdAt, at), lte(followUps.dueAt, at)),
+        ));
 
-    if (pending.length > 0) {
-      const { FollowUpService } = await import("@/domains/follow-ups/service");
-      for (const f of pending) {
-        await FollowUpService.completeFollowUp(f.id);
-        completedFollowUpIds.push(f.id);
+      if (pending.length > 0) {
+        const { FollowUpService } = await import("@/domains/follow-ups/service");
+        for (const f of pending) {
+          await FollowUpService.completeFollowUp(f.id);
+          completedFollowUpIds.push(f.id);
+        }
       }
     }
   }
 
-  // Missed call from a lead → callback task (one: three missed calls in a row are one call back).
-  const [openCallback] = missed
-    ? await db.select({ id: followUps.id }).from(followUps)
-        .where(and(eq(followUps.leadId, leadId), eq(followUps.type, "call"), eq(followUps.status, "pending"))).limit(1)
-    : [];
-  if (missed && !openCallback) {
-    const { FollowUpService } = await import("@/domains/follow-ups/service");
-    const [leadRec] = await db.select({ name: leads.name, ownerId: leads.ownerId }).from(leads).where(eq(leads.id, leadId)).limit(1);
-    await FollowUpService.createFollowUp({
-      leadId,
-      type: "call",
-      title: leadRec?.name ? `Call back ${leadRec.name}` : "Call back",
-      dueAt: new Date(),
-      userId: leadRec?.ownerId ?? userId,
-    });
+  // Missed call from a lead → callback task, due from the moment they called (so the rep's call back,
+  // even one synced in the same batch, completes it). Not for old history — turning sync on uploads
+  // the last week, and week-old missed calls aren't a to-do now — and not when a call follow-up is
+  // already due today (three missed calls in a row are one call back; next week's call isn't one).
+  if (missed && Date.now() - at.getTime() < CALLBACK_WITHIN_MS) {
+    const [openCallback] = await db
+      .select({ id: followUps.id })
+      .from(followUps)
+      .where(and(eq(followUps.leadId, leadId), eq(followUps.type, "call"), eq(followUps.status, "pending"), lt(followUps.dueAt, await endOfDay(new Date()))))
+      .limit(1);
+    if (!openCallback) {
+      const { FollowUpService } = await import("@/domains/follow-ups/service");
+      const [leadRec] = await db.select({ name: leads.name, ownerId: leads.ownerId }).from(leads).where(eq(leads.id, leadId)).limit(1);
+      await FollowUpService.createFollowUp({
+        leadId,
+        type: "call",
+        title: leadRec?.name ? `Call back ${leadRec.name}` : "Call back",
+        dueAt: at,
+        userId: leadRec?.ownerId ?? userId,
+      });
+    }
   }
 
   // Show personal-mode WhatsApp messages in the lead's WhatsApp thread too. "sent" = handed to the

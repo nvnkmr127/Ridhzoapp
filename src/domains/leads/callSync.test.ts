@@ -13,7 +13,7 @@ vi.mock("@/db", () => ({
 }));
 vi.mock("drizzle-orm", async (orig) => {
   const real = await orig<typeof import("drizzle-orm")>();
-  return { ...real, inArray: (col: unknown, vals: string[]) => ((queriedPhones = vals), real.inArray(col as never, vals)) };
+  return { ...real, inArray: (col: unknown, vals: string[]) => ((queriedPhones = [...queriedPhones, ...vals]), real.inArray(col as never, vals)) };
 });
 vi.mock("@/lib/leads/orgDialCode", () => ({ orgDialCode: async () => "+91" }));
 const recordLeadContact = vi.fn<(a: unknown) => Promise<{ logged: boolean }>>(async () => ({ logged: true }));
@@ -32,6 +32,7 @@ describe("syncDeviceCalls", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     leadRows = baseRows;
+    queriedPhones = [];
   });
 
   it("matches a national-format number to the stored +91 lead and logs it", async () => {
@@ -69,6 +70,19 @@ describe("syncDeviceCalls", () => {
     leadRows = [dup("stale", "u1", "2026-09-02T00:00:00Z"), dup("fresh-hidden", "u2", "2026-09-25T00:00:00Z"), dup("fresh", "u1", "2026-09-20T00:00:00Z")];
     await run([call({ externalRef: "d1" })], async (id) => id !== "fresh-hidden");
     expect(recordLeadContact).toHaveBeenCalledWith(expect.objectContaining({ leadId: "fresh" }));
+  });
+
+  it("matches a lead saved in another format by the last 8 digits, preferring an exact match", async () => {
+    const lead = (id: string, phone: string, updatedAt: string) => ({ id, name: id, phone, ownerId: "u1", createdAt: LEAD_CREATED, updatedAt: new Date(updatedAt) });
+    leadRows = [lead("spaced", "98765 43210", "2026-09-25T00:00:00Z")];
+    await run([call({ externalRef: "f1" })], async () => true);
+    expect(recordLeadContact).toHaveBeenCalledWith(expect.objectContaining({ leadId: "spaced" }));
+    expect(queriedPhones).toContain("76543210"); // asked the db for last-8 matches too
+
+    recordLeadContact.mockClear();
+    leadRows = [lead("spaced", "98765 43210", "2026-09-25T00:00:00Z"), lead("exact", "+919876543210", "2026-09-02T00:00:00Z")];
+    await run([call({ externalRef: "f2" })], async () => true);
+    expect(recordLeadContact).toHaveBeenCalledWith(expect.objectContaining({ leadId: "exact" }));
   });
 
   it("alerts the rep whose phone rang and, when someone else owns the lead, the owner too", async () => {
