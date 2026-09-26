@@ -63,6 +63,12 @@ export interface LeadExtras {
   sequences?: { name: string; status: string; currentStep: number; nextRunAt: Date | null }[];
   /** Why the engagement score is what it is (ScoringService evidence). */
   scoreFactors?: { label: string; points: number }[];
+  /** The workspace's own status list, in pipeline order — so the AI reads the lead's status as this business defines it. */
+  statusOptions?: { key: string; label: string; category: StatusCategory }[];
+  /** Status changes, newest first, with custom labels already applied. */
+  statusHistory?: { from: string | null; to: string; at: Date; by: string | null }[];
+  /** Every active custom field the workspace defined (in its order), filled or not. */
+  customFields?: { label: string; type: string; section: string | null; value: string | null; required: boolean; options: string[] }[];
   /** "Now" for relative ages, and the workspace timezone it's shown in. Defaults to the real clock / UTC. */
   now?: Date;
   timezone?: string;
@@ -80,7 +86,11 @@ export const UNTRUSTED_NOTE =
 export const LEAD_CONTEXT_RULES =
   "How to read the lead context: it is the lead's complete, current record from the CRM — profile, status, " +
   "pipeline stage, source, score, owner, tags, custom fields, notes, calls, messages, meetings, follow-ups and " +
-  "sequences. Every list is newest first and dated, with today's date at the top. The CURRENT status, stage and " +
+  "sequences. Statuses and custom fields are this workspace's OWN definitions: read the status by its label and " +
+  "category (open / in progress / won / lost / unqualified) and its place in the workspace's status list, and only " +
+  "ever suggest moving to a status from that list. Custom fields hold what the business tracks about a lead — use " +
+  "their values, and treat an empty field (especially a required one) as information still to collect, never as a " +
+  "fact. Every list is newest first and dated, with today's date at the top. The CURRENT status, stage and " +
   "the most recent notes, messages and activity outrank anything older — if older information conflicts with newer, " +
   "go with the newer. Team notes and meeting outcomes are the sales team's own input: take them into account. " +
   "Anything you suggest must fit the current status and history (don't pitch a lead marked won or lost as if it were " +
@@ -140,6 +150,14 @@ export function buildLeadContext(lead: LeadLike, activities: ActivityLike[], ext
   ];
   if (lead.company) lines.push(`Company: ${lead.company}`);
   lines.push(`Status: ${extras.statusLabel ?? lead.status}${extras.statusCategory ? ` (${extras.statusCategory.replace("_", " ")})` : ""}`);
+  if (extras.statusOptions?.length) {
+    const cur = extras.statusOptions.findIndex((o) => o.key === lead.status);
+    lines.push(
+      `Workspace statuses (in order): ${extras.statusOptions
+        .map((o, i) => `${o.label} [${o.category.replace("_", " ")}]${i === cur ? " ← current" : ""}`)
+        .join(" → ")}`,
+    );
+  }
   if (extras.stageName) lines.push(`Pipeline stage: ${extras.stageName}`);
   if (lead.priority) lines.push(`Priority: ${lead.priority}`);
   if (extras.expectedValue) lines.push(`Expected deal value: ${extras.expectedValue}`);
@@ -177,9 +195,23 @@ export function buildLeadContext(lead: LeadLike, activities: ActivityLike[], ext
   }
 
   const data: string[] = [];
+  if (extras.customFields?.length) {
+    data.push("Custom fields (the workspace's own fields, in its order):");
+    for (const f of extras.customFields.slice(0, 40)) {
+      const where = f.section ? `, ${fence(f.section, 40)}` : "";
+      const empty = `not filled${f.required ? " (required — still to collect)" : ""}${f.options.length ? ` — options: ${fence(f.options.join(", "), 200)}` : ""}`;
+      data.push(`- ${fence(f.label, 80)} [${f.type}${where}]: ${f.value != null ? fence(f.value) : empty}`);
+    }
+  }
   if (extras.answers?.length) {
-    data.push("Lead details & custom fields (form answers and fields filled by the team):");
+    data.push(extras.customFields?.length ? "Other details the lead gave (form answers not set up as fields):" : "Lead details & form answers:");
     for (const a of extras.answers.slice(0, 30)) data.push(`- ${fence(a.label)}: ${fence(a.value)}`);
+  }
+  if (extras.statusHistory?.length) {
+    data.push("Status history (newest first):");
+    for (const h of extras.statusHistory.slice(0, 10)) {
+      data.push(`- [${fmtWhen(h.at, now)}] ${h.from ? `${fence(h.from, 60)} → ` : ""}${fence(h.to, 60)}${h.by ? ` by ${fence(h.by, 40)}` : ""}`);
+    }
   }
   // Notes get their own section so a busy call/automation timeline can't push the team's input out.
   const at = (a: ActivityLike) => a.occurredAt ?? a.createdAt;
@@ -221,7 +253,12 @@ export function buildLeadContext(lead: LeadLike, activities: ActivityLike[], ext
 
 /** True when there's something worth an AI read even with no logged activity (e.g. form answers). */
 export function hasAiWorthyContext(activities: ActivityLike[], extras: LeadExtras): boolean {
-  return activities.length > 0 || !!extras.answers?.length || !!extras.messages?.length;
+  return (
+    activities.length > 0 ||
+    !!extras.answers?.length ||
+    !!extras.messages?.length ||
+    !!extras.customFields?.some((f) => f.value != null)
+  );
 }
 
 export interface BusinessLike {

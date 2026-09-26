@@ -2,7 +2,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { followUps, leadPipelineStages, users, whatsappMessages } from "@/db/schema";
+import { followUps, leadPipelineStages, leadStatusHistory, users, whatsappMessages } from "@/db/schema";
 import { TagService } from "@/domains/tags/service";
 import { SequenceService } from "@/domains/leads/sequenceService";
 import { ActivityService } from "@/domains/activities/service";
@@ -31,12 +31,13 @@ import { buildLeadContext, type ActivityLike, type LeadExtras, type LeadLike } f
 export const LEAD_AI_SOURCES = {
   business: "Workspace name, industry, website, city, phone and the owner's own \"about the business\" text (organizations) — via leadSystemPrompt",
   profile: "Name, channels available (not raw phone/email), company, priority, created date (leads)",
-  status: "Status with its category, pipeline stage, lost reason, expected value (leads, custom statuses, pipeline stages)",
+  status: "Status by its custom label and category, the workspace's full status list in order, pipeline stage, lost reason, expected value (leads, custom_status_configs, pipeline stages)",
+  statusHistory: "Status changes over time with custom labels and who made them (lead_status_history)",
   source: "Lead source and ad/UTM campaign (lead_sources, customData attribution)",
   score: "Engagement score and the factors behind it (leads.score, customData._scoreFactors)",
   owner: "Assigned sales rep (users)",
   tags: "Tags on the lead (lead_tags)",
-  customFields: "Form answers and custom fields, with the workspace's labels (customData + custom field definitions)",
+  customFields: "Every active custom field the workspace defined — label, type, section, options, required — with the lead's value or 'not filled'; plus form answers that aren't defined fields (custom_field_defs + customData). Admin-only fields are left out: AI output is shown to reps.",
   notes: "Team notes, newest first, with who wrote them (activities type=note)",
   activity: "Full activity history — calls, emails, status changes, automations — newest first, with who logged it (activities)",
   calls: "Call totals over all time, answered / incoming / talk time, unanswered streak, best time to reach (activities)",
@@ -74,6 +75,19 @@ type LoadableLead = LeadLike & {
 
 const MESSAGE_LIMIT = 20;
 
+// A custom field's stored value as text for the prompt; null = not filled.
+function fieldValue(raw: unknown, type: string): string | null {
+  if (raw == null || raw === "") return null;
+  if (Array.isArray(raw)) return raw.length ? raw.map(String).join(", ") : null;
+  if (type === "checkbox") return raw === true || raw === "true" || raw === 1 || raw === "1" ? "yes" : "no";
+  if ((type === "date" || type === "datetime") && !Number.isNaN(Date.parse(String(raw)))) {
+    const iso = new Date(String(raw)).toISOString();
+    return type === "date" ? iso.slice(0, 10) : iso.slice(0, 16).replace("T", " ") + " UTC";
+  }
+  const s = typeof raw === "object" ? JSON.stringify(raw) : String(raw).trim();
+  return s || null;
+}
+
 /**
  * Gathers everything the AI should know about a lead — see LEAD_AI_SOURCES — from the latest data,
  * so a recap, draft, assistant answer or reply classification is grounded in the whole record.
@@ -81,7 +95,7 @@ const MESSAGE_LIMIT = 20;
 export async function loadLeadAiContext(lead: LoadableLead, organizationId: string) {
   const cd = (lead.customData as Record<string, unknown> | null) ?? {};
 
-  const [activityRows, messages, shares, statuses, defs, stage, source, meetingRows, owner, tagRows, followUpRows, sequenceRows] = await Promise.all([
+  const [activityRows, messages, shares, statuses, defs, stage, source, meetingRows, owner, tagRows, followUpRows, sequenceRows, statusRows] = await Promise.all([
     ActivityService.getLeadActivities(lead.id),
     db
       .select({ direction: whatsappMessages.direction, body: whatsappMessages.body, createdAt: whatsappMessages.createdAt })
@@ -127,6 +141,20 @@ export async function loadLeadAiContext(lead: LoadableLead, organizationId: stri
       .limit(15)
       .catch(() => []),
     SequenceService.listForLead(lead.id).catch(() => []),
+    db
+      .select({
+        oldStatus: leadStatusHistory.oldStatus,
+        newStatus: leadStatusHistory.newStatus,
+        createdAt: leadStatusHistory.createdAt,
+        firstName: users.firstName,
+        lastName: users.lastName,
+      })
+      .from(leadStatusHistory)
+      .leftJoin(users, eq(leadStatusHistory.changedById, users.id))
+      .where(eq(leadStatusHistory.leadId, lead.id))
+      .orderBy(desc(leadStatusHistory.createdAt))
+      .limit(10)
+      .catch(() => []),
   ]);
 
   // Who logged each entry, and when it actually happened (phone calls sync in after the fact).
@@ -138,7 +166,27 @@ export async function loadLeadAiContext(lead: LoadableLead, organizationId: stri
   const scoreFactors = (cd._scoreFactors as { factors?: { label: string; points: number }[] } | undefined)?.factors;
 
   const status = statuses.find((s) => s.key === lead.status);
-  const labels = Object.fromEntries((defs as { key: string; label: string }[]).map((d) => [d.key, d.label]));
+  const statusLabel = (key: string | null) => (key ? statuses.find((s) => s.key === key)?.label ?? key : null);
+
+  // Custom fields: every active definition, filled or not, so the AI knows what the business tracks
+  // and what's still missing. Admin-only fields stay out — recaps and drafts are shown to reps.
+  const fieldDefs = defs as {
+    key: string; label: string; type: string; options: string[] | null; required: boolean;
+    disabled: boolean; adminOnly: boolean; section: string | null;
+  }[];
+  const hiddenKeys = new Set(fieldDefs.filter((d) => d.adminOnly || d.disabled).map((d) => d.key));
+  const shownDefs = fieldDefs.filter((d) => !hiddenKeys.has(d.key));
+  const definedKeys = new Set(fieldDefs.map((d) => d.key));
+  const customFields = shownDefs.map((d) => ({
+    label: d.label,
+    type: d.type,
+    section: d.section || null,
+    value: fieldValue(cd[d.key], d.type),
+    required: d.required,
+    options: Array.isArray(d.options) ? d.options : [],
+  }));
+  // Anything else the lead gave (form answers without a field definition), minus hidden fields.
+  const otherAnswers = formAnswers(cd).filter((a) => !definedKeys.has(a.key));
   const campaign = [cd.meta_campaign_name, cd.utm_campaign, cd.campaign].find((v) => typeof v === "string" && v) as string | undefined;
 
   const tz = (await getOrgFormat(organizationId).catch(() => null))?.timezone ?? "UTC";
@@ -172,7 +220,15 @@ export async function loadLeadAiContext(lead: LoadableLead, organizationId: stri
     lostReason: lead.lostReason ?? null,
     source: source && source.organizationId === organizationId ? source.name : typeof cd.leadSource === "string" ? cd.leadSource : null,
     campaign: campaign ?? null,
-    answers: formAnswers(cd, labels),
+    answers: otherAnswers,
+    customFields,
+    statusOptions: [...statuses].sort((a, b) => a.orderIndex - b.orderIndex).map((st) => ({ key: st.key, label: st.label, category: st.category })),
+    statusHistory: statusRows.map((h) => ({
+      from: statusLabel(h.oldStatus),
+      to: statusLabel(h.newStatus) ?? h.newStatus,
+      at: h.createdAt,
+      by: [h.firstName, h.lastName].filter(Boolean).join(" ") || null,
+    })),
     messages: [...messages].reverse(),
     contentOpens: shares.map((s) => ({ title: s.title, viewCount: s.viewCount, lastViewedAt: s.lastViewedAt })),
     unansweredStreak: callStats.unansweredStreak,

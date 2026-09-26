@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildLeadContext, draftSystemPrompt, businessPreamble, leadSystemPrompt, LEAD_CONTEXT_RULES, UNTRUSTED_NOTE, type LeadLike } from "./leadBrief";
+import { buildLeadContext, hasAiWorthyContext, draftSystemPrompt, businessPreamble, leadSystemPrompt, LEAD_CONTEXT_RULES, UNTRUSTED_NOTE, type LeadLike } from "./leadBrief";
 
 const baseLead: LeadLike = {
   name: "Ada Lovelace",
@@ -93,6 +93,46 @@ describe("buildLeadContext", () => {
       { type: "note", content: "Budget is 80L max", createdAt: new Date("2026-08-01T00:00:00Z") },
     ];
     expect(buildLeadContext(baseLead, acts)).toContain("Budget is 80L max");
+  });
+
+  it("reads the status as the workspace defines it: custom labels, order, category and history", () => {
+    const ctx = buildLeadContext({ ...baseLead, status: "site_visit" }, [], {
+      statusLabel: "Site visit booked",
+      statusCategory: "in_progress",
+      statusOptions: [
+        { key: "new", label: "New", category: "open" },
+        { key: "site_visit", label: "Site visit booked", category: "in_progress" },
+        { key: "booked", label: "Flat booked", category: "won" },
+      ],
+      statusHistory: [{ from: "New", to: "Site visit booked", at: new Date("2026-09-24T00:00:00Z"), by: "Priya" }],
+      now: new Date("2026-09-26T00:00:00Z"),
+    });
+    expect(ctx).toContain("Status: Site visit booked (in progress)");
+    expect(ctx).toContain("Workspace statuses (in order): New [open] → Site visit booked [in progress] ← current → Flat booked [won]");
+    expect(ctx).toContain("[2026-09-24 (2d ago)] New → Site visit booked by Priya");
+  });
+
+  it("lists every custom field, filled or not, flagging required ones still to collect", () => {
+    const ctx = buildLeadContext(baseLead, [], {
+      customFields: [
+        { label: "Budget", type: "number", section: "Requirement", value: "8000000", required: true, options: [] },
+        { label: "BHK", type: "select", section: null, value: null, required: true, options: ["2BHK", "3BHK"] },
+        { label: "Loan needed", type: "checkbox", section: null, value: null, required: false, options: [] },
+      ],
+      answers: [{ key: "how_did_you_hear", label: "How did you hear", value: "Instagram" }],
+    });
+    const fenced = ctx.slice(ctx.indexOf("<lead_data>"));
+    expect(fenced).toContain("- Budget [number, Requirement]: 8000000");
+    expect(fenced).toContain("- BHK [select]: not filled (required — still to collect) — options: 2BHK, 3BHK");
+    expect(fenced).toContain("- Loan needed [checkbox]: not filled");
+    expect(fenced).toContain("Other details the lead gave (form answers not set up as fields):");
+    expect(fenced).toContain("- How did you hear: Instagram");
+  });
+
+  it("counts a filled custom field as enough to write a recap", () => {
+    const f = { label: "Budget", type: "number", section: null, required: false, options: [] };
+    expect(hasAiWorthyContext([], { customFields: [{ ...f, value: "5L" }] })).toBe(true);
+    expect(hasAiWorthyContext([], { customFields: [{ ...f, value: null }] })).toBe(false);
   });
 
   it("only shows Company when the lead has one", () => {
