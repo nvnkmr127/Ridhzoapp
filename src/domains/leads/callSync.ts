@@ -101,21 +101,33 @@ export async function syncDeviceCalls(input: {
   const allKeys = [...new Set(calls.flatMap((c) => keysFor(c.number)))];
   if (!allKeys.length) return { matched: 0, logged: 0 };
 
+  // The same number can sit on several leads (a duplicate, a colleague's copy). Pick like caller ID
+  // does: the most recently active lead this rep may open — so the call lands on the lead whose name
+  // the phone showed, and never on one they can't see while another one matches.
   const rows = await db
-    .select({ id: leads.id, name: leads.name, phone: leads.phone, ownerId: leads.ownerId, createdAt: leads.createdAt })
+    .select({ id: leads.id, name: leads.name, phone: leads.phone, ownerId: leads.ownerId, createdAt: leads.createdAt, updatedAt: leads.updatedAt })
     .from(leads)
-    .where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt), inArray(leads.phone, allKeys)));
-  const byPhone = new Map(rows.map((r) => [r.phone!, r]));
+    .where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt), inArray(leads.phone, allKeys)))
+    .orderBy(desc(leads.updatedAt));
+  const byPhone = new Map<string, typeof rows>();
+  for (const r of rows) byPhone.set(r.phone!, [...(byPhone.get(r.phone!) ?? []), r]);
 
   const allowed = new Map<string, boolean>();
   let matched = 0;
   let logged = 0;
   const completedFollowUpIds = new Set<string>();
+  const mayOpen = async (id: string) => {
+    if (!allowed.has(id)) allowed.set(id, await canOpen(id));
+    return allowed.get(id)!;
+  };
   for (const call of calls) {
-    const lead = keysFor(call.number).map((k) => byPhone.get(k)).find(Boolean);
-    if (!lead || call.startedAt.getTime() < lead.createdAt.getTime() - BEFORE_LEAD_MS) continue;
-    if (!allowed.has(lead.id)) allowed.set(lead.id, await canOpen(lead.id));
-    if (!allowed.get(lead.id)) continue;
+    const candidates = keysFor(call.number)
+      .flatMap((k) => byPhone.get(k) ?? [])
+      .filter((l) => call.startedAt.getTime() >= l.createdAt.getTime() - BEFORE_LEAD_MS)
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+    let lead: (typeof candidates)[number] | undefined;
+    for (const c of candidates) if (await mayOpen(c.id)) { lead = c; break; }
+    if (!lead) continue;
     matched++;
 
     const res = await recordLeadContact({
@@ -133,16 +145,20 @@ export async function syncDeviceCalls(input: {
       res.completedFollowUpIds.forEach(id => completedFollowUpIds.add(id));
     }
 
+    // Missed call → alert the rep whose phone rang (they can call straight back), and the lead's
+    // owner too when that's someone else, so the owner knows their lead is trying to reach them.
     if (call.direction === "incoming" && call.durationSec === 0 && now.getTime() - call.startedAt.getTime() < NOTIFY_WITHIN_MS) {
       const { NotificationService } = await import("@/domains/notifications/service");
-      await NotificationService.create({
-        userId: lead.ownerId ?? userId,
-        type: "missed_call",
-        title: "Missed call from {name}",
-        titleVars: { name: lead.name },
-        body: "Tap to reply on WhatsApp or call back",
-        leadId: lead.id,
-      }).catch(() => {});
+      for (const to of new Set([userId, lead.ownerId ?? userId])) {
+        await NotificationService.create({
+          userId: to,
+          type: "missed_call",
+          title: "Missed call from {name}",
+          titleVars: { name: lead.name },
+          body: to === userId ? "Tap to reply on WhatsApp or call back" : "They called a teammate's phone — tap to follow up",
+          leadId: lead.id,
+        }).catch(() => {});
+      }
     }
   }
   return { matched, logged, completedFollowUpIds: Array.from(completedFollowUpIds) };

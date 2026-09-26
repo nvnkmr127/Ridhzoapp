@@ -1,13 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const LEAD_CREATED = new Date("2026-09-01T00:00:00Z");
-const leadRows = [
-  { id: "lead-own", name: "Ravi", phone: "+919876543210", ownerId: "u1", createdAt: LEAD_CREATED },
-  { id: "lead-other", name: "Asha", phone: "+919000000001", ownerId: "u2", createdAt: LEAD_CREATED },
+const OLD = new Date("2026-09-10T00:00:00Z");
+const baseRows = [
+  { id: "lead-own", name: "Ravi", phone: "+919876543210", ownerId: "u1", createdAt: LEAD_CREATED, updatedAt: OLD },
+  { id: "lead-other", name: "Asha", phone: "+919000000001", ownerId: "u2", createdAt: LEAD_CREATED, updatedAt: OLD },
 ];
+let leadRows = baseRows;
 let queriedPhones: string[] = [];
 vi.mock("@/db", () => ({
-  db: { select: () => ({ from: () => ({ where: async () => leadRows }) }) },
+  db: { select: () => ({ from: () => ({ where: () => ({ orderBy: async () => leadRows }) }) }) },
 }));
 vi.mock("drizzle-orm", async (orig) => {
   const real = await orig<typeof import("drizzle-orm")>();
@@ -27,7 +29,10 @@ const run = (calls: ReturnType<typeof call>[], canOpen = async (id: string) => i
   syncDeviceCalls({ organizationId: "org-1", userId: "u1", calls, canOpen, now });
 
 describe("syncDeviceCalls", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    leadRows = baseRows;
+  });
 
   it("matches a national-format number to the stored +91 lead and logs it", async () => {
     const res = await run([call({ externalRef: "c1" })]);
@@ -57,6 +62,20 @@ describe("syncDeviceCalls", () => {
     notify.mockClear();
     await run([call({ direction: "incoming", durationSec: 0, startedAt: new Date("2026-09-20T10:00:00Z") })]);
     expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("with the number on two leads, logs on the most recently active one the rep may open", async () => {
+    const dup = (id: string, ownerId: string, updatedAt: string) => ({ id, name: id, phone: "+919876543210", ownerId, createdAt: LEAD_CREATED, updatedAt: new Date(updatedAt) });
+    leadRows = [dup("stale", "u1", "2026-09-02T00:00:00Z"), dup("fresh-hidden", "u2", "2026-09-25T00:00:00Z"), dup("fresh", "u1", "2026-09-20T00:00:00Z")];
+    await run([call({ externalRef: "d1" })], async (id) => id !== "fresh-hidden");
+    expect(recordLeadContact).toHaveBeenCalledWith(expect.objectContaining({ leadId: "fresh" }));
+  });
+
+  it("alerts the rep whose phone rang and, when someone else owns the lead, the owner too", async () => {
+    await run([call({ number: "+919000000001", direction: "incoming", durationSec: 0 })], async () => true);
+    expect(notify).toHaveBeenCalledTimes(2);
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ userId: "u1", leadId: "lead-other" }));
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ userId: "u2", leadId: "lead-other" }));
   });
 
   it("doesn't re-notify a call that was already logged", async () => {
