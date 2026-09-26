@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildLeadContext, draftSystemPrompt, businessPreamble, type LeadLike } from "./leadBrief";
+import { buildLeadContext, draftSystemPrompt, businessPreamble, leadSystemPrompt, LEAD_CONTEXT_RULES, UNTRUSTED_NOTE, type LeadLike } from "./leadBrief";
 
 const baseLead: LeadLike = {
   name: "Ada Lovelace",
@@ -51,8 +51,69 @@ describe("buildLeadContext", () => {
     expect(ctx).not.toContain("event 10");
   });
 
+  it("covers the whole record: owner, tags, score reasons, calls, follow-ups, sequences, and dates relative to today", () => {
+    const now = new Date("2026-09-26T10:00:00Z");
+    const ctx = buildLeadContext(
+      { ...baseLead, createdAt: new Date("2026-09-20T00:00:00Z"), priority: "high" },
+      [
+        { type: "note", content: "Wants a 3BHK, decides after Diwali", createdAt: new Date("2026-09-25T00:00:00Z"), by: "Priya" },
+        { type: "call", content: "Called — Answered (3m 12s)", createdAt: new Date("2026-09-24T00:00:00Z"), by: "Priya" },
+      ],
+      {
+        now,
+        timezone: "Asia/Kolkata",
+        ownerName: "Priya Sharma",
+        tags: ["Hot", "Site visit done"],
+        scoreFactors: [{ label: "Replied to you", points: 25 }],
+        calls: { total: 4, answered: 1, incoming: 0, talkTimeSec: 192 },
+        followUps: [{ title: "Send brochure", type: "followup", status: "pending", dueAt: new Date("2026-09-28T00:00:00Z"), completedAt: null, description: null }],
+        sequences: [{ name: "Warm nurture", status: "active", currentStep: 1, nextRunAt: new Date("2026-09-27T00:00:00Z") }],
+        expectedValue: "1500000",
+      },
+    );
+    expect(ctx).toContain("Today: 2026-09-26 (workspace timezone Asia/Kolkata)");
+    expect(ctx).toContain("Assigned to: Priya Sharma");
+    expect(ctx).toContain("Priority: high");
+    expect(ctx).toContain("Tags: Hot, Site visit done");
+    expect(ctx).toContain("Engagement score: 72/100 — Replied to you (+25)");
+    expect(ctx).toContain("Calls: 4 total, 1 answered, 0 from the lead, 3 min talk time");
+    expect(ctx).toContain("Expected deal value: 1500000");
+    expect(ctx).toContain("Lead created: 2026-09-20 (6d ago)");
+    expect(ctx).toContain('In automated sequence: "Warm nurture" (step 2, next 2026-09-27 (in 1d))');
+    const fenced = ctx.slice(ctx.indexOf("<lead_data>"));
+    expect(fenced).toContain("Team notes (newest first):");
+    expect(fenced).toContain("Priya: Wants a 3BHK, decides after Diwali");
+    expect(fenced).toContain("[due 2026-09-28 (in 2d)] Send brochure (followup, pending)");
+    expect(fenced).toContain("call by Priya: Called — Answered (3m 12s)");
+  });
+
+  it("keeps team notes even when a busy timeline would push them out", () => {
+    const acts = [
+      ...Array.from({ length: 30 }, (_, i) => ({ type: "call", content: `call ${i}`, createdAt: new Date("2026-09-20T00:00:00Z") })),
+      { type: "note", content: "Budget is 80L max", createdAt: new Date("2026-08-01T00:00:00Z") },
+    ];
+    expect(buildLeadContext(baseLead, acts)).toContain("Budget is 80L max");
+  });
+
+  it("only shows Company when the lead has one", () => {
+    expect(buildLeadContext({ ...baseLead, company: null }, [])).not.toContain("Company:");
+  });
+
   it("does not leak enrichment line when there is none", () => {
     expect(buildLeadContext(baseLead, [])).not.toContain("Enriched");
+  });
+});
+
+describe("leadSystemPrompt", () => {
+  it("layers business, shared context rules, the feature's job and the untrusted-data note", () => {
+    const p = leadSystemPrompt({ name: "Acme Homes", industry: "Real Estate", website: null }, "Summarize the lead.");
+    expect(p.indexOf('"Acme Homes"')).toBeLessThan(p.indexOf(LEAD_CONTEXT_RULES));
+    expect(p.indexOf(LEAD_CONTEXT_RULES)).toBeLessThan(p.indexOf("Summarize the lead."));
+    expect(p.endsWith(UNTRUSTED_NOTE)).toBe(true);
+  });
+
+  it("still applies the shared rules when the org can't be loaded", () => {
+    expect(leadSystemPrompt(null, "Classify.")).toContain(LEAD_CONTEXT_RULES);
   });
 });
 

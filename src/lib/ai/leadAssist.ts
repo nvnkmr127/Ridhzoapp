@@ -2,8 +2,8 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
 import { generateText, aiEnabled } from "@/lib/ai/client";
-import { buildLeadContext, businessPreamble, hasAiWorthyContext, UNTRUSTED_NOTE } from "@/lib/ai/leadBrief";
-import { loadLeadAiContext } from "@/lib/ai/leadContext";
+import { hasAiWorthyContext, leadSystemPrompt } from "@/lib/ai/leadBrief";
+import { leadAiContext } from "@/lib/ai/leadContext";
 import { OrgService } from "@/domains/organizations/service";
 import { PlanService } from "@/domains/billing/planService";
 import type { LeadService } from "@/domains/leads/service";
@@ -35,7 +35,7 @@ function draftSystem(channel: "whatsapp" | "email", tone: keyof typeof TONES, la
     `Tone: ${TONES[tone]}. ${lang} Be specific to what the lead asked for (their form answers and messages) ` +
     "and to where the conversation is; don't repeat what was already sent. End with one clear next step. " +
     "No emojis unless natural. Use ONLY facts from the context — never invent prices, offers, dates or details. " +
-    `${shape}\n${UNTRUSTED_NOTE}`
+    shape
   );
 }
 
@@ -54,12 +54,12 @@ export async function draftReplyForLead(
   if (!aiEnabled()) return { ...fallback, ai: false };
   if (!(await PlanService.useAiCredit(organizationId))) return { ...fallback, ai: false, outOfCredits: true };
 
-  const [{ activities, extras }, org] = await Promise.all([
-    loadLeadAiContext(lead, organizationId),
+  const [{ text: context }, org] = await Promise.all([
+    leadAiContext(lead, organizationId),
     OrgService.getOrganization(organizationId),
   ]);
-  const prompt = `${buildLeadContext(lead, activities, extras)}\n\nWrite the next ${channel === "email" ? "email" : "WhatsApp message"} to send this lead.`;
-  const raw = await generateText(`${businessPreamble(org)}\n\n${draftSystem(channel, tone, language)}`, prompt);
+  const prompt = `${context}\n\nWrite the next ${channel === "email" ? "email" : "WhatsApp message"} to send this lead.`;
+  const raw = await generateText(leadSystemPrompt(org, draftSystem(channel, tone, language)), prompt);
   if (!raw) {
     await PlanService.refundAiCredit(organizationId);
     return { ...fallback, ai: false };
@@ -73,21 +73,21 @@ export async function draftReplyForLead(
 }
 
 const RECAP_SYSTEM = `You summarize a sales lead for a busy salesperson.
-Return ONE or TWO short sentences: what the lead wants (from their form answers/messages), where things stand, and the single most useful next step.
-No preamble, no bullet points, no quotes. Plain, specific, factual. ${UNTRUSTED_NOTE}`;
+Return ONE or TWO short sentences: what the lead wants (from their form answers, notes and messages), where things stand right now given the latest activity, and the single most useful next step.
+No preamble, no bullet points, no quotes. Plain, specific, factual.`;
 
 type RecapCache = { text: string; at: string; sig: string };
 
-// A one-glance "where this lead stands". Saved on the lead and reused until the lead changes (new
-// activity/message/status/stage/answers), so opening it again costs no AI call.
+// A one-glance "where this lead stands". Saved on the lead and reused until anything in its AI context
+// changes (the context signature — notes, calls, messages, follow-ups, meetings, status, owner,
+// fields…), so opening it again costs no AI call but it's never stale.
 export async function recapForLead(
   lead: Lead,
   organizationId: string,
   refresh = false,
 ): Promise<{ summary: string; ai: boolean; generatedAt?: string; cached?: boolean; outOfCredits?: boolean }> {
   const leadId = lead.id;
-  const { activities, extras } = await loadLeadAiContext(lead, organizationId);
-  const sig = [activities.length, extras.messages?.length ?? 0, lead.status, lead.stageId ?? "", extras.answers?.length ?? 0, lead.nextFollowUpAt?.toISOString() ?? ""].join("|");
+  const { activities, extras, text: context, signature: sig } = await leadAiContext(lead, organizationId);
 
   const cached = (lead.customData as { _aiRecap?: RecapCache } | null)?._aiRecap;
   if (!refresh && cached?.sig === sig) return { summary: cached.text, ai: true, generatedAt: cached.at, cached: true };
@@ -107,7 +107,7 @@ export async function recapForLead(
   }
 
   const org = await OrgService.getOrganization(organizationId);
-  const summary = await generateText(`${businessPreamble(org)}\n\n${RECAP_SYSTEM}`, buildLeadContext(lead, activities, extras), 200);
+  const summary = await generateText(leadSystemPrompt(org, RECAP_SYSTEM), context, 200);
   if (!summary) {
     await PlanService.refundAiCredit(organizationId);
     return { summary: `Status is ${extras.statusLabel ?? lead.status}. Review recent activity and follow up.`, ai: false };
