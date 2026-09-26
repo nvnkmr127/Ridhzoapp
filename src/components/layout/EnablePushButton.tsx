@@ -20,7 +20,7 @@ function urlBase64ToUint8Array(base64: string) {
 }
 
 interface EnablePushButtonProps {
-  mode?: "icon" | "button";
+  mode?: "icon" | "button" | "banner";
   allowTest?: boolean;
 }
 
@@ -142,6 +142,19 @@ export function EnablePushButton({ mode = "icon", allowTest = false }: EnablePus
   }
 
   if (!supported) return null;
+
+  if (mode === "banner") {
+    if (enabled) return null;
+    return (
+      <div className="bg-primary/10 text-primary px-4 py-2 flex items-center justify-center gap-3 text-sm">
+        <Bell className="h-4 w-4" />
+        <span>Never miss alerts and new leads.</span>
+        <Button size="sm" onClick={enable} disabled={busy} className="h-7 text-xs">
+          Enable Push Notifications
+        </Button>
+      </div>
+    );
+  }
 
   if (mode === "button") {
     return (

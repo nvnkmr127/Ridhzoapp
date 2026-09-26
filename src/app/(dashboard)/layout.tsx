@@ -5,6 +5,7 @@ import { ImpersonationBanner } from "@/components/platform/ImpersonationBanner";
 import { SystemBroadcastBanner } from "@/components/platform/SystemBroadcastBanner";
 import { PaymentGraceBanner } from "@/components/billing/PaymentGraceBanner";
 import { FloatingAssistant } from "@/components/assistant/FloatingAssistant";
+import { EnablePushButton } from "@/components/layout/EnablePushButton";
 import { SignupAttribution } from "@/components/layout/SignupAttribution";
 import { TimezoneBanner } from "@/components/settings/TimezoneBanner";
 import { hasPermission } from "@/lib/rbac";
@@ -80,6 +81,7 @@ export default async function DashboardLayout({
         <ImpersonationBanner />
         <InstallPwaBanner />
         {canAdmin && <TimezoneBanner workspaceTz={workspaceTz} />}
+        <EnablePushButton mode="banner" />
         <Header isSuperAdmin={superAdmin} organizationId={organizationId} usageStats={usageStats} allowed={allowed} />
         <main className="flex-1 overflow-y-auto">
           {children}

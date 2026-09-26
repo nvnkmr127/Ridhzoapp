@@ -11,12 +11,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { PlusCircle, Search, User, PieChart, Sparkles } from "lucide-react";
 import { useT } from "@/components/LanguageProvider";
-import { signOut } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
+import { isPlaceholderEmail } from "@/lib/auth/googleLink";
 import Image from "next/image";
 import Link from "next/link";
 import { QuickAddLeadDrawer } from "@/components/leads/QuickAddLeadDrawer";
 import { NotificationBell } from "@/components/layout/NotificationBell";
-import { EnablePushButton } from "@/components/layout/EnablePushButton";
 import { OfflineStatusIndicator } from "@/components/layout/OfflineStatusIndicator";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { MobileSidebar } from "@/components/layout/MobileSidebar";
@@ -43,6 +43,7 @@ export function Header({
 }) {
   const [searchOpen, setSearchOpen] = React.useState(false);
   const t = useT();
+  const { data: session } = useSession();
   const [shortcutLabel, setShortcutLabel] = React.useState("⌘K");
 
   // Cmd/Ctrl+K toggles the global command palette & detect operating system for shortcut badge.
@@ -169,7 +170,6 @@ export function Header({
             </Button>
           </QuickAddLeadDrawer>
         </div>
-        <EnablePushButton />
         <NotificationBell />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -178,8 +178,15 @@ export function Header({
               <span className="sr-only">Toggle user menu</span>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>My Account</DropdownMenuLabel>
+          <DropdownMenuContent align="end" className="w-56">
+            <div className="flex flex-col space-y-1 p-2">
+              <p className="text-sm font-medium leading-none">{session?.user?.name || "My Account"}</p>
+              <p className="text-xs leading-none text-muted-foreground">
+                {session?.user?.email && !isPlaceholderEmail(session.user.email)
+                  ? session.user.email
+                  : session?.user?.phone || ""}
+              </p>
+            </div>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
               <Link href="/settings">Settings</Link>
