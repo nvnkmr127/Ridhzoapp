@@ -16,6 +16,7 @@ import { ShareContentCard } from "@/components/leads/ShareContentCard";
 import { ReengagementPlanCard } from "@/components/leads/ReengagementPlanCard";
 import { ContentSharingService } from "@/domains/leads/contentSharingService";
 import { OrgService } from "@/domains/organizations/service";
+import { LiveNextBestAction } from "@/components/leads/LiveNextBestAction";
 import { requireOrg, hasPermission } from "@/lib/rbac";
 import { CustomFieldService } from "@/domains/customFields/service";
 import { ActivityService } from "@/domains/activities/service";
@@ -295,12 +296,13 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
 
       {/* Header: who, status, how to reach them, and the actions — all above the fold on a phone. */}
       <div className="space-y-4 border-b pb-5">
-        <div className="flex items-start gap-3">
-          <LeadBackButton leadId={lead.id} />
-          <div className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border bg-secondary text-sm font-semibold text-secondary-foreground sm:flex">
-            {initials}
-          </div>
-          <div className="min-w-0 flex-1 space-y-1.5">
+        <div className="flex items-start gap-3 justify-between">
+          <div className="flex items-start gap-3 flex-1">
+            <LeadBackButton leadId={lead.id} />
+            <div className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-full border border-border bg-secondary text-sm font-semibold text-secondary-foreground sm:flex">
+              {initials}
+            </div>
+            <div className="min-w-0 flex-1 space-y-1.5">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <h2 className="break-words text-xl font-bold tracking-tight sm:text-2xl">{lead.name}</h2>
               <LeadStatusControl leadId={lead.id} status={lead.status} className="h-8 w-auto min-w-[130px] text-xs" />
@@ -321,12 +323,6 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 <span className="flex min-w-0 items-center gap-1.5">
                   <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   <span className="break-all">{lead.email}</span>
-                </span>
-              )}
-              {lead.company && (
-                <span className="flex items-center gap-1.5">
-                  <Building className="h-3.5 w-3.5 text-muted-foreground" />
-                  {lead.company}
                 </span>
               )}
               {!lead.phone && !lead.email && <span className="text-muted-foreground">No phone or email yet — use Edit to add one.</span>}
@@ -359,6 +355,17 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               {lead.createdAt ? <LocalTime iso={lead.createdAt} mode="date" fallback="recently" /> : "recently"}
             </p>
           </div>
+          <div className="hidden lg:flex shrink-0 items-start gap-4">
+             <div className="w-[140px]">
+                <LeadAssignControl leadId={lead.id} ownerId={lead.ownerId} initialUsers={usersList} currentUserId={userId} canSeeAllLeads={isFieldAdmin} />
+             </div>
+             <div className="w-[140px]">
+                <LeadStageAndValueControl leadId={lead.id} stageId={lead.stageId} stages={stagesList} />
+             </div>
+             <div className="w-[160px]">
+                <LeadTags leadId={lead.id} initialTags={leadTags} />
+             </div>
+          </div>
           <LeadPager leadId={lead.id} />
         </div>
 
@@ -377,7 +384,8 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
         {/* Left column (desktop): coaching + lead details */}
         <div className="contents lg:col-span-1 lg:block lg:space-y-6">
           <div className={m("order-1")}>
-            <SectionCard icon={Sparkles} title="Next Best Action" className={nbaAccent}>
+            <LiveNextBestAction>
+              <SectionCard icon={Sparkles} title="Next Best Action" className={nbaAccent}>
               <div className="space-y-2">
                 <p className="text-base font-semibold leading-snug">{nba.label}</p>
                 <p className="text-sm text-muted-foreground">{nba.reason}</p>
@@ -396,6 +404,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 />
               </div>
             </SectionCard>
+            </LiveNextBestAction>
           </div>
 
           {answers.length > 0 && (
@@ -431,30 +440,6 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 ...callStats,
               }}
             />
-          </div>
-
-          <div className={m("order-4")}>
-            <SectionCard icon={SlidersHorizontal} title="Lead Management">
-              <div className="space-y-4">
-                <div>
-                  <span className="mb-1.5 block text-xs text-muted-foreground">Assignee</span>
-                  <LeadAssignControl
-                    leadId={lead.id}
-                    ownerId={lead.ownerId}
-                    initialUsers={usersList}
-                    currentUserId={userId}
-                    canSeeAllLeads={isFieldAdmin}
-                  />
-                </div>
-                <div>
-                  <span className="mb-1.5 block text-xs text-muted-foreground">Tags</span>
-                  <LeadTags leadId={lead.id} initialTags={leadTags} />
-                </div>
-                <div className="border-t pt-4">
-                  <LeadStageAndValueControl leadId={lead.id} stageId={lead.stageId} stages={stagesList} />
-                </div>
-              </div>
-            </SectionCard>
           </div>
 
           <div className={m("order-7")}>

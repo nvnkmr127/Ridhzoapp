@@ -376,6 +376,7 @@ export function LeadsTable({
               <TableHead>Status</TableHead>
               <TableHead>Owner</TableHead>
               {customColumns.map((c) => <TableHead key={c.key}>{c.label}</TableHead>)}
+              <TableHead>Score</TableHead>
               <TableHead>Next action</TableHead>
               <TableHead>Created</TableHead>
               <TableHead className="w-24"><span className="sr-only">Actions</span></TableHead>
@@ -445,6 +446,9 @@ export function LeadsTable({
                     {renderCustom((lead.customData as Record<string, unknown> | null)?.[c.key])}
                   </TableCell>
                 ))}
+                <TableCell className="text-sm font-medium">
+                  {lead.score != null ? lead.score : "—"}
+                </TableCell>
                 <TableCell>
                   {(() => {
                     const nba = NextBestActionService.getRecommendation({
