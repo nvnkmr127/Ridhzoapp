@@ -36,15 +36,18 @@ export function Header({
   organizationId,
   usageStats,
   allowed = [],
+  currentUser,
 }: {
   allowed?: string[];
   isSuperAdmin?: boolean;
   organizationId?: string;
   usageStats?: UsageStats | null;
+  currentUser?: { name?: string | null; email?: string | null; phone?: string | null };
 }) {
   const [searchOpen, setSearchOpen] = React.useState(false);
   const t = useT();
   const { data: session } = useSession() || {};
+  const user = currentUser || session?.user;
   const [shortcutLabel, setShortcutLabel] = React.useState("⌘K");
 
   const getUserInitials = (name?: string | null) => {
@@ -54,7 +57,7 @@ export function Header({
     if (parts.length === 1) return parts[0][0].toUpperCase();
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
-  const initials = getUserInitials(session?.user?.name);
+  const initials = getUserInitials(user?.name);
 
   // Cmd/Ctrl+K toggles the global command palette & detect operating system for shortcut badge.
   React.useEffect(() => {
@@ -147,11 +150,11 @@ export function Header({
             <div className="flex flex-col space-y-1.5 p-2">
               <p className="text-sm font-semibold leading-none">My Account</p>
               <div className="flex flex-col space-y-0.5">
-                {session?.user?.name && <p className="text-sm font-medium">{session.user.name}</p>}
+                {user?.name && <p className="text-sm font-medium">{user.name}</p>}
                 <p className="text-xs leading-none text-muted-foreground truncate">
-                  {session?.user?.email && !isPlaceholderEmail(session.user.email)
-                    ? session.user.email
-                    : session?.user?.phone || "No contact info"}
+                  {user?.email && !isPlaceholderEmail(user.email)
+                    ? user.email
+                    : user?.phone || "No contact info"}
                 </p>
               </div>
             </div>

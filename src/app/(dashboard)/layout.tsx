@@ -67,7 +67,7 @@ export default async function DashboardLayout({
   const [canAdmin, canSources] = await Promise.all([hasPermission("settings.manage"), hasPermission("sources.manage")]);
   const allowed = [canAdmin && "settings.manage", canSources && "sources.manage"].filter((p): p is string => !!p);
   const workspaceTz = (await getOrgFormat(organizationId)).timezone;
-  const [me] = await db.select({ language: users.language }).from(users).where(eq(users.id, userId)).limit(1);
+  const [me] = await db.select({ language: users.language, firstName: users.firstName, lastName: users.lastName, email: users.email, phone: users.phone }).from(users).where(eq(users.id, userId)).limit(1);
   const lang = isLang(me?.language) ? me.language : "en";
 
   return (
@@ -82,7 +82,17 @@ export default async function DashboardLayout({
         <InstallPwaBanner />
         {canAdmin && <TimezoneBanner workspaceTz={workspaceTz} />}
         <EnablePushButton mode="banner" />
-        <Header isSuperAdmin={superAdmin} organizationId={organizationId} usageStats={usageStats} allowed={allowed} />
+        <Header 
+          isSuperAdmin={superAdmin} 
+          organizationId={organizationId} 
+          usageStats={usageStats} 
+          allowed={allowed} 
+          currentUser={{
+            name: [me?.firstName, me?.lastName].filter(Boolean).join(" ") || null,
+            email: me?.email || null,
+            phone: me?.phone || null,
+          }}
+        />
         <main className="flex-1 overflow-y-auto">
           {children}
         </main>
