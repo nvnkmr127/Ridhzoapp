@@ -9,7 +9,7 @@ import {
   getVapidPublicKeyAction,
   sendTestPushAction,
 } from "@/lib/actions/push";
-import { Send, CheckCircle2 } from "lucide-react";
+import { Send, CheckCircle2, X } from "lucide-react";
 
 // VAPID public key is base64url; PushManager wants a Uint8Array.
 function urlBase64ToUint8Array(base64: string) {
@@ -30,6 +30,7 @@ export function EnablePushButton({ mode = "icon", allowTest = false }: EnablePus
   const [enabled, setEnabled] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
   const [testing, setTesting] = React.useState(false);
+  const [hideBanner, setHideBanner] = React.useState(true); // default true to avoid hydration flash
 
   React.useEffect(() => {
     const ok = typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window;
@@ -38,6 +39,10 @@ export function EnablePushButton({ mode = "icon", allowTest = false }: EnablePus
       navigator.serviceWorker.getRegistration().then((reg) =>
         reg?.pushManager.getSubscription().then((s) => setEnabled(!!s)),
       ).catch(() => {});
+      
+      const isDenied = typeof Notification !== "undefined" && Notification.permission === "denied";
+      const isDismissed = localStorage.getItem("push_banner_dismissed") === "true";
+      setHideBanner(isDenied || isDismissed);
     }
   }, []);
 
@@ -144,14 +149,30 @@ export function EnablePushButton({ mode = "icon", allowTest = false }: EnablePus
   if (!supported) return null;
 
   if (mode === "banner") {
-    if (enabled) return null;
+    if (enabled || hideBanner) return null;
     return (
-      <div className="bg-primary/10 text-primary px-4 py-2 flex items-center justify-center gap-3 text-sm">
-        <Bell className="h-4 w-4" />
-        <span>Never miss alerts and new leads.</span>
-        <Button size="sm" onClick={enable} disabled={busy} className="h-7 text-xs">
-          Enable Push Notifications
-        </Button>
+      <div className="bg-primary/10 text-primary px-4 py-2.5 flex items-center justify-between gap-3 text-sm border-b border-primary/20 transition-all duration-300 ease-in-out">
+        <div className="flex items-center gap-2 max-w-full overflow-hidden">
+          <Bell className="h-4 w-4 shrink-0" />
+          <span className="truncate">Never miss alerts and new leads.</span>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button size="sm" onClick={enable} disabled={busy} className="h-7 text-xs px-3">
+            Enable Push Notifications
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 rounded-full hover:bg-primary/20 text-primary shrink-0"
+            onClick={() => {
+              localStorage.setItem("push_banner_dismissed", "true");
+              setHideBanner(true);
+            }}
+          >
+            <X className="h-3.5 w-3.5" />
+            <span className="sr-only">Dismiss</span>
+          </Button>
+        </div>
       </div>
     );
   }

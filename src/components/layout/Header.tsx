@@ -22,6 +22,7 @@ import { CommandPalette } from "@/components/layout/CommandPalette";
 import { MobileSidebar } from "@/components/layout/MobileSidebar";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { UsageMenuSection } from "@/components/layout/UsageMenuSection";
 
 type UsageStats = {
   plan: string;
@@ -111,56 +112,7 @@ export function Header({
         </button>
       </div>
       <div className="flex items-center gap-4">
-        {usageStats && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="hidden md:flex h-8 w-8 items-center justify-center rounded-full bg-secondary text-secondary-foreground hover:bg-secondary/80 cursor-default">
-                  <PieChart className="h-4 w-4" />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="w-48 p-3 space-y-2 bg-popover text-popover-foreground border border-border shadow-md">
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium">Seats</span>
-                    <span className="text-muted-foreground">{usageStats.seats.current} / {usageStats.seats.max === Infinity ? "∞" : usageStats.seats.max}</span>
-                  </div>
-                  <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
-                    <div className="h-full bg-primary" style={{ width: `${Math.min(100, (usageStats.seats.current / (usageStats.seats.max === Infinity ? 1 : usageStats.seats.max)) * 100)}%` }} />
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium">Leads</span>
-                    <span className="text-muted-foreground">{usageStats.leads.current} / {usageStats.leads.max === Infinity ? "∞" : usageStats.leads.max}</span>
-                  </div>
-                  <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
-                    <div className="h-full bg-primary" style={{ width: `${Math.min(100, (usageStats.leads.current / (usageStats.leads.max === Infinity ? 1 : usageStats.leads.max)) * 100)}%` }} />
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium">AI credits (month)</span>
-                    <span className="text-muted-foreground">{usageStats.aiCredits.current} / {usageStats.aiCredits.max}</span>
-                  </div>
-                  <div className="h-1.5 w-full bg-secondary rounded-full overflow-hidden">
-                    <div className="h-full bg-primary" style={{ width: `${Math.min(100, (usageStats.aiCredits.current / usageStats.aiCredits.max) * 100)}%` }} />
-                  </div>
-                </div>
-                {usageStats.plan !== "unlimited" && usageStats.plan !== "business" && (
-                  <div className="pt-2 border-t border-border">
-                    <Button asChild size="sm" className="w-full h-7 text-xs gap-1.5 font-medium">
-                      <Link href="/settings/billing">
-                        <Sparkles className="h-3.5 w-3.5" />
-                        Upgrade to Unlimited
-                      </Link>
-                    </Button>
-                  </div>
-                )}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        )}
+
         <OfflineStatusIndicator organizationId={organizationId} />
         <div className="hidden md:flex">
           <QuickAddLeadDrawer organizationId={organizationId}>
@@ -188,6 +140,7 @@ export function Header({
               </p>
             </div>
             <DropdownMenuSeparator />
+            {usageStats && <UsageMenuSection usageStats={usageStats} />}
             <DropdownMenuItem asChild>
               <Link href="/settings">Settings</Link>
             </DropdownMenuItem>
