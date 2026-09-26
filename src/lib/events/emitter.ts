@@ -16,6 +16,14 @@ export type EventPayload = {
   source?: string; // e.g. 'automation' — used to stop automations from re-triggering automations
   meetingId?: string;
   startAt?: string; // ISO — meeting start
+  // call.logged: what happened on the call, for automation conditions (call_outcome, call_duration_sec…)
+  call?: {
+    activityId: string;
+    outcome: "answered" | "no_answer" | "busy" | "wrong_number" | "missed" | "unknown";
+    direction: "outgoing" | "incoming";
+    durationSec: number | null; // null = logged by hand, no call log
+    unansweredStreak: number; // outgoing calls in a row not picked up, this one included
+  };
 };
 
 export interface SystemEvents {
@@ -35,6 +43,7 @@ export interface SystemEvents {
   'meeting.completed': (payload: EventPayload) => void;
   'meeting.no_show': (payload: EventPayload) => void;
   'meeting.cancelled': (payload: EventPayload) => void;
+  'call.logged': (payload: EventPayload) => void;
 }
 
 export const MEETING_EVENTS = ['meeting.scheduled', 'meeting.rescheduled', 'meeting.completed', 'meeting.no_show', 'meeting.cancelled'] as const;

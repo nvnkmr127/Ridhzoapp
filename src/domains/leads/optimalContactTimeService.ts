@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { activities, leads } from "@/db/schema";
-import { and, eq, or, like } from "drizzle-orm";
+import { and, eq, or, like, sql } from "drizzle-orm";
 import { zonedParts } from "@/lib/tz";
 
 export interface HourlyDistribution {
@@ -36,14 +36,14 @@ export class OptimalContactTimeService {
       tz = (await getOrgFormat(organizationId).catch(() => null))?.timezone ?? "UTC";
     }
     const actRows = await db
-      .select({ createdAt: activities.createdAt })
+      .select({ at: activities.occurredAt })
       .from(activities)
       .innerJoin(leads, eq(activities.leadId, leads.id))
       .where(
         and(
           eq(leads.organizationId, organizationId),
           or(
-            and(eq(activities.type, "call"), like(activities.content, "Called — Answered%")),
+            and(eq(activities.type, "call"), sql`(coalesce(${activities.durationSec}, 0) > 0 or ${activities.content} like 'Called — Answered%')`), // connected, incl. synced + incoming
             and(eq(activities.type, "message"), like(activities.content, "[whatsapp ← lead]%")),
             like(activities.content, "Lead replied%"), // replies reps log from personal WhatsApp / email
           ),
@@ -64,7 +64,7 @@ export class OptimalContactTimeService {
     const daysCounts = new Array(7).fill(0);
 
     for (const act of actRows) {
-      const p = zonedParts(new Date(act.createdAt), tz);
+      const p = zonedParts(new Date(act.at), tz); // when the call happened, not when it was logged
       hoursCounts[p.hour]++;
       daysCounts[p.weekday]++;
     }

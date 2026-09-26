@@ -90,7 +90,7 @@ export async function syncDeviceCalls(input: {
         type: "missed_call",
         title: "Missed call from {name}",
         titleVars: { name: lead.name },
-        body: "Tap to call back",
+        body: "Tap to reply on WhatsApp or call back",
         leadId: lead.id,
       }).catch(() => {});
     }

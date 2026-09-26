@@ -39,7 +39,12 @@ export class AutomationEngine {
         const { TagService } = await import("@/domains/tags/service");
         const tags = await TagService.getForLead(leadId).catch(() => [] as { name: string }[]);
         const tagStr = tags.map((t) => t.name).join(", ");
-        const lead = { ...leadRow, tag: tagStr, tags: tagStr };
+        // call.logged: the call itself is matchable too ("not answered 3 times", "talked over 2 min").
+        const call = payload?.call;
+        const callFields = call
+          ? { call_outcome: call.outcome, call_direction: call.direction, call_duration_sec: call.durationSec ?? 0, call_unanswered_streak: call.unansweredStreak }
+          : {};
+        const lead = { ...leadRow, tag: tagStr, tags: tagStr, ...callFields };
         const passed = this.evaluateConditionGroup(lead, config);
         if (!passed) {
           return { skipped: true, executedCount: 0 };

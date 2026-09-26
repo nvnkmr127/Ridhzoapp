@@ -130,7 +130,14 @@ export async function buildLeadProfile(lead: Lead, ctx: { userId: string | null;
   const callStats = ScoringService.callStats(activities);
   const inbound = waMessages.filter((m) => m.direction === "inbound");
   const contactWindow = bestContactWindow(
-    [...inbound.map((m) => new Date(m.createdAt)), ...activities.filter((a) => a.type === "call" && /Called — Answered/.test(a.content ?? "")).map((a) => new Date(a.createdAt))],
+    // When the lead actually talked: replies, and calls that connected (picked "Answered", or the phone
+    // logged talk time — incl. calls they made), at the time the call happened, not when it was logged.
+    [
+      ...inbound.map((m) => new Date(m.createdAt)),
+      ...activities
+        .filter((a) => a.type === "call" && ((a.durationSec ?? 0) > 0 || /^(Called|Incoming call) — Answered/.test(a.content ?? "")))
+        .map((a) => new Date(a.occurredAt)),
+    ],
     org?.timezone || "UTC",
   );
   // Non-admins never see admin-only field values (same as the web lead page).

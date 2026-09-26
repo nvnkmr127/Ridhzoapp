@@ -27,6 +27,7 @@ function eventDiscriminator(eventType: string, p: EventPayload): string {
     case "meeting.completed":
     case "meeting.no_show":
     case "meeting.cancelled": return p.meetingId ?? "";
+    case "call.logged": return p.call?.activityId ?? ""; // once per call
     default: return "";
   }
 }
@@ -130,6 +131,12 @@ eventBus.on('lead.created', async (p) => {
   // Enrich in the background (no-op when no provider is configured). jobId = leadId dedupes a
   // double-fire, and the worker itself is a no-op if enrichment is off, so this is always safe.
   await enrichmentQueue.add(`enrich-${p.leadId}`, { leadId: p.leadId }, { jobId: `enrich-${p.leadId}` });
+});
+
+// A call was logged (by hand, after tap-to-call, or from the phone's call log). Automations read the
+// call's outcome/duration/unanswered streak as condition fields — see AutomationEngine.
+eventBus.on('call.logged', async (p) => {
+  dispatchTrigger('call.logged', p);
 });
 
 eventBus.on('lead.updated', async (p) => {

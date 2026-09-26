@@ -48,6 +48,31 @@ function parseConditions(c: any): { source: string; advField: string; advOp: str
   return { source: src?.value ?? "", advField: adv?.field ?? "", advOp: adv?.operator ?? "equals", advVal: adv?.value ?? "" };
 }
 
+// "Call logged" conditions, as plain choices. Each maps onto the one advanced field condition the
+// engine reads (call_* fields come from the call — see AutomationEngine).
+const CALL_RULES = [
+  { key: "any", label: "Any call", field: "" },
+  { key: "unanswered", label: "Not answered … times in a row", field: "call_unanswered_streak", unit: "times" },
+  { key: "long", label: "Answered and lasted over … minutes", field: "call_duration_sec", unit: "minutes" },
+  { key: "answered", label: "Answered", field: "call_outcome", value: "answered" },
+  { key: "missed", label: "Missed call from the lead", field: "call_outcome", value: "missed" },
+] as const;
+type CallRule = (typeof CALL_RULES)[number]["key"];
+
+function callRuleOf(field: string, value: string): { rule: CallRule; n: string } {
+  if (field === "call_unanswered_streak") return { rule: "unanswered", n: value || "3" };
+  if (field === "call_duration_sec") return { rule: "long", n: String(Math.round(Number(value || 120) / 60)) };
+  if (field === "call_outcome") return { rule: value === "missed" ? "missed" : "answered", n: "" };
+  return { rule: "any", n: "" };
+}
+
+function callRuleCondition(rule: CallRule, n: string): { field: string; op: string; val: string } {
+  if (rule === "unanswered") return { field: "call_unanswered_streak", op: "equals", val: n || "3" }; // fires once, on the Nth
+  if (rule === "long") return { field: "call_duration_sec", op: "greater_than", val: String(Number(n || 2) * 60) };
+  if (rule === "answered" || rule === "missed") return { field: "call_outcome", op: "equals", val: rule };
+  return { field: "", op: "equals", val: "" };
+}
+
 export function AutomationBuilder({
   initialData = null,
   automationId,
@@ -144,7 +169,14 @@ export function AutomationBuilder({
       {/* WHEN */}
       <div className="border p-4 rounded-2xl space-y-3">
         <h3 className="font-semibold">When (trigger)</h3>
-        <Select value={trigger} onValueChange={setTrigger}>
+        <Select
+          value={trigger}
+          onValueChange={(v) => {
+            // Call conditions only mean something for "Call logged" (and a lead field is hidden there).
+            if ((v === "call.logged") !== advField.startsWith("call_")) setAdvField("");
+            setTrigger(v);
+          }}
+        >
           <SelectTrigger><SelectValue placeholder="Select trigger" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="lead.created">Lead created</SelectItem>
@@ -160,6 +192,7 @@ export function AutomationBuilder({
             <SelectItem value="meeting.completed">Meeting / visit done</SelectItem>
             <SelectItem value="meeting.no_show">Lead didn&apos;t show up</SelectItem>
             <SelectItem value="meeting.cancelled">Meeting / visit cancelled</SelectItem>
+            <SelectItem value="call.logged">Call logged (by hand or from the phone)</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -177,6 +210,32 @@ export function AutomationBuilder({
             </SelectContent>
           </Select>
         </div>
+        {trigger === "call.logged" ? (() => {
+          const { rule, n } = callRuleOf(advField, advVal);
+          const set = (r: CallRule, num: string) => {
+            const c = callRuleCondition(r, num);
+            setAdvField(c.field);
+            setAdvOp(c.op);
+            setAdvVal(c.val);
+          };
+          const unit = CALL_RULES.find((r) => r.key === rule);
+          return (
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">The call</Label>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Select value={rule} onValueChange={(v) => set(v as CallRule, v === "long" ? "2" : "3")}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {CALL_RULES.map((r) => <SelectItem key={r.key} value={r.key}>{r.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                {unit && "unit" in unit ? (
+                  <Input type="number" min={1} className="sm:w-[120px]" aria-label={unit.unit} value={n} onChange={(e) => set(rule, e.target.value)} />
+                ) : null}
+              </div>
+            </div>
+          );
+        })() : (
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">Advanced field match — optional</Label>
           <div className="flex flex-col sm:flex-row gap-2">
@@ -195,6 +254,7 @@ export function AutomationBuilder({
             <Input placeholder="Value" value={advVal} onChange={(e) => setAdvVal(e.target.value)} />
           </div>
         </div>
+        )}
       </div>
 
       {/* THEN */}

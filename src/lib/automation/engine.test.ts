@@ -3,6 +3,7 @@ import { AutomationEngine, resolveDueAt } from './engine';
 import { db } from '@/db';
 
 vi.mock('@/db', () => ({ db: { select: vi.fn() } }));
+vi.mock('@/domains/tags/service', () => ({ TagService: { getForLead: async () => [] } }));
 
 // Expose the private method for testing purposes
 const evaluateConditionGroup = (AutomationEngine as any).evaluateConditionGroup.bind(AutomationEngine);
@@ -79,6 +80,36 @@ describe('AutomationEngine action execution (best-effort)', () => {
     mockActions([{ type: 'send_whatsapp', config: {} }]);
     vi.spyOn(AutomationEngine as any, 'executeAction').mockRejectedValue(new Error('boom'));
     await expect(AutomationEngine.evaluateAndExecute('a1', 'l1')).rejects.toThrow(/All actions failed/);
+  });
+});
+
+describe('call.logged conditions', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  // Queue: the automation's condition, the lead row, then (only if the rule passes) its actions.
+  function mockCallRule(condition: any, passes: boolean) {
+    (db.select as any)
+      .mockReturnValueOnce({ from: () => ({ where: () => Promise.resolve([{ config: condition }]) }) })
+      .mockReturnValueOnce({ from: () => ({ where: () => ({ limit: () => Promise.resolve([{ id: 'l1', status: 'new' }]) }) }) });
+    if (passes) (db.select as any).mockReturnValueOnce({ from: () => ({ where: () => ({ orderBy: () => Promise.resolve([{ type: 'add_note', config: { content: 'x' } }]) }) }) });
+  }
+  const call = (over: any) => ({ leadId: 'l1', call: { activityId: 'a', outcome: 'no_answer', direction: 'outgoing', durationSec: 0, unansweredStreak: 1, ...over } });
+
+  it('matches on the call itself: third unanswered call, long calls', async () => {
+    const exec = vi.spyOn(AutomationEngine as any, 'executeAction').mockResolvedValue(undefined);
+    const third = { field: 'call_unanswered_streak', operator: 'equals', value: 3 };
+
+    mockCallRule(third, false);
+    expect((await AutomationEngine.evaluateAndExecute('a1', 'l1', call({ unansweredStreak: 2 }) as any)).skipped).toBe(true);
+    mockCallRule(third, true);
+    expect((await AutomationEngine.evaluateAndExecute('a1', 'l1', call({ unansweredStreak: 3 }) as any)).skipped).toBe(false);
+
+    const long = { field: 'call_duration_sec', operator: 'greater_than', value: 120 };
+    mockCallRule(long, false);
+    expect((await AutomationEngine.evaluateAndExecute('a1', 'l1', call({ outcome: 'answered', durationSec: 95 }) as any)).skipped).toBe(true);
+    mockCallRule(long, true);
+    expect((await AutomationEngine.evaluateAndExecute('a1', 'l1', call({ outcome: 'answered', durationSec: 180 }) as any)).skipped).toBe(false);
+    expect(exec).toHaveBeenCalledTimes(2);
   });
 });
 

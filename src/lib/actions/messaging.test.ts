@@ -32,7 +32,10 @@ vi.mock("@/db", () => ({
     }),
   },
 }));
-vi.mock("@/domains/leads/scoringService", () => ({ ScoringService: { updateLeadScore: async () => {} } }));
+vi.mock("@/domains/leads/scoringService", async (orig) => {
+  const { ScoringService } = await orig<typeof import("@/domains/leads/scoringService")>();
+  return { ScoringService: { updateLeadScore: async () => {}, callStats: ScoringService.callStats.bind(ScoringService) } };
+});
 
 const waSend = vi.fn();
 vi.mock("@/lib/messaging/whatsapp/service", () => ({ WhatsAppService: { send: (i: unknown) => waSend(i) } }));
@@ -42,6 +45,7 @@ vi.mock("@/lib/rbac", () => ({ requireOrg: vi.fn(), requirePermission: vi.fn() }
 
 import { logLeadContactAction, sendWhatsAppAction } from "./messaging";
 import { recordLeadContact } from "@/domains/leads/contactLog";
+import { eventBus } from "@/lib/events/emitter";
 
 const LEAD = "6f1c2e0a-1111-4222-8333-444455556666";
 const access = { lead: { id: LEAD, email: "a@b.com" }, userId: "u1", organizationId: "org-1" };
@@ -125,6 +129,16 @@ describe("calls read from the phone's call log", () => {
     expect(res.logged).toBe(false);
     expect(update).not.toHaveBeenCalled();
     expect(waInsert).not.toHaveBeenCalled();
+  });
+
+  it("tells automations about the call, with the unanswered run including this one", async () => {
+    const emitted = vi.fn();
+    eventBus.on("call.logged", emitted);
+    // no known ref, no manual match, then the lead's recent calls (newest first)
+    selectResults = [[], [], [{ type: "call", content: "Called — No answer" }, { type: "call", content: "Called — Busy / call back later" }, { type: "call", content: "Called — Answered" }]];
+    await recordLeadContact({ leadId: LEAD, userId: "u1", channel: "call", direction: "outgoing", durationSec: 0, startedAt: at, externalRef: "c7" });
+    expect(emitted).toHaveBeenCalledWith(expect.objectContaining({ leadId: LEAD, call: expect.objectContaining({ activityId: "act-1", outcome: "no_answer", unansweredStreak: 2 }) }));
+    eventBus.off("call.logged", emitted);
   });
 
   it("a missed call from the lead is logged but isn't outreach", async () => {

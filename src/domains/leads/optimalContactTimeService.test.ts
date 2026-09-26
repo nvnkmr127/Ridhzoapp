@@ -30,9 +30,9 @@ describe("OptimalContactTimeService", () => {
         innerJoin: () => ({
           where: () =>
             Promise.resolve([
-              { createdAt: tuesdayTwoPm },
-              { createdAt: tuesdayTwoPm },
-              { createdAt: tuesdayTwoPm },
+              { at: tuesdayTwoPm },
+              { at: tuesdayTwoPm },
+              { at: tuesdayTwoPm },
             ]),
         }),
       }),

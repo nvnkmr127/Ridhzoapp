@@ -1,9 +1,10 @@
-import { and, eq, gte, isNull, like, lte } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, like, lte } from "drizzle-orm";
 import { db } from "@/db";
 import { activities, whatsappMessages } from "@/db/schema";
 import { ActivityService } from "@/domains/activities/service";
 import { markLeadContacted } from "@/domains/follow-ups/state";
 import { ScoringService } from "@/domains/leads/scoringService";
+import { eventBus } from "@/lib/events/emitter";
 
 // Outreach the rep did OUTSIDE Ridhzo (phone call, their own WhatsApp, their own mail app), and replies
 // they paste in. Shared by the web actions and the mobile API; callers check lead access first.
@@ -119,6 +120,27 @@ export async function recordLeadContact(input: {
     .onConflictDoNothing()
     .returning({ id: activities.id });
   if (!inserted.length) return { logged: false };
+
+  if (channel === "call") {
+    // Unanswered run including this call — "not answered 3 times in a row" automations read it.
+    const recent = await db
+      .select({ type: activities.type, content: activities.content, durationSec: activities.durationSec })
+      .from(activities)
+      .where(and(eq(activities.leadId, leadId), eq(activities.type, "call")))
+      .orderBy(desc(activities.occurredAt))
+      .limit(20);
+    eventBus.emit("call.logged", {
+      leadId,
+      userId,
+      call: {
+        activityId: inserted[0].id,
+        outcome: missed ? "missed" : outcome ?? "unknown",
+        direction: incoming ? "incoming" : "outgoing",
+        durationSec: durationSec ?? null,
+        unansweredStreak: ScoringService.callStats(recent).unansweredStreak,
+      },
+    });
+  }
 
   // A wrong number isn't contact with the lead, and neither is a call from them we missed; everything
   // else (even an unanswered outgoing call) is an outreach attempt, which is what SLA timing measures.

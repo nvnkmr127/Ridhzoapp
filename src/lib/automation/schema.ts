@@ -17,6 +17,7 @@ export const TriggerConfigSchema = z.object({
     'meeting.completed',
     'meeting.no_show',
     'meeting.cancelled',
+    'call.logged',
   ]),
 });
 
