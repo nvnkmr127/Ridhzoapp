@@ -19,7 +19,7 @@ vi.mock("./contactLog", () => ({ recordLeadContact: (a: unknown) => recordLeadCo
 const notify = vi.fn<(a: unknown) => Promise<object>>(async () => ({}));
 vi.mock("@/domains/notifications/service", () => ({ NotificationService: { create: (a: unknown) => notify(a) } }));
 
-import { phoneKey, syncDeviceCalls } from "./callSync";
+import { callerLine, phoneKey, syncDeviceCalls } from "./callSync";
 
 const now = new Date("2026-09-26T12:00:00Z");
 const call = (over: Record<string, unknown>) => ({ externalRef: "c", number: "09876543210", direction: "outgoing" as const, startedAt: new Date("2026-09-26T10:00:00Z"), durationSec: 30, ...over });
@@ -76,5 +76,16 @@ describe("phoneKey", () => {
     expect(phoneKey("+919876543210")).not.toBe(phoneKey("+919876543211"));
     expect(phoneKey("123")).toBeNull();
     expect(phoneKey(null)).toBeNull();
+  });
+});
+
+describe("callerLine", () => {
+  const inr = { currency: "INR", locale: "en-IN" };
+  it("shows status and the deal value in compact local units", () => {
+    expect(callerLine("Interested", "50000.00", inr)).toBe("Interested · ₹50K");
+    expect(callerLine("Negotiation", 150000, inr)).toBe("Negotiation · ₹1.5L");
+    expect(callerLine("New", null, inr)).toBe("New");
+    expect(callerLine("New", "0", inr)).toBe("New");
+    expect(callerLine(null, 2500, { currency: "AED", locale: "en-AE" })).toMatch(/2\.5K/);
   });
 });

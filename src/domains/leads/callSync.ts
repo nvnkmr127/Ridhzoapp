@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
 import { normalizePhone } from "@/lib/leads/normalize";
@@ -36,6 +36,50 @@ export async function leadPhoneKeys(organizationId: string, ownerId: string | nu
     .from(leads)
     .where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt), isNotNull(leads.phone), ownerId ? eq(leads.ownerId, ownerId) : undefined));
   return [...new Set(rows.map((r) => phoneKey(r.phone)).filter((k): k is string => !!k))];
+}
+
+// The line under the lead's name on the phone's incoming-call alert: "Interested · ₹1.5L". Compact
+// money in the org's own units (en-IN gives K / L / Cr).
+export function callerLine(statusLabel: string | null | undefined, value: string | number | null | undefined, fmt: { currency: string; locale: string }) {
+  const n = Number(value);
+  let money: string | null = null;
+  if (Number.isFinite(n) && n > 0) {
+    try {
+      money = new Intl.NumberFormat(fmt.locale, { style: "currency", currency: fmt.currency, notation: "compact", maximumFractionDigits: 1 }).format(n);
+    } catch {
+      money = `${fmt.currency} ${Math.round(n)}`;
+    }
+  }
+  return [statusLabel, money].filter(Boolean).join(" · ");
+}
+
+export type CallerEntry = { key: string; leadId: string; name: string; line: string };
+
+// ponytail: newest 20k leads per phone (~2 MB); page it or move to a server lookup if orgs outgrow it.
+const CALLER_DIRECTORY_CAP = 20_000;
+
+// Caller ID for the Android app: who's calling, for every lead this rep may open (all for an admin).
+// Stored on the phone so the incoming-call alert works with the app closed; wiped on sign-out.
+export async function callerDirectory(organizationId: string, ownerId: string | null, fmt: { currency: string; locale: string }): Promise<CallerEntry[]> {
+  const [{ CustomStatusSchemaService }, rows] = await Promise.all([
+    import("./customStatusSchemaService"),
+    db
+      .select({ id: leads.id, name: leads.name, phone: leads.phone, status: leads.status, value: leads.expectedValue })
+      .from(leads)
+      .where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt), isNotNull(leads.phone), ownerId ? eq(leads.ownerId, ownerId) : undefined))
+      .orderBy(desc(leads.updatedAt))
+      .limit(CALLER_DIRECTORY_CAP),
+  ]);
+  const labels = new Map((await CustomStatusSchemaService.getTenantStatusSchema(organizationId).catch(() => [])).map((s) => [s.key, s.label]));
+  const seen = new Set<string>();
+  const out: CallerEntry[] = [];
+  for (const r of rows) {
+    const key = phoneKey(r.phone);
+    if (!key || seen.has(key)) continue; // same number on two leads: the most recently active wins
+    seen.add(key);
+    out.push({ key, leadId: r.id, name: r.name, line: callerLine(labels.get(r.status) ?? r.status, r.value, fmt) });
+  }
+  return out;
 }
 
 // Logs the calls on a rep's phone that were with a lead (Android call-log sync, opt-in on the device).
