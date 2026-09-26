@@ -20,14 +20,17 @@ vi.mock("@/db", () => ({
   db: {
     select: () => {
       const rows = async () => selectResults.shift() ?? [];
-      const chain = { from: () => chain, where: () => chain, orderBy: () => chain, limit: rows };
+      const chain = { from: () => chain, innerJoin: () => chain, where: () => chain, orderBy: () => chain, limit: rows };
       return chain;
     },
     update: () => ({ set: (v: unknown) => ({ where: async () => update(v) }) }),
     insert: () => ({
       values: (v: unknown) => {
         waInsert(v);
-        return Object.assign(Promise.resolve(), { onConflictDoNothing: () => ({ returning: async () => (dupe ? [] : [{ id: "act-1" }]) }) });
+        return Object.assign(Promise.resolve(), {
+          onConflictDoNothing: () => ({ returning: async () => (dupe ? [] : [{ id: "act-1" }]) }),
+          returning: async () => [{ id: "row-1" }],
+        });
       },
     }),
   },
@@ -36,6 +39,9 @@ vi.mock("@/domains/leads/scoringService", async (orig) => {
   const { ScoringService } = await orig<typeof import("@/domains/leads/scoringService")>();
   return { ScoringService: { updateLeadScore: async () => {}, callStats: ScoringService.callStats.bind(ScoringService) } };
 });
+
+const createFollowUp = vi.fn();
+vi.mock("@/domains/follow-ups/service", () => ({ FollowUpService: { createFollowUp: (a: unknown) => createFollowUp(a), completeFollowUp: vi.fn() } }));
 
 const waSend = vi.fn();
 vi.mock("@/lib/messaging/whatsapp/service", () => ({ WhatsAppService: { send: (i: unknown) => waSend(i) } }));
@@ -141,10 +147,20 @@ describe("calls read from the phone's call log", () => {
     eventBus.off("call.logged", emitted);
   });
 
-  it("a missed call from the lead is logged but isn't outreach", async () => {
+  it("a missed call from the lead is logged but isn't outreach, and books one callback", async () => {
+    // recent calls, no open callback yet, then the lead's name/owner
+    selectResults = [[], [], [{ name: "Ravi Kumar", ownerId: "u2" }]];
     await recordLeadContact({ leadId: LEAD, userId: "u1", channel: "call", direction: "incoming", durationSec: 0, externalRef: "c2" });
     expect(waInsert).toHaveBeenCalledWith(expect.objectContaining({ content: "Missed call from lead" }));
     expect(markLeadContacted).not.toHaveBeenCalled();
+    expect(createFollowUp).toHaveBeenCalledWith(expect.objectContaining({ leadId: LEAD, type: "call", title: "Call back Ravi Kumar", userId: "u2" }));
+  });
+
+  it("doesn't pile up callbacks when the lead calls again before the rep calls back", async () => {
+    selectResults = [[], [{ id: "open-callback" }]];
+    await recordLeadContact({ leadId: LEAD, userId: "u1", channel: "call", direction: "incoming", durationSec: 0, externalRef: "c4" });
+    expect(waInsert).toHaveBeenCalledWith(expect.objectContaining({ content: "Missed call from lead" }));
+    expect(createFollowUp).not.toHaveBeenCalled();
   });
 
   it("an answered call from the lead counts as contact", async () => {

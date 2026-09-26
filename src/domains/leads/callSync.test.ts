@@ -32,7 +32,7 @@ describe("syncDeviceCalls", () => {
   it("matches a national-format number to the stored +91 lead and logs it", async () => {
     const res = await run([call({ externalRef: "c1" })]);
     expect(queriedPhones).toContain("+919876543210");
-    expect(res).toEqual({ matched: 1, logged: 1 });
+    expect(res).toEqual({ matched: 1, logged: 1, completedFollowUpIds: [] });
     expect(recordLeadContact).toHaveBeenCalledWith(expect.objectContaining({ leadId: "lead-own", channel: "call", durationSec: 30, externalRef: "c1" }));
   });
 
@@ -42,13 +42,13 @@ describe("syncDeviceCalls", () => {
       call({ number: "+919000000001" }),
       call({ startedAt: new Date("2026-08-30T00:00:00Z") }), // 2 days before the lead
     ]);
-    expect(res).toEqual({ matched: 0, logged: 0 });
+    expect(res).toEqual({ matched: 0, logged: 0, completedFollowUpIds: [] });
     expect(recordLeadContact).not.toHaveBeenCalled();
   });
 
   it("logs the call that made someone a lead (unknown caller added right after)", async () => {
     const res = await run([call({ direction: "incoming", startedAt: new Date("2026-08-31T23:50:00Z") })]);
-    expect(res).toEqual({ matched: 1, logged: 1 });
+    expect(res).toEqual({ matched: 1, logged: 1, completedFollowUpIds: [] });
   });
 
   it("pings the owner about a recent missed call from a lead, not an old one", async () => {
@@ -62,7 +62,7 @@ describe("syncDeviceCalls", () => {
   it("doesn't re-notify a call that was already logged", async () => {
     recordLeadContact.mockResolvedValueOnce({ logged: false });
     const res = await run([call({ direction: "incoming", durationSec: 0 })]);
-    expect(res).toEqual({ matched: 1, logged: 0 });
+    expect(res).toEqual({ matched: 1, logged: 0, completedFollowUpIds: [] });
     expect(notify).not.toHaveBeenCalled();
   });
 });

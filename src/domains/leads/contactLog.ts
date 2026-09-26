@@ -1,10 +1,12 @@
-import { and, desc, eq, gte, isNull, like, lte } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, like, lt, lte } from "drizzle-orm";
 import { db } from "@/db";
-import { activities, whatsappMessages, followUps, leads } from "@/db/schema";
+import { activities, whatsappMessages, followUps, leads, organizations } from "@/db/schema";
 import { ActivityService } from "@/domains/activities/service";
 import { markLeadContacted } from "@/domains/follow-ups/state";
 import { ScoringService } from "@/domains/leads/scoringService";
 import { eventBus } from "@/lib/events/emitter";
+import { DEFAULT_FORMAT } from "@/lib/format";
+import { startOfZonedDay } from "@/lib/tz";
 
 // Outreach the rep did OUTSIDE Ridhzo (phone call, their own WhatsApp, their own mail app), and replies
 // they paste in. Shared by the web actions and the mobile API; callers check lead access first.
@@ -123,7 +125,7 @@ export async function recordLeadContact(input: {
     .returning({ id: activities.id });
   if (!inserted.length) return { logged: false };
 
-  let completedFollowUpIds: string[] = [];
+  const completedFollowUpIds: string[] = [];
 
   if (channel === "call") {
     // Unanswered run including this call — "not answered 3 times in a row" automations read it.
@@ -151,15 +153,26 @@ export async function recordLeadContact(input: {
   if (outcome !== "wrong_number" && !missed) {
     await markLeadContacted(leadId, startedAt);
 
-    // Auto-complete any due follow-ups matching this action so reps don't have to check them off manually.
-    const mappedType = channel === "call" ? "call" : channel === "email" ? "email" : "message";
+    // Auto-complete the follow-ups this contact answers, so reps don't tick them off by hand: ones of
+    // the same kind (a call completes "call", WhatsApp completes "whatsapp") plus generic "follow-up"s,
+    // due by the end of today in the workspace's timezone — next week's follow-up still stands.
+    const kinds = channel === "call" ? ["call", "followup"] : channel === "email" ? ["email", "followup"] : ["whatsapp", "followup"];
+    const [org] = await db
+      .select({ timezone: organizations.timezone })
+      .from(leads)
+      .innerJoin(organizations, eq(organizations.id, leads.organizationId))
+      .where(eq(leads.id, leadId))
+      .limit(1);
+    const timezone = org?.timezone || DEFAULT_FORMAT.timezone;
+    const endOfToday = startOfZonedDay(startedAt ?? new Date(), timezone, 1);
     const pending = await db
       .select({ id: followUps.id })
       .from(followUps)
       .where(and(
         eq(followUps.leadId, leadId),
-        eq(followUps.type, mappedType),
-        eq(followUps.status, "pending")
+        inArray(followUps.type, kinds),
+        eq(followUps.status, "pending"),
+        lt(followUps.dueAt, endOfToday),
       ));
 
     if (pending.length > 0) {
@@ -171,8 +184,12 @@ export async function recordLeadContact(input: {
     }
   }
 
-  // Missed call from a lead → callback task.
-  if (missed) {
+  // Missed call from a lead → callback task (one: three missed calls in a row are one call back).
+  const [openCallback] = missed
+    ? await db.select({ id: followUps.id }).from(followUps)
+        .where(and(eq(followUps.leadId, leadId), eq(followUps.type, "call"), eq(followUps.status, "pending"))).limit(1)
+    : [];
+  if (missed && !openCallback) {
     const { FollowUpService } = await import("@/domains/follow-ups/service");
     const [leadRec] = await db.select({ name: leads.name, ownerId: leads.ownerId }).from(leads).where(eq(leads.id, leadId)).limit(1);
     await FollowUpService.createFollowUp({

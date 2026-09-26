@@ -1,8 +1,10 @@
 import { and, desc, eq, inArray, isNotNull, isNull, gte, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { leads, users, activities } from "@/db/schema";
+import { leads, users, activities, organizations } from "@/db/schema";
 import { normalizePhone } from "@/lib/leads/normalize";
 import { orgDialCode } from "@/lib/leads/orgDialCode";
+import { DEFAULT_FORMAT } from "@/lib/format";
+import { startOfZonedDay } from "@/lib/tz";
 import { recordLeadContact, type CallDirection } from "./contactLog";
 
 export type DeviceCall = {
@@ -45,7 +47,7 @@ export function callerLine(statusLabel: string | null | undefined, value: string
   let money: string | null = null;
   if (Number.isFinite(n) && n > 0) {
     try {
-      money = new Intl.NumberFormat(fmt.locale, { style: "currency", currency: fmt.currency, notation: "compact", maximumFractionDigits: 1 }).format(n);
+      money = new Intl.NumberFormat(fmt.locale, { style: "currency", currency: fmt.currency, notation: "compact", minimumFractionDigits: 0, maximumFractionDigits: 1 }).format(n);
     } catch {
       money = `${fmt.currency} ${Math.round(n)}`;
     }
@@ -146,15 +148,17 @@ export async function syncDeviceCalls(input: {
   return { matched, logged, completedFollowUpIds: Array.from(completedFollowUpIds) };
 }
 
-export async function getCallSyncStatus(userId: string) {
+// "Logged today" counts from midnight in the workspace's timezone, not the server's (UTC).
+export async function getCallSyncStatus(userId: string, organizationId: string) {
   const [user] = await db
     .select({ lastCallSyncAt: users.lastCallSyncAt })
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
 
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
+  const [org] = await db.select({ timezone: organizations.timezone }).from(organizations).where(eq(organizations.id, organizationId)).limit(1);
+  const timezone = org?.timezone || DEFAULT_FORMAT.timezone;
+  const startOfDay = startOfZonedDay(new Date(), timezone);
 
   const [{ count }] = await db
     .select({ count: sql<number>`count(*)::int` })

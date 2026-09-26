@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
   if (!auth.userId) return NextResponse.json({ error: "A user session is required" }, { status: 403 });
 
   try {
-    const status = await getCallSyncStatus(auth.userId);
+    const status = await getCallSyncStatus(auth.userId, auth.organizationId);
     return NextResponse.json({ data: status });
   } catch (e) {
     const { logError } = await import("@/lib/log");

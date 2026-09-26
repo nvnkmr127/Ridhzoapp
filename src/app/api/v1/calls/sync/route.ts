@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     await db.update(users).set({ lastCallSyncAt: new Date() }).where(eq(users.id, auth.userId));
     
     // Fetch the updated status to return it
-    const status = await getCallSyncStatus(auth.userId);
+    const status = await getCallSyncStatus(auth.userId, auth.organizationId);
 
     if (res.logged > 0) {
       const { revalidatePath } = await import("next/cache");
