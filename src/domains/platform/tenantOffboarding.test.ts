@@ -30,6 +30,12 @@ vi.mock("@/domains/billing/invoiceService", () => ({
       { id: "inv_1", orgId: "org_1", invoiceNumber: "INV-001", total: 9999 },
       { id: "inv_2", orgId: "org_other", invoiceNumber: "INV-002", total: 4999 },
     ]),
+    listForOrg: vi.fn().mockImplementation(async (orgId: string) =>
+      [
+        { id: "inv_1", orgId: "org_1", invoiceNumber: "INV-001", total: 9999 },
+        { id: "inv_2", orgId: "org_other", invoiceNumber: "INV-002", total: 4999 },
+      ].filter((i) => i.orgId === orgId),
+    ),
   },
 }));
 
@@ -82,6 +88,8 @@ describe("Tenant Offboarding & Data Erasure (GDPR / DPDP)", () => {
         createdAt: new Date(),
       };
 
+      // Row queries are awaited directly or capped with .limit(); both resolve to the same rows.
+      const rows = (r: unknown[]) => Object.assign(Promise.resolve(r), { limit: () => Promise.resolve(r) });
       let callCount = 0;
       vi.mocked(db.select).mockImplementation(() => {
         callCount++;
@@ -94,24 +102,24 @@ describe("Tenant Offboarding & Data Erasure (GDPR / DPDP)", () => {
               }
               if (callCount === 2) {
                 // users select
-                return Promise.resolve([
+                return rows([
                   { id: "u1", email: "admin@acme.com", firstName: "Alice" },
                 ]);
               }
               if (callCount === 3) {
                 // leads select
-                return Promise.resolve([
+                return rows([
                   { id: "lead_1", name: "Bob Buyer", email: "bob@client.com" },
                 ]);
               }
               if (callCount === 4) {
                 // apiKeys select
-                return Promise.resolve([
+                return rows([
                   { id: "key_1", name: "Production API", prefix: "rdz_live" },
                 ]);
               }
               // activities & follow-ups
-              return Promise.resolve([{ id: "act_1", type: "call" }]);
+              return rows([{ id: "act_1", type: "call" }]);
             }),
           }),
         } as any;

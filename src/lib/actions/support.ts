@@ -9,9 +9,11 @@ import { ok, fail, actionFail } from "@/lib/actions/result";
 
 // Tenant side of the support desk: anyone in a workspace can open a ticket and follow the thread.
 // Staff-only internal notes are never sent to the tenant.
-function forTenant(t: SupportTicket) {
-  const { internalNotes: _notes, assignedTo: _assignee, ...rest } = t;
-  return rest;
+function forTenant(t: SupportTicket): Omit<SupportTicket, "internalNotes" | "assignedTo"> {
+  const rest: Partial<SupportTicket> = { ...t };
+  delete rest.internalNotes;
+  delete rest.assignedTo;
+  return rest as Omit<SupportTicket, "internalNotes" | "assignedTo">;
 }
 
 export async function listMySupportTicketsAction() {

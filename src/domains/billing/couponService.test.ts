@@ -2,12 +2,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { CouponService, Coupon } from "./couponService";
 import { PlatformConfigService } from "@/domains/platform/configService";
 
-vi.mock("@/domains/platform/configService", () => ({
-  PlatformConfigService: {
-    get: vi.fn(),
-    set: vi.fn(),
-  },
-}));
+vi.mock("@/domains/platform/configService", () => {
+  // update() = locked get → modify → set; modelled on the get/set mocks so tests assert on set().
+  const PlatformConfigService: Record<string, any> = { get: vi.fn(), set: vi.fn() };
+  PlatformConfigService.update = vi.fn(async (key: string, dflt: unknown, fn: (v: any) => any) => {
+    const next = await fn(structuredClone((await PlatformConfigService.get(key, dflt)) ?? dflt));
+    await PlatformConfigService.set(key, next);
+    return next;
+  });
+  return { PlatformConfigService };
+});
 
 describe("CouponService", () => {
   beforeEach(() => {

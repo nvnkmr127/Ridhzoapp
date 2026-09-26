@@ -10,12 +10,16 @@ vi.mock("@/db", () => ({
   },
 }));
 
-vi.mock("./configService", () => ({
-  PlatformConfigService: {
-    get: vi.fn(),
-    set: vi.fn(),
-  },
-}));
+vi.mock("./configService", () => {
+  // update() = locked get → modify → set; modelled on the get/set mocks so tests assert on set().
+  const PlatformConfigService: Record<string, any> = { get: vi.fn(), set: vi.fn() };
+  PlatformConfigService.update = vi.fn(async (key: string, dflt: unknown, fn: (v: any) => any) => {
+    const next = await fn(structuredClone((await PlatformConfigService.get(key, dflt)) ?? dflt));
+    await PlatformConfigService.set(key, next);
+    return next;
+  });
+  return { PlatformConfigService };
+});
 
 vi.mock("@/domains/notifications/service", () => ({
   NotificationService: {

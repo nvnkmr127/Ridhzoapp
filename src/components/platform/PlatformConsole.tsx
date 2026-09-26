@@ -24,7 +24,6 @@ import {
   Trash2,
   RefreshCw,
   TrendingUp,
-  Sliders,
   Zap,
   Power,
   HeartPulse,
@@ -44,7 +43,6 @@ import {
   ShieldAlert,
   Send,
   Inbox,
-  Globe,
   UserCheck,
   Clock,
   StickyNote,
@@ -208,21 +206,9 @@ export function PlatformConsole({
   const [capiConfig, setCapiConfig] = React.useState<PublicCapiConfig>(
     initialCapiConfig ?? { pixelId: "", accessToken: "", testEventCode: "", enabled: false, hasAccessToken: false }
   );
-  const [capiLogs, setCapiLogs] = React.useState<CapiEventLog[]>(initialCapiLogs ?? []);
+  const [capiLogs] = React.useState<CapiEventLog[]>(initialCapiLogs ?? []);
   const [campaignStats] = React.useState(initialCampaigns);
   const [savingCapi, setSavingCapi] = React.useState(false);
-  const [testingCapi, setTestingCapi] = React.useState(false);
-
-  const handleTestCapiPing = async () => {
-    setTestingCapi(true);
-    try {
-      // Wait to simulate ping (to be implemented with real backend action)
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      toast({ title: "Test ping sent", description: "Dispatched a test event to Meta." });
-    } finally {
-      setTestingCapi(false);
-    }
-  };
 
   const handleSaveCapi = async () => {
     setSavingCapi(true);
@@ -241,7 +227,7 @@ export function PlatformConsole({
 
   // The server page loads data per tab and remounts this component (key={tab}) when ?tab= changes,
   // so the tab comes from the server; switching just navigates.
-  type TabKey = "tenants" | "revops" | "support" | "announcements" | "compliance" | "users" | "escalations" | "dlq" | "system" | "flags";
+  type TabKey = "tenants" | "revops" | "support" | "announcements" | "compliance" | "users" | "escalations" | "dlq" | "system";
   const tab = initialTab as TabKey;
   const setTab = React.useCallback(
     (nextTab: TabKey) => router.push(`/admin?tab=${nextTab}`, { scroll: false }),
@@ -364,6 +350,8 @@ export function PlatformConsole({
   };
 
   const handleVoidInvoice = async (id: string) => {
+    const inv = invoices.find((i) => i.id === id);
+    if (!confirm(`Void ${inv?.invoiceNumber ?? "this invoice"}? Only for an invoice issued in error — a paid one needs a credit note.`)) return;
     const res = await voidInvoiceAction(id);
     if (res.ok) {
       toast({ title: "Invoice Voided", description: `Marked invoice as void.` });
@@ -438,6 +426,8 @@ export function PlatformConsole({
   };
 
   const handleDeleteCoupon = async (id: string) => {
+    const code = coupons.find((c) => c.id === id)?.code ?? "this coupon";
+    if (!confirm(`Delete ${code}? Customers can no longer redeem it. (Deactivate instead to keep its history.)`)) return;
     const res = await deleteCouponAction(id);
     if (res.ok) {
       setCoupons((prev) => prev.filter((c) => c.id !== id));
@@ -515,6 +505,8 @@ export function PlatformConsole({
   };
 
   const handleRevokeFleetKey = async (id: string) => {
+    const k = apiKeys.find((x) => x.id === id);
+    if (!confirm(`Revoke API key "${k?.name ?? id}"${k?.orgName ? ` for ${k.orgName}` : ""}? Their integrations using it stop working immediately.`)) return;
     const res = await revokeFleetApiKeyAction(id);
     if (res.ok) {
       toast({ title: "API Key Revoked" });
@@ -607,6 +599,7 @@ export function PlatformConsole({
   };
 
   const handleTriggerLiveDigest = async () => {
+    if (!confirm("Email the executive digest to all configured recipients now?")) return;
     setDigestBusy(true);
     try {
       const res = await triggerExecutiveDigestAction();
@@ -1146,6 +1139,8 @@ export function PlatformConsole({
   }
 
   async function handleRunRetentionScan() {
+    // Can permanently anonymize suspended workspaces (those warned 14+ days ago) — type to confirm.
+    if (window.prompt("This can PERMANENTLY anonymize long-suspended workspaces whose owners were already warned. Type ANONYMIZE to run it now.")?.trim() !== "ANONYMIZE") return;
     setRunningRetentionScan(true);
     try {
       const res = await triggerSuspensionRetentionScanAction();
@@ -1258,14 +1253,14 @@ export function PlatformConsole({
               {metrics?.totalOrgs ?? orgs.length}
               <span className="ml-1.5 text-sm font-normal text-muted-foreground">orgs</span>
             </span>
-            {revops && revops.mrr > 0 && (
+            {revenueSummary && revenueSummary.mrr > 0 && (
               <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                ₹{revops.mrr.toLocaleString()}/mo
+                ₹{revenueSummary.mrr.toLocaleString()}/mo
               </span>
             )}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            {metrics?.totalUsers ?? 0} users · {revops?.paidAccounts ?? 0} paid accounts
+            {metrics?.totalUsers ?? 0} users · {revenueSummary?.paidAccounts ?? 0} paid accounts
           </p>
         </button>
 
@@ -3808,16 +3803,6 @@ export function PlatformConsole({
                 </Button>
                 <Button
                   size="sm"
-                  variant="outline"
-                  className="h-8 text-xs gap-1.5"
-                  disabled={testingCapi || !capiConfig.pixelId || !capiConfig.accessToken}
-                  onClick={handleTestCapiPing}
-                >
-                  <Send className="h-3.5 w-3.5" />
-                  {testingCapi ? "Pinging Meta..." : "Send Test Ping"}
-                </Button>
-                <Button
-                  size="sm"
                   className="h-8 text-xs gap-1.5"
                   disabled={savingCapi}
                   onClick={handleSaveCapi}
@@ -3842,7 +3827,7 @@ export function PlatformConsole({
               <div className="space-y-1">
                 <label className="font-semibold text-foreground">Conversions System User Access Token</label>
                 <PasswordInput
-                  placeholder="EAAG..."
+                  placeholder={capiConfig.hasAccessToken ? "•••••••• saved — leave blank to keep" : "EAAG..."}
                   value={capiConfig.accessToken}
                   onChange={(e) => setCapiConfig((prev) => ({ ...prev, accessToken: e.target.value.trim() }))}
                   className="h-8 text-xs font-mono"
@@ -4254,28 +4239,9 @@ export function PlatformConsole({
         </div>
       )}
 
-      {/* Tab: Feature Flags & Progressive Rollouts */}
-      {tab === "flags" && (
+      {/* Tab: Announcements & Maintenance */}
+      {tab === "announcements" && (
         <div className="space-y-6">
-          {/* Feature Flags Card */}
-          <div className="rounded-2xl border bg-card shadow-sm p-5 space-y-4">
-            <div className="border-b pb-3">
-              <h3 className="text-base font-semibold flex items-center gap-2">
-                <Sliders className="h-4 w-4 text-primary" /> Feature Flags &amp; Progressive Delivery
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                Zero-downtime release switches for AI copilot, WhatsApp BSP API, and predictive analytics across tenants.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              {/* Feature Flags UI - Disabled / Work in Progress
-              {flags.map((flag) => ( ... ))}
-              */}
-              <p className="text-sm text-muted-foreground p-4">Coming soon...</p>
-            </div>
-          </div>
-
           {/* Maintenance Mode & Emergency Lockdown Card */}
           <div className="rounded-2xl border border-destructive/30 bg-card p-5 space-y-4 shadow-sm">
             <div className="flex items-center justify-between border-b pb-3">

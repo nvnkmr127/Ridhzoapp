@@ -251,7 +251,7 @@ export class AnomalyDetectionService {
     const status = action === "resolve" ? ("resolved" as const) : ("dismissed" as const);
     await PlatformConfigService.update<Record<string, "resolved" | "dismissed">>(RESOLUTIONS_CONFIG_KEY, {}, (r) => ({ ...r, [id]: status }));
     await PlatformConfigService.update<SecurityAnomaly[]>(CACHED_ANOMALIES_KEY, [], (cached) =>
-      cached.map((a) => (a.id === id ? { ...a, status } : a)),
+      (Array.isArray(cached) ? cached : []).map((a) => (a.id === id ? { ...a, status } : a)),
     );
 
     await AuditService.log({
