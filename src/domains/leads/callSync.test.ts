@@ -14,9 +14,9 @@ vi.mock("drizzle-orm", async (orig) => {
   return { ...real, inArray: (col: unknown, vals: string[]) => ((queriedPhones = vals), real.inArray(col as never, vals)) };
 });
 vi.mock("@/lib/leads/orgDialCode", () => ({ orgDialCode: async () => "+91" }));
-const recordLeadContact = vi.fn(async (_: unknown) => ({ logged: true }));
+const recordLeadContact = vi.fn<(a: unknown) => Promise<{ logged: boolean }>>(async () => ({ logged: true }));
 vi.mock("./contactLog", () => ({ recordLeadContact: (a: unknown) => recordLeadContact(a) }));
-const notify = vi.fn(async (_: unknown) => ({}));
+const notify = vi.fn<(a: unknown) => Promise<object>>(async () => ({}));
 vi.mock("@/domains/notifications/service", () => ({ NotificationService: { create: (a: unknown) => notify(a) } }));
 
 import { syncDeviceCalls } from "./callSync";
