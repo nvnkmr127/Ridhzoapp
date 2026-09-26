@@ -5,8 +5,10 @@ import { Sparkles, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { summarizeLeadAction } from "@/lib/actions/ai";
 import { usePlan } from "@/components/billing/PlanGate";
+import { AiLeadSuggestions } from "@/components/leads/AiLeadSuggestions";
+import type { LeadPlan } from "@/lib/ai/leadPlan";
 
-type Recap = { text: string; at?: string };
+type Recap = { text: string; at?: string; plan?: LeadPlan };
 
 function ago(iso?: string) {
   if (!iso) return "";
@@ -56,7 +58,7 @@ export function LeadAiRecap({
           if (!auto) openUpgrade();
           return;
         }
-        setRecap({ text: res.summary, at: res.generatedAt });
+        setRecap({ text: res.summary, at: res.generatedAt, plan: res.plan });
       } catch {
         setError("Couldn't generate a recap right now. Try again in a moment.");
       } finally {
@@ -87,6 +89,9 @@ export function LeadAiRecap({
           <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-violet-500" />
           <p className="text-foreground/90">{loading ? "Updating…" : recap.text}</p>
         </div>
+        {!loading && recap.plan && (
+          <AiLeadSuggestions leadId={leadId} plan={recap.plan} onChange={(plan) => setRecap((r) => (r ? { ...r, plan } : r))} />
+        )}
         <div className="flex items-center justify-between pl-6 text-[11px] text-muted-foreground">
           <span>{recap.at ? `AI recap · ${ago(recap.at)}` : "Recap"}</span>
           <button type="button" onClick={() => run(true)} disabled={loading} className="flex items-center gap-1 hover:text-foreground disabled:opacity-50">

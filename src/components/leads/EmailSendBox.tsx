@@ -19,7 +19,10 @@ export function EmailSendBox({ leadId, email }: { leadId: string; email: string 
   const logContact = useLogContact(leadId);
   // Header "Email" button lands here — one place to write emails.
   const onLeadAction = React.useCallback((a: LeadUiAction) => {
-    if (a.type === "focus-composer" && a.channel === "email") subjectRef.current?.focus();
+    if (a.type === "focus-composer" && a.channel === "email") {
+      if (a.text) setBody(a.text);
+      subjectRef.current?.focus();
+    }
   }, []);
   useLeadAction(onLeadAction);
 

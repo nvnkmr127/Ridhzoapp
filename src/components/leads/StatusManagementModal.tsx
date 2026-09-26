@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { LossReasonsEditor } from "@/components/settings/LossReasonsEditor";
+import { StatusPlaybooksEditor } from "@/components/settings/StatusPlaybooksEditor";
 import {
   Dialog,
   DialogContent,
@@ -314,6 +315,7 @@ export function StatusManagementModal({
           </div>
         )}
 
+        <StatusPlaybooksEditor />
         <LossReasonsEditor />
       </DialogContent>
     </Dialog>

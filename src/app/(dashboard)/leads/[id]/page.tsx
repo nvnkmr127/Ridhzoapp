@@ -39,6 +39,8 @@ import { LeadDuplicateBanner } from "@/components/leads/LeadDuplicateBanner";
 import { LeadStageAndValueControl } from "@/components/leads/LeadStageAndValueControl";
 import { LeadSequencesCard } from "@/components/leads/LeadSequencesCard";
 import { LeadAiRecap } from "@/components/leads/LeadAiRecap";
+import type { RecapCache } from "@/lib/ai/leadAssist";
+import { visiblePlan } from "@/lib/ai/leadPlan";
 import { LeadInsightsCard } from "@/components/leads/LeadInsightsCard";
 import { SectionCard } from "@/components/leads/SectionCard";
 import { SequenceService } from "@/domains/leads/sequenceService";
@@ -226,7 +228,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   const inboundCount = waMessages.filter((msg) => msg.direction === "inbound").length;
   const outboundCount = waMessages.length - inboundCount;
   const answers = formAnswers(cd, Object.fromEntries(allCustomDefs.map((d) => [d.key, d.label])));
-  const savedRecap = (cd._aiRecap as { text?: string; at?: string } | undefined) ?? null;
+  const savedRecap = (cd._aiRecap as RecapCache | undefined) ?? null;
 
   // A content open in the last 3 days is a hot buying signal — surface it to the coach.
   const RECENT_OPEN_MS = 3 * 24 * 60 * 60 * 1000;
@@ -416,7 +418,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 <NbaActions action={nba.action} hasPhone={!!lead.phone} hasEmail={!!lead.email} />
                 <LeadAiRecap
                   leadId={lead.id}
-                  initial={savedRecap?.text ? { text: savedRecap.text, at: savedRecap.at } : null}
+                  initial={savedRecap?.text ? { text: savedRecap.text, at: savedRecap.at, plan: visiblePlan(savedRecap.plan, savedRecap.dismissed) } : null}
                   autoRun={answers.length > 0 && activities.length === 0}
                   changeKey={liveFingerprint}
                 />

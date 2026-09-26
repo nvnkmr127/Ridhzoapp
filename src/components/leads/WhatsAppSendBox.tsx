@@ -39,7 +39,10 @@ export function WhatsAppSendBox({
 
   // Header "WhatsApp" button lands here (one composer for every way of messaging).
   const onLeadAction = React.useCallback((a: LeadUiAction) => {
-    if (a.type === "focus-composer" && a.channel === "whatsapp") textareaRef.current?.focus();
+    if (a.type === "focus-composer" && a.channel === "whatsapp") {
+      if (a.text) setBody(a.text);
+      textareaRef.current?.focus();
+    }
   }, []);
   useLeadAction(onLeadAction);
 

@@ -5,6 +5,8 @@ import { db } from "@/db";
 import { followUps, leadPipelineStages, leadStatusHistory, users, whatsappMessages } from "@/db/schema";
 import { TagService } from "@/domains/tags/service";
 import { SequenceService } from "@/domains/leads/sequenceService";
+import { PlatformConfigService } from "@/domains/platform/configService";
+import { cleanPlaybooks, statusPlaybooksKey } from "@/lib/leads/statusPlaybooks";
 import { ActivityService } from "@/domains/activities/service";
 import { ContentSharingService } from "@/domains/leads/contentSharingService";
 import { CustomFieldService } from "@/domains/customFields/service";
@@ -32,6 +34,7 @@ export const LEAD_AI_SOURCES = {
   business: "Workspace name, industry, website, city, phone and the owner's own \"about the business\" text (organizations) — via leadSystemPrompt",
   profile: "Name, channels available (not raw phone/email), company, priority, created date (leads)",
   status: "Status by its custom label and category, the workspace's full status list in order, pipeline stage, lost reason, expected value (leads, custom_status_configs, pipeline stages)",
+  playbook: "The admin-written playbook for the lead's current status — the team's own process (platform config status_playbooks)",
   statusHistory: "Status changes over time with custom labels and who made them (lead_status_history)",
   source: "Lead source and ad/UTM campaign (lead_sources, customData attribution)",
   score: "Engagement score and the factors behind it (leads.score, customData._scoreFactors)",
@@ -58,7 +61,7 @@ const ALL_SOURCES = Object.keys(LEAD_AI_SOURCES) as LeadAiSource[];
  * a bare "yes" or "ok" is read in light of the conversation and the lead's status rather than alone.
  */
 export const LEAD_AI_FEATURES: Record<string, { what: string; sources: readonly LeadAiSource[] }> = {
-  recap: { what: "AI recap under Next Best Action (web + mobile)", sources: ALL_SOURCES },
+  recap: { what: "AI recap + suggestions (custom-field values, status change, next step) under Next Best Action (web + mobile)", sources: ALL_SOURCES },
   draftReply: { what: "Write WhatsApp/email with AI (web + mobile)", sources: ALL_SOURCES },
   assistant: { what: "AI assistant — the lead being viewed, and any lead it looks up", sources: ALL_SOURCES },
   replyIntent: { what: "Inbound WhatsApp reply intent/sentiment tagging", sources: ALL_SOURCES },
@@ -95,7 +98,7 @@ function fieldValue(raw: unknown, type: string): string | null {
 export async function loadLeadAiContext(lead: LoadableLead, organizationId: string) {
   const cd = (lead.customData as Record<string, unknown> | null) ?? {};
 
-  const [activityRows, messages, shares, statuses, defs, stage, source, meetingRows, owner, tagRows, followUpRows, sequenceRows, statusRows] = await Promise.all([
+  const [activityRows, messages, shares, statuses, defs, stage, source, meetingRows, owner, tagRows, followUpRows, sequenceRows, statusRows, playbooks] = await Promise.all([
     ActivityService.getLeadActivities(lead.id),
     db
       .select({ direction: whatsappMessages.direction, body: whatsappMessages.body, createdAt: whatsappMessages.createdAt })
@@ -155,6 +158,7 @@ export async function loadLeadAiContext(lead: LoadableLead, organizationId: stri
       .orderBy(desc(leadStatusHistory.createdAt))
       .limit(10)
       .catch(() => []),
+    PlatformConfigService.get<Record<string, string>>(statusPlaybooksKey(organizationId), {}).catch(() => ({})),
   ]);
 
   // Who logged each entry, and when it actually happened (phone calls sync in after the fact).
@@ -222,6 +226,7 @@ export async function loadLeadAiContext(lead: LoadableLead, organizationId: stri
     campaign: campaign ?? null,
     answers: otherAnswers,
     customFields,
+    statusPlaybook: cleanPlaybooks(playbooks)[lead.status] ?? null,
     statusOptions: [...statuses].sort((a, b) => a.orderIndex - b.orderIndex).map((st) => ({ key: st.key, label: st.label, category: st.category })),
     statusHistory: statusRows.map((h) => ({
       from: statusLabel(h.oldStatus),
@@ -243,7 +248,8 @@ export async function loadLeadAiContext(lead: LoadableLead, organizationId: stri
     })),
   };
 
-  return { activities, extras };
+  // Raw definitions and statuses too, for features that act on them (the AI brief's suggestions).
+  return { activities, extras, fieldDefs: shownDefs, statuses };
 }
 
 /**
@@ -252,7 +258,7 @@ export async function loadLeadAiContext(lead: LoadableLead, organizationId: stri
  * the signature moves, so any new note, call, message, follow-up, tag or field change refreshes it.
  */
 export async function leadAiContext(lead: LoadableLead, organizationId: string) {
-  const { activities, extras } = await loadLeadAiContext(lead, organizationId);
+  const { activities, extras, fieldDefs, statuses } = await loadLeadAiContext(lead, organizationId);
   const text = buildLeadContext(lead, activities, extras);
   const facts = { ...extras, now: undefined };
   const signature = createHash("sha1")
@@ -265,5 +271,5 @@ export async function leadAiContext(lead: LoadableLead, organizationId: string) 
     )
     .digest("hex")
     .slice(0, 16);
-  return { activities, extras, text, signature };
+  return { activities, extras, text, signature, fieldDefs, statuses };
 }

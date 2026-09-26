@@ -5,7 +5,11 @@ import { requireOrg } from "@/lib/rbac";
 import { generateText, aiEnabled } from "@/lib/ai/client";
 import { businessPreamble } from "@/lib/ai/leadBrief";
 import { getActionableLead } from "@/lib/leads/access";
-import { draftReplyForLead, recapForLead } from "@/lib/ai/leadAssist";
+import { draftReplyForLead, markAiSuggestionDone, recapForLead, type RecapCache, type RecapResult } from "@/lib/ai/leadAssist";
+import { visiblePlan } from "@/lib/ai/leadPlan";
+import { ok, fail, actionFail, type ActionResult } from "@/lib/actions/result";
+import { changeLeadStatusAction, updateCustomDataAction } from "@/lib/actions/leads";
+import { createFollowUp } from "@/lib/actions/follow-ups";
 import { OrgService } from "@/domains/organizations/service";
 import { PlanService } from "@/domains/billing/planService";
 
@@ -26,15 +30,73 @@ export async function draftLeadReplyAction(
   return draftReplyForLead(access.lead, access.organizationId, { channel, tone, language });
 }
 
-// AI recap — a one-glance "where this lead stands". Saved on the lead and reused until the lead
-// changes (new activity/message/status/stage/answers), so opening the page again costs no AI call.
-export async function summarizeLeadAction(
-  data: unknown,
-): Promise<{ summary: string; ai: boolean; generatedAt?: string; cached?: boolean; outOfCredits?: boolean }> {
+// AI recap — a one-glance "where this lead stands", plus AI suggestions (custom fields, status, next
+// step). Saved on the lead and reused until the lead changes, so opening the page again costs no AI call.
+export async function summarizeLeadAction(data: unknown): Promise<RecapResult> {
   const { leadId, refresh } = z.object({ leadId: z.guid(), refresh: z.boolean().optional() }).parse(data);
   const access = await getActionableLead(leadId);
   if (!access) throw new Error("Lead not found");
   return recapForLead(access.lead, access.organizationId, refresh);
+}
+
+const suggestionSchema = z.object({ leadId: z.guid(), id: z.string().min(1).max(40) });
+
+// Applies ONE AI suggestion the rep accepted. The suggestion is looked up server-side from what was
+// saved with the recap (never taken from the client), and applied through the normal actions — so the
+// same permissions, field validation and won/lost bookkeeping apply as if the rep did it by hand.
+export async function applyAiSuggestionAction(data: unknown): Promise<ActionResult<{ applied: string }>> {
+  try {
+    const { leadId, id } = suggestionSchema.parse(data);
+    const access = await getActionableLead(leadId);
+    if (!access) return fail("NOT_FOUND", "This lead no longer exists or was moved.");
+    const cd = (access.lead.customData as Record<string, unknown> | null) ?? {};
+    const saved = cd._aiRecap as RecapCache | undefined;
+    const plan = visiblePlan(saved?.plan, saved?.dismissed);
+
+    const field = plan.fields.find((f) => f.id === id);
+    if (field) {
+      // Pass every stored value plus the new one: updateCustomDataAction treats missing editable
+      // fields as cleared.
+      const res = await updateCustomDataAction(leadId, { ...cd, [field.key]: field.value });
+      if (!res.ok) return res;
+      await markAiSuggestionDone(leadId, access.organizationId, id);
+      return ok({ applied: `${field.label} set to ${field.display}` });
+    }
+
+    if (plan.status?.id === id) {
+      const res = await changeLeadStatusAction(leadId, plan.status.key, plan.status.reason);
+      if (!res.ok) return res;
+      await markAiSuggestionDone(leadId, access.organizationId, id);
+      return ok({ applied: `Status changed to ${plan.status.label}` });
+    }
+
+    if (plan.next?.id === id) {
+      const next = plan.next;
+      const type = next.kind === "call" || next.kind === "whatsapp" || next.kind === "email" ? next.kind : "followup";
+      // No time from the AI → tomorrow, same time.
+      const dueAt = next.followUpAt ?? new Date(Date.now() + 86_400_000).toISOString();
+      const res = await createFollowUp({ leadId, type, title: next.title, description: next.reason || undefined, dueAt });
+      if (!res.ok) return res;
+      await markAiSuggestionDone(leadId, access.organizationId, id);
+      return ok({ applied: `Follow-up added: ${next.title}` });
+    }
+
+    return fail("NOT_FOUND", "That suggestion is out of date — refresh the AI recap.");
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function dismissAiSuggestionAction(data: unknown): Promise<ActionResult<{ dismissed: true }>> {
+  try {
+    const { leadId, id } = suggestionSchema.parse(data);
+    const access = await getActionableLead(leadId);
+    if (!access) return fail("NOT_FOUND", "This lead no longer exists or was moved.");
+    await markAiSuggestionDone(leadId, access.organizationId, id);
+    return ok({ dismissed: true });
+  } catch (e) {
+    return actionFail(e);
+  }
 }
 
 const SEQ_SYSTEM = `You design short WhatsApp/email follow-up sequences for salespeople.

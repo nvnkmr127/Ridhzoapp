@@ -135,6 +135,12 @@ describe("buildLeadContext", () => {
     expect(hasAiWorthyContext([], { customFields: [{ ...f, value: null }] })).toBe(false);
   });
 
+  it("puts the team's playbook for the current status in front of the AI", () => {
+    const ctx = buildLeadContext(baseLead, [], { statusLabel: "Site visit booked", statusPlaybook: "Confirm the day before.\nSend the location pin." });
+    expect(ctx).toContain('Team playbook for "Site visit booked" (the business\'s own process for this status — follow it): Confirm the day before. Send the location pin.');
+    expect(buildLeadContext(baseLead, [])).not.toContain("Team playbook");
+  });
+
   it("only shows Company when the lead has one", () => {
     expect(buildLeadContext({ ...baseLead, company: null }, [])).not.toContain("Company:");
   });

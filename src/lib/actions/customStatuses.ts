@@ -10,6 +10,7 @@ import { LeadService } from "@/domains/leads/service";
 import { z } from "zod";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
 import { DEFAULT_LOSS_REASONS, cleanLossReasons, lossReasonsKey } from "@/lib/leads/lossReasons";
+import { cleanPlaybooks, statusPlaybooksKey } from "@/lib/leads/statusPlaybooks";
 
 const addStatusSchema = z.object({
   key: z.string().min(1).max(50),
@@ -108,6 +109,27 @@ export async function setLossReasonsAction(reasons: string[]) {
     if (cleaned.length < 2) return fail("VALIDATION", "Add at least one reason besides “Other”.");
     const { PlatformConfigService } = await import("@/domains/platform/configService");
     await PlatformConfigService.set(lossReasonsKey(organizationId), cleaned);
+    return ok(cleaned);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+// Per-status AI playbooks (lib/leads/statusPlaybooks). Readable by anyone in the workspace (they
+// shape the AI's advice), editable by admins like the status list itself.
+export async function getStatusPlaybooksAction(): Promise<Record<string, string>> {
+  const { organizationId } = await requireOrg();
+  const { PlatformConfigService } = await import("@/domains/platform/configService");
+  return cleanPlaybooks(await PlatformConfigService.get<Record<string, string>>(statusPlaybooksKey(organizationId), {}));
+}
+
+export async function setStatusPlaybooksAction(playbooks: Record<string, string>) {
+  const { organizationId } = await requirePermission("settings.manage");
+  try {
+    const statuses = await CustomStatusSchemaService.getTenantStatusSchema(organizationId);
+    const cleaned = cleanPlaybooks(playbooks, statuses.map((s) => s.key));
+    const { PlatformConfigService } = await import("@/domains/platform/configService");
+    await PlatformConfigService.set(statusPlaybooksKey(organizationId), cleaned);
     return ok(cleaned);
   } catch (e) {
     return actionFail(e);

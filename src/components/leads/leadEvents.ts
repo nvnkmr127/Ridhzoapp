@@ -14,11 +14,11 @@ export type LeadUiAction =
   | { type: "edit" }
   // Switch the workspace tabs (e.g. the NBA card jumping to Meetings).
   | { type: "open-tab"; tab: string }
-  // Open the in-app composer for a channel; `ai` also starts an AI draft.
-  | { type: "compose"; channel: "whatsapp" | "email"; ai?: boolean }
+  // Open the in-app composer for a channel; `ai` also starts an AI draft, `text` prefills it.
+  | { type: "compose"; channel: "whatsapp" | "email"; ai?: boolean; text?: string }
   // Emitted by the tabs after switching for a "compose", once the composer is mounted.
   | { type: "ai-draft"; channel: "whatsapp" | "email" }
-  | { type: "focus-composer"; channel: "whatsapp" | "email" };
+  | { type: "focus-composer"; channel: "whatsapp" | "email"; text?: string };
 
 const EVENT = "ridhzo:lead-ui";
 

@@ -6,6 +6,8 @@ import { hasAiWorthyContext, leadSystemPrompt } from "@/lib/ai/leadBrief";
 import { leadAiContext } from "@/lib/ai/leadContext";
 import { OrgService } from "@/domains/organizations/service";
 import { PlanService } from "@/domains/billing/planService";
+import { CustomFieldService } from "@/domains/customFields/service";
+import { briefFormatInstructions, parseLeadBrief, visiblePlan, type LeadPlan, type PlanInput } from "@/lib/ai/leadPlan";
 import type { LeadService } from "@/domains/leads/service";
 
 // AI reply drafts and lead recaps. Shared by the web server actions and the mobile API; callers check
@@ -72,25 +74,34 @@ export async function draftReplyForLead(
   return { draft: raw, ai: true };
 }
 
-const RECAP_SYSTEM = `You summarize a sales lead for a busy salesperson.
-Return ONE or TWO short sentences: what the lead wants (from their form answers, notes and messages), where things stand right now given the latest activity, and the single most useful next step.
-No preamble, no bullet points, no quotes. Plain, specific, factual.`;
+const RECAP_SYSTEM = `You brief a busy salesperson on one lead and propose concrete updates for them to approve.
+Recap: plain, specific, factual — what the lead wants (from their answers, notes and messages), where things stand right now given the latest activity, and the single most useful next step.
+Suggestions are only proposals the rep accepts or dismisses, so only make ones the context clearly supports.`;
 
-type RecapCache = { text: string; at: string; sig: string };
+export type RecapCache = { text: string; at: string; sig: string; plan?: LeadPlan; dismissed?: string[] };
 
-// A one-glance "where this lead stands". Saved on the lead and reused until anything in its AI context
-// changes (the context signature — notes, calls, messages, follow-ups, meetings, status, owner,
-// fields…), so opening it again costs no AI call but it's never stale.
-export async function recapForLead(
-  lead: Lead,
-  organizationId: string,
-  refresh = false,
-): Promise<{ summary: string; ai: boolean; generatedAt?: string; cached?: boolean; outOfCredits?: boolean }> {
+export type RecapResult = {
+  summary: string;
+  ai: boolean;
+  generatedAt?: string;
+  cached?: boolean;
+  outOfCredits?: boolean;
+  /** AI suggestions not yet applied or dismissed (custom fields, status, next step). */
+  plan?: LeadPlan;
+};
+
+// A one-glance "where this lead stands" plus AI suggestions (fields found in the conversation, a
+// status change, the next step), from ONE AI call. Saved on the lead and reused until anything in its
+// AI context changes (the context signature — notes, calls, messages, follow-ups, meetings, status,
+// owner, fields…), so opening it again costs no AI call but it's never stale.
+export async function recapForLead(lead: Lead, organizationId: string, refresh = false): Promise<RecapResult> {
   const leadId = lead.id;
-  const { activities, extras, text: context, signature: sig } = await leadAiContext(lead, organizationId);
+  const { activities, extras, text: context, signature: sig, fieldDefs, statuses } = await leadAiContext(lead, organizationId);
 
   const cached = (lead.customData as { _aiRecap?: RecapCache } | null)?._aiRecap;
-  if (!refresh && cached?.sig === sig) return { summary: cached.text, ai: true, generatedAt: cached.at, cached: true };
+  if (!refresh && cached?.sig === sig) {
+    return { summary: cached.text, ai: true, generatedAt: cached.at, cached: true, plan: visiblePlan(cached.plan, cached.dismissed) };
+  }
 
   // Brand-new leads with form answers are exactly when a recap helps most — only skip the AI when
   // there's genuinely nothing to read.
@@ -106,18 +117,51 @@ export async function recapForLead(
     };
   }
 
+  const defs = fieldDefs as unknown as Parameters<typeof CustomFieldService.validateWith>[0];
+  const planInput: PlanInput = {
+    fields: fieldDefs.map((d) => ({ key: d.key, label: d.label, type: d.type, options: Array.isArray(d.options) ? d.options : [] })),
+    current: (lead.customData as Record<string, unknown> | null) ?? {},
+    // The field's own validation (types, options) as a non-admin — so a suggestion is always one the
+    // rep's accept can actually save.
+    coerce: (key, value) => {
+      try {
+        return CustomFieldService.validateWith(defs, { [key]: value }, { lenient: true, isAdmin: false })[key];
+      } catch {
+        return undefined;
+      }
+    },
+    statuses: statuses.map((st) => ({ key: st.key, label: st.label })),
+    currentStatus: lead.status,
+    now: extras.now ?? new Date(),
+  };
+
   const org = await OrgService.getOrganization(organizationId);
-  const summary = await generateText(leadSystemPrompt(org, RECAP_SYSTEM), context, 200);
-  if (!summary) {
+  const system = leadSystemPrompt(org, `${RECAP_SYSTEM}\n\n${briefFormatInstructions(planInput, extras.timezone ?? "UTC")}`);
+  const raw = await generateText(system, context, 900);
+  if (!raw) {
     await PlanService.refundAiCredit(organizationId);
     return { summary: `Status is ${extras.statusLabel ?? lead.status}. Review recent activity and follow up.`, ai: false };
   }
+  const { recap: summary, plan } = parseLeadBrief(raw, planInput);
 
   const at = new Date().toISOString();
+  // Keep what the rep already applied/dismissed, so the same suggestion doesn't come back.
+  const dismissed = (cached?.dismissed ?? []).slice(-100);
+  const saved: RecapCache = { text: summary, at, sig, plan, dismissed };
   // jsonb_set so this can't clobber a concurrent customData write (e.g. score recalculation).
   await db
     .update(leads)
-    .set({ customData: sql`jsonb_set(coalesce(${leads.customData}, '{}'::jsonb), '{_aiRecap}', ${JSON.stringify({ text: summary, at, sig })}::jsonb)` })
+    .set({ customData: sql`jsonb_set(coalesce(${leads.customData}, '{}'::jsonb), '{_aiRecap}', ${JSON.stringify(saved)}::jsonb)` })
     .where(and(eq(leads.id, leadId), eq(leads.organizationId, organizationId)));
-  return { summary, ai: true, generatedAt: at };
+  return { summary, ai: true, generatedAt: at, plan: visiblePlan(plan, dismissed) };
+}
+
+/** Records a suggestion as applied or dismissed, so it stops showing (and isn't proposed again). */
+export async function markAiSuggestionDone(leadId: string, organizationId: string, id: string): Promise<void> {
+  await db
+    .update(leads)
+    .set({
+      customData: sql`case when (${leads.customData} -> '_aiRecap') is not null then jsonb_set(${leads.customData}, '{_aiRecap,dismissed}', coalesce(${leads.customData}->'_aiRecap'->'dismissed', '[]'::jsonb) || to_jsonb(${id}::text)) else ${leads.customData} end`,
+    })
+    .where(and(eq(leads.id, leadId), eq(leads.organizationId, organizationId)));
 }

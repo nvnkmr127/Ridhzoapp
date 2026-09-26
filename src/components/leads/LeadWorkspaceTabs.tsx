@@ -50,7 +50,7 @@ export function LeadWorkspaceTabs({ tabs, defaultValue }: { tabs: LeadTab[]; def
     setValue(a.channel === "whatsapp" ? "whatsapp" : "emails");
     ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     // Wait for the tab's composer to mount, then ask it to draft (or just focus it).
-    setTimeout(() => emitLeadAction(a.ai ? { type: "ai-draft", channel: a.channel } : { type: "focus-composer", channel: a.channel }), 60);
+    setTimeout(() => emitLeadAction(a.ai ? { type: "ai-draft", channel: a.channel } : { type: "focus-composer", channel: a.channel, text: a.text }), 60);
   }, []);
   useLeadAction(onLeadAction);
 

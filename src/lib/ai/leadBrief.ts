@@ -65,6 +65,8 @@ export interface LeadExtras {
   scoreFactors?: { label: string; points: number }[];
   /** The workspace's own status list, in pipeline order — so the AI reads the lead's status as this business defines it. */
   statusOptions?: { key: string; label: string; category: StatusCategory }[];
+  /** The admin-written playbook for the lead's current status (lib/leads/statusPlaybooks). */
+  statusPlaybook?: string | null;
   /** Status changes, newest first, with custom labels already applied. */
   statusHistory?: { from: string | null; to: string; at: Date; by: string | null }[];
   /** Every active custom field the workspace defined (in its order), filled or not. */
@@ -88,7 +90,8 @@ export const LEAD_CONTEXT_RULES =
   "pipeline stage, source, score, owner, tags, custom fields, notes, calls, messages, meetings, follow-ups and " +
   "sequences. Statuses and custom fields are this workspace's OWN definitions: read the status by its label and " +
   "category (open / in progress / won / lost / unqualified) and its place in the workspace's status list, and only " +
-  "ever suggest moving to a status from that list. Custom fields hold what the business tracks about a lead — use " +
+  "ever suggest moving to a status from that list. If the context has a team playbook for the current status, " +
+  "follow it — it is how this business works leads in that status. Custom fields hold what the business tracks about a lead — use " +
   "their values, and treat an empty field (especially a required one) as information still to collect, never as a " +
   "fact. Every list is newest first and dated, with today's date at the top. The CURRENT status, stage and " +
   "the most recent notes, messages and activity outrank anything older — if older information conflicts with newer, " +
@@ -157,6 +160,9 @@ export function buildLeadContext(lead: LeadLike, activities: ActivityLike[], ext
         .map((o, i) => `${o.label} [${o.category.replace("_", " ")}]${i === cur ? " ← current" : ""}`)
         .join(" → ")}`,
     );
+  }
+  if (extras.statusPlaybook) {
+    lines.push(`Team playbook for "${extras.statusLabel ?? lead.status}" (the business's own process for this status — follow it): ${extras.statusPlaybook.replace(/\s+/g, " ").trim()}`);
   }
   if (extras.stageName) lines.push(`Pipeline stage: ${extras.stageName}`);
   if (lead.priority) lines.push(`Priority: ${lead.priority}`);
