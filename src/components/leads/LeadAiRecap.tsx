@@ -20,8 +20,27 @@ function ago(iso?: string) {
 // "Where does this lead stand" recap. Shows the saved recap instantly (no AI call); the server reuses
 // it until the lead changes. Runs automatically once for a brand-new lead that has form answers —
 // the moment a recap of "what they asked for" helps most — otherwise only on demand.
-export function LeadAiRecap({ leadId, initial, autoRun = false }: { leadId: string; initial?: Recap | null; autoRun?: boolean }) {
+// `changeKey` (the lead's live change token) moves when the lead gets new activity; an existing recap
+// then refreshes itself so it never describes a lead that has moved on. The server only spends a
+// credit when the recap's inputs actually changed — otherwise it hands back the saved one.
+export function LeadAiRecap({
+  leadId,
+  initial,
+  autoRun = false,
+  changeKey,
+}: {
+  leadId: string;
+  initial?: Recap | null;
+  autoRun?: boolean;
+  changeKey?: string | null;
+}) {
   const [recap, setRecap] = React.useState<Recap | null>(initial ?? null);
+
+  // A newer recap arrived with the page data (e.g. generated on another device) — show it.
+  React.useEffect(() => {
+    if (initial?.text && initial.at && (!recap?.at || initial.at > recap.at)) setRecap(initial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial?.text, initial?.at]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const { paid, openUpgrade } = usePlan();
@@ -51,6 +70,15 @@ export function LeadAiRecap({ leadId, initial, autoRun = false }: { leadId: stri
   React.useEffect(() => {
     if (autoRun && !initial && paid) run(false, true);
   }, [autoRun, initial, paid, run]);
+
+  // Lead changed while open: refresh a recap that's already showing (paid workspaces only, quietly).
+  const lastKey = React.useRef(changeKey);
+  React.useEffect(() => {
+    if (changeKey == null || changeKey === lastKey.current) return;
+    lastKey.current = changeKey;
+    if (recap && paid && !loading) run(false, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [changeKey]);
 
   if (recap) {
     return (

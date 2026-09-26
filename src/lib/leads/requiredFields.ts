@@ -6,7 +6,9 @@ import { eq } from "drizzle-orm";
 // so callers never need to special-case it. Returns the fields that are configured AND missing from
 // the payload — the single source of truth shared by EVERY create path (manual, API, ingestion,
 // booking) so the setting can't be enforced in the UI while a backend path bypasses it.
-const OPTIONAL_REQUIREABLE = ["email", "phone", "company"] as const;
+// Company is no longer asked for on the add/edit forms, so it can't be required either — an org that
+// saved it as required earlier would otherwise be unable to add a lead at all.
+const OPTIONAL_REQUIREABLE = ["email", "phone"] as const;
 type Requireable = (typeof OPTIONAL_REQUIREABLE)[number];
 
 export function findMissingRequiredFields(

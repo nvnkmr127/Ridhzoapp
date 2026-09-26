@@ -11,7 +11,11 @@ describe("findMissingRequiredFields", () => {
   });
 
   it("treats whitespace-only as missing", () => {
-    expect(findMissingRequiredFields(["company"], { company: "   " })).toEqual(["company"]);
+    expect(findMissingRequiredFields(["phone"], { phone: "   " })).toEqual(["phone"]);
+  });
+
+  it("never requires company (it isn't on the lead forms any more)", () => {
+    expect(findMissingRequiredFields(["company"], {})).toEqual([]);
   });
 
   it("ignores 'name' (always enforced elsewhere) and unknown keys", () => {
@@ -23,6 +27,6 @@ describe("findMissingRequiredFields", () => {
   });
 
   it("reports every missing required field", () => {
-    expect(findMissingRequiredFields(["email", "phone", "company"], {})).toEqual(["email", "phone", "company"]);
+    expect(findMissingRequiredFields(["email", "phone", "company"], {})).toEqual(["email", "phone"]);
   });
 });

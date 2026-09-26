@@ -1,4 +1,4 @@
-import { Phone, Mail, Building, Sparkles, Flame, Radio, SlidersHorizontal, Braces, ClipboardList, Clock } from "lucide-react";
+import { Phone, Mail, Sparkles, Flame, Radio, Braces, ClipboardList, Clock } from "lucide-react";
 import { bestContactWindow } from "@/domains/leads/bestContactTime";
 import { getOrgFormat } from "@/lib/format.server";
 import { CustomStatusSchemaService } from "@/domains/leads/customStatusSchemaService";
@@ -17,6 +17,7 @@ import { ReengagementPlanCard } from "@/components/leads/ReengagementPlanCard";
 import { ContentSharingService } from "@/domains/leads/contentSharingService";
 import { OrgService } from "@/domains/organizations/service";
 import { LiveNextBestAction } from "@/components/leads/LiveNextBestAction";
+import { leadLiveFingerprint } from "@/lib/leads/liveFingerprint";
 import { requireOrg, hasPermission } from "@/lib/rbac";
 import { CustomFieldService } from "@/domains/customFields/service";
 import { ActivityService } from "@/domains/activities/service";
@@ -96,6 +97,8 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   const dupConditions = [];
   if (cleanEmail) dupConditions.push(sql`lower(${leads.email}) = ${cleanEmail}`);
   if (cleanPhone) dupConditions.push(eq(leads.phone, cleanPhone));
+
+  const liveFingerprintP = leadLiveFingerprint(id, organizationId).catch(() => null);
 
   // 2. Fan out independent child reads directly without redundant auth/middleware wrappers.
   const [
@@ -249,6 +252,9 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     unansweredStreak: callStats.unansweredStreak,
     meeting: nextMeeting,
   });
+  // Change token the live NBA card polls against. Started before the profile reads so it's never
+  // newer than what this render shows (at worst a change lands in between and costs one extra refresh).
+  const liveFingerprint = await liveFingerprintP;
   const nbaAccent =
     nba.priority === "high"
       ? "border-red-500/40 bg-red-500/5"
@@ -395,7 +401,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
         {/* Left column (desktop): coaching + lead details */}
         <div className="contents lg:col-span-1 lg:block lg:space-y-6">
           <div className={m("order-1")}>
-            <LiveNextBestAction>
+            <LiveNextBestAction leadId={lead.id} fingerprint={liveFingerprint}>
               <SectionCard icon={Sparkles} title="Next Best Action" className={nbaAccent}>
               <div className="space-y-2">
                 <p className="text-base font-semibold leading-snug">{nba.label}</p>
@@ -412,6 +418,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                   leadId={lead.id}
                   initial={savedRecap?.text ? { text: savedRecap.text, at: savedRecap.at } : null}
                   autoRun={answers.length > 0 && activities.length === 0}
+                  changeKey={liveFingerprint}
                 />
               </div>
             </SectionCard>

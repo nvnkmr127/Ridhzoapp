@@ -1,5 +1,6 @@
 "use server";
 
+import { leadLiveFingerprint } from "@/lib/leads/liveFingerprint";
 import { assertLeadAccess, filterAccessibleLeadIds } from "@/lib/leads/access";
 import { requireOrg, requirePermission, hasPermission, assertWritable } from "@/lib/rbac";
 import { z } from "zod";
@@ -571,5 +572,19 @@ export async function quickDispositionAction(leadId: string, outcome: "intereste
     return ok({ status: target.key, label: target.label });
   } catch (e) {
     return actionFail(e);
+  }
+}
+
+// Polled by the lead profile's live Next Best Action card: a change token for the lead (see
+// leadLiveFingerprint). Read-only, so read-only/impersonated sessions may call it too. Null = gone
+// or no access — the card just stops refreshing.
+export async function leadLiveFingerprintAction(leadId: string): Promise<string | null> {
+  try {
+    const id = z.guid().parse(leadId);
+    const { userId, organizationId } = await requireOrg();
+    await assertLeadAccess(id, { userId, organizationId });
+    return await leadLiveFingerprint(id, organizationId);
+  } catch {
+    return null;
   }
 }

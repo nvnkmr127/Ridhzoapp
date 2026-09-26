@@ -47,7 +47,6 @@ const WEEK = [
 const LEAD_FIELDS: { key: string; label: string }[] = [
   { key: "email", label: "Email" },
   { key: "phone", label: "Phone" },
-  { key: "company", label: "Company" },
 ];
 
 // Suggestions only (free text is still allowed) — the industries Ridhzo's owners are actually in.
