@@ -18,13 +18,25 @@ import { updateLeadAction } from "@/lib/actions/leads"
 import { useToast } from "@/hooks/use-toast"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Pencil } from "lucide-react"
+import {
+  CONFIGURABLE_LEAD_FIELDS,
+  DEFAULT_LEAD_FIELD_CONFIG,
+  getLeadFieldValue,
+  type LeadFieldConfig,
+} from "@/lib/leads/fieldConfig"
+import { getLeadFieldConfigAction } from "@/lib/actions/organizations"
 
 const formSchema = z.object({
   id: z.guid(),
   name: z.string().trim().min(1, "Name is required").max(255, "Name cannot exceed 255 characters"),
   email: z.string().email("Invalid email address").optional().or(z.literal("")),
   phone: z.string().max(50, "Phone number too long").optional().or(z.literal("")),
-  company: z.string().max(255, "Company name cannot exceed 255 characters").optional().or(z.literal("")),
+  company: z.string().max(255).optional().or(z.literal("")),
+  budget: z.string().max(255).optional().or(z.literal("")),
+  location: z.string().max(255).optional().or(z.literal("")),
+  industry: z.string().max(255).optional().or(z.literal("")),
+  companySize: z.string().max(255).optional().or(z.literal("")),
+  websiteUrl: z.string().max(255).optional().or(z.literal("")),
   expectedUpdatedAt: z.string().optional(),
 });
 
@@ -35,6 +47,12 @@ interface EditLeadDialogProps {
     email?: string | null;
     phone?: string | null;
     company?: string | null;
+    customData?: unknown;
+    budget?: string | null;
+    location?: string | null;
+    industry?: string | null;
+    companySize?: string | null;
+    websiteUrl?: string | null;
     updatedAt?: string | Date | null;
   }
 }
@@ -47,6 +65,7 @@ export function EditLeadDialog({ lead, compact = false }: EditLeadDialogProps & 
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const { toast } = useToast();
+  const [fieldConfig, setFieldConfig] = React.useState<LeadFieldConfig>(DEFAULT_LEAD_FIELD_CONFIG);
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -55,34 +74,62 @@ export function EditLeadDialog({ lead, compact = false }: EditLeadDialogProps & 
       name: lead.name,
       email: lead.email || "",
       phone: lead.phone || "",
-      company: lead.company || "",
+      company: getLeadFieldValue(lead as any, "company"),
+      budget: getLeadFieldValue(lead as any, "budget"),
+      location: getLeadFieldValue(lead as any, "location"),
+      industry: getLeadFieldValue(lead as any, "industry"),
+      companySize: getLeadFieldValue(lead as any, "companySize"),
+      websiteUrl: getLeadFieldValue(lead as any, "websiteUrl"),
       expectedUpdatedAt: toIso(lead.updatedAt),
     },
   });
 
-  // Reset form with fresh lead props whenever the dialog opens
+  // Reset form with fresh lead props whenever the dialog opens and load field config
   React.useEffect(() => {
     if (open) {
+      getLeadFieldConfigAction().then(setFieldConfig).catch(() => {});
       form.reset({
         id: lead.id,
         name: lead.name,
         email: lead.email || "",
         phone: lead.phone || "",
-        company: lead.company || "",
+        company: getLeadFieldValue(lead as any, "company"),
+        budget: getLeadFieldValue(lead as any, "budget"),
+        location: getLeadFieldValue(lead as any, "location"),
+        industry: getLeadFieldValue(lead as any, "industry"),
+        companySize: getLeadFieldValue(lead as any, "companySize"),
+        websiteUrl: getLeadFieldValue(lead as any, "websiteUrl"),
         expectedUpdatedAt: toIso(lead.updatedAt),
       });
     }
   }, [open, lead, form]);
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
+    // Validate mandatory configured default fields
+    const missingConfigured = CONFIGURABLE_LEAD_FIELDS.filter((f) => {
+      if (fieldConfig[f.key] !== "mandatory") return false;
+      const v = values[f.key as keyof typeof values];
+      return !(v?.toString().trim());
+    });
+
+    if (missingConfigured.length > 0) {
+      for (const m of missingConfigured) {
+        form.setError(m.key as any, { message: `${m.label} is required.` });
+      }
+      toast({
+        variant: "destructive",
+        title: "Required field missing",
+        description: `Please fill in: ${missingConfigured.map((m) => m.label).join(", ")}`,
+      });
+      return;
+    }
+
     try {
       const res = await updateLeadAction(values);
       if (!res.ok) {
         if (res.fieldErrors) {
           for (const [key, message] of Object.entries(res.fieldErrors)) {
-            if (key === "name" || key === "email" || key === "phone" || key === "company") {
-              form.setError(key, { message });
-            }
+            form.setError(key as any, { message });
           }
         }
         toast({ variant: "destructive", title: "Unable to update lead", description: res.message });
@@ -121,7 +168,7 @@ export function EditLeadDialog({ lead, compact = false }: EditLeadDialogProps & 
         <DialogHeader>
           <DialogTitle>Edit Lead</DialogTitle>
           <DialogDescription>
-            Make changes to the lead&apos;s contact information here.
+            Make changes to the lead&apos;s details here.
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -166,6 +213,36 @@ export function EditLeadDialog({ lead, compact = false }: EditLeadDialogProps & 
                 </FormItem>
               )}
             />
+
+            {/* Tenant-configurable default fields (Mandatory, Optional, Hidden) */}
+            {CONFIGURABLE_LEAD_FIELDS.map((f) => {
+              const req = fieldConfig[f.key] ?? "optional";
+              if (req === "hidden") return null;
+              const isMandatory = req === "mandatory";
+              return (
+                <FormField
+                  key={f.key}
+                  control={form.control}
+                  name={f.key as any}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        {f.label}
+                        {isMandatory && <span className="text-destructive"> *</span>}
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          type={f.type === "url" ? "url" : "text"}
+                          placeholder={f.placeholder}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              );
+            })}
 
             <div className="flex justify-end pt-4">
               <Button type="submit" disabled={form.formState.isSubmitting}>

@@ -75,6 +75,12 @@ const updateOrgSchema = z.object({
     .array(z.enum(LEAD_FIELDS))
     .default(["name"])
     .transform((arr) => Array.from(new Set(["name", ...arr]))),
+  leadFieldConfig: z
+    .record(
+      z.enum(["budget", "company", "location", "industry", "companySize", "websiteUrl"]),
+      z.enum(["mandatory", "optional", "hidden"]),
+    )
+    .optional(),
   // ISO timestamp the form loaded the org with — enables optimistic concurrency (see service).
   expectedUpdatedAt: z.string().optional().or(z.literal("")),
 }).refine((d) => d.workStartHour == null || d.workEndHour == null || d.workStartHour < d.workEndHour, {
@@ -87,12 +93,19 @@ export async function getOrganizationAction() {
   return OrgService.getOrganization(organizationId);
 }
 
+export async function getLeadFieldConfigAction() {
+  const { organizationId } = await requireOrg();
+  const org = await OrgService.getOrganization(organizationId);
+  const { resolveLeadFieldConfig } = await import("@/lib/leads/fieldConfig");
+  return resolveLeadFieldConfig(org?.leadFieldConfig);
+}
+
 // Fields recorded as {old, new} in the audit entry — low-cardinality/operational, safe to show
 // in full. Everything else that changed is named in `changedFields` with no value (free text like
 // aiContext, or PII like phone/address that doesn't need to be replayed into the audit trail).
 const SETTINGS_VALUE_FIELDS = [
   "timezone", "locale", "currency", "dateFormat", "slaHours", "whatsappMode",
-  "requiredLeadFields", "sequenceWindowStart", "sequenceWindowEnd", "dailySummary",
+  "requiredLeadFields", "leadFieldConfig", "sequenceWindowStart", "sequenceWindowEnd", "dailySummary",
   "workDays", "workStartHour", "workEndHour",
 ] as const;
 

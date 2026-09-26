@@ -92,6 +92,11 @@ const patchSchema = z
     email: z.string().email().optional().or(z.literal("")),
     phone: z.string().max(50).optional().or(z.literal("")),
     company: z.string().max(255).optional().or(z.literal("")),
+    budget: z.string().max(255).optional().or(z.literal("")),
+    location: z.string().max(255).optional().or(z.literal("")),
+    industry: z.string().max(255).optional().or(z.literal("")),
+    companySize: z.string().max(255).optional().or(z.literal("")),
+    websiteUrl: z.string().max(255).optional().or(z.literal("")),
     customData: z.record(z.string(), z.unknown()).optional(),
     // Pipeline stage and opportunity value ("" / null clears).
     stageId: z.guid().nullable().optional().or(z.literal("")),
@@ -107,6 +112,11 @@ const patchSchema = z
       v.email !== undefined ||
       v.phone !== undefined ||
       v.company !== undefined ||
+      v.budget !== undefined ||
+      v.location !== undefined ||
+      v.industry !== undefined ||
+      v.companySize !== undefined ||
+      v.websiteUrl !== undefined ||
       v.customData !== undefined ||
       v.stageId !== undefined ||
       v.expectedValue !== undefined ||
@@ -159,13 +169,27 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       );
       if (!updated) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
-    if (parsed.data.customData !== undefined) {
+    const hasConfigurableFields =
+      parsed.data.budget !== undefined ||
+      parsed.data.location !== undefined ||
+      parsed.data.industry !== undefined ||
+      parsed.data.companySize !== undefined ||
+      parsed.data.websiteUrl !== undefined;
+
+    if (parsed.data.customData !== undefined || hasConfigurableFields) {
       const current = await LeadService.getLead(id, auth.organizationId);
       if (!current) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
       const { CustomFieldService } = await import("@/domains/customFields/service");
       // A partial patch over the stored values; "" / null clears a field.
       const stored = (current.customData as Record<string, unknown>) ?? {};
-      const merged = { ...stored, ...parsed.data.customData };
+      const directFields: Record<string, unknown> = {};
+      if (parsed.data.budget !== undefined) directFields.budget = parsed.data.budget || null;
+      if (parsed.data.location !== undefined) directFields.location = parsed.data.location || null;
+      if (parsed.data.industry !== undefined) directFields.industry = parsed.data.industry || null;
+      if (parsed.data.companySize !== undefined) directFields.companySize = parsed.data.companySize || null;
+      if (parsed.data.websiteUrl !== undefined) directFields.websiteUrl = parsed.data.websiteUrl || null;
+
+      const merged = { ...stored, ...(parsed.data.customData ?? {}), ...directFields };
       const isAdmin = !auth.userId || (await hasPermissionForRoleId(auth.roleId ?? null, "settings.manage"));
       let validated: Record<string, unknown>;
       try {

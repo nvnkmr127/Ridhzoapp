@@ -1,0 +1,1 @@
+ALTER TABLE "organizations" ADD COLUMN IF NOT EXISTS "lead_field_config" jsonb DEFAULT '{"budget":"optional","company":"optional","location":"optional","industry":"optional","companySize":"optional","websiteUrl":"optional"}'::jsonb;

@@ -498,7 +498,20 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           {(visibleCustomDefs.length > 0 || isFieldAdmin) && (
             <div className={m("order-10")}>
               <SectionCard icon={Braces} title="More details">
-                <LeadCustomFields leadId={lead.id} initialData={(lead.customData as Record<string, unknown>) ?? {}} initialDefs={visibleCustomDefs} />
+                {(() => {
+                  const { resolveLeadFieldConfig } = require("@/lib/leads/fieldConfig");
+                  const fieldConfig = resolveLeadFieldConfig(org?.leadFieldConfig);
+                  const activeCustomDefs = visibleCustomDefs.filter(
+                    (f: any) => fieldConfig[f.key as keyof typeof fieldConfig] !== "hidden"
+                  );
+                  return (
+                    <LeadCustomFields
+                      leadId={lead.id}
+                      initialData={(lead.customData as Record<string, unknown>) ?? {}}
+                      initialDefs={activeCustomDefs}
+                    />
+                  );
+                })()}
               </SectionCard>
             </div>
           )}

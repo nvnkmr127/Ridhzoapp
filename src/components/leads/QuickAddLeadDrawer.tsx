@@ -25,13 +25,25 @@ import { useToast } from "@/hooks/use-toast"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
+import {
+  CONFIGURABLE_LEAD_FIELDS,
+  DEFAULT_LEAD_FIELD_CONFIG,
+  type LeadFieldConfig,
+} from "@/lib/leads/fieldConfig"
+import { getLeadFieldConfigAction } from "@/lib/actions/organizations"
+
 const emptyStringToUndefined = z.string().regex(/^\s*$/).transform(() => "");
 
 const formSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(255, "Name cannot exceed 255 characters"),
   email: z.string().trim().email("Invalid email address").optional().or(z.literal("")).or(emptyStringToUndefined),
   phone: z.string().trim().max(50, "Phone number too long").optional().or(z.literal("")).or(emptyStringToUndefined),
-  company: z.string().trim().max(255, "Company name cannot exceed 255 characters").optional().or(z.literal("")).or(emptyStringToUndefined),
+  company: z.string().trim().max(255).optional().or(z.literal("")).or(emptyStringToUndefined),
+  budget: z.string().trim().max(255).optional().or(z.literal("")).or(emptyStringToUndefined),
+  location: z.string().trim().max(255).optional().or(z.literal("")).or(emptyStringToUndefined),
+  industry: z.string().trim().max(255).optional().or(z.literal("")).or(emptyStringToUndefined),
+  companySize: z.string().trim().max(255).optional().or(z.literal("")).or(emptyStringToUndefined),
+  websiteUrl: z.string().trim().max(255).optional().or(z.literal("")).or(emptyStringToUndefined),
   ownerId: z.string().optional().or(z.literal("")).or(emptyStringToUndefined),
 });
 
@@ -48,6 +60,7 @@ export function QuickAddLeadDrawer({
   const [defs, setDefs] = React.useState<CustomFieldDef[]>([]);
   const [customValues, setCustomValues] = React.useState<Record<string, string>>({});
   const [users, setUsers] = React.useState<Array<{ id: string; name: string }>>([]);
+  const [fieldConfig, setFieldConfig] = React.useState<LeadFieldConfig>(DEFAULT_LEAD_FIELD_CONFIG);
   const [serverError, setServerError] = React.useState<string | null>(null);
 
   const fetchCustomFields = React.useCallback(() => {
@@ -69,6 +82,7 @@ export function QuickAddLeadDrawer({
       setServerError(null);
       fetchCustomFields();
       listUsersAction().then(setUsers).catch(() => {});
+      getLeadFieldConfigAction().then(setFieldConfig).catch(() => {});
     }
   }, [open, fetchCustomFields]);
 
@@ -79,12 +93,35 @@ export function QuickAddLeadDrawer({
       email: "",
       phone: "",
       company: "",
+      budget: "",
+      location: "",
+      industry: "",
+      companySize: "",
+      websiteUrl: "",
       ownerId: "",
     },
   });
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setServerError(null);
+
+    // Validate mandatory configured default fields
+    const missingConfigured = CONFIGURABLE_LEAD_FIELDS.filter((f) => {
+      if (fieldConfig[f.key] !== "mandatory") return false;
+      const v = values[f.key as keyof typeof values];
+      return !(v?.toString().trim());
+    });
+
+    if (missingConfigured.length > 0) {
+      for (const m of missingConfigured) {
+        form.setError(m.key as any, { message: `${m.label} is required.` });
+      }
+      const msg = `Please fill in required field: ${missingConfigured.map((m) => m.label).join(", ")}`;
+      setServerError(msg);
+      toast({ variant: "destructive", title: "Required field missing", description: msg });
+      return;
+    }
+
     const activeDefs = defs.filter((d) => !d.disabled);
     const missing = activeDefs.filter((d) => d.required && !(String(customValues[d.key] ?? "")).trim());
     if (missing.length) {
@@ -97,13 +134,21 @@ export function QuickAddLeadDrawer({
       });
       return;
     }
+
+    const customMerged = { ...customValues };
+    if (values.budget && fieldConfig.budget !== "hidden") customMerged.budget = values.budget;
+    if (values.location && fieldConfig.location !== "hidden") customMerged.location = values.location;
+    if (values.industry && fieldConfig.industry !== "hidden") customMerged.industry = values.industry;
+    if (values.companySize && fieldConfig.companySize !== "hidden") customMerged.companySize = values.companySize;
+    if (values.websiteUrl && fieldConfig.websiteUrl !== "hidden") customMerged.websiteUrl = values.websiteUrl;
+
     const leadPayload = {
       name: values.name,
       email: values.email || undefined,
       phone: values.phone || undefined,
-      company: values.company || undefined,
+      company: fieldConfig.company !== "hidden" ? (values.company || undefined) : undefined,
       ownerId: values.ownerId || undefined,
-      customData: customValues,
+      customData: customMerged,
     };
 
     if (typeof window !== "undefined" && !navigator.onLine) {
@@ -245,6 +290,36 @@ export function QuickAddLeadDrawer({
                   </FormItem>
                 )}
               />
+
+              {/* Tenant-configurable default fields (Mandatory, Optional, Hidden) */}
+              {CONFIGURABLE_LEAD_FIELDS.map((f) => {
+                const req = fieldConfig[f.key] ?? "optional";
+                if (req === "hidden") return null;
+                const isMandatory = req === "mandatory";
+                return (
+                  <FormField
+                    key={f.key}
+                    control={form.control}
+                    name={f.key as any}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          {f.label}
+                          {isMandatory && <span className="text-destructive"> *</span>}
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type={f.type === "url" ? "url" : "text"}
+                            placeholder={f.placeholder}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                );
+              })}
 
 
               <FormField

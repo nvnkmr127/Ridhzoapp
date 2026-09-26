@@ -92,6 +92,11 @@ const createSchema = z.object({
   email: z.string().email("Invalid email format").optional().or(z.literal("")),
   phone: z.string().max(50).optional().or(z.literal("")),
   company: z.string().max(255).optional().or(z.literal("")),
+  budget: z.string().max(255).optional().or(z.literal("")),
+  location: z.string().max(255).optional().or(z.literal("")),
+  industry: z.string().max(255).optional().or(z.literal("")),
+  companySize: z.string().max(255).optional().or(z.literal("")),
+  websiteUrl: z.string().max(255).optional().or(z.literal("")),
   customData: z.record(z.string(), z.unknown()).optional(),
   // "Assign to" (web Quick Add): an active teammate in this workspace; defaults to the creator.
   ownerId: z.guid().optional(),
@@ -122,7 +127,15 @@ export async function POST(req: NextRequest) {
     await PlanService.assertCanAddLead(auth.organizationId);
     const { hasPermissionForRoleId } = await import("@/lib/rbac");
     const isAdmin = !auth.userId || (await hasPermissionForRoleId(auth.roleId ?? null, "settings.manage"));
-    const customData = await CustomFieldService.validate(auth.organizationId, parsed.data.customData ?? {}, { isAdmin, isNew: true });
+
+    const rawCustom = { ...(parsed.data.customData ?? {}) };
+    if (parsed.data.budget) rawCustom.budget = parsed.data.budget;
+    if (parsed.data.location) rawCustom.location = parsed.data.location;
+    if (parsed.data.industry) rawCustom.industry = parsed.data.industry;
+    if (parsed.data.companySize) rawCustom.companySize = parsed.data.companySize;
+    if (parsed.data.websiteUrl) rawCustom.websiteUrl = parsed.data.websiteUrl;
+
+    const customData = await CustomFieldService.validate(auth.organizationId, rawCustom, { isAdmin, isNew: true });
     const lead = await LeadService.createLead(
       {
         name: parsed.data.name,

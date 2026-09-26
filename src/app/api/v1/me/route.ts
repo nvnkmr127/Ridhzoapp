@@ -21,7 +21,13 @@ export async function GET(req: NextRequest) {
       .where(eq(users.id, auth.userId))
       .limit(1),
     db
-      .select({ id: organizations.id, name: organizations.name, timezone: organizations.timezone, currency: organizations.currency })
+      .select({
+        id: organizations.id,
+        name: organizations.name,
+        timezone: organizations.timezone,
+        currency: organizations.currency,
+        leadFieldConfig: organizations.leadFieldConfig,
+      })
       .from(organizations)
       .where(eq(organizations.id, auth.organizationId))
       .limit(1),
@@ -33,6 +39,8 @@ export async function GET(req: NextRequest) {
   ]);
   if (!user || !org) return NextResponse.json({ error: "Invalid or missing credentials" }, { status: 401 });
 
+  const { resolveLeadFieldConfig } = await import("@/lib/leads/fieldConfig");
+
   return NextResponse.json({
     data: {
       user: {
@@ -41,7 +49,13 @@ export async function GET(req: NextRequest) {
         phone: user.phone,
         name: [user.firstName, user.lastName].filter(Boolean).join(" ") || user.phone || user.email,
       },
-      organization: org,
+      organization: {
+        id: org.id,
+        name: org.name,
+        timezone: org.timezone,
+        currency: org.currency,
+        leadFieldConfig: resolveLeadFieldConfig(org.leadFieldConfig),
+      },
       permissions,
       // Admins (settings.manage) see every lead; everyone else sees their own.
       canSeeAllLeads: permissions.includes("settings.manage"),

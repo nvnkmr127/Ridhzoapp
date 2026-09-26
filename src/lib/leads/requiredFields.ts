@@ -1,13 +1,12 @@
 import { db } from "@/db";
 import { organizations } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import {
+  findMissingMandatoryLeadFields,
+  type LeadFieldConfig,
+} from "./fieldConfig";
 
-// Which lead fields the org marked required at capture. "name" is always required (NOT NULL column),
-// so callers never need to special-case it. Returns the fields that are configured AND missing from
-// the payload — the single source of truth shared by EVERY create path (manual, API, ingestion,
-// booking) so the setting can't be enforced in the UI while a backend path bypasses it.
-// Company is no longer asked for on the add/edit forms, so it can't be required either — an org that
-// saved it as required earlier would otherwise be unable to add a lead at all.
+// Which contact channels the org marked required at capture (name, email, phone).
 const OPTIONAL_REQUIREABLE = ["email", "phone"] as const;
 type Requireable = (typeof OPTIONAL_REQUIREABLE)[number];
 
@@ -20,23 +19,49 @@ export function findMissingRequiredFields(
 }
 
 // Throws a VALIDATION error (with per-field errors) when a required field is missing. Shared by the
-// synchronous create paths; ingestion uses findMissingRequiredFields directly so it can log instead.
+// synchronous create paths (manual, API, ingestion, booking) so the setting can't be bypassed.
 export async function assertRequiredLeadFields(
   organizationId: string,
-  data: { email?: string | null; phone?: string | null; company?: string | null },
+  data: {
+    email?: string | null;
+    phone?: string | null;
+    company?: string | null;
+    customData?: Record<string, unknown> | null;
+    [key: string]: unknown;
+  },
 ): Promise<void> {
   const [org] = await db
-    .select({ requiredLeadFields: organizations.requiredLeadFields })
+    .select({
+      requiredLeadFields: organizations.requiredLeadFields,
+      leadFieldConfig: organizations.leadFieldConfig,
+    })
     .from(organizations)
     .where(eq(organizations.id, organizationId))
     .limit(1);
-  const missing = findMissingRequiredFields(org?.requiredLeadFields, data);
-  if (missing.length) {
-    const err = new Error(`Missing required field(s): ${missing.join(", ")}`);
+
+  const missingContact = findMissingRequiredFields(org?.requiredLeadFields, data);
+  const missingConfigured = findMissingMandatoryLeadFields(
+    org?.leadFieldConfig as LeadFieldConfig | undefined,
+    data as Record<string, unknown>,
+  );
+
+  const fieldErrors: Record<string, string> = {};
+  for (const f of missingContact) {
+    fieldErrors[f] = "This field is required.";
+  }
+  for (const f of missingConfigured) {
+    fieldErrors[f.key] = `${f.label} is required.`;
+  }
+
+  const allMissingLabels = [
+    ...missingContact.map((f) => f.charAt(0).toUpperCase() + f.slice(1)),
+    ...missingConfigured.map((f) => f.label),
+  ];
+
+  if (allMissingLabels.length > 0) {
+    const err = new Error(`Missing required field(s): ${allMissingLabels.join(", ")}`);
     (err as { code?: string }).code = "VALIDATION";
-    (err as { fieldErrors?: Record<string, string> }).fieldErrors = Object.fromEntries(
-      missing.map((f) => [f, "This field is required."]),
-    );
+    (err as { fieldErrors?: Record<string, string> }).fieldErrors = fieldErrors;
     throw err;
   }
 }

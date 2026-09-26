@@ -29,6 +29,17 @@ export const organizations = pgTable('organizations', {
   // Which lead fields are required at capture. "name" is always required by the column NOT NULL.
   requiredLeadFields: jsonb('required_lead_fields').$type<string[]>().default(['name']).notNull(),
 
+  // Per-tenant configuration for default fields (Budget, Company, Location, Industry, Company Size, Website URL).
+  // Each field can be: 'mandatory' | 'optional' | 'hidden'.
+  leadFieldConfig: jsonb('lead_field_config').$type<Record<string, 'mandatory' | 'optional' | 'hidden'>>().default({
+    budget: 'optional',
+    company: 'optional',
+    location: 'optional',
+    industry: 'optional',
+    companySize: 'optional',
+    websiteUrl: 'optional',
+  }),
+
   // Hours a new lead may sit unactioned before it escalates. Null = SLA escalation off.
   slaHours: integer('sla_hours'),
 

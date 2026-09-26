@@ -25,7 +25,9 @@ interface LeadHeaderQuickActionsProps {
     email?: string | null;
     phone?: string | null;
     company?: string | null;
+    customData?: unknown;
     nextFollowUpAt?: Date | string | null;
+    updatedAt?: Date | string | null;
   };
 }
 

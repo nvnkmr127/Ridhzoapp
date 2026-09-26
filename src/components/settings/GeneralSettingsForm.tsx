@@ -11,6 +11,13 @@ import { AiContextDialog } from "@/components/settings/AiContextDialog";
 import { Building, Globe, LocateFixed, Lock, Check, Sparkles, Clock, Calendar, Banknote, MessageCircle, BellRing, ListChecks, Tag, Copy, Wand2, UserPlus, CircleCheck, Circle } from "lucide-react";
 import Link from "next/link";
 
+import {
+  CONFIGURABLE_LEAD_FIELDS,
+  resolveLeadFieldConfig,
+  type LeadFieldConfig,
+  type FieldRequirement,
+} from "@/lib/leads/fieldConfig";
+
 type Org = {
   id: string;
   name: string;
@@ -28,6 +35,7 @@ type Org = {
   city?: string | null;
   country?: string | null;
   requiredLeadFields?: string[] | null;
+  leadFieldConfig?: Record<string, "mandatory" | "optional" | "hidden"> | null;
   slaHours?: number | null;
   whatsappMode?: string | null;
   dailySummary?: number | null;
@@ -156,6 +164,9 @@ export function GeneralSettingsForm({
   const [statusModalOpen, setStatusModalOpen] = React.useState(false);
   const [requiredFields, setRequiredFields] = React.useState<string[]>(
     organization?.requiredLeadFields ?? ["name"],
+  );
+  const [fieldConfig, setFieldConfig] = React.useState<LeadFieldConfig>(() =>
+    resolveLeadFieldConfig(organization?.leadFieldConfig),
   );
   const [workDays, setWorkDays] = React.useState<number[]>(organization?.workDays ?? [1, 2, 3, 4, 5, 6]);
   // Version the form loaded with — sent back on save so a concurrent edit is caught, not clobbered.
@@ -303,6 +314,7 @@ export function GeneralSettingsForm({
         sequenceWindowStart: start === "" ? null : Number(start),
         sequenceWindowEnd: end === "" ? null : Number(end),
         requiredLeadFields: requiredFields as ("name" | "email" | "phone" | "company")[],
+        leadFieldConfig: fieldConfig,
         workDays,
         workStartHour: Number(f.workStartHour),
         workEndHour: Number(f.workEndHour),
@@ -596,33 +608,105 @@ export function GeneralSettingsForm({
           </div>
         </Section>
 
-        {/* 5. New lead rules */}
-        <Section icon={ListChecks} title="Details needed for a new lead" desc="What must be filled in before a lead can be saved.">
-          <div className="flex flex-wrap gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted px-3 py-1.5 text-sm text-muted-foreground">
-              <Lock className="h-3.5 w-3.5" /> Name
-            </span>
-            {LEAD_FIELDS.map(({ key, label }) => {
-              const on = requiredFields.includes(key);
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => { setDirty(true); setRequiredFields((prev) => (on ? prev.filter((k) => k !== key) : [...prev, key])); }}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors ${
-                    on ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:border-foreground/30"
-                  }`}
-                >
-                  {on ? <Check className="h-3.5 w-3.5 text-primary" /> : <span className="h-3.5 w-3.5" />}
-                  {label}
-                  <span className="text-xs opacity-70">{on ? "required" : "optional"}</span>
-                </button>
-              );
-            })}
+        {/* 5. Lead Fields & Capture Rules */}
+        <Section icon={ListChecks} title="Lead fields & requirements" desc="Configure which fields are mandatory, optional, or hidden for your workspace.">
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Default lead fields</p>
+              <div className="space-y-2.5">
+                {CONFIGURABLE_LEAD_FIELDS.map((field) => {
+                  const current = fieldConfig[field.key] ?? "optional";
+                  return (
+                    <div
+                      key={field.key}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-border bg-card/60 transition-colors"
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm text-foreground">{field.label}</span>
+                          {current === "mandatory" && (
+                            <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-destructive/15 text-destructive border border-destructive/25">
+                              Mandatory
+                            </span>
+                          )}
+                          {current === "optional" && (
+                            <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-primary/10 text-primary border border-primary/25">
+                              Optional
+                            </span>
+                          )}
+                          {current === "hidden" && (
+                            <span className="text-[11px] px-2 py-0.5 rounded-full font-medium bg-muted text-muted-foreground border border-border">
+                              Hidden
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {current === "mandatory" && "Must be filled before saving or submitting a lead."}
+                          {current === "optional" && "Visible on forms and lead profiles, but optional."}
+                          {current === "hidden" && "Completely hidden across lead forms and edit screens."}
+                        </p>
+                      </div>
+                      <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5 self-start sm:self-center shrink-0">
+                        {(["mandatory", "optional", "hidden"] as const).map((opt) => {
+                          const active = current === opt;
+                          return (
+                            <button
+                              key={opt}
+                              type="button"
+                              onClick={() => {
+                                setDirty(true);
+                                setFieldConfig((prev) => ({ ...prev, [field.key]: opt }));
+                              }}
+                              className={`px-3 py-1 text-xs font-medium rounded-md capitalize transition-colors ${
+                                active
+                                  ? opt === "mandatory"
+                                    ? "bg-destructive text-destructive-foreground shadow-sm"
+                                    : opt === "optional"
+                                    ? "bg-primary text-primary-foreground shadow-sm"
+                                    : "bg-background text-foreground shadow-sm border border-border/60"
+                                  : "text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              {opt}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-border">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Contact requirements</p>
+              <div className="flex flex-wrap gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted px-3 py-1.5 text-sm text-muted-foreground">
+                  <Lock className="h-3.5 w-3.5" /> Name (Always required)
+                </span>
+                {LEAD_FIELDS.map(({ key, label }) => {
+                  const on = requiredFields.includes(key);
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => { setDirty(true); setRequiredFields((prev) => (on ? prev.filter((k) => k !== key) : [...prev, key])); }}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                        on ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:border-foreground/30"
+                      }`}
+                    >
+                      {on ? <Check className="h-3.5 w-3.5 text-primary" /> : <span className="h-3.5 w-3.5" />}
+                      {label}
+                      <span className="text-xs opacity-70">{on ? "required" : "optional"}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
           <Hint>
-            Applies when your team adds a lead by hand. Leads from ads and forms are always saved — if something is missing they&apos;re tagged
-            <b> missing-info</b> so you can ask for it. Need your own fields (budget, location…)? Add them in{" "}
+            These settings apply independently to your workspace across all lead creation, drawer, and edit flows.
+            Custom attributes can also be configured in{" "}
             <Link href="/settings/custom-fields" className="underline underline-offset-2">Custom fields</Link>.
           </Hint>
         </Section>

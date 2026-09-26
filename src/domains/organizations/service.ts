@@ -122,6 +122,7 @@ export class OrgService {
       city: string | null;
       country: string | null;
       requiredLeadFields: string[];
+      leadFieldConfig: Record<string, "mandatory" | "optional" | "hidden">;
       slaHours: number | null;
       whatsappMode: string;
       autoMergeDuplicates: number;

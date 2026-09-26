@@ -31,6 +31,11 @@ const createLeadSchema = z.object({
   email: z.string().trim().email("Invalid email").optional().or(z.literal("")).or(emptyStringToUndefined),
   phone: phoneField,
   company: z.string().trim().max(255).optional().or(z.literal("")).or(emptyStringToUndefined),
+  budget: z.string().trim().max(255).optional().or(z.literal("")).or(emptyStringToUndefined),
+  location: z.string().trim().max(255).optional().or(z.literal("")).or(emptyStringToUndefined),
+  industry: z.string().trim().max(255).optional().or(z.literal("")).or(emptyStringToUndefined),
+  companySize: z.string().trim().max(255).optional().or(z.literal("")).or(emptyStringToUndefined),
+  websiteUrl: z.string().trim().max(255).optional().or(z.literal("")).or(emptyStringToUndefined),
   ownerId: uuidSchema.optional().or(z.literal("")).or(emptyStringToUndefined),
   customData: z.record(z.string(), z.unknown()).optional(),
 });
@@ -45,14 +50,40 @@ export async function createLeadAction(
     return fail("VALIDATION", "Please fix the highlighted fields.", zodFieldErrors(parsed.error));
   }
 
+  const { OrgService } = await import("@/domains/organizations/service");
+  const { resolveLeadFieldConfig, findMissingMandatoryLeadFields } = await import("@/lib/leads/fieldConfig");
+  const org = await OrgService.getOrganization(organizationId);
+  const fieldConfig = resolveLeadFieldConfig(org?.leadFieldConfig);
+
+  const customDataMerged: Record<string, unknown> = { ...(parsed.data.customData ?? {}) };
+  if (parsed.data.budget && fieldConfig.budget !== "hidden") customDataMerged.budget = parsed.data.budget.trim();
+  if (parsed.data.location && fieldConfig.location !== "hidden") customDataMerged.location = parsed.data.location.trim();
+  if (parsed.data.industry && fieldConfig.industry !== "hidden") customDataMerged.industry = parsed.data.industry.trim();
+  if (parsed.data.companySize && fieldConfig.companySize !== "hidden") customDataMerged.companySize = parsed.data.companySize.trim();
+  if (parsed.data.websiteUrl && fieldConfig.websiteUrl !== "hidden") customDataMerged.websiteUrl = parsed.data.websiteUrl.trim();
+
+  // Strip hidden fields
+  for (const [k, req] of Object.entries(fieldConfig)) {
+    if (req === "hidden") {
+      delete customDataMerged[k];
+    }
+  }
+
   // Pass empty strings as undefined
   const data = {
     name: parsed.data.name.trim(),
     email: parsed.data.email?.trim() || undefined,
     phone: parsed.data.phone?.trim() || undefined,
-    company: parsed.data.company?.trim() || undefined,
+    company: fieldConfig.company === "hidden" ? undefined : (parsed.data.company?.trim() || undefined),
     ownerId: parsed.data.ownerId || undefined,
+    customData: customDataMerged,
   };
+
+  const missing = findMissingMandatoryLeadFields(fieldConfig, data);
+  if (missing.length > 0) {
+    const fieldErrors = Object.fromEntries(missing.map((m) => [m.key, `${m.label} is required.`]));
+    return fail("VALIDATION", `Please fill in required field(s): ${missing.map((m) => m.label).join(", ")}`, fieldErrors);
+  }
 
   try {
     // Required-field enforcement now lives in LeadService.createLead so every create path (API,
@@ -81,6 +112,12 @@ const updateLeadSchema = z.object({
   email: z.string().email("Invalid email").optional().or(z.literal("")),
   phone: phoneField,
   company: z.string().optional().or(z.literal("")),
+  budget: z.string().optional().or(z.literal("")),
+  location: z.string().optional().or(z.literal("")),
+  industry: z.string().optional().or(z.literal("")),
+  companySize: z.string().optional().or(z.literal("")),
+  websiteUrl: z.string().optional().or(z.literal("")),
+  customData: z.record(z.string(), z.unknown()).optional(),
   // ISO timestamp the editor loaded the lead with — enables optimistic concurrency.
   expectedUpdatedAt: z.string().optional().or(z.literal("")),
 });
@@ -93,21 +130,78 @@ export async function updateLeadAction(input: z.infer<typeof updateLeadSchema>) 
     return fail("VALIDATION", "Please fix the highlighted fields.", zodFieldErrors(parsed.error));
   }
 
-  const { id, expectedUpdatedAt, ...data } = parsed.data;
+  const { id, expectedUpdatedAt, customData: inputCustomData, budget, location, industry, companySize, websiteUrl, ...data } = parsed.data;
+
+  const { OrgService } = await import("@/domains/organizations/service");
+  const { resolveLeadFieldConfig, findMissingMandatoryLeadFields } = await import("@/lib/leads/fieldConfig");
+  const org = await OrgService.getOrganization(organizationId);
+  const fieldConfig = resolveLeadFieldConfig(org?.leadFieldConfig);
+
+  const current = await LeadService.getLead(id, organizationId);
+  if (!current) return fail("NOT_FOUND", "This lead no longer exists or was moved.");
+
+  const currentCustom = (current.customData as Record<string, unknown> | null) ?? {};
+  const updatedCustom: Record<string, unknown> = { ...currentCustom, ...(inputCustomData ?? {}) };
+
+  if (budget !== undefined) {
+    if (fieldConfig.budget === "hidden") delete updatedCustom.budget;
+    else if (budget.trim()) updatedCustom.budget = budget.trim();
+    else delete updatedCustom.budget;
+  }
+  if (location !== undefined) {
+    if (fieldConfig.location === "hidden") delete updatedCustom.location;
+    else if (location.trim()) updatedCustom.location = location.trim();
+    else delete updatedCustom.location;
+  }
+  if (industry !== undefined) {
+    if (fieldConfig.industry === "hidden") delete updatedCustom.industry;
+    else if (industry.trim()) updatedCustom.industry = industry.trim();
+    else delete updatedCustom.industry;
+  }
+  if (companySize !== undefined) {
+    if (fieldConfig.companySize === "hidden") delete updatedCustom.companySize;
+    else if (companySize.trim()) updatedCustom.companySize = companySize.trim();
+    else delete updatedCustom.companySize;
+  }
+  if (websiteUrl !== undefined) {
+    if (fieldConfig.websiteUrl === "hidden") delete updatedCustom.websiteUrl;
+    else if (websiteUrl.trim()) updatedCustom.websiteUrl = websiteUrl.trim();
+    else delete updatedCustom.websiteUrl;
+  }
 
   // Cleanup empty strings to undefined
-  const cleanData = {
-    name: data.name,
-    email: data.email || undefined,
-    phone: data.phone || undefined,
-    company: data.company || undefined,
+  const cleanData: Record<string, any> = {};
+  if (data.name !== undefined) cleanData.name = data.name;
+  if (data.email !== undefined) cleanData.email = data.email || undefined;
+  if (data.phone !== undefined) cleanData.phone = data.phone || undefined;
+  if (data.company !== undefined) {
+    cleanData.company = fieldConfig.company === "hidden" ? undefined : (data.company || undefined);
+  }
+
+  // Validate resulting lead against mandatory fields
+  const candidateLead = {
+    ...current,
+    ...cleanData,
+    company: cleanData.company !== undefined ? cleanData.company : current.company,
+    customData: updatedCustom,
   };
+  const missing = findMissingMandatoryLeadFields(fieldConfig, candidateLead as Record<string, unknown>);
+  if (missing.length > 0) {
+    const fieldErrors = Object.fromEntries(missing.map((m) => [m.key, `${m.label} is required.`]));
+    return fail("VALIDATION", `Please fill in required field(s): ${missing.map((m) => m.label).join(", ")}`, fieldErrors);
+  }
 
   try {
     await assertLeadAccess(id, { userId, organizationId });
     const expected = expectedUpdatedAt ? new Date(expectedUpdatedAt) : undefined;
     const lead = await LeadService.updateLead(id, cleanData, userId, organizationId, expected);
     if (!lead) return fail("NOT_FOUND", "This lead no longer exists or was moved.");
+
+    // Update customData if any configurable custom fields were passed
+    if (budget !== undefined || location !== undefined || industry !== undefined || companySize !== undefined || websiteUrl !== undefined || inputCustomData !== undefined) {
+      await LeadService.updateCustomData(id, updatedCustom, organizationId);
+    }
+
     revalidatePath('/leads');
     revalidatePath(`/leads/${id}`);
     return ok(lead);
