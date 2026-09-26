@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { forgetRole } from "@/lib/rbac/roleCache";
 import {
   organizations,
   users,
@@ -1257,6 +1258,7 @@ export class PlatformService {
       // 6. Teams & Roles
       await tx.delete(teams).where(eq(teams.organizationId, organizationId));
       await tx.delete(roles).where(eq(roles.organizationId, organizationId));
+      forgetRole();
 
       // 7. Organization primary row
       await tx.delete(organizations).where(eq(organizations.id, organizationId));

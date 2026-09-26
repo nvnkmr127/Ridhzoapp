@@ -7,6 +7,7 @@ import { ScoringService } from "@/domains/leads/scoringService";
 import { eventBus } from "@/lib/events/emitter";
 import { DEFAULT_FORMAT } from "@/lib/format";
 import { startOfZonedDay } from "@/lib/tz";
+import { keepAlive } from "@/lib/keepAlive";
 
 // Outreach the rep did OUTSIDE Ridhzo (phone call, their own WhatsApp, their own mail app), and replies
 // they paste in. Shared by the web actions and the mobile API; callers check lead access first.
@@ -239,7 +240,7 @@ export async function recordLeadContact(input: {
     await db.insert(whatsappMessages).values({ leadId, userId, direction: "outbound", body: message, status: "sent" });
   }
 
-  void ScoringService.updateLeadScore(leadId).catch(() => {});
+  keepAlive(ScoringService.updateLeadScore(leadId), "lead score");
   return { logged: true, completedFollowUpIds };
 }
 
@@ -258,5 +259,5 @@ export async function recordLeadReply(input: { leadId: string; userId: string; c
   });
   const { SequenceService } = await import("@/domains/leads/sequenceService");
   await SequenceService.stopForLead(leadId, "lead replied").catch(() => {});
-  void ScoringService.updateLeadScore(leadId).catch(() => {});
+  keepAlive(ScoringService.updateLeadScore(leadId), "lead score");
 }

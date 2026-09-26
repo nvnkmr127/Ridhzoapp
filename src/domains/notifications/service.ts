@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { notifications, users, roles } from "@/db/schema";
 import { and, desc, eq, isNull, inArray } from "drizzle-orm";
+import { keepAlive } from "@/lib/keepAlive";
 
 // High-signal notification types that also warrant an email. Chatty ones (self-completions) don't.
 const EMAIL_TYPES = new Set(["new_lead", "lead_assigned", "follow_up_due", "follow_up_overdue", "sla_escalation", "meeting_scheduled", "meeting_reminder"]);
@@ -24,14 +25,14 @@ export class NotificationService {
     const [row] = await db.insert(notifications).values(data).returning();
     // Best-effort browser push for closed-tab delivery; the in-app bell is the source of truth.
     const { PushService } = await import("@/lib/push/service");
-    void PushService.sendToUser(data.userId, {
+    keepAlive(PushService.sendToUser(data.userId, {
       title: data.title,
       body: data.body,
       url: data.leadId ? `/leads/${data.leadId}` : "/",
-    });
+    }), "web push");
     // Best-effort mobile push (Expo + FCM) — same event, native devices. The app routes taps by
     // type/leadId, marks the notification read by id, and shows the unread count on its icon.
-    if (mobilePush) void (async () => {
+    if (mobilePush) keepAlive((async () => {
       const [{ MobilePushService }, { pushChannelFor }, badge] = await Promise.all([
         import("@/lib/push/mobile"),
         import("@/lib/push/channels"),
@@ -44,8 +45,8 @@ export class NotificationService {
         channelId: pushChannelFor(data.type),
         badge,
       });
-    })().catch(() => {});
-    if (EMAIL_TYPES.has(data.type)) void NotificationService.email({ ...data, type: data.type });
+    })(), "mobile push");
+    if (EMAIL_TYPES.has(data.type)) keepAlive(NotificationService.email({ ...data, type: data.type }), "notification email");
     return row;
   }
 

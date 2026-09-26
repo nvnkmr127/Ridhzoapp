@@ -70,7 +70,9 @@ export async function buildLeadProfile(lead: Lead, ctx: { userId: string | null;
 
   const [activities, waMessages, attachments, shares, org, availableSequences, enrolled, stages, duplicates, source, meetings, defs, statusCategory, reengagement] =
     await Promise.all([
-      ActivityService.getLeadActivities(id),
+      // Same cap as GET /api/v1/leads/:id — years-old leads have thousands; stats and the timeline
+      // here only need the recent ones.
+      ActivityService.getLeadActivities(id, 500),
       WhatsAppService.listForLead(id).catch(() => []),
       db
         .select()

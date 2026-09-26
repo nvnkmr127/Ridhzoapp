@@ -1,6 +1,7 @@
 "use client"
 import * as React from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Bell } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -17,21 +18,42 @@ export function NotificationBell() {
   const [items, setItems] = React.useState<Notif[]>([]);
 
   // Poll the unread badge — the "New Lead Alert" surfacing. 30s is plenty for a web CRM.
-  // A rise in unread (not the first load) plays the user's chosen alert sound.
+  // A rise in unread (not the first load) plays the user's chosen alert sound, and refreshes the page
+  // under it: a new lead from a webhook, a call a rep logged on their phone, a missed call — the list
+  // or lead the user is looking at shows it without a reload. Coming back to the tab does the same
+  // (plenty can change on the phones meanwhile). A hidden tab doesn't poll.
+  const router = useRouter();
   const last = React.useRef<number | null>(null);
+  const lastRefresh = React.useRef(Date.now());
   React.useEffect(() => {
+    const refresh = () => {
+      lastRefresh.current = Date.now();
+      router.refresh();
+    };
     const tick = () =>
       unreadCountAction()
         .then((n) => {
-          if (last.current != null && n > last.current) void playAlertSound();
+          if (last.current != null && n > last.current) {
+            void playAlertSound();
+            refresh();
+          }
           last.current = n;
           setCount(n);
         })
         .catch(() => {});
     tick();
-    const t = setInterval(tick, 30_000);
-    return () => clearInterval(t);
-  }, []);
+    const t = setInterval(() => document.visibilityState === "visible" && tick(), 30_000);
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      tick();
+      if (Date.now() - lastRefresh.current > 60_000) refresh();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [router]);
 
   async function onOpen(open: boolean) {
     if (!open) return;

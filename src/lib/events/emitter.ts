@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { keepAlive } from "@/lib/keepAlive";
 
 export type EventPayload = {
   leadId: string;
@@ -50,8 +51,15 @@ export const MEETING_EVENTS = ['meeting.scheduled', 'meeting.rescheduled', 'meet
 export type MeetingEvent = (typeof MEETING_EVENTS)[number];
 
 class TypedEventEmitter extends EventEmitter {
+  // Listeners are async (automations, activity notes, notifications) and nobody awaits emit(): keep
+  // each one alive past the response (see keepAlive — serverless would otherwise drop the work).
   emit<K extends keyof SystemEvents>(eventName: K, ...args: Parameters<SystemEvents[K]>): boolean {
-    return super.emit(eventName, ...args);
+    const listeners = this.listeners(eventName) as ((...a: unknown[]) => unknown)[];
+    for (const listener of listeners) {
+      const r = listener.apply(this, args);
+      if (r && typeof (r as Promise<unknown>).then === "function") keepAlive(r as Promise<unknown>, `event ${String(eventName)}`);
+    }
+    return listeners.length > 0;
   }
 
   on<K extends keyof SystemEvents>(eventName: K, listener: SystemEvents[K]): this {

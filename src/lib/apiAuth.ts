@@ -24,17 +24,20 @@ export async function authorizeApiRequest(req: NextRequest): Promise<ApiAuth | {
   const mobile = verifyMobileToken(raw);
   if (mobile) {
     const { isMobileTokenRevoked } = await import("@/lib/mobileRevocation");
-    if (await isMobileTokenRevoked(mobile)) {
-      return { error: NextResponse.json({ error: "Invalid or missing credentials" }, { status: 401 }) };
-    }
+    // Four independent checks — run together, not one round trip after another (every app request
+    // pays this before any real work). Decided in the same order as before.
     // A 30-day token outlives membership changes, so re-check the user is still active and still in
     // the token's org on every request — a removed/deactivated user is locked out immediately.
-    const live = await liveUser(mobile.sub, mobile.org);
-    if (!live) {
+    const [revoked, live, isSuspended, limited] = await Promise.all([
+      isMobileTokenRevoked(mobile),
+      liveUser(mobile.sub, mobile.org),
+      suspended(mobile.org),
+      rateLimited(`mobile:${mobile.sub}`),
+    ]);
+    if (revoked || !live) {
       return { error: NextResponse.json({ error: "Invalid or missing credentials" }, { status: 401 }) };
     }
-    if (await suspended(mobile.org)) return { error: suspendedResponse() };
-    const limited = await rateLimited(`mobile:${mobile.sub}`);
+    if (isSuspended) return { error: suspendedResponse() };
     if (limited) return { error: limited };
     // The live role, not the one baked into the token — a demoted admin loses admin rights at once.
     return { organizationId: mobile.org, userId: mobile.sub, roleId: live.roleId };

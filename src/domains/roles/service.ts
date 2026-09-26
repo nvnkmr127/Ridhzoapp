@@ -3,6 +3,7 @@ import { UserFacingError } from "@/lib/actions/result";
 import { roles, users, invitations } from "@/db/schema";
 import { and, count, eq, gt, isNull, or } from "drizzle-orm";
 import { ALL_PERMISSIONS } from "@/lib/permissions";
+import { forgetRole } from "@/lib/rbac/roleCache";
 
 const cols = { id: roles.id, name: roles.name, permissions: roles.permissions, organizationId: roles.organizationId };
 
@@ -59,6 +60,7 @@ export class RoleService {
       .set(set)
       .where(and(eq(roles.id, id), eq(roles.organizationId, organizationId)))
       .returning(cols);
+    forgetRole(id);
     return r;
   }
 
@@ -96,6 +98,7 @@ export class RoleService {
       .delete(roles)
       .where(and(eq(roles.id, id), eq(roles.organizationId, organizationId)))
       .returning(cols);
+    forgetRole(id);
     return r;
   }
 }

@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { forgetRole } from "@/lib/rbac/roleCache";
 import { signupTrial } from "@/domains/billing/planService";
 import { organizations, users, roles } from "@/db/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
@@ -24,6 +25,7 @@ export class OrgService {
         await db.insert(roles).values({ name, organizationId: null, permissions });
       } else if (name === "admin") {
         await db.update(roles).set({ permissions }).where(eq(roles.id, existing.id));
+        forgetRole(existing.id);
       }
     }
     const [adminRole] = await db

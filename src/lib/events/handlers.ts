@@ -4,6 +4,7 @@ import { automations, automationTriggers, leads, users } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { automationQueue } from "@/lib/jobs/workers/automationWorker";
 import { enrichmentQueue } from "@/lib/jobs/workers/enrichmentWorker";
+import { keepAlive } from "@/lib/keepAlive";
 
 // A per-event discriminator so a recurring trigger runs once per DISTINCT change, not once per lead.
 // lead.created is genuinely once-per-lead (no discriminator); status/assign/stage recur.
@@ -32,7 +33,13 @@ function eventDiscriminator(eventType: string, p: EventPayload): string {
   }
 }
 
-async function dispatchTrigger(eventType: string, payload: EventPayload) {
+// Handlers call this without awaiting it (the rest of the handler shouldn't wait on automations), so it
+// keeps its own work alive past the response.
+function dispatchTrigger(eventType: string, payload: EventPayload) {
+  keepAlive(runTrigger(eventType, payload), `automations for ${eventType}`);
+}
+
+async function runTrigger(eventType: string, payload: EventPayload) {
   if (!payload.leadId) return;
   // Stop automations from triggering automations: a change made BY an automation action doesn't
   // cascade into more automations (prevents status ping-pong / assignment loops).
@@ -143,7 +150,7 @@ eventBus.on('lead.updated', async (p) => {
   dispatchTrigger('lead.updated', p);
   await ActivityService.addActivity({ leadId: p.leadId, userId: isUuid(p.userId) ? p.userId : undefined, type: 'note', content: 'Lead details were updated.' });
   const { ScoringService } = await import("@/domains/leads/scoringService");
-  void ScoringService.updateLeadScore(p.leadId).catch(() => {});
+  keepAlive(ScoringService.updateLeadScore(p.leadId), "lead score");
 });
 
 eventBus.on('lead.assigned', async (p) => {
@@ -210,7 +217,7 @@ eventBus.on('lead.status_changed', async (p) => {
   dispatchTrigger('lead.status_changed', p);
   await ActivityService.addActivity({ leadId: p.leadId, userId: p.userId, type: 'note', content: `Status changed from ${p.oldStatus} to ${p.newStatus}.` });
   const { ScoringService } = await import("@/domains/leads/scoringService");
-  void ScoringService.updateLeadScore(p.leadId).catch(() => {});
+  keepAlive(ScoringService.updateLeadScore(p.leadId), "lead score");
   // Resolve by status CATEGORY so custom statuses ("Closed – paid", "Not interested") behave like
   // won/lost — literal keys missed them, so their sequences kept messaging a decided lead.
   const category = p.newStatus ? await statusCategoryForLead(p.leadId, p.newStatus) : null;

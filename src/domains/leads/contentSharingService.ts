@@ -4,6 +4,7 @@ import { sharedLinks, sharedLinkViews, leads, users, organizations } from "@/db/
 import { and, asc, count, desc, eq, gt, gte, lt, isNull, sql } from "drizzle-orm";
 import { NotificationService } from "@/domains/notifications/service";
 import { ActivityService } from "@/domains/activities/service";
+import { keepAlive } from "@/lib/keepAlive";
 
 export interface SharedPageData {
   title: string;
@@ -196,21 +197,22 @@ export class ContentSharingService {
     const page = await this.pageData(link);
     const leadName = page.leadName;
     // Surface the engagement signal: who opened what, and how many times.
-    void ActivityService.addActivity({
+    // Not awaited (the lead's page shouldn't wait on it), but kept alive past the response.
+    keepAlive(ActivityService.addActivity({
       leadId: link.leadId,
       userId: link.ownerId ?? undefined,
       type: "content_viewed",
       content: `Opened "${link.title}" (view #${nextCount})`,
-    });
+    }), "content view activity");
 
     if (link.ownerId) {
-      void NotificationService.create({
+      keepAlive(NotificationService.create({
         userId: link.ownerId,
         type: "content_viewed",
         title: `${leadName} opened your content`,
         body: `${leadName} opened "${link.title}"${nextCount > 1 ? ` — ${nextCount} views so far` : ""}.`,
         leadId: link.leadId,
-      });
+      }), "content view notification");
     }
 
     return page;

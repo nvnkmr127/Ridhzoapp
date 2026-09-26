@@ -7,6 +7,7 @@ import { roles, users } from "@/db/schema";
 import { eq, and, isNull, or } from "drizzle-orm";
 import type { PermissionKey } from "@/lib/permissions";
 import { SYSTEM_ROLE_PERMISSIONS, ALL_PERMISSIONS } from "@/lib/permissions";
+import { cachedRole } from "./roleCache";
 
 // A single dashboard render calls into rbac many times (layout + page each do requireOrg/isSuperAdmin/
 // hasPermission). Memoize per request so the session decode and each DB round-trip (role, suspension)
@@ -178,11 +179,14 @@ export async function hasPermission(key: PermissionKey): Promise<boolean> {
 // permission set.
 export async function hasPermissionForRoleId(roleId: string | null, key: PermissionKey): Promise<boolean> {
   if (!roleId) return false;
-  const [role] = await db
-    .select({ name: roles.name, permissions: roles.permissions, organizationId: roles.organizationId })
-    .from(roles)
-    .where(eq(roles.id, roleId))
-    .limit(1);
+  const role = await cachedRole(roleId, async () => {
+    const [r] = await db
+      .select({ name: roles.name, permissions: roles.permissions, organizationId: roles.organizationId })
+      .from(roles)
+      .where(eq(roles.id, roleId))
+      .limit(1);
+    return r ?? null;
+  });
   if (!role) return false;
   return roleGrants({ name: role.name, permissions: role.permissions ?? [], organizationId: role.organizationId }, key);
 }
