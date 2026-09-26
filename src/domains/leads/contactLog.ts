@@ -101,6 +101,8 @@ export async function recordLeadContact(input: {
     const [known] = await db
       .select({ id: activities.id })
       .from(activities)
+      .where(and(eq(activities.userId, userId), eq(activities.externalRef, externalRef)))
+      .limit(1);
     if (known || (await mergeIntoManualLog({ leadId, userId, startedAt, durationSec, externalRef }))) {
       return { logged: false };
     }
