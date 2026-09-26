@@ -48,6 +48,11 @@ export async function POST(req: NextRequest) {
     // Fetch the updated status to return it
     const status = await getCallSyncStatus(auth.userId);
 
+    if (res.logged > 0) {
+      const { revalidatePath } = await import("next/cache");
+      revalidatePath("/", "layout");
+    }
+
     return NextResponse.json({ data: { received: calls.length, ...res, status } });
   } catch (e) {
     // No request details in the log: the body is the rep's personal call history.

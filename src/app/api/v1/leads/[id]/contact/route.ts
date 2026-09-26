@@ -32,6 +32,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   try {
     const { startedAt, ...rest } = parsed.data;
     const { logged, completedFollowUpIds } = await recordLeadContact({ leadId: id, userId: auth.userId, ...rest, startedAt: startedAt ? new Date(startedAt) : undefined });
+    if (logged) {
+      const { revalidatePath } = await import("next/cache");
+      revalidatePath(`/leads/${id}`);
+      revalidatePath("/");
+    }
     return NextResponse.json({ data: { logged, completedFollowUpIds } }, { status: logged ? 201 : 200 });
   } catch (e) {
     const { logError } = await import("@/lib/log");

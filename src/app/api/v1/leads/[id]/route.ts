@@ -33,15 +33,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 
   // ponytail: newest 500 only — bounds the payload on years-old leads; page it if anyone hits the cap.
-  const activities = await ActivityService.getLeadActivities(id, 500);
-  const fus = await db
-    .select({ id: followUps.id, title: followUps.title, type: followUps.type, description: followUps.description, status: followUps.status, dueAt: followUps.dueAt })
-    .from(followUps)
-    .where(eq(followUps.leadId, id))
-    .orderBy(asc(followUps.dueAt));
-
-  const { TagService } = await import("@/domains/tags/service");
-  const tags = await TagService.getForLead(id);
+  const [activities, fus, tags] = await Promise.all([
+    ActivityService.getLeadActivities(id, 500),
+    db
+      .select({ id: followUps.id, title: followUps.title, type: followUps.type, description: followUps.description, status: followUps.status, dueAt: followUps.dueAt })
+      .from(followUps)
+      .where(eq(followUps.leadId, id))
+      .orderBy(asc(followUps.dueAt)),
+    import("@/domains/tags/service").then(m => m.TagService.getForLead(id))
+  ]);
 
   const callActivities = activities.filter(a => a.type === "call");
   const attempts = callActivities.filter(a => a.content?.startsWith("Called —")).length;
