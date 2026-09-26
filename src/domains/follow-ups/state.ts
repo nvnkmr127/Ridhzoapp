@@ -38,10 +38,12 @@ export async function markLeadContacted(leadId: string, at: Date = new Date()): 
     .update(leads)
     // Raw SQL doesn't get Drizzle's Date→timestamp mapping, so pass the same ISO string it would
     // (a bare Date is sent as "Thu Sep 24 2026 … GMT+0530", which Postgres rejects).
-    // greatest(): a call synced late from the phone must not move last-contacted backwards.
+    // greatest(): a call synced late from the phone must not move last-contacted backwards, and the
+    // call that made someone a lead (logged after they were added) counts from the lead's creation,
+    // never before it — or first-response time would go negative.
     .set({
-      lastContactedAt: sql`greatest(${leads.lastContactedAt}, ${at.toISOString()}::timestamp)`,
-      firstContactedAt: sql`coalesce(${leads.firstContactedAt}, ${at.toISOString()}::timestamp)`,
+      lastContactedAt: sql`greatest(${leads.lastContactedAt}, ${at.toISOString()}::timestamp, ${leads.createdAt})`,
+      firstContactedAt: sql`coalesce(${leads.firstContactedAt}, greatest(${at.toISOString()}::timestamp, ${leads.createdAt}))`,
       updatedAt: new Date(),
     })
     .where(eq(leads.id, leadId));

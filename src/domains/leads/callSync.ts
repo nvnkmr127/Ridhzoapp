@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
 import { normalizePhone } from "@/lib/leads/normalize";
@@ -13,13 +13,34 @@ export type DeviceCall = {
   durationSec: number; // 0 = not answered
 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
 // A missed call older than this is history, not something to call back now — log it, don't ping.
-const NOTIFY_WITHIN_MS = 24 * 60 * 60 * 1000;
+const NOTIFY_WITHIN_MS = DAY_MS;
+// An unknown caller the rep adds as a lead afterwards: that call belongs on the new lead's timeline.
+// Anything older predates the lead and is skipped.
+const BEFORE_LEAD_MS = DAY_MS;
+
+// The match key the phone filters its call log with: the last 8 digits, so every way of writing a
+// number agrees — "+91 98765 43210" / "098765 43210", "+971 50 123 4567" / "050 123 4567", and
+// 8-digit Singapore numbers. It's only a prefilter: syncDeviceCalls still matches the full number.
+export function phoneKey(phone: string | null | undefined): string | null {
+  const d = (phone ?? "").replace(/\D/g, "");
+  return d.length < 6 ? null : d.slice(-8);
+}
+
+// Phone numbers of the leads this rep may open (all the org's for an admin), as phoneKeys. The app
+// only sends calls with these numbers — personal calls never leave the phone.
+export async function leadPhoneKeys(organizationId: string, ownerId: string | null): Promise<string[]> {
+  const rows = await db
+    .select({ phone: leads.phone })
+    .from(leads)
+    .where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt), isNotNull(leads.phone), ownerId ? eq(leads.ownerId, ownerId) : undefined));
+  return [...new Set(rows.map((r) => phoneKey(r.phone)).filter((k): k is string => !!k))];
+}
 
 // Logs the calls on a rep's phone that were with a lead (Android call-log sync, opt-in on the device).
-// Only numbers that match a lead the rep may open are stored; every other number is dropped here and
-// never written anywhere. Calls from before the lead existed are skipped so first-response times stay
-// honest. Re-sending a call is harmless: recordLeadContact dedupes on externalRef.
+// The app already filters to lead numbers; this re-checks, so anything else is dropped here unwritten.
+// Re-sending a call is harmless: recordLeadContact dedupes on externalRef.
 export async function syncDeviceCalls(input: {
   organizationId: string;
   userId: string;
@@ -45,7 +66,7 @@ export async function syncDeviceCalls(input: {
   let logged = 0;
   for (const call of calls) {
     const lead = keysFor(call.number).map((k) => byPhone.get(k)).find(Boolean);
-    if (!lead || call.startedAt < lead.createdAt) continue;
+    if (!lead || call.startedAt.getTime() < lead.createdAt.getTime() - BEFORE_LEAD_MS) continue;
     if (!allowed.has(lead.id)) allowed.set(lead.id, await canOpen(lead.id));
     if (!allowed.get(lead.id)) continue;
     matched++;

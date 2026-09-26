@@ -18,8 +18,9 @@ const schema = z.object({
     .max(200),
 });
 
-// Android call-log sync (opt-in in the app): the rep's recent calls; the ones with their leads are
-// logged on each lead's timeline, the rest are discarded unread. Idempotent per call.
+// Android call-log sync (opt-in in the app): the rep's recent calls with lead numbers — the app
+// filters with GET /api/v1/calls/numbers first, so personal calls are never sent. Each is logged on
+// its lead's timeline (anything that doesn't match a lead is dropped unwritten). Idempotent per call.
 export async function POST(req: NextRequest) {
   const auth = await authorizeApiRequest(req);
   if ("error" in auth) return auth.error;
