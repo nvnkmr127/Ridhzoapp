@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeApiRequest } from "@/lib/apiAuth";
+import { withIdempotency } from "@/lib/idempotency";
 import { canEditLeads, leadForApi, leadNotFound, readOnly } from "@/lib/meetingsApi";
 import { ActivityService } from "@/domains/activities/service";
 
@@ -14,16 +15,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!(await leadForApi(auth, id))) return leadNotFound();
   if (!(await canEditLeads(auth))) return readOnly();
 
-  const body = await req.json().catch(() => null);
-  const parsed = schema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: "Note cannot be empty" }, { status: 422 });
+  // Offline retries from the app carry an Idempotency-Key: log once, replay the first response.
+  return withIdempotency(req, auth, `notes:${id}`, async () => {
+    const body = await req.json().catch(() => null);
+    const parsed = schema.safeParse(body);
+    if (!parsed.success) return NextResponse.json({ error: "Note cannot be empty" }, { status: 422 });
 
-  const activity = await ActivityService.addActivity({
-    leadId: id,
-    userId: auth.userId,
-    type: "note",
-    content: parsed.data.content,
+    const activity = await ActivityService.addActivity({
+      leadId: id,
+      userId: auth.userId,
+      type: "note",
+      content: parsed.data.content,
+    });
+
+    return NextResponse.json({ data: activity }, { status: 201 });
   });
-
-  return NextResponse.json({ data: activity }, { status: 201 });
 }

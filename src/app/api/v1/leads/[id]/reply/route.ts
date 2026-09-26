@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeApiRequest } from "@/lib/apiAuth";
+import { withIdempotency } from "@/lib/idempotency";
 import { canEditLeads, leadForApi, leadNotFound, readOnly } from "@/lib/meetingsApi";
 import { recordLeadReply } from "@/domains/leads/contactLog";
 
@@ -14,22 +15,26 @@ const schema = z.object({
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizeApiRequest(req);
   if ("error" in auth) return auth.error;
-  if (!auth.userId) return NextResponse.json({ error: "A user session is required" }, { status: 403 });
+  const userId = auth.userId;
+  if (!userId) return NextResponse.json({ error: "A user session is required" }, { status: 403 });
   const { id } = await params;
   if (!(await leadForApi(auth, id))) return leadNotFound();
   if (!(await canEditLeads(auth))) return readOnly();
 
-  const parsed = schema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Paste or type what they said." }, { status: 422 });
-  }
+  // Offline retries from the app carry an Idempotency-Key: log once, replay the first response.
+  return withIdempotency(req, auth, `reply:${id}`, async () => {
+    const parsed = schema.safeParse(await req.json().catch(() => null));
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Paste or type what they said." }, { status: 422 });
+    }
 
-  try {
-    await recordLeadReply({ leadId: id, userId: auth.userId, ...parsed.data });
-    return NextResponse.json({ data: { logged: true } }, { status: 201 });
-  } catch (e) {
-    const { logError } = await import("@/lib/log");
-    const ref = logError("api/v1/leads/[id]/reply", e, { leadId: id });
-    return NextResponse.json({ error: "Could not save the reply. Please try again.", ref }, { status: 500 });
-  }
+    try {
+      await recordLeadReply({ leadId: id, userId, ...parsed.data });
+      return NextResponse.json({ data: { logged: true } }, { status: 201 });
+    } catch (e) {
+      const { logError } = await import("@/lib/log");
+      const ref = logError("api/v1/leads/[id]/reply", e, { leadId: id });
+      return NextResponse.json({ error: "Could not save the reply. Please try again.", ref }, { status: 500 });
+    }
+  });
 }

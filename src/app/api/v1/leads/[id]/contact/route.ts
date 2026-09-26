@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeApiRequest } from "@/lib/apiAuth";
+import { withIdempotency } from "@/lib/idempotency";
 import { canEditLeads, leadForApi, leadNotFound, readOnly } from "@/lib/meetingsApi";
 import { recordLeadContact } from "@/domains/leads/contactLog";
 
@@ -21,26 +22,30 @@ const schema = z.object({
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizeApiRequest(req);
   if ("error" in auth) return auth.error;
-  if (!auth.userId) return NextResponse.json({ error: "A user session is required" }, { status: 403 });
+  const userId = auth.userId;
+  if (!userId) return NextResponse.json({ error: "A user session is required" }, { status: 403 });
   const { id } = await params;
   if (!(await leadForApi(auth, id))) return leadNotFound();
   if (!(await canEditLeads(auth))) return readOnly();
 
-  const parsed = schema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "Invalid body", details: parsed.error.issues }, { status: 422 });
+  // Offline retries from the app carry an Idempotency-Key: log once, replay the first response.
+  return withIdempotency(req, auth, `contact:${id}`, async () => {
+    const parsed = schema.safeParse(await req.json().catch(() => null));
+    if (!parsed.success) return NextResponse.json({ error: "Invalid body", details: parsed.error.issues }, { status: 422 });
 
-  try {
-    const { startedAt, ...rest } = parsed.data;
-    const { logged, completedFollowUpIds } = await recordLeadContact({ leadId: id, userId: auth.userId, ...rest, startedAt: startedAt ? new Date(startedAt) : undefined });
-    if (logged) {
-      const { revalidatePath } = await import("next/cache");
-      revalidatePath(`/leads/${id}`);
-      revalidatePath("/");
+    try {
+      const { startedAt, ...rest } = parsed.data;
+      const { logged, completedFollowUpIds } = await recordLeadContact({ leadId: id, userId, ...rest, startedAt: startedAt ? new Date(startedAt) : undefined });
+      if (logged) {
+        const { revalidatePath } = await import("next/cache");
+        revalidatePath(`/leads/${id}`);
+        revalidatePath("/");
+      }
+      return NextResponse.json({ data: { logged, completedFollowUpIds } }, { status: logged ? 201 : 200 });
+    } catch (e) {
+      const { logError } = await import("@/lib/log");
+      const ref = logError("api/v1/leads/[id]/contact", e, { leadId: id });
+      return NextResponse.json({ error: "Could not log this contact. Please try again.", ref }, { status: 500 });
     }
-    return NextResponse.json({ data: { logged, completedFollowUpIds } }, { status: logged ? 201 : 200 });
-  } catch (e) {
-    const { logError } = await import("@/lib/log");
-    const ref = logError("api/v1/leads/[id]/contact", e, { leadId: id });
-    return NextResponse.json({ error: "Could not log this contact. Please try again.", ref }, { status: 500 });
-  }
+  });
 }
