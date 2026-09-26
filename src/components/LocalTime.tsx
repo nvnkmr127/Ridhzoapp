@@ -2,7 +2,9 @@
 
 import * as React from "react";
 
-export type LocalTimeMode = "time" | "date" | "datetime" | "shortDate" | "full";
+// relative: "just now" / "12m ago" / "3h ago" / "Yesterday" / "4 days ago", then the short date —
+// for lists where recency is what matters (a lead that came in 20 minutes ago).
+export type LocalTimeMode = "time" | "date" | "datetime" | "shortDate" | "full" | "relative";
 
 export interface LocalTimeProps {
   iso: string | Date | null | undefined;
@@ -40,6 +42,18 @@ export function formatLocalDateTime(
   if (Number.isNaN(date.getTime())) return "";
 
   switch (mode) {
+    case "relative": {
+      const mins = Math.floor((Date.now() - date.getTime()) / 60_000);
+      if (mins < 1) return "just now";
+      if (mins < 60) return `${mins}m ago`;
+      if (mins < 24 * 60) return `${Math.floor(mins / 60)}h ago`;
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const days = Math.ceil((startOfToday.getTime() - date.getTime()) / 86_400_000);
+      if (days <= 1) return "Yesterday";
+      if (days < 7) return `${days} days ago`;
+      return date.toLocaleDateString(undefined, { dateStyle: "short" });
+    }
     case "time":
       return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
     case "date":
@@ -72,7 +86,7 @@ export function LocalTime({ iso, mode = "datetime", className, fallback = "" }: 
   const formatted = formatLocalDateTime(date, mode);
 
   return (
-    <time dateTime={isoStr} className={className} suppressHydrationWarning>
+    <time dateTime={isoStr} className={className} title={mode === "relative" && mounted ? formatLocalDateTime(date, "full") : undefined} suppressHydrationWarning>
       {mounted ? formatted : (fallback || formatted)}
     </time>
   );

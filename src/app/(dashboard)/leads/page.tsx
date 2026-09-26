@@ -4,7 +4,8 @@ import { CustomStatusSchemaService } from "@/domains/leads/customStatusSchemaSer
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { SmartSegments } from "@/components/leads/SmartSegments";
-import { Users, Plus, Upload, FilterX, Kanban, Flame, Trash2, Network } from "lucide-react";
+import { Users, Plus, Upload, FilterX, Kanban, Flame, Trash2, Network, ChevronDown } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import Link from "next/link";
 import { LeadService } from "@/domains/leads/service";
 import { SavedViewService } from "@/domains/savedViews/service";
@@ -47,12 +48,13 @@ export default async function LeadsPage({
     }
   }
 
-  const [views, usersList, sourcesList, tagsList, customFieldDefs, leadResult] = await Promise.all([
+  const [views, usersList, sourcesList, tagsList, customFieldDefs, statusSchema, leadResult] = await Promise.all([
     SavedViewService.listViews(organizationId, userId, isAdmin),
     listUsersAction().catch(() => []),
     LeadSourceService.getSources(organizationId).catch(() => []),
     TagService.listAll(organizationId).catch(() => []),
     CustomFieldService.list(organizationId).catch(() => []),
+    CustomStatusSchemaService.getTenantStatusSchema(organizationId).catch(() => []),
     LeadService.listLeads({
       organizationId,
       search,
@@ -85,7 +87,8 @@ export default async function LeadsPage({
   const hasActiveFilters = Boolean(search || status || ownerId || filters);
 
   return (
-    <div className="flex-1 space-y-4 p-4 pt-4 sm:p-8 sm:pt-6">
+    // pb-24: room below the table for the floating assistant button, which otherwise covers the pager.
+    <div className="flex-1 space-y-4 p-4 pb-24 pt-4 sm:p-8 sm:pb-28 sm:pt-6">
       <LeadsAutoRefresh />
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -95,22 +98,29 @@ export default async function LeadsPage({
           </p>
         </div>
 
-        <div className="flex items-center space-x-2">
-          <Link href="/leads/hot">
-            <Button variant="outline">
-              <Flame className="mr-2 h-4 w-4 text-orange-500" /> Hot Leads
-            </Button>
-          </Link>
+        {/* Primary actions stay visible; the occasional destinations (hot leads — also a segment chip
+            below — and the recycle bin) live in "More", so the header fits and wraps on smaller screens. */}
+        <div className="flex flex-wrap items-center gap-2">
           <Link href="/leads/kanban">
             <Button variant="outline">
               <Kanban className="mr-2 h-4 w-4" /> Pipeline Board
             </Button>
           </Link>
-          <Link href="/leads/recycle-bin">
-            <Button variant="outline">
-              <Trash2 className="mr-2 h-4 w-4" /> Recycle Bin
-            </Button>
-          </Link>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" aria-label="More lead views">
+                More <ChevronDown className="ml-1.5 h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem asChild>
+                <Link href="/leads/hot"><Flame className="mr-2 h-4 w-4 text-orange-500" /> Hot leads</Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/leads/recycle-bin"><Trash2 className="mr-2 h-4 w-4" /> Recycle bin</Link>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <LeadImportWizard>
             <Button variant="outline">
               <Upload className="mr-2 h-4 w-4" /> Import Leads
@@ -134,7 +144,7 @@ export default async function LeadsPage({
           users: usersList,
           sources: sourcesList.map((s) => ({ id: s.id, name: s.name })),
           tags: tagsList.map((t) => ({ id: t.id, name: t.name })),
-          statuses: (await CustomStatusSchemaService.getTenantStatusSchema(organizationId).catch(() => [])).map((st) => ({ key: st.key, label: st.label })),
+          statuses: statusSchema.map((st) => ({ key: st.key, label: st.label })),
         }}
       />
 
@@ -189,6 +199,7 @@ export default async function LeadsPage({
             .filter((f) => f.showOnTable && !f.disabled && (isAdmin || !f.adminOnly))
             .map((f) => ({ key: f.key, label: f.label }))}
           initialUsers={usersList}
+          statuses={statusSchema.map((st) => ({ key: st.key, label: st.label, color: st.color, category: st.category }))}
           nextMeetings={await MeetingService.nextScheduledForLeads(visibleLeads.map((l: { id: string }) => l.id)).catch(() => ({}))}
         />
       )}

@@ -42,7 +42,8 @@ interface EditLeadDialogProps {
 // The exact timestamp the editor loaded, sent back so the server can reject a stale overwrite.
 const toIso = (v?: string | Date | null) => (v ? new Date(v).toISOString() : undefined);
 
-export function EditLeadDialog({ lead }: EditLeadDialogProps) {
+// compact: an icon-only trigger, for table rows.
+export function EditLeadDialog({ lead, compact = false }: EditLeadDialogProps & { compact?: boolean }) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const { toast } = useToast();
@@ -105,9 +106,15 @@ export function EditLeadDialog({ lead }: EditLeadDialogProps) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2" data-edit-lead-trigger>
-          <Pencil className="h-4 w-4" /> Edit
-        </Button>
+        {compact ? (
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" title="Edit lead" aria-label={`Edit ${lead.name}`} data-edit-lead-trigger>
+            <Pencil className="h-4 w-4" />
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm" className="gap-2" data-edit-lead-trigger>
+            <Pencil className="h-4 w-4" /> Edit
+          </Button>
+        )}
       </DialogTrigger>
       {/* No auto-focus: on phones it popped the keyboard over half the form before you'd chosen a field. */}
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-[425px]" onOpenAutoFocus={(e) => e.preventDefault()}>

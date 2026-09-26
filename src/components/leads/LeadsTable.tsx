@@ -33,6 +33,7 @@ import { LocalTime } from "@/components/LocalTime";
 
 type Lead = {
   id: string; displayId?: number | null; name: string; email: string | null; phone: string | null; status: string; createdAt: Date;
+  ownerId?: string | null;
   company?: string | null;
   customData?: unknown;
   score?: number | null; lastContactedAt?: Date | null; nextFollowUpAt?: Date | null;
@@ -65,6 +66,7 @@ export function LeadsTable({
   customColumns = [],
   initialUsers,
   nextMeetings = {},
+  statuses,
 }: {
   leads: Lead[];
   page?: number;
@@ -75,19 +77,25 @@ export function LeadsTable({
   initialUsers?: User[];
   /** Earliest scheduled meeting per lead id — lets the Next Best Action badge see meetings. */
   nextMeetings?: Record<string, { startAt: Date | string; durationMinutes: number; label: string }>;
+  /** The workspace's statuses, from the server render — badges show their label + colour at once. */
+  statuses?: { key: string; label: string; color: string; category?: StatusCategory }[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
-  const [statusMap, setStatusMap] = React.useState<Map<string, { label: string; color: string; category?: StatusCategory }>>(new Map());
+  const [statusMap, setStatusMap] = React.useState<Map<string, { label: string; color: string; category?: StatusCategory }>>(
+    () => new Map((statuses ?? []).map((x) => [x.key, { label: x.label, color: x.color, category: x.category }])),
+  );
 
-  // Load the tenant status schema once so status badges show their configured label + colour.
+  // Status badges show the configured label + colour. Normally the page passes the schema in; only
+  // fetch it when it didn't (otherwise every badge first flashed the raw key, e.g. "new").
   React.useEffect(() => {
+    if (statuses?.length) return;
     getTenantStatusSchemaAction()
       .then((s) => setStatusMap(new Map((s as any[]).map((x) => [x.key, { label: x.label, color: x.color, category: x.category }]))))
       .catch(() => {});
-  }, []);
+  }, [statuses]);
   const [users, setUsers] = React.useState<User[]>(initialUsers ?? []);
   const [busy, setBusy] = React.useState(false);
 
@@ -106,6 +114,17 @@ export function LeadsTable({
   const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
 
   const allSelected = leads.length > 0 && selected.size === leads.length;
+  const userName = React.useMemo(() => new Map(users.map((u) => [u.id, u.name])), [users]);
+
+  // The whole row opens the lead — except clicks on its own controls (checkbox, links, buttons, and
+  // the edit dialog / menus that portal out of it). Ctrl/⌘-click opens a new tab, like a link.
+  function openRow(e: React.MouseEvent, id: string) {
+    const t = e.target as HTMLElement;
+    if (!e.currentTarget.contains(t) || t.closest("a,button,input,label,[role=menuitem],[role=dialog]")) return;
+    if (window.getSelection()?.toString()) return; // selecting text to copy, not opening
+    if (e.metaKey || e.ctrlKey) window.open(`/leads/${id}`, "_blank");
+    else router.push(`/leads/${id}`);
+  }
 
   function toggle(id: string) {
     setSelected((s) => {
@@ -346,43 +365,61 @@ export function LeadsTable({
               <TableHead className="w-10">
                 <input
                   type="checkbox"
+                  className="h-4 w-4 cursor-pointer accent-primary"
                   checked={allSelected}
                   onChange={toggleAll}
                   aria-label="Select all leads on page"
                 />
               </TableHead>
-              <TableHead>ID</TableHead>
               <TableHead>Name</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Phone</TableHead>
+              <TableHead>Contact</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Owner</TableHead>
               {customColumns.map((c) => <TableHead key={c.key}>{c.label}</TableHead>)}
-              <TableHead>Next Action</TableHead>
+              <TableHead>Next action</TableHead>
               <TableHead>Created</TableHead>
-              <TableHead className="text-right">Action</TableHead>
+              <TableHead className="w-24"><span className="sr-only">Actions</span></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {leads.map((lead) => (
-              <TableRow key={lead.id} data-state={selected.has(lead.id) ? "selected" : undefined}>
+              <TableRow
+                key={lead.id}
+                data-state={selected.has(lead.id) ? "selected" : undefined}
+                className="group cursor-pointer"
+                onClick={(e) => openRow(e, lead.id)}
+              >
                 <TableCell>
                   <input
                     type="checkbox"
+                    className="h-4 w-4 cursor-pointer accent-primary"
                     checked={selected.has(lead.id)}
                     onChange={() => toggle(lead.id)}
                     aria-label={`Select ${lead.name}`}
                   />
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground tabular-nums">
-                  {lead.displayId != null ? `#${lead.displayId}` : "—"}
+                <TableCell className="max-w-[16rem]">
+                  <div className="flex items-baseline gap-2">
+                    <Link href={`/leads/${lead.id}`} className="truncate font-medium text-foreground hover:underline">
+                      {lead.name}
+                    </Link>
+                    {lead.displayId != null ? <span className="shrink-0 text-xs tabular-nums text-muted-foreground">#{lead.displayId}</span> : null}
+                  </div>
+                  {lead.company ? <div className="truncate text-xs text-muted-foreground">{lead.company}</div> : null}
                 </TableCell>
-                <TableCell className="font-medium">
-                  <Link href={`/leads/${lead.id}`} className="hover:underline text-primary">
-                    {lead.name}
-                  </Link>
+                <TableCell className="max-w-[16rem]">
+                  {lead.phone ? (
+                    <a href={`tel:${lead.phone}`} className="block tabular-nums hover:underline" title={`Call ${lead.phone}`}>
+                      {lead.phone}
+                    </a>
+                  ) : null}
+                  {lead.email ? (
+                    <a href={`mailto:${lead.email}`} className="block truncate text-xs text-muted-foreground hover:underline" title={lead.email}>
+                      {lead.email}
+                    </a>
+                  ) : null}
+                  {!lead.phone && !lead.email ? <span className="text-muted-foreground">—</span> : null}
                 </TableCell>
-                <TableCell>{lead.email || "-"}</TableCell>
-                <TableCell>{lead.phone || "-"}</TableCell>
                 <TableCell>
                   {statusMap.get(lead.status) ? (
                     <Badge
@@ -393,7 +430,14 @@ export function LeadsTable({
                       {statusMap.get(lead.status)!.label}
                     </Badge>
                   ) : (
-                    <Badge variant={lead.status === "new" ? "default" : "secondary"}>{lead.status}</Badge>
+                    <Badge variant={lead.status === "new" ? "default" : "secondary"} className="capitalize">{lead.status}</Badge>
+                  )}
+                </TableCell>
+                <TableCell className="text-sm">
+                  {lead.ownerId ? (
+                    userName.get(lead.ownerId) ?? <span className="text-muted-foreground">—</span>
+                  ) : (
+                    <span className="text-amber-500">Unassigned</span>
                   )}
                 </TableCell>
                 {customColumns.map((c) => (
@@ -420,20 +464,19 @@ export function LeadsTable({
                     );
                   })()}
                 </TableCell>
-                <TableCell suppressHydrationWarning>
-                  <LocalTime iso={lead.createdAt} mode="shortDate" />
+                <TableCell className="whitespace-nowrap text-sm text-muted-foreground" suppressHydrationWarning>
+                  <LocalTime iso={lead.createdAt} mode="relative" />
                 </TableCell>
                 <TableCell className="text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    <Button asChild variant="ghost" size="sm">
-                      <Link href={`/leads/${lead.id}`}>View</Link>
-                    </Button>
-                    <EditLeadDialog lead={lead} />
+                  {/* Row actions stay quiet until the row is hovered or focused — delete especially. */}
+                  <div className="flex items-center justify-end gap-1 opacity-60 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                    <EditLeadDialog lead={lead} compact />
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="text-destructive hover:text-destructive"
+                      className="h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                       title="Move to recycle bin"
+                      aria-label={`Move ${lead.name} to recycle bin`}
                       onClick={() => setLeadToDelete(lead)}
                     >
                       <Trash className="h-4 w-4" />
@@ -468,7 +511,7 @@ export function LeadsTable({
             </Button>
           </div>
 
-          <div className="flex items-center space-x-1">
+          <div className={`flex items-center space-x-1 ${totalPages <= 1 ? "hidden" : ""}`}>
             <span className="mr-2">
               Page {page} of {totalPages}
             </span>
