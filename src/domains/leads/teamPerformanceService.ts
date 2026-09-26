@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { CustomStatusSchemaService } from "./customStatusSchemaService";
-import { leads, users, followUps } from "@/db/schema";
-import { and, eq, gte, inArray, count } from "drizzle-orm";
+import { leads, users, followUps, activities } from "@/db/schema";
+import { and, eq, gte, inArray, count, sum } from "drizzle-orm";
 
 export interface RepPerformanceMetric {
   userId: string;
@@ -12,6 +12,8 @@ export interface RepPerformanceMetric {
   winRatePercentage: number;
   totalRevenue: number;
   completedFollowUps: number;
+  calls: number; // logged calls (manual + phone call log)
+  talkTimeSec: number; // from the Android call log; manual logs carry no duration
   rank: number;
 }
 
@@ -85,6 +87,16 @@ export class TeamPerformanceService {
       }
     }
 
+    // Calls per rep, by when the call happened.
+    const callConditions = [eq(activities.type, "call"), inArray(activities.userId, userIds)];
+    if (startDate) callConditions.push(gte(activities.occurredAt, startDate));
+    const callRows = await db
+      .select({ userId: activities.userId, count: count(), talk: sum(activities.durationSec) })
+      .from(activities)
+      .where(and(...callConditions))
+      .groupBy(activities.userId);
+    const callsMap = new Map(callRows.map((r) => [r.userId, { calls: Number(r.count), talk: Number(r.talk ?? 0) }]));
+
     const statsMap: Record<
       string,
       { total: number; won: number; revenue: number }
@@ -121,6 +133,8 @@ export class TeamPerformanceService {
         winRatePercentage,
         totalRevenue: stats.revenue,
         completedFollowUps,
+        calls: callsMap.get(u.id)?.calls ?? 0,
+        talkTimeSec: callsMap.get(u.id)?.talk ?? 0,
         rank: 0,
       };
     });

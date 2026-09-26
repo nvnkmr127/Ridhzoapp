@@ -116,3 +116,59 @@ sudo systemctl stop privyr-worker || true
 sudo systemctl disable privyr-worker || true
 ```
 You can now destroy the DigitalOcean Droplet in the DigitalOcean Cloud console.
+
+---
+
+## Backups & Recovery
+
+Railway Hobby has **no** database backups. The only backup is `.github/workflows/db-backup.yml`:
+every 6 hours it dumps Postgres, proves the dump restores, and uploads it to a private R2 bucket.
+Worst case you lose up to 6 hours of data.
+
+| What | Backed up by |
+|---|---|
+| Postgres | `db-backup.yml` → R2 (kept 30 days) |
+| Deleted leads (< 30 days) | In-app recycle bin — no backup needed |
+| `NEXTAUTH_SECRET`, `EMAIL_SECRET_KEY` | Password manager — without them a restored DB can't decrypt SMTP passwords or keep sessions |
+| Redis | Nothing — workers re-create their schedulers on boot |
+| R2 attachments | Nothing — R2 is durable; files are only deleted when their lead is purged |
+
+### One-time setup
+
+1. **Read-only DB user** (so GitHub never holds a write-capable password), via `psql "<RAILWAY_POSTGRES_PUBLIC_URL>"`:
+   ```sql
+   CREATE ROLE backup LOGIN PASSWORD '<random>';
+   GRANT pg_read_all_data TO backup;
+   ```
+2. **R2 bucket** `ridhzo-db-backups` (separate from the attachments bucket), in its Settings:
+   - **Object lifecycle rule**: delete objects after 30 days.
+   - **Bucket lock rule**: retain 29 days — so even a leaked token can't delete or overwrite backups.
+   - **API token**: Object Read & Write, scoped to this bucket only.
+3. **GitHub → Settings → Secrets → Actions**: `BACKUP_DATABASE_URL` (public URL with the `backup`
+   user), `BACKUP_R2_BUCKET`, `BACKUP_R2_ACCOUNT_ID`, `BACKUP_R2_KEY_ID`, `BACKUP_R2_SECRET`.
+4. Actions → **DB backup** → **Run workflow**, confirm it's green and a file appears in the bucket.
+
+### Recovery
+
+Download the dump you need (newest before the incident):
+```bash
+aws s3 ls s3://ridhzo-db-backups/pg/ --endpoint-url https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+aws s3 cp s3://ridhzo-db-backups/pg/<file>.dump db.dump --endpoint-url https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+```
+
+**A. Whole database lost or wiped** (Railway failure, leaked credentials, destroyed volume):
+1. Create a new Railway Postgres (or any Postgres of the same major version).
+2. `pg_restore -d "<NEW_DATABASE_URL>" --no-owner --no-acl db.dump`
+3. Point `DATABASE_URL` at it in Vercel **and** the Railway worker; redeploy both.
+4. Rotate `NEXTAUTH_SECRET` only if it leaked (it logs everyone out).
+
+**B. One tenant's data lost** (purged leads, wrong tenant hard-deleted, bad bulk edit) — never
+restore over prod, every other tenant would lose newer data:
+1. Restore into a scratch DB: `docker run -d -e POSTGRES_PASSWORD=x -p 5433:5432 postgres:<MAJOR>`,
+   then `pg_restore -d postgresql://postgres:x@localhost:5433/postgres --no-owner --no-acl db.dump`.
+2. Copy that org's missing rows back, parents first (organizations → users → leads → child tables),
+   inserting with `ON CONFLICT (id) DO NOTHING` so nothing current is overwritten.
+3. Check in the app, then drop the scratch DB.
+
+**C. Bug corrupted data for everyone:** if caught within hours and nothing important came in since,
+use A. Otherwise use B's scratch DB and copy back only the damaged tables/columns.

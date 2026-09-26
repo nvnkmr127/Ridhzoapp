@@ -1,4 +1,5 @@
-import { pgTable, uuid, varchar, text, timestamp, index, integer } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, timestamp, index, uniqueIndex, integer } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 import { leads } from './leads';
 import { users } from './users';
@@ -10,12 +11,20 @@ export const activities = pgTable('activities', {
   userId: uuid('user_id').references(() => users.id),
   type: varchar('type', { length: 50 }).notNull(), // email, call, meeting, note
   content: text('content'),
+  // Calls read from the rep's phone: talk time (0 = not answered) and the device call-log id, so a
+  // retry, the offline queue or the background sync can never log the same call twice.
+  durationSec: integer('duration_sec'),
+  externalRef: varchar('external_ref', { length: 100 }),
   occurredAt: timestamp('occurred_at').defaultNow().notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
   leadIdx: index('activities_lead_idx').on(table.leadId),
   leadCreatedIdx: index('activities_lead_created_idx').on(table.leadId, table.createdAt),
+  userOccurredIdx: index('activities_user_occurred_idx').on(table.userId, table.occurredAt), // per-rep call stats
+  userExternalRefUnique: uniqueIndex('activities_user_external_ref_unique')
+    .on(table.userId, table.externalRef)
+    .where(sql`${table.externalRef} IS NOT NULL`),
 }));
 
 export const followUps = pgTable('follow_ups', {

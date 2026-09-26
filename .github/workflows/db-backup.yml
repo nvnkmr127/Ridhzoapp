@@ -1,0 +1,50 @@
+name: DB backup
+
+# The ONLY Postgres backup (Railway Hobby has none). Every 6h: dump prod → prove it restores into a
+# throwaway Postgres → upload to a private R2 bucket. A failed dump or restore never uploads, and
+# GitHub emails on a failed run. Runbook: deploy/railway-setup.md → "Backups & Recovery".
+on:
+  schedule:
+    - cron: "15 */6 * * *"
+  workflow_dispatch:
+
+concurrency: db-backup
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      SCRATCH: postgresql://postgres:x@localhost:5432/postgres
+    steps:
+      # pg_dump must be >= the server's major version, so match whatever prod runs.
+      - name: Install matching Postgres client
+        run: |
+          MAJOR=$(psql "$DATABASE_URL" -Atc "select current_setting('server_version_num')::int / 10000")
+          echo "MAJOR=$MAJOR" >> "$GITHUB_ENV"
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y "postgresql-client-$MAJOR"
+          echo "/usr/lib/postgresql/$MAJOR/bin" >> "$GITHUB_PATH"
+
+      - name: Dump
+        run: pg_dump "$DATABASE_URL" -Fc --no-owner --no-acl -f db.dump
+
+      - name: Prove it restores
+        run: |
+          docker run -d --name scratch -e POSTGRES_PASSWORD=x -p 5432:5432 "postgres:$MAJOR"
+          until pg_isready -h localhost -q; do sleep 1; done
+          pg_restore -d "$SCRATCH" --no-owner --no-acl --exit-on-error db.dump
+          for t in organizations users leads; do
+            n=$(psql "$SCRATCH" -Atc "select count(*) from $t")
+            echo "$t: $n rows"; [ "$n" -gt 0 ]
+          done
+
+      - name: Upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_R2_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_R2_SECRET }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          aws s3 cp db.dump "s3://${{ secrets.BACKUP_R2_BUCKET }}/pg/$(date -u +%Y-%m-%dT%H%MZ).dump" \
+            --endpoint-url "https://${{ secrets.BACKUP_R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"

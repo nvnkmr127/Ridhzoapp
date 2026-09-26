@@ -15,6 +15,7 @@ import { CustomerLtvAnalyticsService } from "@/domains/leads/customerLtvAnalytic
 import { LeadGeoAnalyticsService } from "@/domains/leads/leadGeoAnalyticsService";
 import { ChannelAnalyticsService } from "@/domains/leads/channelAnalyticsService";
 import { TeamPerformanceService } from "@/domains/leads/teamPerformanceService";
+import { formatCallDuration } from "@/domains/leads/contactLog";
 import { ActivityDigestService } from "@/domains/leads/activityDigestService";
 import { PipelineScorecardService } from "@/domains/leads/pipelineScorecardService";
 import { CapacityAssignmentService } from "@/domains/leads/capacityAssignmentService";
@@ -327,6 +328,8 @@ export default async function InsightsPage() {
                     <TableHead className="text-right">Won</TableHead>
                     <TableHead className="text-right">Win %</TableHead>
                     <TableHead className="text-right">Revenue</TableHead>
+                    <TableHead className="text-right">Calls</TableHead>
+                    <TableHead className="text-right">Talk time</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -337,6 +340,8 @@ export default async function InsightsPage() {
                       <TableCell className="text-right tabular-nums">{r.wonLeads}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.winRatePercentage.toFixed(0)}%</TableCell>
                       <TableCell className="text-right tabular-nums">{money(r.totalRevenue)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.calls}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.talkTimeSec ? formatCallDuration(r.talkTimeSec) : "—"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

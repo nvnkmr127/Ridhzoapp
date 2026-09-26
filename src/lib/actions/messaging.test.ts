@@ -8,10 +8,22 @@ const addActivity = vi.fn();
 vi.mock("@/domains/activities/service", () => ({ ActivityService: { addActivity: (a: unknown) => addActivity(a) } }));
 
 const markLeadContacted = vi.fn();
-vi.mock("@/domains/follow-ups/state", () => ({ markLeadContacted: (id: string) => markLeadContacted(id) }));
+vi.mock("@/domains/follow-ups/state", () => ({ markLeadContacted: (...a: unknown[]) => markLeadContacted(...a) }));
 
+// Every insert lands here; activity inserts dedupe on externalRef (dupe = the ref is already logged).
 const waInsert = vi.fn();
-vi.mock("@/db", () => ({ db: { insert: () => ({ values: (v: unknown) => waInsert(v) }) } }));
+let dupe = false;
+vi.mock("@/db", () => ({
+  db: {
+    insert: () => ({
+      values: (v: unknown) => {
+        waInsert(v);
+        return Object.assign(Promise.resolve(), { onConflictDoNothing: () => ({ returning: async () => (dupe ? [] : [{ id: "act-1" }]) }) });
+      },
+    }),
+  },
+}));
+vi.mock("@/domains/leads/scoringService", () => ({ ScoringService: { updateLeadScore: async () => {} } }));
 
 const waSend = vi.fn();
 vi.mock("@/lib/messaging/whatsapp/service", () => ({ WhatsAppService: { send: (i: unknown) => waSend(i) } }));
@@ -20,12 +32,16 @@ vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/lib/rbac", () => ({ requireOrg: vi.fn(), requirePermission: vi.fn() }));
 
 import { logLeadContactAction, sendWhatsAppAction } from "./messaging";
+import { recordLeadContact } from "@/domains/leads/contactLog";
 
 const LEAD = "6f1c2e0a-1111-4222-8333-444455556666";
 const access = { lead: { id: LEAD, email: "a@b.com" }, userId: "u1", organizationId: "org-1" };
 
 describe("lead messaging actions", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dupe = false;
+  });
 
   it("won't send WhatsApp for a lead the user can't act on (other tenant / not assigned)", async () => {
     getActionableLead.mockResolvedValueOnce(null);
@@ -38,14 +54,14 @@ describe("lead messaging actions", () => {
     getActionableLead.mockResolvedValueOnce(access);
     const res = await logLeadContactAction({ leadId: LEAD, channel: "call", outcome: "no_answer", note: "try after 5" });
     expect(res.ok).toBe(true);
-    expect(addActivity).toHaveBeenCalledWith(expect.objectContaining({ type: "call", content: "Called — No answer\nNote: try after 5" }));
-    expect(markLeadContacted).toHaveBeenCalledWith(LEAD);
+    expect(waInsert).toHaveBeenCalledWith(expect.objectContaining({ type: "call", content: "Called — No answer\nNote: try after 5" }));
+    expect(markLeadContacted).toHaveBeenCalledWith(LEAD, undefined);
   });
 
   it("does not count a wrong number as contact", async () => {
     getActionableLead.mockResolvedValueOnce(access);
     await logLeadContactAction({ leadId: LEAD, channel: "call", outcome: "wrong_number" });
-    expect(addActivity).toHaveBeenCalled();
+    expect(waInsert).toHaveBeenCalled();
     expect(markLeadContacted).not.toHaveBeenCalled();
   });
 
@@ -60,6 +76,40 @@ describe("lead messaging actions", () => {
     getActionableLead.mockResolvedValueOnce(null);
     const res = await logLeadContactAction({ leadId: LEAD, channel: "email" });
     expect(res.ok).toBe(false);
-    expect(addActivity).not.toHaveBeenCalled();
+    expect(waInsert).not.toHaveBeenCalled();
+  });
+});
+
+describe("calls read from the phone's call log", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dupe = false;
+  });
+  const at = new Date("2026-09-26T10:00:00Z");
+
+  it("derives the outcome from talk time and records it at the call's time", async () => {
+    const res = await recordLeadContact({ leadId: LEAD, userId: "u1", channel: "call", durationSec: 192, startedAt: at, externalRef: "c1" });
+    expect(res.logged).toBe(true);
+    expect(waInsert).toHaveBeenCalledWith(expect.objectContaining({ content: "Called — Answered (3m 12s)", durationSec: 192, externalRef: "c1", occurredAt: at }));
+    expect(markLeadContacted).toHaveBeenCalledWith(LEAD, at);
+  });
+
+  it("never logs the same device call twice", async () => {
+    dupe = true;
+    const res = await recordLeadContact({ leadId: LEAD, userId: "u1", channel: "call", durationSec: 0, externalRef: "c1" });
+    expect(res.logged).toBe(false);
+    expect(markLeadContacted).not.toHaveBeenCalled();
+  });
+
+  it("a missed call from the lead is logged but isn't outreach", async () => {
+    await recordLeadContact({ leadId: LEAD, userId: "u1", channel: "call", direction: "incoming", durationSec: 0, externalRef: "c2" });
+    expect(waInsert).toHaveBeenCalledWith(expect.objectContaining({ content: "Missed call from lead" }));
+    expect(markLeadContacted).not.toHaveBeenCalled();
+  });
+
+  it("an answered call from the lead counts as contact", async () => {
+    await recordLeadContact({ leadId: LEAD, userId: "u1", channel: "call", direction: "incoming", durationSec: 45, externalRef: "c3" });
+    expect(waInsert).toHaveBeenCalledWith(expect.objectContaining({ content: "Incoming call — Answered (45s)" }));
+    expect(markLeadContacted).toHaveBeenCalled();
   });
 });

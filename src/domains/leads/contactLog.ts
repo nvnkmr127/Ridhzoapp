@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { whatsappMessages } from "@/db/schema";
+import { activities, whatsappMessages } from "@/db/schema";
 import { ActivityService } from "@/domains/activities/service";
 import { markLeadContacted } from "@/domains/follow-ups/state";
 import { ScoringService } from "@/domains/leads/scoringService";
@@ -16,8 +16,19 @@ export const CALL_OUTCOMES = {
 export type CallOutcome = keyof typeof CALL_OUTCOMES;
 export type ContactChannel = "call" | "whatsapp" | "email";
 
+export type CallDirection = "outgoing" | "incoming";
+
+// "3m 12s" / "45s" — talk time as shown on the timeline.
+export function formatCallDuration(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return m ? `${m}m ${s}s` : `${s}s`;
+}
+
 // Without this, personal-mode contact left no trace: no timeline entry and no last_contacted_at, so
 // response-time/SLA metrics, the Next Best Action and cold-lead detection treated the lead as untouched.
+// Calls read from the phone's call log also carry durationSec/startedAt/direction and an externalRef
+// (the device's call id): a call already logged under that ref is skipped, so returns logged: false.
 export async function recordLeadContact(input: {
   leadId: string;
   userId: string;
@@ -25,11 +36,23 @@ export async function recordLeadContact(input: {
   outcome?: CallOutcome;
   note?: string;
   message?: string; // text prefilled into WhatsApp, if any
-}) {
-  const { leadId, userId, channel, outcome, note, message } = input;
+  durationSec?: number;
+  startedAt?: Date;
+  direction?: CallDirection;
+  externalRef?: string;
+}): Promise<{ logged: boolean }> {
+  const { leadId, userId, channel, note, message, durationSec, startedAt, externalRef } = input;
+  const incoming = channel === "call" && input.direction === "incoming";
+  // The call log knows whether it connected; the rep still picks busy / wrong number themselves.
+  const outcome = input.outcome ?? (durationSec == null ? undefined : durationSec > 0 ? "answered" : "no_answer");
+  const missed = incoming && outcome !== "answered";
+
   let content: string;
   if (channel === "call") {
-    content = `Called — ${outcome ? CALL_OUTCOMES[outcome] : "outcome not recorded"}`;
+    const talk = durationSec ? ` (${formatCallDuration(durationSec)})` : "";
+    if (missed) content = "Missed call from lead";
+    else if (incoming) content = `Incoming call — Answered${talk}`;
+    else content = `Called — ${outcome ? CALL_OUTCOMES[outcome] : "outcome not recorded"}${talk}`;
   } else if (channel === "whatsapp") {
     content = message ? `WhatsApp opened with message: ${message}` : "Opened WhatsApp chat";
   } else {
@@ -37,16 +60,24 @@ export async function recordLeadContact(input: {
   }
   if (note) content += `\nNote: ${note}`;
 
-  await ActivityService.addActivity({
-    leadId,
-    userId,
-    type: channel === "call" ? "call" : channel === "email" ? "email" : "message",
-    content,
-  });
+  const inserted = await db
+    .insert(activities)
+    .values({
+      leadId,
+      userId,
+      type: channel === "call" ? "call" : channel === "email" ? "email" : "message",
+      content,
+      durationSec: channel === "call" ? durationSec : undefined,
+      externalRef,
+      ...(startedAt ? { occurredAt: startedAt } : {}),
+    })
+    .onConflictDoNothing()
+    .returning({ id: activities.id });
+  if (!inserted.length) return { logged: false };
 
-  // A wrong number isn't contact with the lead; everything else (even an unanswered call) is an
-  // outreach attempt, which is what first-response/SLA timing measures.
-  if (outcome !== "wrong_number") await markLeadContacted(leadId);
+  // A wrong number isn't contact with the lead, and neither is a call from them we missed; everything
+  // else (even an unanswered outgoing call) is an outreach attempt, which is what SLA timing measures.
+  if (outcome !== "wrong_number" && !missed) await markLeadContacted(leadId, startedAt);
 
   // Show personal-mode WhatsApp messages in the lead's WhatsApp thread too. "sent" = handed to the
   // rep's WhatsApp; we can't see delivery for messages that don't go through the Business API.
@@ -55,6 +86,7 @@ export async function recordLeadContact(input: {
   }
 
   void ScoringService.updateLeadScore(leadId).catch(() => {});
+  return { logged: true };
 }
 
 // "They replied" — lands in the WhatsApp thread as inbound (so the AI and scoring see real intent)
