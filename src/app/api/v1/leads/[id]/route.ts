@@ -43,10 +43,37 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { TagService } = await import("@/domains/tags/service");
   const tags = await TagService.getForLead(id);
 
+  const callActivities = activities.filter(a => a.type === "call");
+  const attempts = callActivities.filter(a => a.content?.startsWith("Called —")).length;
+  const answered = callActivities.filter(a => a.content?.startsWith("Called —") && (Number(a.durationSec) > 0 || a.content?.includes("Answered"))).length;
+
+  const lastCall = callActivities[0];
+  let recentCrossCall = null;
+  // If the last call was within the last hour and made by someone other than the current user
+  if (lastCall && lastCall.userId && lastCall.userId !== auth.userId) {
+    const timeSinceCall = Date.now() - new Date(lastCall.occurredAt || lastCall.createdAt).getTime();
+    if (timeSinceCall < 60 * 60 * 1000) {
+      recentCrossCall = {
+        userName: lastCall.userName || "Another user",
+        occurredAt: lastCall.occurredAt || lastCall.createdAt,
+      };
+    }
+  }
+
   return NextResponse.json({
     data: {
       lead,
-      activities: activities.map((a) => ({ id: a.id, type: a.type, content: a.content, createdAt: a.createdAt })),
+      callStats: { attempts, answered },
+      recentCrossCall,
+      activities: activities.map((a) => ({ 
+        id: a.id, 
+        type: a.type, 
+        content: a.content, 
+        createdAt: a.createdAt,
+        occurredAt: a.occurredAt,
+        userId: a.userId,
+        userName: a.userName 
+      })),
       followUps: fus,
       tags,
     },

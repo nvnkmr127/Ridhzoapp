@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, isNull, like, lte } from "drizzle-orm";
 import { db } from "@/db";
-import { activities, whatsappMessages } from "@/db/schema";
+import { activities, whatsappMessages, followUps, leads } from "@/db/schema";
 import { ActivityService } from "@/domains/activities/service";
 import { markLeadContacted } from "@/domains/follow-ups/state";
 import { ScoringService } from "@/domains/leads/scoringService";
@@ -76,7 +76,7 @@ export async function recordLeadContact(input: {
   startedAt?: Date;
   direction?: CallDirection;
   externalRef?: string;
-}): Promise<{ logged: boolean }> {
+}): Promise<{ logged: boolean; completedFollowUpIds?: string[] }> {
   const { leadId, userId, channel, note, message, durationSec, startedAt, externalRef } = input;
   const incoming = channel === "call" && input.direction === "incoming";
   // The call log knows whether it connected; the rep still picks busy / wrong number themselves.
@@ -101,9 +101,9 @@ export async function recordLeadContact(input: {
     const [known] = await db
       .select({ id: activities.id })
       .from(activities)
-      .where(and(eq(activities.userId, userId), eq(activities.externalRef, externalRef)))
-      .limit(1);
-    if (known || (await mergeIntoManualLog({ leadId, userId, startedAt, durationSec, externalRef }))) return { logged: false };
+    if (known || (await mergeIntoManualLog({ leadId, userId, startedAt, durationSec, externalRef }))) {
+      return { logged: false };
+    }
   }
 
   const inserted = await db
@@ -120,6 +120,8 @@ export async function recordLeadContact(input: {
     .onConflictDoNothing()
     .returning({ id: activities.id });
   if (!inserted.length) return { logged: false };
+
+  let completedFollowUpIds: string[] = [];
 
   if (channel === "call") {
     // Unanswered run including this call — "not answered 3 times in a row" automations read it.
@@ -144,7 +146,41 @@ export async function recordLeadContact(input: {
 
   // A wrong number isn't contact with the lead, and neither is a call from them we missed; everything
   // else (even an unanswered outgoing call) is an outreach attempt, which is what SLA timing measures.
-  if (outcome !== "wrong_number" && !missed) await markLeadContacted(leadId, startedAt);
+  if (outcome !== "wrong_number" && !missed) {
+    await markLeadContacted(leadId, startedAt);
+
+    // Auto-complete any due follow-ups matching this action so reps don't have to check them off manually.
+    const mappedType = channel === "call" ? "call" : channel === "email" ? "email" : "message";
+    const pending = await db
+      .select({ id: followUps.id })
+      .from(followUps)
+      .where(and(
+        eq(followUps.leadId, leadId),
+        eq(followUps.type, mappedType),
+        eq(followUps.status, "pending")
+      ));
+
+    if (pending.length > 0) {
+      const { FollowUpService } = await import("@/domains/follow-ups/service");
+      for (const f of pending) {
+        await FollowUpService.completeFollowUp(f.id);
+        completedFollowUpIds.push(f.id);
+      }
+    }
+  }
+
+  // Missed call from a lead → callback task.
+  if (missed) {
+    const { FollowUpService } = await import("@/domains/follow-ups/service");
+    const [leadRec] = await db.select({ name: leads.name, ownerId: leads.ownerId }).from(leads).where(eq(leads.id, leadId)).limit(1);
+    await FollowUpService.createFollowUp({
+      leadId,
+      type: "call",
+      title: leadRec?.name ? `Call back ${leadRec.name}` : "Call back",
+      dueAt: new Date(),
+      userId: leadRec?.ownerId ?? userId,
+    });
+  }
 
   // Show personal-mode WhatsApp messages in the lead's WhatsApp thread too. "sent" = handed to the
   // rep's WhatsApp; we can't see delivery for messages that don't go through the Business API.
@@ -153,7 +189,7 @@ export async function recordLeadContact(input: {
   }
 
   void ScoringService.updateLeadScore(leadId).catch(() => {});
-  return { logged: true };
+  return { logged: true, completedFollowUpIds };
 }
 
 // "They replied" — lands in the WhatsApp thread as inbound (so the AI and scoring see real intent)

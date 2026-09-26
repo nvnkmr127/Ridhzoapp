@@ -31,8 +31,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   try {
     const { startedAt, ...rest } = parsed.data;
-    const { logged } = await recordLeadContact({ leadId: id, userId: auth.userId, ...rest, startedAt: startedAt ? new Date(startedAt) : undefined });
-    return NextResponse.json({ data: { logged } }, { status: logged ? 201 : 200 });
+    const { logged, completedFollowUpIds } = await recordLeadContact({ leadId: id, userId: auth.userId, ...rest, startedAt: startedAt ? new Date(startedAt) : undefined });
+    return NextResponse.json({ data: { logged, completedFollowUpIds } }, { status: logged ? 201 : 200 });
   } catch (e) {
     const { logError } = await import("@/lib/log");
     const ref = logError("api/v1/leads/[id]/contact", e, { leadId: id });

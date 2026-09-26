@@ -42,6 +42,7 @@ export const users = pgTable('users', {
   isSuperAdmin: boolean('is_super_admin').default(false).notNull(), // platform operator — cross-tenant access
   deletedAt: timestamp('deleted_at'), // soft delete — hard delete would orphan lead/activity FKs
   emailOptOut: jsonb('email_opt_out').$type<string[]>().default([]).notNull(), // notification types the user muted for email
+  lastCallSyncAt: timestamp('last_call_sync_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

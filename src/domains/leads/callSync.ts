@@ -1,6 +1,6 @@
-import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, gte, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { leads } from "@/db/schema";
+import { leads, users, activities } from "@/db/schema";
 import { normalizePhone } from "@/lib/leads/normalize";
 import { orgDialCode } from "@/lib/leads/orgDialCode";
 import { recordLeadContact, type CallDirection } from "./contactLog";
@@ -91,7 +91,7 @@ export async function syncDeviceCalls(input: {
   calls: DeviceCall[];
   canOpen: (leadId: string) => Promise<boolean>;
   now?: Date;
-}): Promise<{ matched: number; logged: number }> {
+}): Promise<{ matched: number; logged: number; completedFollowUpIds?: string[] }> {
   const { organizationId, userId, calls, canOpen, now = new Date() } = input;
   const dial = await orgDialCode(organizationId);
   // Leads are stored normalized ("+919876543210"); older rows may hold the raw digits.
@@ -108,6 +108,7 @@ export async function syncDeviceCalls(input: {
   const allowed = new Map<string, boolean>();
   let matched = 0;
   let logged = 0;
+  const completedFollowUpIds = new Set<string>();
   for (const call of calls) {
     const lead = keysFor(call.number).map((k) => byPhone.get(k)).find(Boolean);
     if (!lead || call.startedAt.getTime() < lead.createdAt.getTime() - BEFORE_LEAD_MS) continue;
@@ -126,6 +127,9 @@ export async function syncDeviceCalls(input: {
     });
     if (!res.logged) continue;
     logged++;
+    if (res.completedFollowUpIds) {
+      res.completedFollowUpIds.forEach(id => completedFollowUpIds.add(id));
+    }
 
     if (call.direction === "incoming" && call.durationSec === 0 && now.getTime() - call.startedAt.getTime() < NOTIFY_WITHIN_MS) {
       const { NotificationService } = await import("@/domains/notifications/service");
@@ -139,5 +143,33 @@ export async function syncDeviceCalls(input: {
       }).catch(() => {});
     }
   }
-  return { matched, logged };
+  return { matched, logged, completedFollowUpIds: Array.from(completedFollowUpIds) };
+}
+
+export async function getCallSyncStatus(userId: string) {
+  const [user] = await db
+    .select({ lastCallSyncAt: users.lastCallSyncAt })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(activities)
+    .where(
+      and(
+        eq(activities.userId, userId),
+        eq(activities.type, "call"),
+        isNotNull(activities.externalRef),
+        gte(activities.occurredAt, startOfDay)
+      )
+    );
+
+  return {
+    lastSyncAt: user?.lastCallSyncAt || null,
+    loggedToday: count || 0,
+  };
 }

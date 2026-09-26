@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeApiRequest } from "@/lib/apiAuth";
 import { canEditLeads, leadForApi, readOnly } from "@/lib/meetingsApi";
-import { syncDeviceCalls } from "@/domains/leads/callSync";
+import { syncDeviceCalls, getCallSyncStatus } from "@/domains/leads/callSync";
+import { db } from "@/db";
+import { users } from "@/db/schema";
+import { eq } from "drizzle-orm";
 
 const schema = z.object({
   calls: z
@@ -38,7 +41,14 @@ export async function POST(req: NextRequest) {
       calls: calls.map((c) => ({ ...c, startedAt: new Date(c.startedAt) })),
       canOpen: async (leadId) => !!(await leadForApi(auth, leadId)),
     });
-    return NextResponse.json({ data: { received: calls.length, ...res } });
+    
+    // Update last sync timestamp
+    await db.update(users).set({ lastCallSyncAt: new Date() }).where(eq(users.id, auth.userId));
+    
+    // Fetch the updated status to return it
+    const status = await getCallSyncStatus(auth.userId);
+
+    return NextResponse.json({ data: { received: calls.length, ...res, status } });
   } catch (e) {
     // No request details in the log: the body is the rep's personal call history.
     const { logError } = await import("@/lib/log");
