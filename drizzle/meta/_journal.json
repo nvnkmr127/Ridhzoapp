@@ -547,6 +547,13 @@
       "when": 1790441993569,
       "tag": "0077_lead_field_config",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1790526984556,
+      "tag": "0078_mobile_perf_indexes",
+      "breakpoints": true
     }
   ]
 }

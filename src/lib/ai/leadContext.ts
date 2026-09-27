@@ -98,7 +98,7 @@ function fieldValue(raw: unknown, type: string): string | null {
 export async function loadLeadAiContext(lead: LoadableLead, organizationId: string) {
   const cd = (lead.customData as Record<string, unknown> | null) ?? {};
 
-  const [activityRows, messages, shares, statuses, defs, stage, source, meetingRows, owner, tagRows, followUpRows, sequenceRows, statusRows, playbooks] = await Promise.all([
+  const [activityRows, messages, shares, statuses, defs, stage, source, meetingRows, owner, tagRows, followUpRows, sequenceRows, statusRows, playbooks, orgFormat] = await Promise.all([
     ActivityService.getLeadActivities(lead.id),
     db
       .select({ direction: whatsappMessages.direction, body: whatsappMessages.body, createdAt: whatsappMessages.createdAt })
@@ -159,6 +159,8 @@ export async function loadLeadAiContext(lead: LoadableLead, organizationId: stri
       .limit(10)
       .catch(() => []),
     PlatformConfigService.get<Record<string, string>>(statusPlaybooksKey(organizationId), {}).catch(() => ({})),
+    // In the wave, not awaited after it — that was one more DB round trip on every recap/draft.
+    getOrgFormat(organizationId).catch(() => null),
   ]);
 
   // Who logged each entry, and when it actually happened (phone calls sync in after the fact).
@@ -193,7 +195,7 @@ export async function loadLeadAiContext(lead: LoadableLead, organizationId: stri
   const otherAnswers = formAnswers(cd).filter((a) => !definedKeys.has(a.key));
   const campaign = [cd.meta_campaign_name, cd.utm_campaign, cd.campaign].find((v) => typeof v === "string" && v) as string | undefined;
 
-  const tz = (await getOrgFormat(organizationId).catch(() => null))?.timezone ?? "UTC";
+  const tz = orgFormat?.timezone ?? "UTC";
   const window = bestContactWindow(
     [
       ...messages.filter((m) => m.direction === "inbound" && m.createdAt).map((m) => new Date(m.createdAt!)),

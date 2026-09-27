@@ -90,16 +90,22 @@ export class NotificationService {
     }
   }
 
-  // before: only notifications older than this (the last createdAt already shown) — paging.
-  static async listForUser(userId: string, opts: { unreadOnly?: boolean; limit?: number; before?: Date } = {}) {
+  // Paging, newest first. cursor: the id of the last one already shown — exact keyset on
+  // (created_at, id), so rows sharing a timestamp at a page edge aren't skipped. before: the older
+  // app builds' createdAt cursor (millisecond precision; kept so installed apps keep paging).
+  static async listForUser(userId: string, opts: { unreadOnly?: boolean; limit?: number; before?: Date; cursor?: string } = {}) {
     const where = and(
       eq(notifications.userId, userId),
       opts.unreadOnly ? isNull(notifications.readAt) : undefined,
-      opts.before ? lt(notifications.createdAt, opts.before) : undefined,
+      opts.cursor
+        ? sql`(${notifications.createdAt}, ${notifications.id}) < (select c.created_at, c.id from notifications c where c.id = ${opts.cursor} and c.user_id = ${userId})`
+        : opts.before
+          ? lt(notifications.createdAt, opts.before)
+          : undefined,
     );
     return db.select().from(notifications)
       .where(where)
-      .orderBy(desc(notifications.createdAt))
+      .orderBy(desc(notifications.createdAt), desc(notifications.id))
       .limit(opts.limit ?? 50);
   }
 

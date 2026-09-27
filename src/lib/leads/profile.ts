@@ -1,7 +1,7 @@
 import "server-only";
 import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { leadAttachments, leadPipelineStages, leads } from "@/db/schema";
+import { leadAttachments, leadPipelineStages, leads, sequences, sequenceSteps } from "@/db/schema";
 import { ActivityService } from "@/domains/activities/service";
 import { bestContactWindow } from "@/domains/leads/bestContactTime";
 import { ContentSharingService } from "@/domains/leads/contentSharingService";
@@ -68,7 +68,7 @@ export async function buildLeadProfile(lead: Lead, ctx: { userId: string | null;
     lead.phone?.trim() ? eq(leads.phone, lead.phone.trim()) : null,
   ].filter(Boolean) as ReturnType<typeof eq>[];
 
-  const [activities, waMessages, attachments, shares, org, availableSequences, enrolled, stages, duplicates, source, meetings, defs, statusCategory, reengagement] =
+  const [activities, waMessages, attachments, shares, org, availableSequences, enrolled, stages, duplicates, source, meetings, defs, statusCategory, dialCode] =
     await Promise.all([
       // Same cap as GET /api/v1/leads/:id — years-old leads have thousands; stats and the timeline
       // here only need the recent ones.
@@ -82,7 +82,18 @@ export async function buildLeadProfile(lead: Lead, ctx: { userId: string | null;
         .catch(() => []),
       ContentSharingService.listForLead(id).catch(() => []),
       OrgService.getOrganization(organizationId).catch(() => null),
-      SequenceService.list(organizationId).catch(() => []),
+      // Active sequences + step counts only. SequenceService.list also counts every enrollment in the
+      // workspace (steps × enrollments join) — work the profile throws away.
+      db
+        .select({
+          id: sequences.id,
+          name: sequences.name,
+          stepCount: sql<number>`(select count(*)::int from ${sequenceSteps} where ${sequenceSteps.sequenceId} = ${sequences.id})`,
+        })
+        .from(sequences)
+        .where(and(eq(sequences.organizationId, organizationId), eq(sequences.isActive, true)))
+        .orderBy(sequences.createdAt)
+        .catch(() => []),
       SequenceService.listForLead(id).catch(() => []),
       db
         .select({ id: leadPipelineStages.id, name: leadPipelineStages.name })
@@ -109,8 +120,15 @@ export async function buildLeadProfile(lead: Lead, ctx: { userId: string | null;
       MeetingService.listForLead(id, organizationId).catch(() => []),
       CustomFieldService.list(organizationId).catch(() => []),
       CustomStatusSchemaService.getStatusCategory(organizationId, lead.status).catch(() => undefined),
-      ReengagementCadenceService.getLeadReengagementCadence(id, organizationId).catch(() => null),
+      // In the same wave (was awaited on its own after it — one more round trip).
+      orgDialCode(organizationId),
     ]);
+
+  // Built from the lead and workspace timezone already in hand — no second lead/org read.
+  const reengagement = await ReengagementCadenceService.getLeadReengagementCadence(id, organizationId, {
+    lead: { id, name: lead.name, lastContactedAt: lead.lastContactedAt, createdAt: lead.createdAt },
+    timezone: org?.timezone || "UTC",
+  }).catch(() => null);
 
   // Source + attribution
   const ownSource = source && source.organizationId === organizationId ? source : null;
@@ -179,7 +197,7 @@ export async function buildLeadProfile(lead: Lead, ctx: { userId: string | null;
 
   return {
     // Dialable number for Call/WhatsApp: older leads saved without a country code get the workspace's.
-    dialPhone: normalizePhone(lead.phone, await orgDialCode(organizationId)) ?? lead.phone ?? null,
+    dialPhone: normalizePhone(lead.phone, dialCode) ?? lead.phone ?? null,
     displayId: lead.displayId ?? null,
     createdAt: lead.createdAt,
     statusCategory: statusCategory ?? null,
@@ -209,7 +227,7 @@ export async function buildLeadProfile(lead: Lead, ctx: { userId: string | null;
       messages: waMessages.map((m) => ({ id: m.id, direction: m.direction, body: m.body, status: m.status, createdAt: m.createdAt })),
     },
     sequences: {
-      available: availableSequences.filter((s) => s.isActive).map((s) => ({ id: s.id, name: s.name, stepCount: s.stepCount })),
+      available: availableSequences.map((s) => ({ id: s.id, name: s.name, stepCount: s.stepCount })),
       enrolled: enrolled.map((e) => ({ enrollmentId: e.enrollmentId, sequenceId: e.sequenceId, name: e.name, status: e.status, currentStep: e.currentStep, nextRunAt: e.nextRunAt })),
     },
     attachments: attachments.map((a) => ({ id: a.id, fileName: a.fileName, fileType: a.fileType, fileSize: a.fileSize, createdAt: a.createdAt })),

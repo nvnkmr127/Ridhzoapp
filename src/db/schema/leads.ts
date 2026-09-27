@@ -87,6 +87,8 @@ export const leads = pgTable('leads', {
   orgStatusIdx: index('leads_org_status_idx').on(table.organizationId, table.status),
   orgStatusCreatedIdx: index('leads_org_status_created_idx').on(table.organizationId, table.status, table.createdAt),
   orgSourceIdx: index('leads_org_source_idx').on(table.organizationId, table.sourceId),
+  // Duplicate check on the lead profile matches email case-insensitively (lower(email) = …).
+  orgLowerEmailIdx: index('leads_org_lower_email_idx').on(table.organizationId, sql`lower(${table.email})`),
   // Enforce per-tenant dedup at the DB layer (replaces the racy check-then-insert).
   // Partial: only active (non-deleted) rows with a real value participate, so soft-deleted
   // leads and blank contacts never collide.

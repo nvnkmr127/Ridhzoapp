@@ -22,13 +22,29 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "Invalid lead ID format. Expected a valid UUID." }, { status: 400 });
   }
 
-  // Owner, admin, or someone attending a meeting with this lead (same rule as the web lead page).
-  const lead = await leadForApi(auth, id);
+  // One parallel wave: the access check and the rows it guards don't depend on each other, and each
+  // serial await here was a full DB round trip. Rows for a lead the caller can't open are discarded.
+  const { CustomFieldService } = await import("@/domains/customFields/service");
+  const { TagService } = await import("@/domains/tags/service");
+  const [lead, isAdmin, defs, activities, fus, tags] = await Promise.all([
+    // Owner, admin, or someone attending a meeting with this lead (same rule as the web lead page).
+    leadForApi(auth, id),
+    auth.userId ? hasPermissionForRoleId(auth.roleId ?? null, "settings.manage") : Promise.resolve(true),
+    CustomFieldService.listCached(auth.organizationId),
+    // ponytail: newest 100 only — bounds payload and regex overhead for mobile screens.
+    ActivityService.getLeadActivities(id, 100),
+    db
+      .select({ id: followUps.id, title: followUps.title, type: followUps.type, description: followUps.description, status: followUps.status, dueAt: followUps.dueAt })
+      .from(followUps)
+      .where(eq(followUps.leadId, id))
+      .orderBy(asc(followUps.dueAt))
+      .limit(50),
+    TagService.getForLead(id),
+  ]);
   if (!lead) return leadNotFound();
-  if (auth.userId && !(await hasPermissionForRoleId(auth.roleId ?? null, "settings.manage")) && lead.customData) {
-    const { CustomFieldService } = await import("@/domains/customFields/service");
+  if (!isAdmin && lead.customData) {
     const cd = { ...(lead.customData as Record<string, unknown>) };
-    for (const f of await CustomFieldService.listCached(auth.organizationId)) if (f.adminOnly) delete cd[f.key];
+    for (const f of defs) if (f.adminOnly) delete cd[f.key];
     (lead as { customData: unknown }).customData = cd;
   }
 
@@ -42,18 +58,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     delete cd._scoreFactors;
     (lead as { customData: unknown }).customData = cd;
   }
-
-  // ponytail: newest 100 only — bounds payload and regex overhead for mobile screens.
-  const [activities, fus, tags] = await Promise.all([
-    ActivityService.getLeadActivities(id, 100),
-    db
-      .select({ id: followUps.id, title: followUps.title, type: followUps.type, description: followUps.description, status: followUps.status, dueAt: followUps.dueAt })
-      .from(followUps)
-      .where(eq(followUps.leadId, id))
-      .orderBy(asc(followUps.dueAt))
-      .limit(50),
-    import("@/domains/tags/service").then(m => m.TagService.getForLead(id))
-  ]);
 
   const callActivities = activities.filter(a => a.type === "call");
   const attempts = callActivities.filter(a => a.content?.startsWith("Called —")).length;

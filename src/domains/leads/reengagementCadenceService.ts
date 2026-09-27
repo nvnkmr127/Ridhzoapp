@@ -23,11 +23,14 @@ export class ReengagementCadenceService {
   /**
    * Generates a 4-step multi-channel re-engagement drip cadence schedule for inactive leads.
    */
+  // known: a caller that already holds the lead row and the workspace timezone (the lead profile)
+  // passes them in, so this costs no DB round trips.
   static async getLeadReengagementCadence(
     leadId: string,
-    organizationId: string
+    organizationId: string,
+    known?: { lead: { id: string; name: string; lastContactedAt: Date | null; createdAt: Date }; timezone: string },
   ): Promise<ReengagementCadence> {
-    const [lead] = await db
+    const [lead] = known ? [known.lead] : await db
       .select({
         id: leads.id,
         name: leads.name,
@@ -49,7 +52,7 @@ export class ReengagementCadenceService {
 
     // 10:00 AM in the WORKSPACE's timezone (the server runs in UTC — 10 AM UTC is 3:30 PM in India).
     const { getOrgFormat } = await import("@/lib/format.server");
-    const tz = (await getOrgFormat(organizationId).catch(() => null))?.timezone ?? "UTC";
+    const tz = known?.timezone ?? (await getOrgFormat(organizationId).catch(() => null))?.timezone ?? "UTC";
     const today = zonedParts(new Date(), tz);
     const createStepDate = (offsetDays: number) => zonedTimeToUtc(today.year, today.month, today.day + offsetDays, 10, 0, tz);
 

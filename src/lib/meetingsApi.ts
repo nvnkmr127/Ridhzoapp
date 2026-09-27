@@ -29,9 +29,10 @@ export const readOnly = () => NextResponse.json({ error: "Your role can view lea
 // The lead this caller may open/act on, or null (→ 404, never revealing someone else's lead exists).
 export async function leadForApi(auth: ApiAuth, leadId: string) {
   if (!idOk(leadId)) return null;
-  const lead = await LeadService.getLead(leadId, auth.organizationId);
+  // Independent reads — together, not one DB round trip after the other (every lead route pays this).
+  const [lead, all] = await Promise.all([LeadService.getLead(leadId, auth.organizationId), canSeeAllLeads(auth)]);
   if (!lead) return null;
-  if (auth.userId && lead.ownerId !== auth.userId && !(await canSeeAllLeads(auth)) && !(await attendsMeetingWith(leadId, auth.userId))) return null;
+  if (auth.userId && lead.ownerId !== auth.userId && !all && !(await attendsMeetingWith(leadId, auth.userId))) return null;
   return lead;
 }
 

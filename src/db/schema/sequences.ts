@@ -41,4 +41,5 @@ export const sequenceEnrollments = pgTable("sequence_enrollments", {
 }, (t) => ({
   dueIdx: index("sequence_enrollments_due_idx").on(t.status, t.nextRunAt),
   leadIdx: index("sequence_enrollments_lead_idx").on(t.leadId),
+  sequenceIdx: index("sequence_enrollments_sequence_idx").on(t.sequenceId), // per-sequence counts/joins
 }));

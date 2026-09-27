@@ -16,4 +16,6 @@ export const notifications = pgTable('notifications', {
 }, (table) => ({
   // Drives the unread bell: "my unread, newest first".
   userUnreadIdx: index('notifications_user_idx').on(table.userId, table.readAt, table.createdAt),
+  // The full list, newest first, keyset-paged on (created_at, id) — the index above can't serve that order.
+  userCreatedIdx: index('notifications_user_created_idx').on(table.userId, table.createdAt, table.id),
 }));
