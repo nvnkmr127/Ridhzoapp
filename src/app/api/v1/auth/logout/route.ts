@@ -7,6 +7,11 @@ import { revokeMobileToken } from "@/lib/mobileRevocation";
 export async function POST(req: NextRequest) {
   const header = req.headers.get("authorization") ?? "";
   const token = verifyMobileToken(header.startsWith("Bearer ") ? header.slice(7) : "");
-  if (token) await revokeMobileToken(token);
+  if (token) {
+    const { evictMirroredSession } = await import("@/lib/sessionCache");
+    const { clearUserAuthCache } = await import("@/lib/apiAuth");
+    clearUserAuthCache(token.sub);
+    await Promise.all([revokeMobileToken(token), evictMirroredSession(token.sub, token.org)]);
+  }
   return NextResponse.json({ ok: true });
 }

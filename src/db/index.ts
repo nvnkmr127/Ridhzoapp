@@ -13,9 +13,9 @@ function getClient(): postgres.Sql {
   if (!globalThis._dbClient) {
     const isProd = process.env.NODE_ENV === "production";
     globalThis._dbClient = postgres(connectionString, {
-      prepare: false,
+      prepare: true, // Prepared statements eliminate query re-parsing on Postgres
       fetch_types: false, // Prevents redundant pg_type queries on connection
-      max: isProd ? 10 : 5,
+      max: isProd ? 20 : 10, // Avoid socket starvation when mobile screens fire parallel subqueries
       idle_timeout: isProd ? 30 : 300, // Keep pool warm so navigation clicks do not wait for new TCP handshakes
       connect_timeout: 10, // Generous handshake timeout for cloud proxy
       max_lifetime: 60 * 30, // 30m max connection lifetime

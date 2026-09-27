@@ -80,8 +80,38 @@ async function rateLimited(principal: string): Promise<NextResponse | null> {
   );
 }
 
+// In-memory cache for live user lookups: avoids a 550ms DB round-trip on every single mobile request.
+const userCache = new Map<string, { roleId: string | null; exp: number } | null>();
+
+export function clearUserAuthCache(userId?: string) {
+  if (userId) {
+    for (const key of userCache.keys()) {
+      if (key.startsWith(`${userId}:`)) userCache.delete(key);
+    }
+    void import("@/lib/sessionCache").then(({ evictMirroredSession }) => evictMirroredSession(userId));
+  } else {
+    userCache.clear();
+  }
+}
+
 // The token's user, if still active and still in the token's org (else null → 401).
 async function liveUser(userId: string, organizationId: string): Promise<{ roleId: string | null } | null> {
+  const cacheKey = `${userId}:${organizationId}`;
+  const now = Date.now();
+  const cached = userCache.get(cacheKey);
+  if (cached !== undefined) {
+    if (cached === null) return null;
+    if (cached.exp > now) return { roleId: cached.roleId };
+  }
+
+  // Check Redis L2 mirror across all cluster instances
+  const { getMirroredSession, mirrorSession } = await import("@/lib/sessionCache");
+  const mirrored = await getMirroredSession(userId, organizationId);
+  if (mirrored !== undefined) {
+    userCache.set(cacheKey, mirrored ? { roleId: mirrored.roleId, exp: now + 60_000 } : null);
+    return mirrored;
+  }
+
   const { db } = await import("@/db");
   const { users } = await import("@/db/schema");
   const { eq } = await import("drizzle-orm");
@@ -90,7 +120,11 @@ async function liveUser(userId: string, organizationId: string): Promise<{ roleI
     .from(users)
     .where(eq(users.id, userId))
     .limit(1);
-  return u && u.isActive !== false && u.organizationId === organizationId ? { roleId: u.roleId } : null;
+
+  const val = u && u.isActive !== false && u.organizationId === organizationId ? { roleId: u.roleId } : null;
+  userCache.set(cacheKey, val ? { roleId: val.roleId, exp: now + 60_000 } : null);
+  void mirrorSession(userId, organizationId, val);
+  return val;
 }
 
 async function suspended(organizationId: string): Promise<boolean> {

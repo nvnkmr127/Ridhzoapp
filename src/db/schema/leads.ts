@@ -83,6 +83,7 @@ export const leads = pgTable('leads', {
   orgPhoneIdx: index('leads_org_phone_idx').on(table.organizationId, table.phone),
   orgEmailIdx: index('leads_org_email_idx').on(table.organizationId, table.email),
   orgOwnerIdx: index('leads_org_owner_idx').on(table.organizationId, table.ownerId),
+  orgOwnerCreatedIdx: index('leads_org_owner_created_idx').on(table.organizationId, table.ownerId, table.createdAt),
   orgStatusIdx: index('leads_org_status_idx').on(table.organizationId, table.status),
   orgStatusCreatedIdx: index('leads_org_status_created_idx').on(table.organizationId, table.status, table.createdAt),
   orgSourceIdx: index('leads_org_source_idx').on(table.organizationId, table.sourceId),

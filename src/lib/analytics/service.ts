@@ -199,21 +199,24 @@ export class AnalyticsService {
       .select({
         sourceId: leads.sourceId,
         sourceName: leadSources.name,
-        expectedValue: leads.expectedValue,
+        count: sql<number>`count(*)::int`,
+        totalValue: sql<number>`coalesce(sum(${leads.expectedValue}), 0)::float`,
       })
       .from(leads)
       .leftJoin(leadSources, eq(leads.sourceId, leadSources.id))
-      .where(conditions.length > 0 ? and(...conditions) : undefined);
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .groupBy(leads.sourceId, leadSources.name);
 
     const map = new Map<string, { count: number; totalValue: number }>();
     let totalCount = 0;
 
     for (const r of rows) {
       const name = r.sourceName || "Direct / Organic";
-      const val = Number(r.expectedValue || 0);
+      const val = Number((r as any).totalValue ?? r.expectedValue ?? 0);
+      const count = Number((r as any).count ?? 1);
       const existing = map.get(name) || { count: 0, totalValue: 0 };
-      map.set(name, { count: existing.count + 1, totalValue: existing.totalValue + val });
-      totalCount++;
+      map.set(name, { count: existing.count + count, totalValue: existing.totalValue + val });
+      totalCount += count;
     }
 
     return Array.from(map.entries()).map(([name, stat]) => ({
@@ -240,9 +243,10 @@ export class AnalyticsService {
     filters = await this.withTz(filters);
     const conditions = this.buildLeadConditions(filters);
     const rows = await db
-      .select({ status: leads.status })
+      .select({ status: leads.status, count: sql<number>`count(*)::int` })
       .from(leads)
-      .where(conditions.length > 0 ? and(...conditions) : undefined);
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .groupBy(leads.status);
 
     const stageLabels: Record<string, string> = {
       new: "New",
@@ -260,10 +264,12 @@ export class AnalyticsService {
       Unqualified: 0,
     };
 
-    const total = rows.length;
+    let total = 0;
     for (const r of rows) {
       const label = stageLabels[r.status] || r.status;
-      counts[label] = (counts[label] || 0) + 1;
+      const count = Number((r as any).count ?? 1);
+      counts[label] = (counts[label] || 0) + count;
+      total += count;
     }
 
     return Object.entries(counts).map(([name, count]) => ({
@@ -285,10 +291,12 @@ export class AnalyticsService {
         firstName: users.firstName,
         lastName: users.lastName,
         email: users.email,
+        count: sql<number>`count(*)::int`,
       })
       .from(leads)
       .leftJoin(users, eq(leads.ownerId, users.id))
-      .where(conditions.length > 0 ? and(...conditions) : undefined);
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .groupBy(leads.ownerId, users.firstName, users.lastName, users.email);
 
     const map = new Map<string, number>();
     let totalCount = 0;
@@ -300,8 +308,9 @@ export class AnalyticsService {
       } else if (r.email) {
         name = r.email;
       }
-      map.set(name, (map.get(name) || 0) + 1);
-      totalCount++;
+      const count = Number((r as any).count ?? 1);
+      map.set(name, (map.get(name) || 0) + count);
+      totalCount += count;
     }
 
     return Array.from(map.entries()).map(([name, count]) => ({

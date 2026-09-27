@@ -32,9 +32,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     (lead as { customData: unknown }).customData = cd;
   }
 
-  // ponytail: newest 500 only — bounds the payload on years-old leads; page it if anyone hits the cap.
+  // ponytail: newest 100 only — bounds payload and regex overhead for mobile screens.
   const [activities, fus, tags] = await Promise.all([
-    ActivityService.getLeadActivities(id, 500),
+    ActivityService.getLeadActivities(id, 100),
     db
       .select({ id: followUps.id, title: followUps.title, type: followUps.type, description: followUps.description, status: followUps.status, dueAt: followUps.dueAt })
       .from(followUps)
@@ -141,6 +141,33 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const currentLead = await leadForApi(auth, id);
   if (!currentLead) return leadNotFound();
   if (!(await canEditLeads(auth))) return readOnly();
+
+  const { OrgService } = await import("@/domains/organizations/service");
+  const { resolveLeadFieldConfig, findMissingMandatoryLeadFields } = await import("@/lib/leads/fieldConfig");
+  const org = await OrgService.getOrganization(auth.organizationId);
+  const fieldConfig = resolveLeadFieldConfig(org?.leadFieldConfig);
+
+  const candidateCustom = {
+    ...((currentLead.customData as Record<string, unknown>) || {}),
+    ...(parsed.data.customData ?? {}),
+    ...(parsed.data.budget !== undefined ? { budget: parsed.data.budget || null } : {}),
+    ...(parsed.data.location !== undefined ? { location: parsed.data.location || null } : {}),
+    ...(parsed.data.industry !== undefined ? { industry: parsed.data.industry || null } : {}),
+    ...(parsed.data.companySize !== undefined ? { companySize: parsed.data.companySize || null } : {}),
+    ...(parsed.data.websiteUrl !== undefined ? { websiteUrl: parsed.data.websiteUrl || null } : {}),
+  };
+  const candidateLead = {
+    ...currentLead,
+    ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
+    ...(parsed.data.email !== undefined ? { email: parsed.data.email || null } : {}),
+    ...(parsed.data.phone !== undefined ? { phone: parsed.data.phone || null } : {}),
+    ...(parsed.data.company !== undefined ? { company: fieldConfig.company !== "hidden" ? (parsed.data.company || null) : null } : {}),
+    customData: candidateCustom,
+  };
+  const missing = findMissingMandatoryLeadFields(fieldConfig, candidateLead as Record<string, unknown>);
+  if (missing.length > 0) {
+    return NextResponse.json({ error: `${missing[0].label} is required.` }, { status: 422 });
+  }
 
   // Only this workspace's statuses (GET /api/v1/statuses) — an unknown key would strand the lead
   // outside every pipeline view and report.

@@ -84,10 +84,12 @@ describe('AnalyticsService Calculations', () => {
     const { db } = await import('@/db');
     const queryChain = {
       leftJoin: vi.fn().mockReturnThis(),
-      where: vi.fn().mockResolvedValue(mockRows),
+      where: vi.fn().mockReturnThis(),
+      groupBy: vi.fn().mockResolvedValue(mockRows),
       then: (resolve: any) => resolve(mockRows)
     };
     queryChain.leftJoin.mockReturnValue(queryChain);
+    queryChain.where.mockReturnValue(queryChain);
     ((db as any).from as any).mockReturnValue(queryChain);
 
     const sources = await AnalyticsService.getLeadsBySource({ organizationId: 'org-A' });
@@ -107,9 +109,11 @@ describe('AnalyticsService Calculations', () => {
 
     const { db } = await import('@/db');
     const queryChain = {
-      where: vi.fn().mockResolvedValue(mockLeads),
+      where: vi.fn().mockReturnThis(),
+      groupBy: vi.fn().mockResolvedValue(mockLeads),
       then: (resolve: any) => resolve(mockLeads)
     };
+    queryChain.where.mockReturnValue(queryChain);
     ((db as any).from as any).mockReturnValue(queryChain);
 
     const distribution = await AnalyticsService.getPipelineDistribution({ organizationId: 'org-A' });
@@ -131,10 +135,12 @@ describe('AnalyticsService Calculations', () => {
     const { db } = await import('@/db');
     const queryChain = {
       leftJoin: vi.fn().mockReturnThis(),
-      where: vi.fn().mockResolvedValue(mockRows),
+      where: vi.fn().mockReturnThis(),
+      groupBy: vi.fn().mockResolvedValue(mockRows),
       then: (resolve: any) => resolve(mockRows)
     };
     queryChain.leftJoin.mockReturnValue(queryChain);
+    queryChain.where.mockReturnValue(queryChain);
     ((db as any).from as any).mockReturnValue(queryChain);
 
     const owners = await AnalyticsService.getLeadsByOwner({ organizationId: 'org-A' });

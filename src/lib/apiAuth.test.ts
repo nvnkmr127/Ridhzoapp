@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { authorizeApiRequest } from "./apiAuth";
+import { authorizeApiRequest, clearUserAuthCache } from "./apiAuth";
 import { ApiKeyService } from "@/domains/apiKeys/service";
 import { verifyMobileToken } from "@/lib/mobileAuth";
 import { RateLimiter } from "@/lib/rate-limit";
@@ -36,6 +36,7 @@ const isSuspended = OrgService.isSuspended as unknown as ReturnType<typeof vi.fn
 
 beforeEach(() => {
   vi.clearAllMocks();
+  clearUserAuthCache();
   mobile.mockReturnValue(null);
   isSuspended.mockResolvedValue(false);
   checkLimit.mockResolvedValue({ success: true, limit: 600, remaining: 599, reset: Date.now() + 60000 });
