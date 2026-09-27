@@ -158,7 +158,7 @@ export class PlanService {
 
   // Atomically spends one AI credit. One UPDATE that resets on a new month and refuses at the cap,
   // so concurrent requests can't overdraw. false = out of credits for this month.
-  static async useAiCredit(organizationId: string): Promise<boolean> {
+  static async consumeAiCredit(organizationId: string): Promise<boolean> {
     const max = limitsFor(await this.plan(organizationId)).aiCredits;
     const period = currentPeriod();
     const rows = await db

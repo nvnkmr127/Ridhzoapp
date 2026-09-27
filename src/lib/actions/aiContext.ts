@@ -71,7 +71,7 @@ export async function improveAiContextAction(input: z.infer<typeof improveSchema
   const clean = parsed.data.draft.trim();
   if (!clean) return fail("VALIDATION", "Add some text first, then improve it.");
   if (!aiEnabled()) return fail("SERVER", "AI isn't configured on this environment.");
-  if (!(await PlanService.useAiCredit(organizationId))) {
+  if (!(await PlanService.consumeAiCredit(organizationId))) {
     return fail("LIMIT", "You've used all your AI credits for this month. Upgrade for more.");
   }
 

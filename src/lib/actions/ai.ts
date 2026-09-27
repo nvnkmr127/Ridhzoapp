@@ -139,7 +139,7 @@ export async function generateSequenceAction(goal: string): Promise<{ steps: Gen
   if (!clean || !aiEnabled()) {
     return { steps: contextual, ai: false };
   }
-  if (!(await PlanService.useAiCredit(organizationId))) return { steps: contextual, ai: false, outOfCredits: true };
+  if (!(await PlanService.consumeAiCredit(organizationId))) return { steps: contextual, ai: false, outOfCredits: true };
 
   try {
     const org = await OrgService.getOrganization(organizationId);

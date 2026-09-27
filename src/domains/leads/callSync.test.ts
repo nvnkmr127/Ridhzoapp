@@ -46,7 +46,7 @@ describe("syncDeviceCalls", () => {
     const res = await run([
       call({ number: "+14155550000" }),
       call({ number: "+919000000001" }),
-      call({ startedAt: new Date("2026-08-30T00:00:00Z") }), // 2 days before the lead
+      call({ startedAt: new Date("2026-07-15T00:00:00Z") }), // before the 30-day pre-lead window
     ]);
     expect(res).toEqual({ matched: 0, logged: 0, completedFollowUpIds: [] });
     expect(recordLeadContact).not.toHaveBeenCalled();

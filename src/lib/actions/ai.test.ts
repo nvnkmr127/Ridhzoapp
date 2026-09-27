@@ -13,9 +13,9 @@ vi.mock("@/domains/organizations/service", () => ({
   },
 }));
 
-const useAiCredit = vi.fn().mockResolvedValue(true);
+const consumeAiCredit = vi.fn().mockResolvedValue(true);
 vi.mock("@/domains/billing/planService", () => ({
-  PlanService: { useAiCredit: () => useAiCredit(), refundAiCredit: vi.fn() },
+  PlanService: { consumeAiCredit: () => consumeAiCredit(), refundAiCredit: vi.fn() },
 }));
 
 describe("generateSequenceAction", () => {
@@ -45,7 +45,7 @@ describe("generateSequenceAction", () => {
   it("flags out-of-credits instead of calling the model", async () => {
     const prev = process.env.AI_GATEWAY_API_KEY;
     process.env.AI_GATEWAY_API_KEY = "test-key-long-enough";
-    useAiCredit.mockResolvedValueOnce(false);
+    consumeAiCredit.mockResolvedValueOnce(false);
     const res = await generateSequenceAction("follow up on pricing");
     process.env.AI_GATEWAY_API_KEY = prev;
     expect(res.outOfCredits).toBe(true);

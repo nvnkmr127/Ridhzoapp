@@ -4,6 +4,7 @@ import { getOrgFormat } from "@/lib/format.server";
 import { CustomStatusSchemaService } from "@/domains/leads/customStatusSchemaService";
 import { ScoringService } from "@/domains/leads/scoringService";
 import { formAnswers } from "@/lib/leads/formAnswers";
+import { resolveLeadFieldConfig } from "@/lib/leads/fieldConfig";
 import { normalizePhone } from "@/lib/leads/normalize";
 import { orgDialCode } from "@/lib/leads/orgDialCode";
 import { NbaActions } from "@/components/leads/NbaActions";
@@ -499,7 +500,6 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             <div className={m("order-10")}>
               <SectionCard icon={Braces} title="More details">
                 {(() => {
-                  const { resolveLeadFieldConfig } = require("@/lib/leads/fieldConfig");
                   const fieldConfig = resolveLeadFieldConfig(org?.leadFieldConfig);
                   const activeCustomDefs = visibleCustomDefs.filter(
                     (f: any) => fieldConfig[f.key as keyof typeof fieldConfig] !== "hidden"

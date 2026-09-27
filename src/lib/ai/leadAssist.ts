@@ -54,7 +54,7 @@ export async function draftReplyForLead(
 
   // Graceful fallback when AI isn't configured — still useful, just not generated.
   if (!aiEnabled()) return { ...fallback, ai: false };
-  if (!(await PlanService.useAiCredit(organizationId))) return { ...fallback, ai: false, outOfCredits: true };
+  if (!(await PlanService.consumeAiCredit(organizationId))) return { ...fallback, ai: false, outOfCredits: true };
 
   const [{ text: context }, org] = await Promise.all([
     leadAiContext(lead, organizationId),
@@ -105,7 +105,7 @@ export async function recapForLead(lead: Lead, organizationId: string, refresh =
 
   // Brand-new leads with form answers are exactly when a recap helps most — only skip the AI when
   // there's genuinely nothing to read.
-  const outOfCredits = aiEnabled() && hasAiWorthyContext(activities, extras) && !(await PlanService.useAiCredit(organizationId));
+  const outOfCredits = aiEnabled() && hasAiWorthyContext(activities, extras) && !(await PlanService.consumeAiCredit(organizationId));
   if (!aiEnabled() || !hasAiWorthyContext(activities, extras) || outOfCredits) {
     const last = activities[0];
     return {

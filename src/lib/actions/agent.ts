@@ -22,7 +22,7 @@ export async function runAgentAction(
   // constraints ("audience is investors", "keep it formal") set the tone for the whole thread and
   // would otherwise fall out of a plain tail window in a long conversation.
   const capped = capHistory(history, 20);
-  if (!(await PlanService.useAiCredit(organizationId))) {
+  if (!(await PlanService.consumeAiCredit(organizationId))) {
     return { text: "You've used all your AI credits for this month.", proposals: [], steps: 0, enabled: true, outOfCredits: true };
   }
   return runLeadAgent({ organizationId, userId }, trimmed, capped, leadId);

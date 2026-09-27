@@ -74,11 +74,11 @@ describe('AnalyticsService Calculations', () => {
   });
 
   it('should aggregate revenue by source correctly', async () => {
+    // Rows as the real GROUP BY query returns them: one per source, count and summed value.
     const mockRows = [
-      { sourceName: 'Website', expectedValue: '15000' },
-      { sourceName: 'Website', expectedValue: '5000' },
-      { sourceName: 'Facebook', expectedValue: '12000' },
-      { sourceName: null, expectedValue: '3000' },
+      { sourceId: 's1', sourceName: 'Website', count: 2, totalValue: 20000 },
+      { sourceId: 's2', sourceName: 'Facebook', count: 1, totalValue: 12000 },
+      { sourceId: null, sourceName: null, count: 1, totalValue: 3000 },
     ];
 
     const { db } = await import('@/db');

@@ -120,13 +120,13 @@ describe("PlanService AI credits", () => {
   it("spends a credit when the guarded update matches", async () => {
     queueResults([[{ plan: "free" }]]);
     mockUpdate([{ id: "org" }]);
-    expect(await PlanService.useAiCredit("org")).toBe(true);
+    expect(await PlanService.consumeAiCredit("org")).toBe(true);
   });
 
   it("reports out of credits when the cap guard blocks the update", async () => {
     queueResults([[{ plan: "free" }]]);
     mockUpdate([]);
-    expect(await PlanService.useAiCredit("org")).toBe(false);
+    expect(await PlanService.consumeAiCredit("org")).toBe(false);
   });
 
   it("counts last month's usage as zero", async () => {

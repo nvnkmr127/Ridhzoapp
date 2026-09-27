@@ -15,6 +15,13 @@ vi.mock("@/lib/rate-limit", () => ({
 vi.mock("@/domains/organizations/service", () => ({
   OrgService: { isSuspended: vi.fn().mockResolvedValue(false) },
 }));
+// The Redis L2 mirror fails open (returns undefined) — mirror that deterministically so the
+// suite stays hermetic even when a real Redis is reachable on localhost:6379.
+vi.mock("@/lib/sessionCache", () => ({
+  getMirroredSession: vi.fn().mockResolvedValue(undefined),
+  mirrorSession: vi.fn().mockResolvedValue(undefined),
+  evictMirroredSession: vi.fn().mockResolvedValue(undefined),
+}));
 // The live-user lookup only runs on the mobile path; default it to a valid, active, same-org user.
 const dbUser = vi.hoisted(() => ({ row: { isActive: true, organizationId: "org-1", roleId: null as string | null } }));
 vi.mock("@/db", () => ({

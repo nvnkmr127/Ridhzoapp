@@ -28,7 +28,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (auth.userId && !(await hasPermissionForRoleId(auth.roleId ?? null, "settings.manage")) && lead.customData) {
     const { CustomFieldService } = await import("@/domains/customFields/service");
     const cd = { ...(lead.customData as Record<string, unknown>) };
-    for (const f of await CustomFieldService.list(auth.organizationId)) if (f.adminOnly) delete cd[f.key];
+    for (const f of await CustomFieldService.listCached(auth.organizationId)) if (f.adminOnly) delete cd[f.key];
     (lead as { customData: unknown }).customData = cd;
   }
 

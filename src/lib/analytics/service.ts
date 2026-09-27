@@ -223,8 +223,8 @@ export class AnalyticsService {
 
     for (const r of rows) {
       const name = r.sourceName || "Direct / Organic";
-      const val = Number((r as any).totalValue ?? r.expectedValue ?? 0);
-      const count = Number((r as any).count ?? 1);
+      const val = Number(r.totalValue ?? 0);
+      const count = Number(r.count ?? 1);
       const existing = map.get(name) || { count: 0, totalValue: 0 };
       map.set(name, { count: existing.count + count, totalValue: existing.totalValue + val });
       totalCount += count;
