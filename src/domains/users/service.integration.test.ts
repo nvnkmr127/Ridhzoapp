@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { db } from "@/db";
-import { users, roles, organizations, invitations } from "@/db/schema";
+import { users, roles, organizations, invitations, leadCounters } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { UserService, LAST_ADMIN_ERROR } from "./service";
 import { InvitationService } from "@/domains/invitations/service";
 import { RoleService } from "@/domains/roles/service";
+import { PlatformConfigService } from "@/domains/platform/configService";
 
 // These exercise real transactions, jsonb SQL, and the global-unique email constraint against a
 // live Postgres, so they only run when DATABASE_URL points at a local dev DB. CI without a DB skips.
@@ -17,6 +18,12 @@ let repRoleId = "";
 describe.runIf(RUN)("UserService — /settings/users regressions", () => {
   beforeAll(async () => {
     await db.insert(organizations).values({ id: orgId, name: `IT ${stamp}`, slug: `it-${stamp}` });
+    // Earlier tests in this shared org leave active users behind; give it seats so plan caps never
+    // mask the behaviors under test (BUG-A restores a member into an org that must have room).
+    await PlatformConfigService.set("seat_overrides", {
+      ...(await PlatformConfigService.get<Record<string, number>>("seat_overrides", {})),
+      [orgId]: 10,
+    });
     [{ id: adminRoleId }] = await db
       .insert(roles)
       .values({ organizationId: orgId, name: "Manager", permissions: ["*"] })
@@ -28,9 +35,13 @@ describe.runIf(RUN)("UserService — /settings/users regressions", () => {
   });
 
   afterAll(async () => {
+    const overrides = await PlatformConfigService.get<Record<string, number>>("seat_overrides", {});
+    delete overrides[orgId];
+    await PlatformConfigService.set("seat_overrides", overrides);
     await db.delete(invitations).where(eq(invitations.organizationId, orgId));
     await db.delete(users).where(eq(users.organizationId, orgId));
     await db.delete(roles).where(eq(roles.organizationId, orgId));
+    await db.delete(leadCounters).where(eq(leadCounters.organizationId, orgId));
     await db.delete(organizations).where(eq(organizations.id, orgId));
   });
 

@@ -17,6 +17,6 @@ test.describe('Admin & Settings E2E', () => {
 
     await page.goto('/settings/users');
 
-    await expect(page.locator('h1, h2', { hasText: /Users/i }).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('h1, h2', { hasText: /Team members|Users/i }).first()).toBeVisible({ timeout: 15000 });
   });
 });

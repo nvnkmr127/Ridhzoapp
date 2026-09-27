@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { invitations, users } from "@/db/schema";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNotNull, isNull } from "drizzle-orm";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { PlanService } from "@/domains/billing/planService";
@@ -32,7 +32,14 @@ export class InvitationService {
       .from(invitations)
       .where(and(eq(invitations.organizationId, organizationId), eq(invitations.email, cleanEmail), isNull(invitations.acceptedAt), gt(invitations.expiresAt, new Date())))
       .limit(1);
-    await PlanService.assertCanAddSeat(organizationId, open ? 1 : 0);
+    // Same for a soft-deleted member: their accept restores the old row (BUG-A), reusing the seat
+    // they already held rather than adding a new one.
+    const [tombstoned] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.email, cleanEmail), eq(users.organizationId, organizationId), isNotNull(users.deletedAt)))
+      .limit(1);
+    await PlanService.assertCanAddSeat(organizationId, (open ? 1 : 0) + (tombstoned ? 1 : 0));
 
     // Remove any earlier pending invitations for this email in this org to avoid duplicate seats
     await db.delete(invitations).where(and(eq(invitations.organizationId, organizationId), eq(invitations.email, cleanEmail), isNull(invitations.acceptedAt)));

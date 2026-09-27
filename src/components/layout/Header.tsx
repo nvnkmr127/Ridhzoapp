@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { PlusCircle, Search, User, PieChart, Sparkles } from "lucide-react";
 import { useT } from "@/components/LanguageProvider";
-import { signOut, useSession } from "next-auth/react";
+import { signOut } from "next-auth/react";
 import { isPlaceholderEmail } from "@/lib/auth/googleLink";
 import Image from "next/image";
 import Link from "next/link";
@@ -46,8 +46,7 @@ export function Header({
 }) {
   const [searchOpen, setSearchOpen] = React.useState(false);
   const t = useT();
-  const { data: session } = useSession() || {};
-  const user = currentUser || session?.user;
+  const user = currentUser;
   const [shortcutLabel, setShortcutLabel] = React.useState("⌘K");
 
   const getUserInitials = (name?: string | null) => {

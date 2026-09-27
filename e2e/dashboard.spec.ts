@@ -1,22 +1,11 @@
 import { test, expect } from '@playwright/test';
+import { loginAsUser } from './helpers/auth';
 
 test.describe('Executive Dashboard', () => {
   test.setTimeout(60000);
 
   test('should authenticate and render the real executive dashboard', async ({ page }) => {
-    // Navigate to login page
-    await page.goto('/login');
-
-    // Wait for email input to be visible
-    await page.waitForSelector('input[type="email"]', { timeout: 30000 });
-
-    // Fill credentials
-    await page.fill('input[type="email"]', 'admin@ridhzo.com');
-    await page.fill('input[type="password"]', 'password123');
-    
-    // Submit form and allow auth session to settle
-    await page.click('button[type="submit"]');
-    await page.waitForTimeout(3000);
+    await loginAsUser(page);
 
     // Navigate to Executive Dashboard
     await page.goto('/');
