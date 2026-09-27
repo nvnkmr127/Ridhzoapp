@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { leads, followUps, leadSources, users, teams, activities } from "@/db/schema";
 import { eq, and, gte, lt, lte, desc, isNull, or, sql } from "drizzle-orm";
 import { startOfZonedDay, startOfZonedMonth } from "@/lib/tz";
+import { cache } from "react";
 
 export interface AnalyticsFilters {
   organizationId: string;
@@ -51,6 +52,14 @@ export function summarizeLeadMetrics(
 }
 
 export class AnalyticsService {
+  // Per-request hand-off: the dashboard needs lead KPIs and the pipeline breakdown, which read the
+  // same per-status counts. getLeadMetrics stores its rows here; getPipelineDistribution in the
+  // same request reuses them instead of re-running the identical GROUP BY. cache() scopes the box
+  // to one request, so nothing leaks across requests or callers.
+  private static readonly requestStatusRows = cache(
+    () => ({ rows: null as null | { status: string | null; n: number; value: number }[] }),
+  );
+
   // "Today", "this month" etc. are the WORKSPACE's calendar days — the server runs in UTC, which
   // put an Indian team's "today" 5½ hours off.
   private static getDateRangeBounds(filters: AnalyticsFilters): { start?: Date; end?: Date } {
@@ -138,8 +147,10 @@ export class AnalyticsService {
     const { CustomStatusSchemaService } = await import("@/domains/leads/customStatusSchemaService");
     const catMap = await CustomStatusSchemaService.getStatusCategoryMap(filters.organizationId);
     const resp = (respRows as unknown as { contacted: number; median: number | null; within5: number }[])[0];
+    const statusRows = byStatus.map((r) => ({ status: r.status, n: Number(r.n), value: Number(r.value) }));
+    this.requestStatusRows().rows = statusRows; // the pipeline breakdown reuses these in this request
     return summarizeLeadMetrics(
-      byStatus.map((r) => ({ status: r.status, n: Number(r.n), value: Number(r.value) })),
+      statusRows,
       { contacted: Number(resp?.contacted ?? 0), median: resp?.median == null ? null : Number(resp.median), within5: Number(resp?.within5 ?? 0) },
       (st) => catMap.get(st ?? "") ?? "open",
     );
@@ -237,9 +248,13 @@ export class AnalyticsService {
   }
 
   /**
-   * Aggregates lead counts by pipeline stage.
+   * Aggregates lead counts by pipeline stage. Reuses the per-status rows getLeadMetrics already
+   * fetched in this request when they're available (same dashboard fetch), else queries.
    */
   static async getPipelineDistribution(filters: AnalyticsFilters) {
+    const memo = this.requestStatusRows().rows;
+    if (memo) return this.pipelineFromStatusRows(memo);
+
     filters = await this.withTz(filters);
     const conditions = this.buildLeadConditions(filters);
     const rows = await db
@@ -248,6 +263,10 @@ export class AnalyticsService {
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .groupBy(leads.status);
 
+    return this.pipelineFromStatusRows(rows.map((r) => ({ status: r.status, n: Number((r as { count?: number }).count ?? 1) })));
+  }
+
+  private static pipelineFromStatusRows(rows: { status: string | null; n: number }[]) {
     const stageLabels: Record<string, string> = {
       new: "New",
       active: "Active",
@@ -266,8 +285,8 @@ export class AnalyticsService {
 
     let total = 0;
     for (const r of rows) {
-      const label = stageLabels[r.status] || r.status;
-      const count = Number((r as any).count ?? 1);
+      const label = stageLabels[r.status ?? ""] || r.status || "";
+      const count = r.n;
       counts[label] = (counts[label] || 0) + count;
       total += count;
     }

@@ -211,11 +211,16 @@ function grantedKeys(role: { name: string; permissions: string[]; organizationId
 // Every permission a role id grants (for clients that hide actions the user can't take).
 export async function permissionsForRoleId(roleId: string | null): Promise<PermissionKey[]> {
   if (!roleId) return [];
-  const [role] = await db
-    .select({ name: roles.name, permissions: roles.permissions, organizationId: roles.organizationId })
-    .from(roles)
-    .where(eq(roles.id, roleId))
-    .limit(1);
+  // Through the 15s role cache (forgotten the moment a role is edited) — /me and the lead screens
+  // resolve this on every open; it was the one uncached roles query in the chain.
+  const role = await cachedRole(roleId, async () => {
+    const [row] = await db
+      .select({ name: roles.name, permissions: roles.permissions, organizationId: roles.organizationId })
+      .from(roles)
+      .where(eq(roles.id, roleId))
+      .limit(1);
+    return row ?? null;
+  });
   return role ? grantedKeys({ ...role, permissions: role.permissions ?? [] }) : [];
 }
 

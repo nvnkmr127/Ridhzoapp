@@ -606,9 +606,23 @@ export class LeadService {
   }
 
   static async listDeletedLeads(organizationId: string) {
-    const rows = await db.select().from(leads)
+    // Only the fields the recycle bin renders (the route maps to these nine), and bounded — this
+    // used to be an unbounded SELECT * of every soft-deleted lead, customData blobs included.
+    const rows = await db
+      .select({
+        id: leads.id,
+        name: leads.name,
+        email: leads.email,
+        phone: leads.phone,
+        company: leads.company,
+        status: leads.status,
+        createdAt: leads.createdAt,
+        deletedAt: leads.deletedAt,
+      })
+      .from(leads)
       .where(and(eq(leads.organizationId, organizationId), isNotNull(leads.deletedAt)))
-      .orderBy(desc(leads.deletedAt));
+      .orderBy(desc(leads.deletedAt))
+      .limit(500);
     const PURGE_DAYS = 30;
     return rows.map((l) => {
       const deletedMs = l.deletedAt ? new Date(l.deletedAt).getTime() : Date.now();

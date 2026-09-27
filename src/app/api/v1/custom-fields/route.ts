@@ -10,6 +10,8 @@ export async function GET(req: NextRequest) {
   const auth = await authorizeApiRequest(req);
   if ("error" in auth) return auth.error;
   const isAdmin = !auth.userId || (await hasPermissionForRoleId(auth.roleId ?? null, "settings.manage"));
-  const defs = await CustomFieldService.list(auth.organizationId);
+  // Cached read (Next data cache, invalidated on any def mutation) — defs change rarely and this
+  // endpoint is fetched on every lead form/profile open.
+  const defs = await CustomFieldService.listCached(auth.organizationId);
   return NextResponse.json({ data: defs.filter((d) => !d.disabled && (isAdmin || !d.adminOnly)) });
 }

@@ -17,10 +17,14 @@ export async function GET(req: NextRequest) {
   const userId = auth.userId;
 
   const { getOrgFormat } = await import("@/lib/format.server");
-  const { timezone } = await getOrgFormat(auth.organizationId).catch(() => ({ timezone: "UTC" }));
+  // Independent reads — run together (badges is polled every two minutes; a serialized chain here
+  // is paid on every poll).
+  const [{ timezone }, all] = await Promise.all([
+    getOrgFormat(auth.organizationId).catch(() => ({ timezone: "UTC" })),
+    canSeeAllLeads(auth),
+  ]);
   const endOfToday = startOfZonedDay(new Date(), timezone, 1);
   const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  const all = await canSeeAllLeads(auth);
 
   const [[fu], [mt], unread] = await Promise.all([
     // Same scope as GET /api/v1/follow-ups.

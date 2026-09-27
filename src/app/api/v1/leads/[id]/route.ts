@@ -32,6 +32,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     (lead as { customData: unknown }).customData = cd;
   }
 
+  // Server-generated blobs live in customData (cached AI recap, enrichment evidence, score
+  // factors). No client reads them from this response — the recap has its own endpoint — and they
+  // made every lead-detail payload (and its persisted offline copy) much heavier than it needs to be.
+  if (lead.customData && typeof lead.customData === "object") {
+    const cd = { ...(lead.customData as Record<string, unknown>) };
+    delete cd._aiRecap;
+    delete cd._enrichment;
+    delete cd._scoreFactors;
+    (lead as { customData: unknown }).customData = cd;
+  }
+
   // ponytail: newest 100 only — bounds payload and regex overhead for mobile screens.
   const [activities, fus, tags] = await Promise.all([
     ActivityService.getLeadActivities(id, 100),
@@ -39,7 +50,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       .select({ id: followUps.id, title: followUps.title, type: followUps.type, description: followUps.description, status: followUps.status, dueAt: followUps.dueAt })
       .from(followUps)
       .where(eq(followUps.leadId, id))
-      .orderBy(asc(followUps.dueAt)),
+      .orderBy(asc(followUps.dueAt))
+      .limit(50),
     import("@/domains/tags/service").then(m => m.TagService.getForLead(id))
   ]);
 

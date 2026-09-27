@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { notifications, users, roles } from "@/db/schema";
-import { and, desc, eq, isNull, inArray } from "drizzle-orm";
+import { and, desc, eq, isNull, inArray, sql } from "drizzle-orm";
 import { keepAlive } from "@/lib/keepAlive";
 
 // High-signal notification types that also warrant an email. Chatty ones (self-completions) don't.
@@ -101,9 +101,12 @@ export class NotificationService {
   }
 
   static async unreadCount(userId: string) {
-    const rows = await db.select({ id: notifications.id }).from(notifications)
+    // Aggregated in Postgres (was: fetch every unread row's id and count them in Node).
+    const [row] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(notifications)
       .where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
-    return rows.length;
+    return Number(row?.n ?? 0);
   }
 
   // Mark specific ids read, or all of the user's if ids omitted. Scoped to userId either way.

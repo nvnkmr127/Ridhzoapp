@@ -139,11 +139,17 @@ export class PlanService {
   }
 
   static async aiCredits(organizationId: string, knownPlan?: string) {
-    const max = limitsFor(knownPlan ?? (await this.plan(organizationId))).aiCredits;
-    const [row] = await db
-      .select({ used: organizations.aiCreditsUsed, period: organizations.aiCreditsPeriod })
-      .from(organizations)
-      .where(eq(organizations.id, organizationId));
+    // Plan and credit usage are independent reads — run them together (they were sequential, so
+    // every /me and AI-credit check paid two org round trips).
+    const [planName, rows] = await Promise.all([
+      knownPlan ?? this.plan(organizationId),
+      db
+        .select({ used: organizations.aiCreditsUsed, period: organizations.aiCreditsPeriod })
+        .from(organizations)
+        .where(eq(organizations.id, organizationId)),
+    ]);
+    const max = limitsFor(planName).aiCredits;
+    const row = Array.isArray(rows) ? rows[0] : rows;
     const used = row?.period === currentPeriod() ? row.used : 0;
     // A super-admin grant drives `used` below zero (bonus credits); show it as extra allowance so
     // the meter never reads negative: same remaining credits, used >= 0.
