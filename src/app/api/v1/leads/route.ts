@@ -135,7 +135,11 @@ export async function POST(req: NextRequest) {
     if (parsed.data.companySize) rawCustom.companySize = parsed.data.companySize;
     if (parsed.data.websiteUrl) rawCustom.websiteUrl = parsed.data.websiteUrl;
 
-    const customData = await CustomFieldService.validate(auth.organizationId, rawCustom, { isAdmin, isNew: true });
+    const { withLeadFieldValues } = await import("@/lib/leads/fieldConfig");
+    const customData = withLeadFieldValues(
+      await CustomFieldService.validate(auth.organizationId, rawCustom, { isAdmin, isNew: true }),
+      parsed.data,
+    );
     const lead = await LeadService.createLead(
       {
         name: parsed.data.name,

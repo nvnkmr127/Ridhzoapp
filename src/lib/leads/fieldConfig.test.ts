@@ -3,6 +3,7 @@ import {
   resolveLeadFieldConfig,
   getLeadFieldValue,
   findMissingMandatoryLeadFields,
+  withLeadFieldValues,
   DEFAULT_LEAD_FIELD_CONFIG,
   type LeadFieldConfig,
 } from "./fieldConfig";
@@ -98,5 +99,12 @@ describe("fieldConfig", () => {
 
     const missing = findMissingMandatoryLeadFields(tenantAConfig, leadData);
     expect(missing).toEqual([]);
+  });
+
+  it("merges submitted default fields back into validated customData", () => {
+    const validated = { plan: "Gold", budget: "old", location: "Pune" };
+    const out = withLeadFieldValues(validated, { budget: " 5L ", location: "", industry: undefined, websiteUrl: null });
+    expect(out).toEqual({ plan: "Gold", budget: "5L" });
+    expect(validated.budget).toBe("old"); // input not mutated
   });
 });

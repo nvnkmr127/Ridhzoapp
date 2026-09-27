@@ -5,7 +5,8 @@ import { recapForLead } from "@/lib/ai/leadAssist";
 import { RateLimiter } from "@/lib/rate-limit";
 
 // One-glance AI summary of where this lead stands. Cached on the lead until it changes; ?refresh=1
-// regenerates (one AI credit).
+// regenerates (one AI credit). ?cached=1 never generates: the saved recap (stale: true if out of date)
+// or pending: true — so just opening a lead doesn't spend credits.
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const auth = await authorizeApiRequest(req);
   if ("error" in auth) return auth.error;
@@ -18,7 +19,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 
   try {
-    return NextResponse.json({ data: await recapForLead(lead, auth.organizationId, refresh) });
+    const cachedOnly = req.nextUrl.searchParams.get("cached") === "1";
+    return NextResponse.json({ data: await recapForLead(lead, auth.organizationId, refresh, { cachedOnly }) });
   } catch (e) {
     const { logError } = await import("@/lib/log");
     const ref = logError("api/v1/leads/[id]/ai/recap", e, { leadId: id });

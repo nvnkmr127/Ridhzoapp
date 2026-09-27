@@ -85,7 +85,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         occurredAt: a.occurredAt,
         userId: a.userId,
         userName: a.userName,
-        durationSec: a.durationSec
+        durationSec: a.durationSec,
+        // The phone's call id — the app ties a call's uploaded recording to it (by file name).
+        externalRef: a.externalRef ?? null,
       })),
       followUps: fus,
       tags,
@@ -242,7 +244,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const editable = new Set(defs.filter((d) => !d.disabled && (isAdmin || !d.adminOnly)).map((d) => d.key));
       const result: Record<string, unknown> = { ...validated };
       for (const [k, v] of Object.entries(stored)) if (!(k in result) && !editable.has(k)) result[k] = v;
-      await LeadService.updateCustomData(id, result, auth.organizationId);
+      // After the keep-stored pass, so a cleared default field isn't restored from `stored`.
+      const { withLeadFieldValues } = await import("@/lib/leads/fieldConfig");
+      await LeadService.updateCustomData(id, withLeadFieldValues(result, parsed.data), auth.organizationId);
     }
     if (parsed.data.ownerId !== undefined) {
       const { AssignmentService } = await import("@/domains/leads/assignmentService");

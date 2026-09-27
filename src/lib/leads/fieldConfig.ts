@@ -117,3 +117,23 @@ export function findMissingMandatoryLeadFields(
 
   return missing;
 }
+
+// The configurable fields other than company (which has its own column) are stored in customData,
+// but they aren't custom-field definitions, so CustomFieldService.validate drops them. Callers merge
+// the submitted values back afterwards: a non-empty value is set, "" / null clears, absent is untouched.
+export const CUSTOM_DATA_LEAD_FIELDS = ["budget", "location", "industry", "companySize", "websiteUrl"] as const;
+
+export function withLeadFieldValues(
+  customData: Record<string, unknown>,
+  input: Partial<Record<(typeof CUSTOM_DATA_LEAD_FIELDS)[number], string | null>>,
+): Record<string, unknown> {
+  const out = { ...customData };
+  for (const key of CUSTOM_DATA_LEAD_FIELDS) {
+    const v = input[key];
+    if (v === undefined) continue;
+    const trimmed = (v ?? "").trim();
+    if (trimmed) out[key] = trimmed;
+    else delete out[key];
+  }
+  return out;
+}

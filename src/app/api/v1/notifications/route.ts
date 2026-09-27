@@ -9,8 +9,13 @@ export async function GET(req: NextRequest) {
   if ("error" in auth) return auth.error;
   if (!auth.userId) return NextResponse.json({ data: [], unread: 0 });
 
+  // ?before=<createdAt of the last one shown> for the next page (newest first, 50 at a time).
+  const beforeRaw = req.nextUrl.searchParams.get("before");
+  const before = beforeRaw ? new Date(beforeRaw) : undefined;
+  if (before && Number.isNaN(before.getTime())) return NextResponse.json({ error: "Invalid before" }, { status: 422 });
+
   const [rows, unread] = await Promise.all([
-    NotificationService.listForUser(auth.userId, { limit: 50 }),
+    NotificationService.listForUser(auth.userId, { limit: 50, before }),
     NotificationService.unreadCount(auth.userId),
   ]);
   return NextResponse.json({ data: rows, unread });

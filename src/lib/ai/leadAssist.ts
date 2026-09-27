@@ -85,6 +85,10 @@ export type RecapResult = {
   ai: boolean;
   generatedAt?: string;
   cached?: boolean;
+  /** cachedOnly: the saved recap predates the lead's latest changes (refresh to update). */
+  stale?: boolean;
+  /** cachedOnly: no recap saved yet — generating one costs a credit, so the caller asks first. */
+  pending?: boolean;
   outOfCredits?: boolean;
   /** AI suggestions not yet applied or dismissed (custom fields, status, next step). */
   plan?: LeadPlan;
@@ -94,13 +98,21 @@ export type RecapResult = {
 // status change, the next step), from ONE AI call. Saved on the lead and reused until anything in its
 // AI context changes (the context signature — notes, calls, messages, follow-ups, meetings, status,
 // owner, fields…), so opening it again costs no AI call but it's never stale.
-export async function recapForLead(lead: Lead, organizationId: string, refresh = false): Promise<RecapResult> {
+// cachedOnly (the mobile app on opening a lead): never spend a credit — return the saved recap even if
+// it's out of date (stale, without its suggestions), or `pending` when there is none yet.
+export async function recapForLead(lead: Lead, organizationId: string, refresh = false, opts: { cachedOnly?: boolean } = {}): Promise<RecapResult> {
   const leadId = lead.id;
   const { activities, extras, text: context, signature: sig, fieldDefs, statuses } = await leadAiContext(lead, organizationId);
 
   const cached = (lead.customData as { _aiRecap?: RecapCache } | null)?._aiRecap;
   if (!refresh && cached?.sig === sig) {
     return { summary: cached.text, ai: true, generatedAt: cached.at, cached: true, plan: visiblePlan(cached.plan, cached.dismissed) };
+  }
+  if (!refresh && opts.cachedOnly && aiEnabled() && hasAiWorthyContext(activities, extras)) {
+    // Suggestions from an out-of-date recap may no longer fit, so they're left out until it's refreshed.
+    return cached
+      ? { summary: cached.text, ai: true, generatedAt: cached.at, cached: true, stale: true }
+      : { summary: "", ai: false, pending: true };
   }
 
   // Brand-new leads with form answers are exactly when a recap helps most — only skip the AI when

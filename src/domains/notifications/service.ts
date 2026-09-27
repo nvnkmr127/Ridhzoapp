@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { notifications, users, roles } from "@/db/schema";
-import { and, desc, eq, isNull, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, inArray, lt, sql } from "drizzle-orm";
 import { keepAlive } from "@/lib/keepAlive";
 
 // High-signal notification types that also warrant an email. Chatty ones (self-completions) don't.
@@ -90,10 +90,13 @@ export class NotificationService {
     }
   }
 
-  static async listForUser(userId: string, opts: { unreadOnly?: boolean; limit?: number } = {}) {
-    const where = opts.unreadOnly
-      ? and(eq(notifications.userId, userId), isNull(notifications.readAt))
-      : eq(notifications.userId, userId);
+  // before: only notifications older than this (the last createdAt already shown) — paging.
+  static async listForUser(userId: string, opts: { unreadOnly?: boolean; limit?: number; before?: Date } = {}) {
+    const where = and(
+      eq(notifications.userId, userId),
+      opts.unreadOnly ? isNull(notifications.readAt) : undefined,
+      opts.before ? lt(notifications.createdAt, opts.before) : undefined,
+    );
     return db.select().from(notifications)
       .where(where)
       .orderBy(desc(notifications.createdAt))
