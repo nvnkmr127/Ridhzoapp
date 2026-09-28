@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
-import { and, desc, eq, isNull, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, ilike, or, sql } from "drizzle-orm";
 import { LeadService } from "@/domains/leads/service";
 import { CustomFieldService, FieldValidationError } from "@/domains/customFields/service";
 import { PlanService } from "@/domains/billing/planService";
-import { authorizeApiRequest } from "@/lib/apiAuth";
+import { authorizeApiRequest, type ApiAuth } from "@/lib/apiAuth";
+import { withIdempotency } from "@/lib/idempotency";
 import { canEditLeads, idOk, readOnly } from "@/lib/meetingsApi";
 
 const authorize = authorizeApiRequest;
@@ -35,6 +36,8 @@ export async function GET(req: NextRequest) {
       })),
     });
   }
+
+  if (sp.get("sync") === "1") return changesFeed(auth, sp.get("after"), limit);
 
   const where = [eq(leads.organizationId, auth.organizationId), isNull(leads.deletedAt)];
   if (auth.userId) {
@@ -77,6 +80,7 @@ export async function GET(req: NextRequest) {
       lastContactedAt: leads.lastContactedAt,
       nextFollowUpAt: leads.nextFollowUpAt,
       createdAt: leads.createdAt,
+      updatedAt: leads.updatedAt,
     })
     .from(leads)
     .where(and(...where))
@@ -85,6 +89,38 @@ export async function GET(req: NextRequest) {
     .offset(cursor ? 0 : offset);
 
   return NextResponse.json({ data: rows });
+}
+
+// Incremental sync for the phone's offline store: every lead changed after `after` ("<iso>|<id>" from
+// the previous page's `next`; none = from the start), oldest change first. Soft-deleted leads and
+// leads this rep no longer owns come back as { id, gone: true } so the phone drops its copy.
+// ponytail: hard-purged leads (30 days in the recycle bin) never appear — the app re-pulls everything
+// when its last sync is older than that.
+async function changesFeed(auth: ApiAuth, after: string | null, limit: number) {
+  const [afterAt, afterId] = (after ?? "").split("|");
+  if (after && (!afterAt || Number.isNaN(Date.parse(afterAt)) || !idOk(afterId))) {
+    return NextResponse.json({ error: "Invalid after" }, { status: 422 });
+  }
+  const { canSeeAllLeads } = await import("@/lib/meetingsApi");
+  const { CustomFieldService } = await import("@/domains/customFields/service");
+  const [all, defs] = await Promise.all([canSeeAllLeads(auth), CustomFieldService.listCached(auth.organizationId)]);
+  // Writes stamp updatedAt from a JS Date (ms), inserts from now() (µs): compare at ms, the cursor's precision.
+  const at = sql`date_trunc('milliseconds', ${leads.updatedAt})`;
+  const where = [eq(leads.organizationId, auth.organizationId)];
+  if (after) {
+    const iso = new Date(afterAt).toISOString().replace("Z", ""); // updated_at is naive UTC
+    where.push(gte(leads.updatedAt, new Date(afterAt)), sql`(${at}, ${leads.id}) > (${iso}::timestamp, ${afterId}::uuid)`);
+  }
+  const rows = await db.select().from(leads).where(and(...where)).orderBy(at, leads.id).limit(limit);
+
+  const hidden = new Set(["_aiRecap", "_enrichment", "_scoreFactors", ...(all ? [] : defs.filter((d) => d.adminOnly).map((d) => d.key))]);
+  const data = rows.map((l) => {
+    if (l.deletedAt || (!all && l.ownerId !== auth.userId)) return { id: l.id, updatedAt: l.updatedAt, gone: true };
+    const customData = Object.fromEntries(Object.entries((l.customData as Record<string, unknown>) ?? {}).filter(([k]) => !hidden.has(k)));
+    return { ...l, customData, gone: false };
+  });
+  const last = rows[rows.length - 1];
+  return NextResponse.json({ data, next: last ? `${last.updatedAt.toISOString()}|${last.id}` : after, done: rows.length < limit });
 }
 
 const createSchema = z.object({
@@ -113,6 +149,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid request payload", details: parsed.error.issues }, { status: 422 });
   }
 
+  // Leads created offline are sent with an Idempotency-Key: a retry after a lost response gets the
+  // first lead back instead of creating a second one.
+  return withIdempotency(req, auth, "leads:create", () => createLead(auth, parsed.data));
+}
+
+async function createLead(auth: ApiAuth, data: z.infer<typeof createSchema>) {
+  const parsed = { data };
   if (parsed.data.ownerId) {
     const { users } = await import("@/db/schema");
     const [owner] = await db

@@ -599,7 +599,7 @@ export class LeadService {
   static async deleteLead(leadId: string, deletedById: string, organizationId: string) {
     const validBy = (deletedById && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(deletedById)) ? deletedById : null;
     const [deletedLead] = await db.update(leads)
-      .set({ deletedAt: new Date(), deletedBy: validBy })
+      .set({ deletedAt: new Date(), deletedBy: validBy, updatedAt: new Date() }) // updatedAt: phones pull the delete as a change
       .where(and(eq(leads.id, leadId), eq(leads.organizationId, organizationId), isNull(leads.deletedAt)))
       .returning();
     return deletedLead;
@@ -634,7 +634,7 @@ export class LeadService {
   static async restoreLead(leadId: string, organizationId: string) {
     await PlanService.assertCanAddLead(organizationId);
     const [restored] = await db.update(leads)
-      .set({ deletedAt: null, deletedBy: null })
+      .set({ deletedAt: null, deletedBy: null, updatedAt: new Date() })
       .where(and(eq(leads.id, leadId), eq(leads.organizationId, organizationId), isNotNull(leads.deletedAt)))
       .returning();
     return restored;

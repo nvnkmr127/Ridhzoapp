@@ -9,6 +9,7 @@ import { ActivityService } from "@/domains/activities/service";
 import { AuditService } from "@/domains/audit/service";
 import { hasPermissionForRoleId } from "@/lib/rbac";
 import { canEditLeads, leadForApi, leadNotFound, readOnly } from "@/lib/meetingsApi";
+import { leadConflicts } from "@/lib/leads/syncConflicts";
 
 const idSchema = z.guid();
 
@@ -121,6 +122,9 @@ const patchSchema = z
     expectedValue: z.string().max(30).nullable().optional(),
     // Next follow-up date (ISO) — mirrored as one pending "followup" task; null clears it.
     nextFollowUpAt: z.string().datetime().nullable().optional(),
+    // Offline edits from the app: each changed field's value when the rep edited it. A field someone
+    // else has changed since comes back as a 409 conflict instead of being overwritten.
+    base: z.record(z.string(), z.unknown()).optional(),
   })
   .refine(
     (v) =>
@@ -159,6 +163,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const currentLead = await leadForApi(auth, id);
   if (!currentLead) return leadNotFound();
   if (!(await canEditLeads(auth))) return readOnly();
+
+  if (parsed.data.base) {
+    const { base, ...patch } = parsed.data;
+    const conflicts = leadConflicts(currentLead as Record<string, unknown>, patch, base as Record<string, unknown>);
+    // ponytail: checked before the write, not in the same statement — a web save landing in the
+    // few ms between still wins. Row lock (SELECT … FOR UPDATE) if that ever matters.
+    if (conflicts.length) {
+      return NextResponse.json({ error: "This lead was changed by someone else.", code: "conflict", conflicts }, { status: 409 });
+    }
+  }
 
   const { OrgService } = await import("@/domains/organizations/service");
   const { resolveLeadFieldConfig, findMissingMandatoryLeadFields } = await import("@/lib/leads/fieldConfig");

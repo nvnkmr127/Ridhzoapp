@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS "leads_org_updated_idx" ON "leads" USING btree ("organization_id","updated_at");
