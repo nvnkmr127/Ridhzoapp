@@ -181,7 +181,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const { OrgService } = await import("@/domains/organizations/service");
-  const { resolveLeadFieldConfig, findMissingMandatoryLeadFields } = await import("@/lib/leads/fieldConfig");
+  const { resolveLeadFieldConfig } = await import("@/lib/leads/fieldConfig");
+  const { leadEditFieldErrors } = await import("@/lib/leads/requiredFields");
   const org = await OrgService.getOrganization(auth.organizationId);
   const fieldConfig = resolveLeadFieldConfig(org?.leadFieldConfig);
 
@@ -199,12 +200,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
     ...(parsed.data.email !== undefined ? { email: parsed.data.email || null } : {}),
     ...(parsed.data.phone !== undefined ? { phone: parsed.data.phone || null } : {}),
-    ...(parsed.data.company !== undefined ? { company: fieldConfig.company !== "hidden" ? (parsed.data.company || null) : null } : {}),
+    ...(parsed.data.company !== undefined && fieldConfig.company !== "hidden" ? { company: parsed.data.company || null } : {}),
     customData: candidateCustom,
   };
-  const missing = findMissingMandatoryLeadFields(fieldConfig, candidateLead as Record<string, unknown>);
-  if (missing.length > 0) {
-    return NextResponse.json({ error: `${missing[0].label} is required.` }, { status: 422 });
+  // Only fields this request sends are checked — a status change on an older lead must still work.
+  const fieldErrors = leadEditFieldErrors(org, candidateLead as Record<string, unknown>, Object.keys(parsed.data).filter((k) => parsed.data[k as keyof typeof parsed.data] !== undefined));
+  if (Object.keys(fieldErrors).length > 0) {
+    return NextResponse.json({ error: Object.values(fieldErrors)[0], fieldErrors }, { status: 422 });
   }
 
   // Only this workspace's statuses (GET /api/v1/statuses) — an unknown key would strand the lead

@@ -1,3 +1,4 @@
+import { normalizeProfile, profileRules, profileText } from "@/lib/ai/businessProfile";
 import { NextBestActionService } from "@/domains/leads/nextBestActionService";
 import type { StatusCategory } from "@/domains/leads/customStatusSchemaService";
 import type { FormAnswer } from "@/lib/leads/formAnswers";
@@ -276,6 +277,12 @@ export interface BusinessLike {
   currency?: string | null;
   /** Optional free-text description the tenant writes ("what we sell"). See organizations.aiContext. */
   aiContext?: string | null;
+  /** Structured context: what they sell, rules, tone (lib/ai/businessProfile). */
+  aiProfile?: unknown;
+  /** Extra context for the lead's source (lead_sources.ai_context), set by loadAiBusiness. */
+  sourceContext?: string | null;
+  /** Reference snippets picked from the knowledge docs for this request, set by loadAiBusiness. */
+  knowledge?: string | null;
 }
 
 /**
@@ -292,9 +299,15 @@ export function businessPreamble(org: BusinessLike): string {
   // Lets drafts end with a real "call us on …" instead of a placeholder.
   if (org.phone) s += ` Business phone: ${org.phone}.`;
   if (org.currency) s += ` Workspace currency is ${org.currency}. All monetary values, quotes, and pricing must use ${org.currency} — never use $ unless the workspace currency is USD.`;
-  if (org.aiContext?.trim()) s += ` About the business: ${org.aiContext.trim()}`;
-  s +=
-    " Represent ONLY this business's own products and services. The lead's name, company, or stated" +
+  const profile = normalizeProfile(org.aiProfile);
+  const about = profileText(profile, org.aiContext);
+  if (about) s += `\n\nAbout the business:\n${about}`;
+  if (org.sourceContext?.trim()) s += `\n\nAbout leads from this lead's source: ${org.sourceContext.trim()}`;
+  if (org.knowledge?.trim()) s += `\n\nReference material from the business (use it only when relevant; quote prices/details exactly):\n${org.knowledge.trim()}`;
+  const rules = profileRules(profile);
+  if (rules) s += `\n\n${rules}`;
+  s += "\n\n" +
+    "Represent ONLY this business's own products and services. The lead's name, company, or stated" +
     " interest describes the LEAD — never assume it is what your business sells. If the business's" +
     " offering is unknown, keep guidance generic rather than inventing a product or service.";
   return s;

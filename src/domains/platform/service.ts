@@ -22,6 +22,7 @@ import {
   automations,
   sequences,
   savedViews,
+  aiKnowledgeDocs,
   customFieldDefs,
   invitations,
   emailSettings,
@@ -1231,6 +1232,7 @@ export class PlatformService {
 
       // 4. Integrations & configs
       await tx.delete(savedViews).where(eq(savedViews.organizationId, organizationId));
+      await tx.delete(aiKnowledgeDocs).where(eq(aiKnowledgeDocs.organizationId, organizationId));
       await tx.delete(customFieldDefs).where(eq(customFieldDefs.organizationId, organizationId));
       await tx.delete(apiKeys).where(eq(apiKeys.organizationId, organizationId));
       await tx.delete(invitations).where(eq(invitations.organizationId, organizationId));

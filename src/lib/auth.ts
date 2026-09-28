@@ -122,6 +122,7 @@ export async function authorizePhoneOtp(credentials?: Record<string, string>) {
           firstName,
           lastName,
           passwordHash: randomPasswordHash,
+          passwordSet: false,
           roleId: adminRole?.id ?? null,
           isActive: true,
         })
@@ -310,6 +311,7 @@ export const authOptions: NextAuthOptions = {
                 firstName,
                 lastName,
                 passwordHash: randomPasswordHash,
+                passwordSet: false,
                 roleId: adminRole?.id ?? null,
                 isActive: true,
               })

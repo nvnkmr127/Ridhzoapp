@@ -39,6 +39,7 @@ type Pending = { kind: "deactivate" | "delete"; user: User; reassign: string };
 const NO_TEAM = "__none__"; // Select can't use "" as a value
 const UNASSIGNED = "__unassigned__";
 const KEEP = "__keep__";
+const TEAM_PREFIX = "team:"; // must match TEAM_PREFIX in domains/users/service.ts
 const fullName = (u: User) => [u.firstName, u.lastName].filter(Boolean).join(" ");
 
 export function UsersManager({
@@ -274,13 +275,25 @@ export function UsersManager({
         toast({ variant: "destructive", title: kind === "delete" ? "Could not delete member" : "Could not deactivate", description: res.message });
         return;
       }
-      const moved = (res.data as { leadsMoved?: number }).leadsMoved ?? 0;
+      const { leadsMoved: moved = 0, movedTo = {} } = res.data as { leadsMoved?: number; movedTo?: Record<string, number> };
       if (kind === "delete") setUsers((p) => p.filter((x) => x.id !== u.id));
       else setUsers((p) => p.map((x) => (x.id === u.id ? { ...x, isActive: false } : x)));
-      if (moved) setCounts((c) => ({ ...c, [u.id]: 0, ...(reassignTo ? { [reassignTo]: (c[reassignTo] ?? 0) + moved } : {}) }));
+      if (moved) {
+        setCounts((c) => {
+          const next = { ...c, [u.id]: 0 };
+          for (const [owner, n] of Object.entries(movedTo)) if (owner) next[owner] = (next[owner] ?? 0) + n;
+          return next;
+        });
+      }
+      const team = reassignTo?.startsWith(TEAM_PREFIX) ? teams.find((t) => `${TEAM_PREFIX}${t.id}` === reassignTo) : undefined;
+      const target = team
+        ? `split across ${team.name} (${Object.keys(movedTo).length} people)`
+        : reassignTo
+          ? `moved to ${fullName(users.find((x) => x.id === reassignTo)!) || "the new owner"}`
+          : "are now unassigned";
       toast({
         title: kind === "delete" ? "Member deleted" : "Member deactivated",
-        description: moved ? `${moved} lead(s) ${reassignTo ? `moved to ${fullName(users.find((x) => x.id === reassignTo)!) || "the new owner"}` : "are now unassigned"}.` : undefined,
+        description: moved ? `${moved} lead(s) ${target}.` : undefined,
       });
       setPending(null);
     } catch {
@@ -292,6 +305,8 @@ export function UsersManager({
 
   const activeOthers = pending ? users.filter((x) => x.isActive && x.id !== pending.user.id) : [];
   const pendingLeads = pending ? counts[pending.user.id] ?? 0 : 0;
+  // Only teams that have someone left to take the leads.
+  const reassignTeams = teams.filter((t) => activeOthers.some((x) => x.teamId === t.id));
 
   return (
     <div className="space-y-6">
@@ -497,6 +512,7 @@ export function UsersManager({
                     <SelectContent>
                       {pending.kind === "deactivate" && <SelectItem value={KEEP}>Keep them with {fullName(pending.user) || "this person"}</SelectItem>}
                       <SelectItem value={UNASSIGNED}>No one (unassigned)</SelectItem>
+                      {reassignTeams.map((t) => <SelectItem key={t.id} value={`${TEAM_PREFIX}${t.id}`}>Split evenly across {t.name}</SelectItem>)}
                       {activeOthers.map((x) => <SelectItem key={x.id} value={x.id}>{fullName(x) || x.email}</SelectItem>)}
                     </SelectContent>
                   </Select>

@@ -29,6 +29,7 @@ export class BillingService {
         complimentaryUntil: organizations.complimentaryUntil,
         billingName: organizations.billingName,
         gstin: organizations.gstin,
+        billingEmail: organizations.billingEmail,
         name: organizations.name,
       })
       .from(organizations)
@@ -108,8 +109,8 @@ export class BillingService {
   }
 
   // GST details for invoices. Also pushed to the Razorpay customer so future invoices carry them.
-  static async saveGstDetails(organizationId: string, input: { billingName: string | null; gstin: string | null }) {
-    const [row] = await db.update(organizations).set({ billingName: input.billingName, gstin: input.gstin })
+  static async saveGstDetails(organizationId: string, input: { billingName: string | null; gstin: string | null; billingEmail: string | null }) {
+    const [row] = await db.update(organizations).set({ billingName: input.billingName, gstin: input.gstin, billingEmail: input.billingEmail })
       .where(eq(organizations.id, organizationId))
       .returning({ customerId: organizations.razorpayCustomerId, name: organizations.name });
     if (row?.customerId) {

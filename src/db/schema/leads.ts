@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, timestamp, integer, jsonb, index, uniqueIndex, numeric, primaryKey } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, integer, jsonb, index, uniqueIndex, numeric, primaryKey, text } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 import { users, teams } from './users';
 import { organizations } from './organizations';
@@ -11,6 +11,7 @@ export const leadSources = pgTable('lead_sources', {
   isActive: integer('is_active').default(1).notNull(), // 1=active, 0=inactive
   config: jsonb('config').default({}),
   webhookSecret: varchar('webhook_secret', { length: 255 }),
+  aiContext: text('ai_context'), // extra AI business context for leads from this source (e.g. which course the ad was for)
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (table) => ({
   // Every inbound Facebook webhook matches sources by config.pageId; index the expression so that

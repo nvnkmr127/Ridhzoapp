@@ -1,10 +1,10 @@
-import { Phone, Mail, Sparkles, Flame, Radio, Braces, ClipboardList, Clock } from "lucide-react";
+import { Phone, Mail, Sparkles, Flame, Radio, Braces, ClipboardList, Clock, ListChecks } from "lucide-react";
 import { bestContactWindow } from "@/domains/leads/bestContactTime";
 import { getOrgFormat } from "@/lib/format.server";
 import { CustomStatusSchemaService } from "@/domains/leads/customStatusSchemaService";
 import { ScoringService } from "@/domains/leads/scoringService";
 import { formAnswers } from "@/lib/leads/formAnswers";
-import { resolveLeadFieldConfig } from "@/lib/leads/fieldConfig";
+import { CONFIGURABLE_LEAD_FIELDS, getLeadFieldValue, resolveLeadFieldConfig } from "@/lib/leads/fieldConfig";
 import { normalizePhone } from "@/lib/leads/normalize";
 import { orgDialCode } from "@/lib/leads/orgDialCode";
 import { NbaActions } from "@/components/leads/NbaActions";
@@ -38,6 +38,7 @@ import { LeadTags } from "@/components/leads/LeadTags";
 import { LeadCustomFields } from "@/components/leads/LeadCustomFields";
 import { TagService } from "@/domains/tags/service";
 import { LeadDuplicateBanner } from "@/components/leads/LeadDuplicateBanner";
+import { dedupConditions } from "@/lib/leads/dedupKeys";
 import { LeadStageAndValueControl } from "@/components/leads/LeadStageAndValueControl";
 import { LeadSequencesCard } from "@/components/leads/LeadSequencesCard";
 import { LeadAiRecap } from "@/components/leads/LeadAiRecap";
@@ -98,11 +99,8 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   // Match what listCustomFieldsAction returns for this viewer (admin-only hidden from non-admins).
   const visibleCustomDefs = (isFieldAdmin ? allCustomDefs : allCustomDefs.filter((f) => !f.adminOnly)) as any;
 
-  const cleanEmail = lead.email?.trim().toLowerCase() || undefined;
-  const cleanPhone = lead.phone?.trim() || undefined;
-  const dupConditions = [];
-  if (cleanEmail) dupConditions.push(sql`lower(${leads.email}) = ${cleanEmail}`);
-  if (cleanPhone) dupConditions.push(eq(leads.phone, cleanPhone));
+  // Same-person rule as every other duplicate check (lib/leads/dedupKeys).
+  const dupConditions = dedupConditions(lead);
 
   const liveFingerprintP = leadLiveFingerprint(id, organizationId).catch(() => null);
 
@@ -227,6 +225,13 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     attribution.push(["Form", formNames?.[String(cd.facebook_form_id)] || String(cd.facebook_form_id)]);
   }
   const whatsappMode: "personal" | "bsp" = org?.whatsappMode === "bsp" ? "bsp" : "personal";
+
+  // The workspace's default lead fields (Settings → Lead fields & requirements): shown unless hidden;
+  // a mandatory one that's still empty is shown as missing so the rep fills it in.
+  const leadFieldConfig = resolveLeadFieldConfig(org?.leadFieldConfig);
+  const leadFields = CONFIGURABLE_LEAD_FIELDS.filter((f) => leadFieldConfig[f.key] !== "hidden")
+    .map((f) => ({ ...f, value: getLeadFieldValue(lead as unknown as Record<string, unknown>, f.key), mandatory: leadFieldConfig[f.key] === "mandatory" }))
+    .filter((f) => f.value || f.mandatory);
 
   // Dialable number for Call/WhatsApp links. Older leads may be saved without a country code
   // ("9876543210"), which WhatsApp can't open — complete them with the workspace's default.
@@ -489,6 +494,27 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             <ReengagementPlanCard leadId={lead.id} organizationId={organizationId} />
           </div>
 
+          {leadFields.length > 0 && (
+            <div className={m("order-9")}>
+              <SectionCard icon={ListChecks} title="Lead details">
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  {leadFields.map((f) => (
+                    <div key={f.key} className="min-w-0">
+                      <span className="block text-xs text-muted-foreground">{f.label}</span>
+                      {!f.value ? (
+                        <p className="font-medium text-amber-700 dark:text-amber-400">Not filled — required</p>
+                      ) : f.type === "url" && /^https?:\/\//i.test(f.value) ? (
+                        <a href={f.value} target="_blank" rel="noopener noreferrer nofollow" className="break-all font-medium underline underline-offset-2">{f.value}</a>
+                      ) : (
+                        <p className="break-words font-medium">{f.value}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
+            </div>
+          )}
+
           <div className={m("order-9")}>
             <SectionCard icon={Radio} title="Lead Source">
               <div className="space-y-3 text-sm">
@@ -518,9 +544,8 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             <div className={m("order-10")}>
               <SectionCard icon={Braces} title="More details">
                 {(() => {
-                  const fieldConfig = resolveLeadFieldConfig(org?.leadFieldConfig);
                   const activeCustomDefs = visibleCustomDefs.filter(
-                    (f: any) => fieldConfig[f.key as keyof typeof fieldConfig] !== "hidden"
+                    (f: any) => leadFieldConfig[f.key as keyof typeof leadFieldConfig] !== "hidden"
                   );
                   return (
                     <LeadCustomFields

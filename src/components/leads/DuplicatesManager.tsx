@@ -7,7 +7,7 @@ import { mergeLeadsAction } from "@/lib/actions/dedup";
 import { Merge } from "lucide-react";
 
 type Lead = { id: string; name: string; email: string | null; phone: string | null; createdAt: string | Date };
-type Group = { key: string; leads: Lead[] };
+type Group = { key: string; match?: "email" | "phone" | "name"; leads: Lead[] };
 
 export function DuplicatesManager({ initial }: { initial: Group[] }) {
   const { toast } = useToast();
@@ -46,12 +46,16 @@ export function DuplicatesManager({ initial }: { initial: Group[] }) {
         const primary = group.leads[0];
         return (
           <div key={group.key} className="border rounded-2xl bg-card p-4 space-y-2">
-            <div className="text-xs text-muted-foreground">Matched on {group.key.startsWith("e:") ? "email" : "phone"}</div>
+            {group.match === "name" ? (
+              <div className="text-xs text-amber-700 dark:text-amber-400">Same name, different contact details — check it&apos;s the same person before merging</div>
+            ) : (
+              <div className="text-xs text-muted-foreground">Same {group.match ?? (group.key.startsWith("e:") ? "email" : "phone")}</div>
+            )}
             {group.leads.map((l, i) => (
               <div key={l.id} className="flex items-center justify-between py-1">
                 <div className="flex items-center gap-3 text-sm">
                   <span className="font-medium">{l.name}</span>
-                  <span className="text-muted-foreground">{l.email || l.phone}</span>
+                  <span className="text-muted-foreground">{[l.email, l.phone].filter(Boolean).join(" · ") || "No contact details"}</span>
                   {i === 0 && <span className="text-xs text-muted-foreground font-medium">keeps (oldest shown first)</span>}
                 </div>
                 {i !== 0 && (

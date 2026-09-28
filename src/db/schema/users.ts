@@ -34,6 +34,9 @@ export const users = pgTable('users', {
   // App language for this person's menu and phone notifications ('en' | 'hi' | 'te'). See lib/i18n.
   language: varchar('language', { length: 5 }).default('en').notNull(),
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
+  // false = random hash from a Google/WhatsApp signup; the user never chose a password, so the
+  // profile lets them set one without asking for the current password.
+  passwordSet: boolean('password_set').default(true).notNull(),
   firstName: varchar('first_name', { length: 255 }),
   lastName: varchar('last_name', { length: 255 }),
   roleId: uuid('role_id').references(() => roles.id),

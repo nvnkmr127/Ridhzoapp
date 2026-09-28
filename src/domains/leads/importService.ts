@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { emailKey, phoneKey } from "@/lib/leads/dedupKeys";
 import { orgDialCode } from "@/lib/leads/orgDialCode";
 import { leads, leadSources, users } from "@/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
@@ -94,8 +95,9 @@ export class LeadImportService {
       .from(leads)
       .where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt)));
 
-    const existingEmails = new Set(existing.map((e) => e.email?.toLowerCase()).filter(Boolean));
-    const existingPhones = new Set(existing.map((e) => digits(e.phone)).filter((d) => d.length >= 6));
+    // Same-person rule as every other duplicate check (lib/leads/dedupKeys).
+    const existingEmails = new Set(existing.map((e) => emailKey(e.email)).filter(Boolean));
+    const existingPhones = new Set(existing.map((e) => phoneKey(e.phone)).filter(Boolean));
 
     // Fetch custom-field defs ONCE, then validate every row against them in memory.
     const customDefs = await CustomFieldService.list(organizationId);
@@ -138,8 +140,9 @@ export class LeadImportService {
         valid = false;
         reason = `Invalid expected value: "${r.expectedValue}"`;
       } else {
+        const pKey = phoneKey(phone);
         const emailDup = !!email && (existingEmails.has(email) || seenEmail.has(email));
-        const phoneDup = phone.length >= 6 && (existingPhones.has(phone) || seenPhone.has(phone));
+        const phoneDup = !!pKey && (existingPhones.has(pKey) || seenPhone.has(pKey));
         if (emailDup || phoneDup) {
           duplicate = true;
           reason = "Duplicate of an existing lead";
@@ -147,7 +150,7 @@ export class LeadImportService {
       }
 
       if (email) seenEmail.add(email);
-      if (phone.length >= 6) seenPhone.add(phone);
+      if (phoneKey(phone)) seenPhone.add(phoneKey(phone));
 
       return {
         ...r,

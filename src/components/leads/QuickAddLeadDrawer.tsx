@@ -30,7 +30,7 @@ import {
   DEFAULT_LEAD_FIELD_CONFIG,
   type LeadFieldConfig,
 } from "@/lib/leads/fieldConfig"
-import { getLeadFieldConfigAction } from "@/lib/actions/organizations"
+import { getLeadFieldConfigAction, getRequiredContactFieldsAction } from "@/lib/actions/organizations"
 
 const emptyStringToUndefined = z.string().regex(/^\s*$/).transform(() => "");
 
@@ -61,6 +61,7 @@ export function QuickAddLeadDrawer({
   const [customValues, setCustomValues] = React.useState<Record<string, string>>({});
   const [users, setUsers] = React.useState<Array<{ id: string; name: string }>>([]);
   const [fieldConfig, setFieldConfig] = React.useState<LeadFieldConfig>(DEFAULT_LEAD_FIELD_CONFIG);
+  const [requiredContact, setRequiredContact] = React.useState<("email" | "phone")[]>([]);
   const [serverError, setServerError] = React.useState<string | null>(null);
 
   const fetchCustomFields = React.useCallback(() => {
@@ -83,6 +84,7 @@ export function QuickAddLeadDrawer({
       fetchCustomFields();
       listUsersAction().then(setUsers).catch(() => {});
       getLeadFieldConfigAction().then(setFieldConfig).catch(() => {});
+      getRequiredContactFieldsAction().then(setRequiredContact).catch(() => {});
     }
   }, [open, fetchCustomFields]);
 
@@ -104,6 +106,16 @@ export function QuickAddLeadDrawer({
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setServerError(null);
+
+    // Contact fields the workspace requires (Settings → Lead fields & requirements).
+    const missingContact = requiredContact.filter((f) => !values[f]?.toString().trim());
+    if (missingContact.length > 0) {
+      for (const f of missingContact) form.setError(f, { message: `${f === "email" ? "Email" : "Phone"} is required.` });
+      const msg = `Please fill in required field: ${missingContact.map((f) => (f === "email" ? "Email" : "Phone")).join(", ")}`;
+      setServerError(msg);
+      toast({ variant: "destructive", title: "Required field missing", description: msg });
+      return;
+    }
 
     // Validate mandatory configured default fields
     const missingConfigured = CONFIGURABLE_LEAD_FIELDS.filter((f) => {
@@ -286,7 +298,7 @@ export function QuickAddLeadDrawer({
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email</FormLabel>
+                    <FormLabel>Email{requiredContact.includes("email") && <span className="text-destructive"> *</span>}</FormLabel>
                     <FormControl>
                       <Input type="email" placeholder="john@example.com" {...field} />
                     </FormControl>
@@ -299,7 +311,7 @@ export function QuickAddLeadDrawer({
                 name="phone"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Phone</FormLabel>
+                    <FormLabel>Phone{requiredContact.includes("phone") && <span className="text-destructive"> *</span>}</FormLabel>
                     <FormControl>
                       <Input type="tel" placeholder="+1 (555) 000-0000" {...field} />
                     </FormControl>

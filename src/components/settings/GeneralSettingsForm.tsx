@@ -7,7 +7,8 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { updateOrganizationAction } from "@/lib/actions/organizations";
 import { StatusManagementModal } from "@/components/leads/StatusManagementModal";
-import { AiContextDialog } from "@/components/settings/AiContextDialog";
+import { AiContextDialog, type AiContextVersion } from "@/components/settings/AiContextDialog";
+import { missingFields, normalizeProfile, profileText } from "@/lib/ai/businessProfile";
 import { Building, Globe, LocateFixed, Lock, Check, Sparkles, Clock, Calendar, Banknote, MessageCircle, BellRing, ListChecks, Tag, Copy, Wand2, UserPlus, CircleCheck, Circle } from "lucide-react";
 import Link from "next/link";
 
@@ -29,6 +30,8 @@ type Org = {
   dateFormat?: string | null;
   industry?: string | null;
   aiContext?: string | null;
+  aiProfile?: unknown;
+  aiContextHistory?: AiContextVersion[] | null;
   phone?: string | null;
   website?: string | null;
   addressLine1?: string | null;
@@ -180,7 +183,6 @@ export function GeneralSettingsForm({
     currency: organization?.currency ?? INDIA.currency,
     dateFormat: organization?.dateFormat ?? INDIA.dateFormat,
     industry: organization?.industry ?? "",
-    aiContext: organization?.aiContext ?? "",
     phone: organization?.phone ?? "",
     website: organization?.website ?? "",
     addressLine1: organization?.addressLine1 ?? "",
@@ -194,6 +196,15 @@ export function GeneralSettingsForm({
     workStartHour: String(organization?.workStartHour ?? 9),
     workEndHour: String(organization?.workEndHour ?? 20),
   });
+
+  // Business context for AI saves from its own dialog, never through this form's Save.
+  const [ai, setAi] = React.useState(() => ({
+    profile: normalizeProfile(organization?.aiProfile),
+    notes: organization?.aiContext ?? "",
+    history: organization?.aiContextHistory ?? [],
+  }));
+  const aiSummary = profileText(ai.profile, ai.notes);
+  const aiMissing = missingFields(ai.profile);
 
   // Prompt user before leaving with unsaved changes
   const [dirty, setDirty] = React.useState(false);
@@ -264,7 +275,7 @@ export function GeneralSettingsForm({
   const setup = [
     { done: !!f.name.trim() && !/'s Workspace$/.test(f.name.trim()), label: "Add your business name", href: "#org-name" },
     { done: !!f.industry.trim(), label: "Choose your type of business", href: "#industry" },
-    { done: !!f.aiContext.trim(), label: "Tell AI about your business", href: "#ai-context" },
+    { done: aiMissing.length === 0, label: "Tell AI about your business", href: "#ai-context" },
     { done: !!f.phone.trim(), label: "Add your business phone", href: "#phone" },
     { done: !!f.country, label: "Set your country (for +91 on numbers)", href: "#country" },
     { done: hasLeadSource, label: "Connect where your leads come from", href: "/settings/sources" },
@@ -399,22 +410,28 @@ export function GeneralSettingsForm({
             <div id="ai-context" className="space-y-2 md:col-span-2 scroll-mt-24">
               <Label>Tell AI about your business</Label>
               <div className="flex items-start gap-3 rounded-md border border-input bg-background p-3">
-                <p className={`flex-1 text-sm whitespace-pre-wrap line-clamp-3 ${f.aiContext.trim() ? "text-foreground/90" : "text-muted-foreground"}`}>
-                  {f.aiContext.trim() || "Not added yet — AI replies will sound generic. Add what you sell, your prices and your service areas."}
-                </p>
+                <div className="flex-1 min-w-0 space-y-1">
+                  <p className={`text-sm whitespace-pre-wrap line-clamp-3 ${aiSummary ? "text-foreground/90" : "text-muted-foreground"}`}>
+                    {aiSummary || "Not added yet — AI replies will sound generic. Add what you sell, your prices and your service areas."}
+                  </p>
+                  {aiSummary && aiMissing.length > 0 && <p className="text-xs text-amber-700 dark:text-amber-400">Missing: {aiMissing.join(", ")}</p>}
+                </div>
                 <AiContextDialog
-                  initial={f.aiContext}
-                  onSaved={(t, at) => {
-                    setF((s) => ({ ...s, aiContext: t }));
+                  known={{ name: f.name, industry: f.industry, city: f.city, phone: f.phone, website: f.website, currency: f.currency }}
+                  initialProfile={ai.profile}
+                  initialNotes={ai.notes}
+                  initialHistory={ai.history}
+                  onSaved={(saved, at) => {
+                    setAi(saved);
                     if (at) setExpectedUpdatedAt(at);
                   }}
                 >
                   <Button type="button" variant="outline" size="sm" className="gap-2 shrink-0">
-                    <Sparkles className="h-4 w-4" /> {f.aiContext.trim() ? "Edit" : "Add"}
+                    <Sparkles className="h-4 w-4" /> {aiSummary ? "Edit" : "Add"}
                   </Button>
                 </AiContextDialog>
               </div>
-              <Hint>Upload a brochure or type a few lines. AI uses this for reply drafts, lead summaries and follow-up messages. Saves on its own.</Hint>
+              <Hint>What you sell, your rules and tone, reference documents and per-source notes. AI uses this for reply drafts, lead summaries and follow-up messages. Saves on its own.</Hint>
             </div>
             <div className="space-y-2">
               <Label htmlFor="address">Shop / office address</Label>
@@ -641,9 +658,9 @@ export function GeneralSettingsForm({
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          {current === "mandatory" && "Must be filled before saving or submitting a lead."}
-                          {current === "optional" && "Visible on forms and lead profiles, but optional."}
-                          {current === "hidden" && "Completely hidden across lead forms and edit screens."}
+                          {current === "mandatory" && "Your team must fill it when adding or editing a lead. Shown on the lead page."}
+                          {current === "optional" && "Shown on lead forms and the lead page, but can be left empty."}
+                          {current === "hidden" && "Hidden from lead forms and the lead page. Anything already saved is kept."}
                         </p>
                       </div>
                       <div className="inline-flex rounded-lg border border-border bg-muted/40 p-0.5 self-start sm:self-center shrink-0">
@@ -705,8 +722,10 @@ export function GeneralSettingsForm({
             </div>
           </div>
           <Hint>
-            These settings apply independently to your workspace across all lead creation, drawer, and edit flows.
-            Custom attributes can also be configured in{" "}
+            Applies when your team adds or edits leads (web and phone app). Leads from ads, web forms and the public booking page are
+            never rejected — if a required field is missing they&apos;re saved with a note and a &quot;missing-info&quot; tag.
+            Older leads missing a newly required field can still be updated; it&apos;s asked for when someone edits that field.
+            More fields can be added in{" "}
             <Link href="/settings/custom-fields" className="underline underline-offset-2">Custom fields</Link>.
           </Hint>
         </Section>

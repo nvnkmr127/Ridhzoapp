@@ -27,6 +27,7 @@ export async function GET(req: NextRequest) {
         timezone: organizations.timezone,
         currency: organizations.currency,
         leadFieldConfig: organizations.leadFieldConfig,
+        requiredLeadFields: organizations.requiredLeadFields,
       })
       .from(organizations)
       .where(eq(organizations.id, auth.organizationId))
@@ -55,6 +56,8 @@ export async function GET(req: NextRequest) {
         timezone: org.timezone,
         currency: org.currency,
         leadFieldConfig: resolveLeadFieldConfig(org.leadFieldConfig),
+        // Contact fields required when adding a lead (name is always required).
+        requiredContactFields: (["email", "phone"] as const).filter((f) => (org.requiredLeadFields ?? []).includes(f)),
       },
       permissions,
       // Admins (settings.manage) see every lead; everyone else sees their own.

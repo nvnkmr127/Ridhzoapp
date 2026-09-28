@@ -10,6 +10,7 @@ import { AlertSoundPicker } from "@/components/settings/AlertSoundPicker";
 import { LanguagePicker } from "@/components/settings/LanguagePicker";
 import { isLang } from "@/lib/i18n";
 import { LoginMethods } from "@/components/settings/LoginMethods";
+import { PasswordForm } from "@/components/settings/PasswordForm";
 import { isPlaceholderEmail } from "@/lib/auth/googleLink";
 
 // Result of the "Connect Google" round trip (set by the signIn callback in lib/auth.ts).
@@ -33,7 +34,7 @@ export default async function ProfilePage({
 
   const [emailOptOut, [me], params] = await Promise.all([
     getEmailOptOutAction(),
-    db.select({ email: users.email, phone: users.phone, language: users.language }).from(users).where(eq(users.id, session.user.id)).limit(1),
+    db.select({ email: users.email, phone: users.phone, language: users.language, passwordSet: users.passwordSet }).from(users).where(eq(users.id, session.user.id)).limit(1),
     searchParams,
   ]);
   const email = me && !isPlaceholderEmail(me.email) ? me.email : null;
@@ -49,6 +50,7 @@ export default async function ProfilePage({
       </div>
 
       <LoginMethods email={email} phone={me?.phone ?? null} notice={linkKey ? LINK_NOTICES[linkKey] : undefined} />
+      {email && <PasswordForm hasPassword={me?.passwordSet ?? true} />}
 
       <NotificationPreferences initialOptOut={emailOptOut} />
       <LanguagePicker initial={isLang(me?.language) ? me.language : "en"} />

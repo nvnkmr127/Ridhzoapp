@@ -76,7 +76,7 @@ export async function createUserAction(input: z.infer<typeof createUserSchema>) 
 }
 
 // `reassignTo` (deactivate only): undefined = leave their leads alone, null = unassign them,
-// a user id = hand them to that active member.
+// a user id = hand them to that active member, `team:<id>` = split them across that team.
 export async function setUserActiveAction(id: string, isActive: boolean, reassignTo?: string | null) {
   const { organizationId, userId } = await requirePermission("users.manage");
   if (id === userId && !isActive) return fail("VALIDATION", "You can't deactivate your own account.");
@@ -84,10 +84,11 @@ export async function setUserActiveAction(id: string, isActive: boolean, reassig
     const u = await UserService.setActive(organizationId, id, isActive, isActive ? undefined : reassignTo);
     if (!u) return fail("NOT_FOUND", "That user no longer exists. Refresh the page.");
     const leadsMoved = "leadsMoved" in u ? u.leadsMoved : 0;
-    await AuditService.log({ organizationId, userId, action: isActive ? "user.activate" : "user.deactivate", entityType: "user", entityId: id, metadata: leadsMoved ? { leadsMoved, reassignTo } : undefined });
+    const movedTo = "movedTo" in u ? u.movedTo : {};
+    await AuditService.log({ organizationId, userId, action: isActive ? "user.activate" : "user.deactivate", entityType: "user", entityId: id, metadata: leadsMoved ? { leadsMoved, reassignTo, movedTo } : undefined });
     revalidateTag("active-users");
     revalidatePath("/settings/users");
-    return ok({ id, isActive, leadsMoved });
+    return ok({ id, isActive, leadsMoved, movedTo });
   } catch (e) {
     return actionFail(e);
   }
@@ -130,9 +131,9 @@ export async function deleteUserAction(id: string, reassignTo?: string | null) {
     const u = await UserService.remove(organizationId, id, reassignTo);
     if (!u) return fail("NOT_FOUND", "That user no longer exists. Refresh the page.");
     revalidateTag("active-users");
-    await AuditService.log({ organizationId, userId, action: "user.delete", entityType: "user", entityId: id, metadata: u.leadsMoved ? { leadsMoved: u.leadsMoved, reassignTo } : undefined });
+    await AuditService.log({ organizationId, userId, action: "user.delete", entityType: "user", entityId: id, metadata: u.leadsMoved ? { leadsMoved: u.leadsMoved, reassignTo, movedTo: u.movedTo } : undefined });
     revalidatePath("/settings/users");
-    return ok({ id, leadsMoved: u.leadsMoved });
+    return ok({ id, leadsMoved: u.leadsMoved, movedTo: u.movedTo });
   } catch (e) {
     return actionFail(e);
   }

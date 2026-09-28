@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { findMissingRequiredFields } from "./requiredFields";
+import { findMissingRequiredFields, leadEditFieldErrors } from "./requiredFields";
 
 describe("findMissingRequiredFields", () => {
   it("reports a configured field that is absent", () => {
@@ -28,5 +28,27 @@ describe("findMissingRequiredFields", () => {
 
   it("reports every missing required field", () => {
     expect(findMissingRequiredFields(["email", "phone", "company"], {})).toEqual(["email", "phone"]);
+  });
+});
+
+describe("leadEditFieldErrors", () => {
+  const org = { requiredLeadFields: ["name", "phone"], leadFieldConfig: { budget: "mandatory" } };
+  // An older lead created before Budget became mandatory and before phone was required.
+  const oldLead = { name: "Ravi", phone: null, customData: {} };
+
+  it("lets an older lead be updated without filling newly required fields", () => {
+    expect(leadEditFieldErrors(org, { ...oldLead, status: "contacted" }, ["status"])).toEqual({});
+    expect(leadEditFieldErrors(org, { ...oldLead, name: "Ravi K" }, ["name"])).toEqual({});
+  });
+
+  it("blocks sending a required field empty", () => {
+    expect(leadEditFieldErrors(org, oldLead, ["name", "phone", "budget"])).toEqual({
+      phone: "Phone is required.",
+      budget: "Budget is required.",
+    });
+  });
+
+  it("passes once the sent fields are filled", () => {
+    expect(leadEditFieldErrors(org, { ...oldLead, phone: "+919876543210", customData: { budget: "50,000" } }, ["phone", "budget"])).toEqual({});
   });
 });

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { requireOrg, hasPermission } from "@/lib/rbac";
 import { BillingService } from "@/domains/billing/service";
 import { BillingLifecycleService } from "@/domains/billing/lifecycleService";
+import { InvoiceService } from "@/domains/billing/invoiceService";
 import { PLAN_LIMITS } from "@/domains/billing/planService";
 import { isConfigured, yearlyAvailable } from "@/lib/billing/razorpay";
 import { BillingManager } from "@/components/settings/BillingManager";
@@ -19,12 +20,13 @@ const CANONICAL: Record<string, string> = { pro: "starter", business: "unlimited
 export default async function BillingPage() {
   if (!(await hasPermission("billing.manage"))) redirect("/leads");
   const { organizationId, userId } = await requireOrg();
-  const [billing, status, invoices, [me], { cycle, scheduled }] = await Promise.all([
+  const [billing, status, invoices, [me], { cycle, scheduled }, taxInvoices] = await Promise.all([
     BillingService.get(organizationId),
     BillingLifecycleService.getTenantBillingStatus(organizationId),
     BillingService.invoices(organizationId),
     db.select({ firstName: users.firstName, lastName: users.lastName, email: users.email, phone: users.phone }).from(users).where(eq(users.id, userId)).limit(1),
     BillingService.subscriptionInfo(organizationId),
+    InvoiceService.listForOrg(organizationId),
   ]);
   const plan = billing?.plan ?? "free";
 
@@ -52,7 +54,8 @@ export default async function BillingPage() {
         yearlyAvailable={isConfigured() && yearlyAvailable()}
         cycle={cycle ?? "monthly"}
         scheduled={scheduled}
-        gst={{ billingName: billing?.billingName ?? "", gstin: billing?.gstin ?? "" }}
+        gst={{ billingName: billing?.billingName ?? "", gstin: billing?.gstin ?? "", billingEmail: billing?.billingEmail ?? "" }}
+        taxInvoices={taxInvoices.map((i) => ({ id: i.id, number: i.invoiceNumber, date: i.issuedAt, total: i.totalAmount, status: i.status, isCredit: i.type === "credit_note" }))}
         supportWhatsapp={(process.env.SUPPORT_WHATSAPP ?? "").replace(/\D/g, "")}
         limits={PLAN_LIMITS}
         invoices={invoices.map((i) => ({

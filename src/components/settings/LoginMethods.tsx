@@ -93,7 +93,7 @@ export function LoginMethods({ email, phone, notice }: { email: string | null; p
               <CheckCircle2 className="h-4 w-4 text-emerald-600" /> {email}
             </p>
             <Button variant="outline" size="sm" onClick={sendPasswordLink} disabled={busy}>
-              Set or reset password
+              Email me a reset link
             </Button>
           </div>
         ) : (

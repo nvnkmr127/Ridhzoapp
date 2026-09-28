@@ -65,6 +65,7 @@ describe('Tenant Isolation Tests', () => {
   it('should resolve organizationId from LeadSource when payload organizationId is omitted', async () => {
     vi.spyOn(LeadSourceService, 'getSource').mockResolvedValueOnce({
       id: 'source-org-A',
+      aiContext: null,
       name: 'Source A',
       organizationId: 'org-A',
       type: 'webform',

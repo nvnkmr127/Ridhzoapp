@@ -2,7 +2,7 @@ import "server-only";
 import { generateText, tool, stepCountIs } from "ai";
 import { z } from "zod";
 import { LeadService } from "@/domains/leads/service";
-import { OrgService } from "@/domains/organizations/service";
+import { loadAiBusiness } from "@/domains/organizations/aiBusiness";
 import { businessPreamble, LEAD_CONTEXT_RULES, UNTRUSTED_NOTE } from "@/lib/ai/leadBrief";
 import { leadAiContext } from "@/lib/ai/leadContext";
 import { assertLeadAccess } from "@/lib/leads/access";
@@ -76,7 +76,7 @@ export async function runLeadAgent(
     return { text: "AI isn't configured (no AI_GATEWAY_API_KEY).", proposals: [], steps: 0, enabled: false };
   }
 
-  const org = await OrgService.getOrganization(ctx.organizationId);
+  const org = await loadAiBusiness(ctx.organizationId, { query: message });
   const proposals: AgentProposal[] = [];
 
   // Lead-page context: when the assistant is opened on a lead, tell the model which one so

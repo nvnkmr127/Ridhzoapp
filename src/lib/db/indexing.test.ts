@@ -57,6 +57,7 @@ describe('Database Schema & Indexing Integration', () => {
     it('should query deduplication using organizationId + phone condition', async () => {
       vi.spyOn(LeadSourceService, 'getSource').mockResolvedValueOnce({
         id: 'source-1',
+        aiContext: null,
         name: 'Webform Source',
         organizationId: 'org-tenant-1',
         type: 'webform',

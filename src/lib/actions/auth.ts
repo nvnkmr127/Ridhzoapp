@@ -348,7 +348,7 @@ export async function resetPasswordAction(input: z.infer<typeof resetPasswordSch
     // Update password
     await db
       .update(users)
-      .set({ passwordHash, updatedAt: new Date() })
+      .set({ passwordHash, passwordSet: true, updatedAt: new Date() })
       .where(and(eq(users.email, reset.email), isNull(users.deletedAt)));
 
     // Burn token

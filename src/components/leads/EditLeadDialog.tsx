@@ -24,7 +24,7 @@ import {
   getLeadFieldValue,
   type LeadFieldConfig,
 } from "@/lib/leads/fieldConfig"
-import { getLeadFieldConfigAction } from "@/lib/actions/organizations"
+import { getLeadFieldConfigAction, getRequiredContactFieldsAction } from "@/lib/actions/organizations"
 
 const formSchema = z.object({
   id: z.guid(),
@@ -66,6 +66,7 @@ export function EditLeadDialog({ lead, compact = false }: EditLeadDialogProps & 
   const [open, setOpen] = React.useState(false);
   const { toast } = useToast();
   const [fieldConfig, setFieldConfig] = React.useState<LeadFieldConfig>(DEFAULT_LEAD_FIELD_CONFIG);
+  const [requiredContact, setRequiredContact] = React.useState<("email" | "phone")[]>([]);
   
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -88,6 +89,7 @@ export function EditLeadDialog({ lead, compact = false }: EditLeadDialogProps & 
   React.useEffect(() => {
     if (open) {
       getLeadFieldConfigAction().then(setFieldConfig).catch(() => {});
+      getRequiredContactFieldsAction().then(setRequiredContact).catch(() => {});
       form.reset({
         id: lead.id,
         name: lead.name,
@@ -105,6 +107,15 @@ export function EditLeadDialog({ lead, compact = false }: EditLeadDialogProps & 
   }, [open, lead, form]);
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
+    // Contact fields the workspace requires (Settings → Lead fields & requirements).
+    const missingContact = requiredContact.filter((f) => !values[f]?.toString().trim());
+    if (missingContact.length > 0) {
+      for (const f of missingContact) form.setError(f, { message: `${f === "email" ? "Email" : "Phone"} is required.` });
+      const msg = `Please fill in required field: ${missingContact.map((f) => (f === "email" ? "Email" : "Phone")).join(", ")}`;
+      toast({ variant: "destructive", title: "Required field missing", description: msg });
+      return;
+    }
+
     // Validate mandatory configured default fields
     const missingConfigured = CONFIGURABLE_LEAD_FIELDS.filter((f) => {
       if (fieldConfig[f.key] !== "mandatory") return false;
@@ -191,7 +202,7 @@ export function EditLeadDialog({ lead, compact = false }: EditLeadDialogProps & 
               name="email"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Email</FormLabel>
+                  <FormLabel>Email{requiredContact.includes("email") && <span className="text-destructive"> *</span>}</FormLabel>
                   <FormControl>
                     <Input type="email" {...field} />
                   </FormControl>
@@ -204,7 +215,7 @@ export function EditLeadDialog({ lead, compact = false }: EditLeadDialogProps & 
               name="phone"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Phone</FormLabel>
+                  <FormLabel>Phone{requiredContact.includes("phone") && <span className="text-destructive"> *</span>}</FormLabel>
                   <FormControl>
                     <Input type="tel" inputMode="tel" placeholder="+91 98765 43210" {...field} />
                   </FormControl>

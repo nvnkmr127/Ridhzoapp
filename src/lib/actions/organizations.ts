@@ -31,8 +31,8 @@ const updateOrgSchema = z.object({
   dateFormat: z.string().trim().min(1).max(20),
   // Company information
   industry: opt(120),
-  // Free-text business description fed to the AI assists (see organizations.aiContext).
-  aiContext: opt(4000),
+  // aiContext is saved only by the AI context dialog (lib/actions/aiContext) — not here, where a
+  // missing value would become null and wipe it on every General settings save.
   phone: opt(30),
   // Blank → null; otherwise must parse as a URL (http(s):// prepended if the user omitted it), so a
   // direct/API caller can't persist "not a url" that the client would have rejected.
@@ -91,6 +91,13 @@ const updateOrgSchema = z.object({
 export async function getOrganizationAction() {
   const { organizationId } = await requireOrg();
   return OrgService.getOrganization(organizationId);
+}
+
+// Contact fields (email / phone) the workspace requires — so lead forms can mark and check them.
+export async function getRequiredContactFieldsAction(): Promise<("email" | "phone")[]> {
+  const { organizationId } = await requireOrg();
+  const org = await OrgService.getOrganization(organizationId);
+  return (["email", "phone"] as const).filter((f) => (org?.requiredLeadFields ?? []).includes(f));
 }
 
 export async function getLeadFieldConfigAction() {

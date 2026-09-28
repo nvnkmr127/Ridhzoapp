@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, timestamp, jsonb, integer, text } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, jsonb, integer, text, index } from 'drizzle-orm/pg-core';
 
 // The tenant. Every tenant-scoped row carries organization_id; a user belongs to exactly one org.
 export const organizations = pgTable('organizations', {
@@ -19,7 +19,11 @@ export const organizations = pgTable('organizations', {
   industry: varchar('industry', { length: 120 }),
   // Free-text business description the tenant writes ("what we sell, tone, key offerings"). Fed to
   // the AI assists so multi-tenant generations speak as each business. Future: filled from docs/site.
-  aiContext: text('ai_context'),
+  aiContext: text('ai_context'), // "Other notes" in the AI business context (free text)
+  // Structured business context for AI (what we sell, rules, tone…). Shape: AiProfile in lib/ai/businessProfile.
+  aiProfile: jsonb('ai_profile').$type<Record<string, unknown>>().default({}).notNull(),
+  // Last few saved versions of aiProfile + aiContext, newest first, so a bad edit can be undone.
+  aiContextHistory: jsonb('ai_context_history').$type<{ at: string; by: string | null; profile: Record<string, unknown>; notes: string | null }[]>().default([]).notNull(),
   phone: varchar('phone', { length: 30 }),
   website: varchar('website', { length: 255 }),
   addressLine1: varchar('address_line1', { length: 255 }),
@@ -76,6 +80,7 @@ export const organizations = pgTable('organizations', {
   // GST details for tax invoices (optional). Sent to Razorpay as the customer's GSTIN so invoices carry it.
   billingName: varchar('billing_name', { length: 255 }),
   gstin: varchar('gstin', { length: 15 }),
+  billingEmail: varchar('billing_email', { length: 255 }), // where GST invoices are emailed; null = don't email
   razorpaySubscriptionId: varchar('razorpay_subscription_id', { length: 255 }),
   planStatus: varchar('plan_status', { length: 30 }).default('active').notNull(), // active, created, halted, cancelled
   currentPeriodEnd: timestamp('current_period_end'),
@@ -96,3 +101,15 @@ export const organizations = pgTable('organizations', {
   // don't silently clobber each other (the stale save is rejected with a conflict).
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
+
+// Reference documents (price lists, FAQs, brochures) the AI quotes from when relevant. Plain text;
+// the most relevant chunks are picked per request (lib/ai/businessProfile pickKnowledge).
+export const aiKnowledgeDocs = pgTable('ai_knowledge_docs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  organizationId: uuid('organization_id').references(() => organizations.id).notNull(),
+  title: varchar('title', { length: 255 }).notNull(),
+  content: text('content').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => ({
+  orgIdx: index('ai_knowledge_docs_org_idx').on(t.organizationId),
+}));

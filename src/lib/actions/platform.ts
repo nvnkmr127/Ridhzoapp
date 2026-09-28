@@ -557,7 +557,7 @@ export async function generateInvoiceAction(params: z.input<typeof invoiceSchema
   if (!parsed.success) return fail("VALIDATION", parsed.error.issues[0]?.message ?? "Check the invoice details.");
   try {
     const { InvoiceService } = await import("@/domains/billing/invoiceService");
-    const inv = await InvoiceService.generateInvoice({ ...parsed.data, gstin: parsed.data.gstin || null }, session.user.id);
+    const inv = await InvoiceService.generateInvoice({ ...parsed.data, gstin: parsed.data.gstin || undefined }, session.user.id);
     revalidatePath("/admin");
     return ok(inv);
   } catch (e) {

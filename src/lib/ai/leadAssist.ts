@@ -4,7 +4,7 @@ import { leads } from "@/db/schema";
 import { generateText, aiEnabled } from "@/lib/ai/client";
 import { hasAiWorthyContext, leadSystemPrompt } from "@/lib/ai/leadBrief";
 import { leadAiContext } from "@/lib/ai/leadContext";
-import { OrgService } from "@/domains/organizations/service";
+import { loadAiBusiness } from "@/domains/organizations/aiBusiness";
 import { PlanService } from "@/domains/billing/planService";
 import { CustomFieldService } from "@/domains/customFields/service";
 import { briefFormatInstructions, parseLeadBrief, visiblePlan, type LeadPlan, type PlanInput } from "@/lib/ai/leadPlan";
@@ -27,7 +27,7 @@ function draftSystem(channel: "whatsapp" | "email", tone: keyof typeof TONES, la
   const lang =
     language && language.toLowerCase() !== "auto"
       ? `Write in ${language}.`
-      : "Write in the language the lead used in their messages or form answers; default to English.";
+      : "Write in the language the lead used in their messages or form answers; otherwise the business's default reply language if one is given, else English.";
   const shape =
     channel === "email"
       ? 'Return a short email as: first line "Subject: <subject>", then a blank line, then the body (under 120 words).'
@@ -36,7 +36,7 @@ function draftSystem(channel: "whatsapp" | "email", tone: keyof typeof TONES, la
     `You are helping a salesperson write the next ${channel === "email" ? "email" : "WhatsApp message"} to a lead. ` +
     `Tone: ${TONES[tone]}. ${lang} Be specific to what the lead asked for (their form answers and messages) ` +
     "and to where the conversation is; don't repeat what was already sent. End with one clear next step. " +
-    "No emojis unless natural. Use ONLY facts from the context — never invent prices, offers, dates or details. " +
+    "Follow the business's emoji and sign-off preferences if given; otherwise no emojis unless natural. Use ONLY facts from the context — never invent prices, offers, dates or details. " +
     shape
   );
 }
@@ -56,10 +56,8 @@ export async function draftReplyForLead(
   if (!aiEnabled()) return { ...fallback, ai: false };
   if (!(await PlanService.consumeAiCredit(organizationId))) return { ...fallback, ai: false, outOfCredits: true };
 
-  const [{ text: context }, org] = await Promise.all([
-    leadAiContext(lead, organizationId),
-    OrgService.getOrganization(organizationId),
-  ]);
+  const { text: context } = await leadAiContext(lead, organizationId);
+  const org = await loadAiBusiness(organizationId, { sourceId: lead.sourceId, query: context });
   const prompt = `${context}\n\nWrite the next ${channel === "email" ? "email" : "WhatsApp message"} to send this lead.`;
   const raw = await generateText(leadSystemPrompt(org, draftSystem(channel, tone, language)), prompt);
   if (!raw) {
@@ -147,7 +145,7 @@ export async function recapForLead(lead: Lead, organizationId: string, refresh =
     now: extras.now ?? new Date(),
   };
 
-  const org = await OrgService.getOrganization(organizationId);
+  const org = await loadAiBusiness(organizationId, { sourceId: lead.sourceId, query: context });
   const system = leadSystemPrompt(org, `${RECAP_SYSTEM}\n\n${briefFormatInstructions(planInput, extras.timezone ?? "UTC")}`);
   const raw = await generateText(system, context, 900);
   if (!raw) {

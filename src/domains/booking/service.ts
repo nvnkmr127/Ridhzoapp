@@ -1,6 +1,7 @@
 import { db } from "@/db";
+import { dedupConditions } from "@/lib/leads/dedupKeys";
 import { organizations, leads, meetingLocations } from "@/db/schema";
-import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, or } from "drizzle-orm";
 import { LeadService } from "@/domains/leads/service";
 import { MeetingService } from "@/domains/meetings/service";
 import { isWorkDay, localDayHour, wallTimeToUtc } from "@/lib/workHours";
@@ -70,18 +71,14 @@ export class BookingService {
     const when = wallTimeToUtc(input.date, hh, mm, org.timezone);
     if (!this.isBookable(org, when)) throw new BookingError("That time isn't available any more. Please pick another slot.");
 
-    // Reuse an existing live lead with the same email or phone (digits only, so "+91 98765…" and
-    // "98765…" match); never one sitting in the recycle bin.
+    // Reuse an existing live lead with the same email or phone (shared rule: lib/leads/dedupKeys);
+    // never one sitting in the recycle bin.
     let leadId: string | null = null;
     let ownerId: string | null = null;
-    const email = input.email?.trim().toLowerCase() || null;
-    const digits = input.phone ? input.phone.replace(/\D/g, "").slice(-10) : "";
-    if (email || digits.length >= 7) {
-      const conds = [];
-      if (email) conds.push(sql`lower(${leads.email}) = ${email}`);
-      if (digits.length >= 7) conds.push(sql`right(regexp_replace(${leads.phone}, '\\D', '', 'g'), 10) = ${digits}`);
+    const conds = dedupConditions({ email: input.email, phone: input.phone });
+    if (conds.length) {
       const [existing] = await db.select({ id: leads.id, ownerId: leads.ownerId }).from(leads)
-        .where(and(eq(leads.organizationId, org.id), isNull(leads.deletedAt), or(...conds))).limit(1);
+        .where(and(eq(leads.organizationId, org.id), isNull(leads.deletedAt), or(...conds))).orderBy(leads.createdAt).limit(1);
       if (existing) { leadId = existing.id; ownerId = existing.ownerId; }
     }
 
@@ -90,6 +87,7 @@ export class BookingService {
         { name: input.name, email: input.email, phone: input.phone },
         null,
         org.id,
+        { inbound: true },
       );
       leadId = lead.id;
       ownerId = lead.ownerId;

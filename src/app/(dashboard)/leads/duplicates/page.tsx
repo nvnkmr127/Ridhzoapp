@@ -55,7 +55,7 @@ export default async function DuplicatesPage() {
         <Link href="/leads"><Button variant="ghost" size="icon" aria-label="Go back"><ArrowLeft className="h-5 w-5" /></Button></Link>
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Duplicate Leads</h2>
-          <p className="text-sm text-muted-foreground">Leads sharing an email or phone. Merge keeps the first and moves all history onto it.</p>
+          <p className="text-sm text-muted-foreground">Leads with the same email or phone (any format — +91, spaces or none), plus same-name suggestions to check. Merge keeps the first and moves all history onto it.</p>
         </div>
       </div>
       <AutoMergeToggle initial={(org?.autoMergeDuplicates ?? 0) === 1} />

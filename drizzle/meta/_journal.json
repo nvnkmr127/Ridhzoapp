@@ -575,6 +575,27 @@
       "when": 1790560156134,
       "tag": "0081_lead_phone_digits_trgm",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1790595735558,
+      "tag": "0082_password_set",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1790596189268,
+      "tag": "0083_billing_email",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1790596729399,
+      "tag": "0084_ai_business_context",
+      "breakpoints": true
     }
   ]
 }

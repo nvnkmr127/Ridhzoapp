@@ -2,11 +2,13 @@ import { db } from "@/db";
 import { orgDialCode } from "@/lib/leads/orgDialCode";
 import { leads, leadIngestionLogs, leadStatusHistory } from "@/db/schema";
 import { NormalizedLeadPayload } from "../integrations/types";
-import { eq, or, and, isNull, sql } from "drizzle-orm";
+import { eq, or, and, isNull } from "drizzle-orm";
 import { eventBus } from "@/lib/events/emitter";
 import { LeadSourceService } from "@/domains/leads/sourceService";
 import { normalizeEmail, normalizePhone } from "@/lib/leads/normalize";
 import { findMissingRequiredFields } from "@/lib/leads/requiredFields";
+import { dedupConditions } from "@/lib/leads/dedupKeys";
+import { findMissingMandatoryLeadFields, resolveLeadFieldConfig } from "@/lib/leads/fieldConfig";
 import { organizations } from "@/db/schema";
 import { PlanService } from "@/domains/billing/planService";
 
@@ -112,14 +114,14 @@ export class IngestionService {
     // Match phones on digits only (so "+15550101234" / "15550101234" / "+1 555 010 1234" dedup) and
     // NEVER dedup against a soft-deleted lead — otherwise a re-inquiry would be merged into a lead
     // sitting in the recycle bin and silently lost. Mirrors LeadService.createLead's dedup.
-    const phoneDigits = phone ? phone.replace(/\D/g, "") : "";
-    const searchConditions = [];
-    if (email) searchConditions.push(eq(leads.email, email));
-    if (phoneDigits) searchConditions.push(sql`regexp_replace(${leads.phone}, '\\D', '', 'g') = ${phoneDigits}`);
+    // Same-person rule as every other duplicate check (lib/leads/dedupKeys).
+    const searchConditions = dedupConditions({ email, phone });
     const dedupWhere = and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt), or(...searchConditions));
 
     // 2. Organization-Scoped Deduplication (active leads only)
-    const [existingLead] = await db.select().from(leads).where(dedupWhere).limit(1);
+    const [existingLead] = searchConditions.length
+      ? await db.select().from(leads).where(dedupWhere).orderBy(leads.createdAt).limit(1)
+      : [];
     if (existingLead) {
       return this.applyDedup(existingLead, payload, organizationId);
     }
@@ -128,15 +130,14 @@ export class IngestionService {
     // missing one is still SAVED — the customer can't be asked again, and dropping a paid ad lead
     // over a blank "company" loses the sale. It's flagged instead (note + "missing-info" tag).
     const [orgRow] = await db
-      .select({ requiredLeadFields: organizations.requiredLeadFields })
+      .select({ requiredLeadFields: organizations.requiredLeadFields, leadFieldConfig: organizations.leadFieldConfig })
       .from(organizations)
       .where(eq(organizations.id, organizationId))
       .limit(1);
-    const missing = findMissingRequiredFields(orgRow?.requiredLeadFields, {
-      email,
-      phone,
-      company: payload.company,
-    });
+    const missing: string[] = [
+      ...findMissingRequiredFields(orgRow?.requiredLeadFields, { email, phone }),
+      ...findMissingMandatoryLeadFields(resolveLeadFieldConfig(orgRow?.leadFieldConfig), { company: payload.company, customData: payload.customData }).map((f) => f.label),
+    ];
 
     // 3. Check plan lead limit and insert with organizationId.
     try {
@@ -171,7 +172,7 @@ export class IngestionService {
       }).returning();
     } catch (e: any) {
       if (e?.code === "23505") {
-        const [raced] = await db.select().from(leads).where(dedupWhere).limit(1);
+        const [raced] = searchConditions.length ? await db.select().from(leads).where(dedupWhere).limit(1) : [];
         if (raced) return this.applyDedup(raced, payload, organizationId);
       }
       throw e;

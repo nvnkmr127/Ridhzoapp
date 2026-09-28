@@ -28,6 +28,7 @@ import { FilterGroup, FilterRule } from "@/domains/savedViews/service";
 import { normalizeEmail, normalizePhone } from "@/lib/leads/normalize";
 import { PlanService } from "@/domains/billing/planService";
 import { assertRequiredLeadFields } from "@/lib/leads/requiredFields";
+import { dedupConditions, sameLead } from "@/lib/leads/dedupKeys";
 import { SmartSegmentationService, type SmartSegmentKey } from "./smartSegmentationService";
 
 export type ListLeadsOptions = {
@@ -76,24 +77,23 @@ export class LeadService {
     data: { name: string; email?: string; phone?: string; company?: string; ownerId?: string; teamId?: string; customData?: Record<string, unknown> },
     createdById: string | null,
     organizationId: string,
+    opts: { inbound?: boolean } = {},
   ): Promise<typeof leads.$inferSelect> {
     await PlanService.assertCanAddLead(organizationId);
-    // Enforce the org's required-field configuration at the ONE spot every synchronous create path
-    // (manual UI, REST API, booking) funnels through — so the setting can't be UI-only.
-    await assertRequiredLeadFields(organizationId, data);
+    // Enforce the org's required-field configuration at the ONE spot every team create path (manual
+    // UI, REST API / phone app) funnels through — so the setting can't be UI-only. Inbound leads (a
+    // public booking) skip it: the person booking was never asked for Budget etc., and losing the
+    // booking over it is worse than a blank field — same rule as ad/web-form ingestion.
+    if (!opts.inbound) await assertRequiredLeadFields(organizationId, data);
     // Dedup within THIS org only — same email/phone in another tenant is a different lead.
     // Canonicalize first so "+1 555-0101" and "+15550101" are stored and compared identically;
     // otherwise formatting differences slip past both the app check and the DB unique index.
     const cleanEmail = normalizeEmail(data.email);
     const cleanPhone = normalizePhone(data.phone, await orgDialCode(organizationId));
-    // Compare phones on digits only so "+15550101234", "15550101234" and "+1 (555) 010-1234" are
-    // treated as the same number — the DB unique index only catches exact-string matches, so this
-    // app-level check is what dedups country-code / plus-vs-no-plus variants at create time.
-    const phoneDigits = cleanPhone ? cleanPhone.replace(/\D/g, "") : "";
-    if (cleanEmail || cleanPhone) {
-      const orConds = [];
-      if (cleanEmail) orConds.push(eq(leads.email, cleanEmail));
-      if (phoneDigits) orConds.push(sql`regexp_replace(${leads.phone}, '\\D', '', 'g') = ${phoneDigits}`);
+    // Same-person rule shared by every duplicate check (lib/leads/dedupKeys): email ignoring case,
+    // phone on its last 10 digits — the DB unique index only catches exact strings.
+    const orConds = dedupConditions({ email: cleanEmail, phone: cleanPhone });
+    if (orConds.length) {
       const existing = await db
         .select({ id: leads.id, name: leads.name, email: leads.email, phone: leads.phone, deletedAt: leads.deletedAt })
         .from(leads)
@@ -101,9 +101,10 @@ export class LeadService {
 
       const active = existing.filter((r) => !r.deletedAt);
       const inRecycleBin = existing.filter((r) => r.deletedAt);
+      const incoming = { email: cleanEmail, phone: cleanPhone };
 
-      const dupActiveEmail = cleanEmail && active.find((r) => r.email?.toLowerCase() === cleanEmail.toLowerCase());
-      const dupActivePhone = phoneDigits && active.find((r) => r.phone && r.phone.replace(/\D/g, "") === phoneDigits);
+      const dupActiveEmail = active.find((r) => sameLead(incoming, r).email);
+      const dupActivePhone = active.find((r) => sameLead(incoming, r).phone);
 
       if (dupActiveEmail && dupActivePhone) {
         const err = new Error(`A lead with this email and phone already exists ("${dupActivePhone.name}")`);
@@ -132,12 +133,9 @@ export class LeadService {
       if (inRecycleBin.length > 0) {
         for (const trashed of inRecycleBin) {
           const updates: Record<string, unknown> = {};
-          if (cleanEmail && trashed.email?.toLowerCase() === cleanEmail.toLowerCase()) {
-            updates.email = null;
-          }
-          if (phoneDigits && trashed.phone && trashed.phone.replace(/\D/g, "") === phoneDigits) {
-            updates.phone = null;
-          }
+          const match = sameLead(incoming, trashed);
+          if (match.email) updates.email = null;
+          if (match.phone) updates.phone = null;
           if (Object.keys(updates).length > 0) {
             await db.update(leads).set(updates).where(eq(leads.id, trashed.id));
           }
@@ -242,6 +240,28 @@ export class LeadService {
       const patch: Record<string, unknown> = { ...data, updatedAt: new Date() };
       if ("email" in data) patch.email = normalizeEmail(data.email) ?? null;
       if ("phone" in data) patch.phone = normalizePhone(data.phone, await orgDialCode(organizationId)) ?? null;
+      // Same duplicate rule as create: the unique index only catches the exact same text, so
+      // "9876543210" vs "+919876543210" would otherwise slip through on edit.
+      const incoming = { email: "email" in data ? (patch.email as string | null) : null, phone: "phone" in data ? (patch.phone as string | null) : null };
+      const dupConds = dedupConditions(incoming);
+      if (dupConds.length) {
+        const others = await db
+          .select({ name: leads.name, email: leads.email, phone: leads.phone })
+          .from(leads)
+          .where(and(eq(leads.organizationId, organizationId), ne(leads.id, leadId), isNull(leads.deletedAt), or(...dupConds)))
+          .limit(5);
+        const byEmail = others.find((o) => sameLead(incoming, o).email);
+        const byPhone = others.find((o) => sameLead(incoming, o).phone);
+        if (byEmail || byPhone) {
+          const err = new Error(`Already used by lead "${(byEmail ?? byPhone)!.name}"`);
+          (err as any).code = "VALIDATION";
+          (err as any).fieldErrors = {
+            ...(byEmail ? { email: `Already used by active lead "${byEmail.name}".` } : {}),
+            ...(byPhone ? { phone: `Already used by active lead "${byPhone.name}".` } : {}),
+          };
+          throw err;
+        }
+      }
       const conds = [eq(leads.id, leadId), eq(leads.organizationId, organizationId)];
       // Optimistic concurrency: only write if the row hasn't changed since the editor loaded it.
       // Truncate to milliseconds so Postgres' microsecond precision doesn't cause false conflicts

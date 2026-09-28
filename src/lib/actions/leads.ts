@@ -155,7 +155,8 @@ export async function updateLeadAction(input: z.infer<typeof updateLeadSchema>) 
   const { id, expectedUpdatedAt, customData: inputCustomData, budget, location, industry, companySize, websiteUrl, ...data } = parsed.data;
 
   const { OrgService } = await import("@/domains/organizations/service");
-  const { resolveLeadFieldConfig, findMissingMandatoryLeadFields } = await import("@/lib/leads/fieldConfig");
+  const { resolveLeadFieldConfig } = await import("@/lib/leads/fieldConfig");
+  const { leadEditFieldErrors } = await import("@/lib/leads/requiredFields");
   const org = await OrgService.getOrganization(organizationId);
   const fieldConfig = resolveLeadFieldConfig(org?.leadFieldConfig);
 
@@ -166,27 +167,32 @@ export async function updateLeadAction(input: z.infer<typeof updateLeadSchema>) 
   const updatedCustom: Record<string, unknown> = { ...currentCustom, ...(inputCustomData ?? {}) };
 
   if (budget !== undefined) {
-    if (fieldConfig.budget === "hidden") delete updatedCustom.budget;
+    // Hidden only hides the field — never deletes what's already stored.
+    if (fieldConfig.budget === "hidden") { /* leave as is */ }
     else if (budget.trim()) updatedCustom.budget = budget.trim();
     else delete updatedCustom.budget;
   }
   if (location !== undefined) {
-    if (fieldConfig.location === "hidden") delete updatedCustom.location;
+    // Hidden only hides the field — never deletes what's already stored.
+    if (fieldConfig.location === "hidden") { /* leave as is */ }
     else if (location.trim()) updatedCustom.location = location.trim();
     else delete updatedCustom.location;
   }
   if (industry !== undefined) {
-    if (fieldConfig.industry === "hidden") delete updatedCustom.industry;
+    // Hidden only hides the field — never deletes what's already stored.
+    if (fieldConfig.industry === "hidden") { /* leave as is */ }
     else if (industry.trim()) updatedCustom.industry = industry.trim();
     else delete updatedCustom.industry;
   }
   if (companySize !== undefined) {
-    if (fieldConfig.companySize === "hidden") delete updatedCustom.companySize;
+    // Hidden only hides the field — never deletes what's already stored.
+    if (fieldConfig.companySize === "hidden") { /* leave as is */ }
     else if (companySize.trim()) updatedCustom.companySize = companySize.trim();
     else delete updatedCustom.companySize;
   }
   if (websiteUrl !== undefined) {
-    if (fieldConfig.websiteUrl === "hidden") delete updatedCustom.websiteUrl;
+    // Hidden only hides the field — never deletes what's already stored.
+    if (fieldConfig.websiteUrl === "hidden") { /* leave as is */ }
     else if (websiteUrl.trim()) updatedCustom.websiteUrl = websiteUrl.trim();
     else delete updatedCustom.websiteUrl;
   }
@@ -197,7 +203,7 @@ export async function updateLeadAction(input: z.infer<typeof updateLeadSchema>) 
   if (data.email !== undefined) cleanData.email = data.email || undefined;
   if (data.phone !== undefined) cleanData.phone = data.phone || undefined;
   if (data.company !== undefined) {
-    cleanData.company = fieldConfig.company === "hidden" ? undefined : (data.company || undefined);
+    if (fieldConfig.company !== "hidden") cleanData.company = data.company || undefined;
   }
 
   // Validate resulting lead against mandatory fields
@@ -207,10 +213,10 @@ export async function updateLeadAction(input: z.infer<typeof updateLeadSchema>) 
     company: cleanData.company !== undefined ? cleanData.company : current.company,
     customData: updatedCustom,
   };
-  const missing = findMissingMandatoryLeadFields(fieldConfig, candidateLead as Record<string, unknown>);
-  if (missing.length > 0) {
-    const fieldErrors = Object.fromEntries(missing.map((m) => [m.key, `${m.label} is required.`]));
-    return fail("VALIDATION", `Please fill in required field(s): ${missing.map((m) => m.label).join(", ")}`, fieldErrors);
+  const touched = Object.entries({ ...data, budget, location, industry, companySize, websiteUrl }).filter(([, v]) => v !== undefined).map(([k]) => k);
+  const fieldErrors = leadEditFieldErrors(org, candidateLead as Record<string, unknown>, touched);
+  if (Object.keys(fieldErrors).length > 0) {
+    return fail("VALIDATION", `Please fill in: ${Object.values(fieldErrors).map((e) => e.replace(" is required.", "")).join(", ")}`, fieldErrors);
   }
 
   try {

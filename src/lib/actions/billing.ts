@@ -110,6 +110,8 @@ const gstSchema = z.object({
   billingName: z.string().trim().max(255).transform((v) => v || null),
   gstin: z.string().trim().toUpperCase().transform((v) => v || null)
     .refine((v) => v === null || GSTIN.test(v), "That GSTIN doesn't look right — it's 15 characters, like 36ABCDE1234F1Z5."),
+  billingEmail: z.string().trim().toLowerCase().max(255).transform((v) => v || null)
+    .refine((v) => v === null || z.email().safeParse(v).success, "Please enter a valid email for invoices."),
 });
 
 export async function saveGstDetailsAction(input: z.input<typeof gstSchema>) {
@@ -118,7 +120,7 @@ export async function saveGstDetailsAction(input: z.input<typeof gstSchema>) {
   if (!parsed.success) return fail("VALIDATION", parsed.error.issues[0]?.message ?? "Check your GST details.");
   try {
     await BillingService.saveGstDetails(organizationId, parsed.data);
-    await AuditService.log({ organizationId, userId, action: "billing.gst_update", entityType: "organization", entityId: organizationId, metadata: { hasGstin: !!parsed.data.gstin } });
+    await AuditService.log({ organizationId, userId, action: "billing.gst_update", entityType: "organization", entityId: organizationId, metadata: { hasGstin: !!parsed.data.gstin, hasBillingEmail: !!parsed.data.billingEmail } });
     revalidatePath("/settings/billing");
     return ok(parsed.data);
   } catch (e) {

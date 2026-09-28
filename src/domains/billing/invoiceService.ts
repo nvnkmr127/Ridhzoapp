@@ -4,12 +4,14 @@ import { eq } from "drizzle-orm";
 import { PlatformConfigService } from "@/domains/platform/configService";
 import { AuditService } from "@/domains/audit/service";
 import { UserFacingError } from "@/lib/actions/result";
+import { sendEmail, appUrl } from "@/lib/mail/mailer";
 
 export interface TaxInvoice {
   id: string;
   invoiceNumber: string; // "INV/2026-27/0001" or "CN/2026-27/0001" — sequential per series per financial year
   orgId: string;
   orgName: string;
+  buyerName?: string | null; // registered business name from the workspace's GST details, at issue time
   plan: string;
   amount: number; // taxable value, INR (2dp)
   taxRate: number; // 18
@@ -63,6 +65,21 @@ export function splitTax(taxable: number, gstin: string | null | undefined) {
   return { taxAmount: tax, cgst: 0, sgst: 0, igst: tax, placeOfSupply: buyer };
 }
 
+const inr = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(n);
+
+// Sent from the platform address (not the tenant's own SMTP) — this is our invoice to them.
+async function emailInvoice(to: string, inv: TaxInvoice) {
+  const link = appUrl(`/invoice/${inv.id}`);
+  await sendEmail({
+    to,
+    subject: `Ridhzo tax invoice ${inv.invoiceNumber} — ${inr(inv.totalAmount)}`,
+    html: `<p>Hi,</p>
+<p>Thanks for your payment. Your GST tax invoice <strong>${inv.invoiceNumber}</strong> for ${inr(inv.totalAmount)} (incl. GST) is ready.</p>
+<p><a href="${link}">View and download the invoice</a></p>
+<p style="color:#666;font-size:12px">You're getting this because this address is set for invoices on the Plan &amp; billing page. Change it there any time.</p>`,
+  });
+}
+
 export class InvoiceService {
   static async listInvoices(limit = 100): Promise<TaxInvoice[]> {
     const list = await PlatformConfigService.get<TaxInvoice[]>(INVOICE_CONFIG_KEY, []);
@@ -88,20 +105,23 @@ export class InvoiceService {
     actorId?: string | null,
   ): Promise<TaxInvoice> {
     const [org] = await db
-      .select({ id: organizations.id, name: organizations.name })
+      .select({ id: organizations.id, name: organizations.name, billingName: organizations.billingName, gstin: organizations.gstin, billingEmail: organizations.billingEmail })
       .from(organizations)
       .where(eq(organizations.id, params.orgId))
       .limit(1);
     if (!org) throw new UserFacingError("That organization doesn't exist.");
+    // Webhook charges don't pass a GSTIN — use the one saved on the billing page (B2B credit + CGST/IGST split).
+    const gstin = params.gstin !== undefined ? params.gstin : (org.gstin ?? null);
 
     const taxable = params.total != null ? round2(params.total / (1 + GST_RATE / 100)) : round2(params.amount ?? 0);
     if (!(taxable > 0)) throw new UserFacingError("Amount must be more than zero.");
-    const tax = splitTax(taxable, params.gstin);
+    const tax = splitTax(taxable, gstin);
     const totalAmount = params.total != null ? round2(params.total) : round2(taxable + tax.taxAmount);
     const now = new Date();
     const status = params.status ?? "paid";
 
     let invoice: TaxInvoice | null = null;
+    let isNew = false;
     await PlatformConfigService.update<TaxInvoice[]>(INVOICE_CONFIG_KEY, [], (list) => {
       if (params.paymentId) {
         const existing = list.find((i) => i.paymentId === params.paymentId);
@@ -110,18 +130,20 @@ export class InvoiceService {
           return list;
         }
       }
+      isNew = true;
       invoice = {
         id: `inv_${now.getTime()}_${Math.random().toString(36).slice(2, 7)}`,
         invoiceNumber: nextNumber(list, "INV", financialYear(now)),
         orgId: params.orgId,
         orgName: org.name,
+        buyerName: org.billingName ?? null,
         plan: params.plan,
         amount: taxable,
         taxRate: GST_RATE,
         ...tax,
         totalAmount,
         sacCode: "998313",
-        gstin: params.gstin ?? null,
+        gstin,
         status,
         type: "invoice",
         paymentId: params.paymentId ?? null,
@@ -142,6 +164,10 @@ export class InvoiceService {
       entityId: inv.id,
       metadata: { invoiceNumber: inv.invoiceNumber, totalAmount: inv.totalAmount, paymentId: inv.paymentId ?? null },
     });
+    // Best-effort: a mail hiccup must never fail the charge webhook that issued the invoice.
+    if (isNew && org.billingEmail) {
+      await emailInvoice(org.billingEmail, inv).catch((e) => console.error(`[billing] invoice email ${inv.invoiceNumber} failed`, e));
+    }
     return inv;
   }
 

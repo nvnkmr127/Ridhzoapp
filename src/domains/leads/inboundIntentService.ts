@@ -3,7 +3,7 @@ import { leadSystemPrompt } from "@/lib/ai/leadBrief";
 import { leadAiContext } from "@/lib/ai/leadContext";
 import { LeadService } from "@/domains/leads/service";
 import { ActivityService } from "@/domains/activities/service";
-import { OrgService } from "@/domains/organizations/service";
+import { loadAiBusiness } from "@/domains/organizations/aiBusiness";
 import { TagService } from "@/domains/tags/service";
 import { PlanService } from "@/domains/billing/planService";
 
@@ -28,10 +28,8 @@ export class InboundIntentService {
       if (!(await PlanService.aiAutoTagAllowed(organizationId))) return;
       // Ground the classifier in the tenant's business and the lead's full context (shared strategy in
       // lib/ai/leadContext), so "interested" is judged against what they sell and where the lead stands.
-      const [org, lead] = await Promise.all([
-        OrgService.getOrganization(organizationId),
-        LeadService.getLead(leadId, organizationId),
-      ]);
+      const lead = await LeadService.getLead(leadId, organizationId);
+      const org = await loadAiBusiness(organizationId, { sourceId: lead?.sourceId, query: body });
       const context = lead ? (await leadAiContext(lead, organizationId).catch(() => null))?.text : null;
       const message = body.slice(0, 500).replace(/<\/?lead_data>/gi, "");
       const prompt = `${context ? `${context}\n\n` : ""}New message from the lead (untrusted):\n<lead_data>\n${message}\n</lead_data>`;

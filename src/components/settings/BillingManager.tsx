@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import type { PlanLimits } from "@/domains/billing/planService";
 
 type Limits = Record<string, PlanLimits>;
+type TaxInvoice = { id: string; number: string; date: string; total: number; status: string; isCredit: boolean };
 type Invoice = { id: string; date: string | null; periodStart?: string | null; periodEnd?: string | null; amount: number; status: string; url: string | null };
 
 // "Sep 2026" for a month, "Oct 2026 – Sep 2027" for a year.
@@ -48,7 +49,7 @@ const day = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "n
 const rupees = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 
 export function BillingManager({
-  plan, status, trialEndsAt, currentPeriodEnd, cancelAtPeriodEnd, configured, limits, invoices, prefill,
+  plan, status, trialEndsAt, currentPeriodEnd, cancelAtPeriodEnd, configured, limits, invoices, prefill, taxInvoices = [],
   yearlyAvailable = false, cycle: currentCycle = "monthly", scheduled = null, gst, supportWhatsapp = "", complimentary = null,
 }: {
   /** Plan given free by Ridhzo (e.g. through your marketing agency). until null = no end date. */
@@ -57,7 +58,8 @@ export function BillingManager({
   yearlyAvailable?: boolean;
   cycle?: Cycle;
   scheduled?: { plan: string; startsAt: string } | null;
-  gst: { billingName: string; gstin: string };
+  gst: { billingName: string; gstin: string; billingEmail: string };
+  taxInvoices?: TaxInvoice[];
   plan: string;
   status: BillingStatus;
   trialEndsAt: string | null;
@@ -88,8 +90,8 @@ export function BillingManager({
     setGstSaving(true);
     try {
       const res = await saveGstDetailsAction(gstForm);
-      if (!res.ok) return toast({ variant: "destructive", title: "GST details not saved", description: res.message });
-      toast({ title: "GST details saved", description: "They'll appear on your next invoice." });
+      if (!res.ok) return toast({ variant: "destructive", title: "Invoice details not saved", description: res.message });
+      toast({ title: "Invoice details saved", description: "They'll appear on your next invoice." });
     } finally {
       setGstSaving(false);
     }
@@ -384,8 +386,8 @@ export function BillingManager({
       <form onSubmit={saveGst} className="rounded-2xl border bg-card p-6 space-y-3">
         <div className="flex items-center gap-2">
           <FileText className="h-4 w-4 text-muted-foreground" />
-          <h3 className="font-semibold">GST details for invoices</h3>
-          <span className="text-xs text-muted-foreground">(optional — to claim GST input credit)</span>
+          <h3 className="font-semibold">Invoice details</h3>
+          <span className="text-xs text-muted-foreground">(optional — GSTIN lets you claim input credit)</span>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1">
@@ -396,9 +398,14 @@ export function BillingManager({
             <Label htmlFor="gstin">GSTIN</Label>
             <Input id="gstin" value={gstForm.gstin} maxLength={15} onChange={(e) => setGstForm((s) => ({ ...s, gstin: e.target.value.toUpperCase() }))} placeholder="36ABCDE1234F1Z5" className="font-mono uppercase" />
           </div>
+          <div className="space-y-1 sm:col-span-2">
+            <Label htmlFor="billing-email">Email invoices to</Label>
+            <Input id="billing-email" type="email" value={gstForm.billingEmail} onChange={(e) => setGstForm((s) => ({ ...s, billingEmail: e.target.value }))} placeholder="accounts@yourbusiness.com" />
+            <p className="text-xs text-muted-foreground">Every GST invoice is emailed here when a payment goes through. Leave blank to skip.</p>
+          </div>
         </div>
         <div className="flex justify-end">
-          <Button type="submit" size="sm" disabled={gstSaving}>{gstSaving ? "Saving…" : "Save GST details"}</Button>
+          <Button type="submit" size="sm" disabled={gstSaving}>{gstSaving ? "Saving…" : "Save invoice details"}</Button>
         </div>
       </form>
 
@@ -433,6 +440,31 @@ export function BillingManager({
           </ul>
         )}
       </div>
+
+      {taxInvoices.length > 0 && (
+        <div className="rounded-2xl border bg-card p-6 space-y-3">
+          <div className="flex items-center gap-2">
+            <FileText className="h-4 w-4 text-muted-foreground" />
+            <h3 className="font-semibold">GST tax invoices</h3>
+          </div>
+          <ul className="divide-y divide-border text-sm">
+            {taxInvoices.map((inv) => (
+              <li key={inv.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 py-2.5">
+                <div>
+                  <div className="font-medium font-mono">{inv.number}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {inv.isCredit ? "Credit note · " : ""}{day(inv.date)}{inv.status === "void" ? " · Void" : inv.status === "refunded" ? " · Refunded" : ""}
+                  </div>
+                </div>
+                <span className="font-medium tabular-nums">{rupees(inv.total)}</span>
+                <a href={`/invoice/${inv.id}`} target="_blank" rel="noopener noreferrer" className="text-sm underline underline-offset-2">
+                  Download
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { UserFacingError } from "@/lib/actions/result";
 import { handOverFollowUps } from "@/domains/follow-ups/state";
 import { users, roles, teams, leads } from "@/db/schema";
-import { and, count, eq, isNull, sql } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 
 // Thrown when an operation would leave the org with zero active administrators. Actions map this
@@ -16,6 +16,9 @@ const roleIsAdminSql = sql`(
   OR ${roles.permissions} @> '["*"]'::jsonb
   OR (${roles.organizationId} IS NULL AND lower(${roles.name}) = 'admin')
 )`;
+
+// Reassign target meaning "split across this team" (vs. a plain user id).
+export const TEAM_PREFIX = "team:";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -115,28 +118,46 @@ export class UserService {
     return Object.fromEntries(rows.filter((r) => r.ownerId).map((r) => [r.ownerId!, Number(r.n)]));
   }
 
-  // Hand a departing member's leads to `toId` (an active member of the same org) or leave them
-  // unassigned (null). Runs inside the caller's transaction so it commits with the deactivate/delete.
+  // Hand a departing member's leads to `toId` (an active member of the same org), split them evenly
+  // across a team (`team:<teamId>`), or leave them unassigned (null). Runs inside the caller's
+  // transaction so it commits with the deactivate/delete. Returns how many leads each new owner got.
   // ponytail: a direct owner update — no per-lead lead.assigned events, so hundreds of leads don't
   // fan out hundreds of notifications/automations; switch to AssignmentService if those are wanted.
   private static async reassignLeads(tx: Tx, organizationId: string, fromId: string, toId: string | null) {
-    if (toId) {
-      if (toId === fromId) throw new UserFacingError("Pick someone else to take over their leads.");
-      const [target] = await tx
+    const activeMember = and(eq(users.organizationId, organizationId), eq(users.isActive, true), isNull(users.deletedAt), ne(users.id, fromId));
+    let owners: (string | null)[] = [toId];
+    if (toId?.startsWith(TEAM_PREFIX)) {
+      const members = await tx
         .select({ id: users.id })
         .from(users)
-        .where(and(eq(users.id, toId), eq(users.organizationId, organizationId), eq(users.isActive, true), isNull(users.deletedAt)))
-        .limit(1);
+        .where(and(activeMember, eq(users.teamId, toId.slice(TEAM_PREFIX.length))))
+        .orderBy(users.id);
+      if (!members.length) throw new UserFacingError("That team has no other active members to take over their leads.");
+      owners = members.map((m) => m.id);
+    } else if (toId) {
+      if (toId === fromId) throw new UserFacingError("Pick someone else to take over their leads.");
+      const [target] = await tx.select({ id: users.id }).from(users).where(and(activeMember, eq(users.id, toId))).limit(1);
       if (!target) throw new UserFacingError("The person you picked to take over their leads isn't an active member.");
     }
-    const moved = await tx
-      .update(leads)
-      .set({ ownerId: toId, updatedAt: new Date() })
+
+    const theirs = await tx
+      .select({ id: leads.id })
+      .from(leads)
       .where(and(eq(leads.ownerId, fromId), eq(leads.organizationId, organizationId), isNull(leads.deletedAt)))
-      .returning({ id: leads.id });
-    // Their pending follow-ups on those leads go to the new owner too (or become unassigned).
-    await handOverFollowUps(moved.map((l) => l.id), fromId, toId, tx);
-    return moved.length;
+      .orderBy(leads.createdAt);
+    // Round-robin, so old and new leads are spread evenly rather than in blocks.
+    const byOwner = new Map<string | null, string[]>(owners.map((o) => [o, []]));
+    theirs.forEach((l, i) => byOwner.get(owners[i % owners.length])!.push(l.id));
+
+    const moved: Record<string, number> = {};
+    for (const [owner, ids] of byOwner) {
+      if (!ids.length) continue;
+      await tx.update(leads).set({ ownerId: owner, updatedAt: new Date() }).where(and(inArray(leads.id, ids), eq(leads.organizationId, organizationId)));
+      // Their pending follow-ups on those leads go to the new owner too (or become unassigned).
+      await handOverFollowUps(ids, fromId, owner, tx);
+      moved[owner ?? ""] = ids.length;
+    }
+    return moved;
   }
 
   static async setActive(organizationId: string, id: string, isActive: boolean, reassignTo?: string | null) {
@@ -158,8 +179,8 @@ export class UserService {
       // Only block when THIS write took the org from ≥1 admin to 0 (never in an already-adminless org,
       // and never when deactivating a non-admin).
       if (u && before > 0 && (await this.countActiveAdmins(tx, organizationId)) === 0) throw new Error(LAST_ADMIN_ERROR);
-      const leadsMoved = u && reassignTo !== undefined ? await this.reassignLeads(tx, organizationId, id, reassignTo) : 0;
-      return u && { ...u, leadsMoved };
+      const movedTo = u && reassignTo !== undefined ? await this.reassignLeads(tx, organizationId, id, reassignTo) : {};
+      return u && { ...u, movedTo, leadsMoved: Object.values(movedTo).reduce((a, b) => a + b, 0) };
     });
   }
 
@@ -201,8 +222,8 @@ export class UserService {
         .where(and(eq(users.id, id), eq(users.organizationId, organizationId), isNull(users.deletedAt)))
         .returning(publicCols);
       if (u && before > 0 && (await this.countActiveAdmins(tx, organizationId)) === 0) throw new Error(LAST_ADMIN_ERROR);
-      const leadsMoved = u && reassignTo !== undefined ? await this.reassignLeads(tx, organizationId, id, reassignTo) : 0;
-      return u && { ...u, leadsMoved };
+      const movedTo = u && reassignTo !== undefined ? await this.reassignLeads(tx, organizationId, id, reassignTo) : {};
+      return u && { ...u, movedTo, leadsMoved: Object.values(movedTo).reduce((a, b) => a + b, 0) };
     });
   }
 }

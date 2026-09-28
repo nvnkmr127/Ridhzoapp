@@ -26,6 +26,8 @@ vi.mock("@/domains/audit/service", () => ({
   },
 }));
 
+vi.mock("@/lib/mail/mailer", () => ({ sendEmail: vi.fn().mockResolvedValue(undefined), appUrl: (p: string) => `https://app.test${p}` }));
+
 describe("InvoiceService", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -164,5 +166,42 @@ describe("GST helpers", () => {
     expect(splitTax(1000, "27ABCDE1234F1Z5")).toMatchObject({ cgst: 0, sgst: 0, igst: 180, taxAmount: 180 });
     expect(splitTax(1000, null)).toMatchObject({ cgst: 90, sgst: 90 }); // B2C: supplier's state
     process.env.GST_SUPPLIER_STATE_CODE = prev;
+  });
+});
+
+describe("InvoiceService billing email + saved GSTIN", () => {
+  const store: any[] = [];
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    store.length = 0;
+    vi.mocked(PlatformConfigService.get).mockImplementation(async () => store);
+    vi.mocked(PlatformConfigService.set).mockImplementation(async (_, val) => {
+      store.splice(0, store.length, ...(val as any[]));
+      return val as any;
+    });
+    vi.mocked(db.select).mockReturnValue({
+      from: () => ({ where: () => ({ limit: async () => [{ id: "org_1", name: "Acme", billingName: "Acme Pvt Ltd", gstin: "29ABCDE1234F1Z5", billingEmail: "acc@acme.in" }] }) }),
+    } as any);
+  });
+
+  it("uses the org's saved GSTIN when none is passed, and emails a new invoice once", async () => {
+    const { sendEmail } = await import("@/lib/mail/mailer");
+    const inv = await InvoiceService.generateInvoice({ orgId: "org_1", plan: "starter", total: 1180, paymentId: "pay_1" });
+    expect(inv.gstin).toBe("29ABCDE1234F1Z5");
+    expect(inv.buyerName).toBe("Acme Pvt Ltd");
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(sendEmail).mock.calls[0][0].to).toBe("acc@acme.in");
+    expect(vi.mocked(sendEmail).mock.calls[0][0].html).toContain(`/invoice/${inv.id}`);
+
+    // Webhook retry for the same payment: same invoice, no second email.
+    await InvoiceService.generateInvoice({ orgId: "org_1", plan: "starter", total: 1180, paymentId: "pay_1" });
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("an explicit null GSTIN (B2C) is kept, and a mail failure doesn't fail the invoice", async () => {
+    const { sendEmail } = await import("@/lib/mail/mailer");
+    vi.mocked(sendEmail).mockRejectedValueOnce(new Error("smtp down"));
+    const inv = await InvoiceService.generateInvoice({ orgId: "org_1", plan: "starter", amount: 1000, gstin: null });
+    expect(inv.gstin).toBeNull();
   });
 });

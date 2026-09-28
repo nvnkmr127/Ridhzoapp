@@ -10,6 +10,7 @@ import { ok, fail, actionFail, type ActionResult } from "@/lib/actions/result";
 import { applyAiSuggestion } from "@/lib/ai/leadSuggestions";
 import { revalidatePath } from "next/cache";
 import { OrgService } from "@/domains/organizations/service";
+import { loadAiBusiness } from "@/domains/organizations/aiBusiness";
 import { PlanService } from "@/domains/billing/planService";
 
 const draftSchema = z.object({
@@ -142,7 +143,7 @@ export async function generateSequenceAction(goal: string): Promise<{ steps: Gen
   if (!(await PlanService.consumeAiCredit(organizationId))) return { steps: contextual, ai: false, outOfCredits: true };
 
   try {
-    const org = await OrgService.getOrganization(organizationId);
+    const org = await loadAiBusiness(organizationId, { query: clean });
     const raw = await generateText(`${businessPreamble(org)}\n\n${SEQ_SYSTEM}`, `Goal: ${clean}\nAudience: sales leads.`, 800);
     if (!raw) {
       await PlanService.refundAiCredit(organizationId);
