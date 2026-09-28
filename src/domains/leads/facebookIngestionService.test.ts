@@ -52,15 +52,29 @@ describe("FacebookIngestionService.processEvent", () => {
     expect(res).toMatchObject({ status: "skipped", reason: "no_source_for_page" });
   });
 
-  it("refuses to route a Page connected by two organizations — terminally, not by throwing (so Meta stops retrying)", async () => {
+  it("copies the lead into every organization that connected the Page", async () => {
     h.sources = [
-      { ...source({ pageId: "p1", pageAccessToken: "t" }), organizationId: "org-1" },
-      { ...source({ pageId: "p1", pageAccessToken: "t" }), organizationId: "org-2" },
+      { ...source({ pageId: "p1", pageAccessToken: "t", formFilter: [] }), id: "src-1", organizationId: "org-1" },
+      { ...source({ pageId: "p1", pageAccessToken: "t", formFilter: [] }), id: "src-2", organizationId: "org-2" },
     ];
     const res = await FacebookIngestionService.processEvent(event({ page_id: "p1", form_id: "f1", leadgen_id: "lg1" }));
-    expect(res).toEqual({ status: "failed", reason: "page_multi_org_conflict" });
-    expect(h.processLead).not.toHaveBeenCalled();
-    expect(h.updates.at(-1).status).toBe("failed");
+    expect(res).toMatchObject({ status: "success" });
+    expect(h.processLead.mock.calls.map((c) => [c[0].organizationId, c[0].sourceId])).toEqual([["org-1", "src-1"], ["org-2", "src-2"]]);
+    expect(h.updates.at(-1).status).toBe("processed");
+  });
+
+  it("keeps the event failed if one org's token is dead, while still ingesting for the other", async () => {
+    h.sources = [
+      { ...source({ pageId: "p1", pageAccessToken: "dead", formFilter: [] }), id: "src-1", organizationId: "org-1" },
+      { ...source({ pageId: "p1", pageAccessToken: "t", formFilter: [] }), id: "src-2", organizationId: "org-2" },
+    ];
+    h.fetchLeadgenData.mockRejectedValueOnce(Object.assign(new Error("bad token"), { metaCode: 190 }));
+    h.isAuthError.mockReturnValue(true);
+    const res = await FacebookIngestionService.processEvent(event({ page_id: "p1", form_id: "f1", leadgen_id: "lg1" }));
+    expect(res).toEqual({ status: "failed", reason: "needs_reconnect" });
+    expect(h.markNeedsReconnect).toHaveBeenCalledWith("src-1");
+    expect(h.processLead).toHaveBeenCalledTimes(1);
+    expect(h.updates.at(-1)).toMatchObject({ status: "failed", errorLog: { reason: "auth_error_needs_reconnect" } });
   });
 
   it("skips ingestion for a source the user paused (inactive, not needs-reconnect)", async () => {

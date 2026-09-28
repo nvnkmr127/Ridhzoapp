@@ -419,25 +419,7 @@ The Lead Sources Hub functions at the public boundary of the CRM and enforces st
 During Facebook OAuth authorization, Page Access Tokens are retrieved in the server-side callback ([`src/app/api/auth/facebook/callback/route.ts`](file:///Users/naveenadicharla/Documents/ridhzo/src/app/api/auth/facebook/callback/route.ts#L102)). Tokens are stored in a secure Redis/in-memory pending store indexed by `userId`. **Access tokens are never sent to the browser or rendered in client-side HTML.** The client only receives public metadata (`pageId` and `name`). When the user selects pages to connect, the server action reads the tokens back internally.
 
 ### 2. Multi-Tenant Organization Isolation
-A Facebook Page can only be linked to one organization at a time. In [`LeadSourceService.upsertFacebookPageSource`](file:///Users/naveenadicharla/Documents/ridhzo/src/domains/leads/sourceService.ts#L67), Ridhzo queries the database for any existing source with the same `pageId` belonging to a different `organizationId`:
-```typescript
-const conflict = await db
-  .select({ id: leadSources.id })
-  .from(leadSources)
-  .where(
-    and(
-      eq(leadSources.type, "facebook_lead_ads"),
-      ne(leadSources.organizationId, organizationId),
-      sql`${leadSources.config}->>'pageId' = ${page.pageId}`
-    )
-  )
-  .limit(1);
-
-if (conflict.length > 0) {
-  throw new Error("This Facebook Page is already connected by another organization.");
-}
-```
-This check prevents cross-tenant data leaks and ensures webhook routing remains strictly deterministic.
+A Facebook Page may be connected by more than one organization. [`FacebookIngestionService.processEvent`](file:///Users/naveenadicharla/Documents/ridhzo/src/domains/leads/facebookIngestionService.ts) picks one source per organization for the Page and ingests the lead separately into each, using that organization's own token, form filter and field mappings. Leads never cross organizations: each copy is written with that organization's `organizationId` and deduplicated only within it. If one organization's token is dead, the other organizations still receive the lead, and the event stays `failed` so it is replayed when the dead one reconnects (replays dedupe by contact). Deleting a source only unsubscribes the Page from Meta webhooks when no other source still uses it.
 
 ---
 

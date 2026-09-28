@@ -76,8 +76,8 @@ The **Facebook & Instagram Lead Ads** integration connects Ridhzo directly to th
 - Admins check one or multiple pages and click **Connect Selected Pages**.
 - Triggers [`connectFacebookPagesAction(pageIds)`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/actions/sources.ts#L121).
 
-### C. Webhook Subscription & Multi-Tenant Lock
-- **Tenant Exclusivity**: Ridhzo verifies that no other organization has connected the same `pageId` ([`LeadSourceService.upsertFacebookPageSource`](file:///Users/naveenadicharla/Documents/ridhzo/src/domains/leads/sourceService.ts#L73)).
+### C. Webhook Subscription & Multi-Tenant Pages
+- **Shared Pages**: several organizations may connect the same `pageId`. Each incoming lead is copied into every connected organization ([`FacebookIngestionService.processEvent`](file:///Users/naveenadicharla/Documents/ridhzo/src/domains/leads/facebookIngestionService.ts)), and the Page is only unsubscribed from `leadgen` when the last source using it is deleted.
 - **Subscribed Apps Edge**: Calls `POST /v20.0/{page_id}/subscribed_apps?subscribed_fields=leadgen` via [`MetaTokenRefreshService.subscribePageToLeadgen`](file:///Users/naveenadicharla/Documents/ridhzo/src/domains/leads/metaTokenRefreshService.ts#L149). This instructs Meta to deliver live leads to Ridhzo's webhook endpoint.
 
 ---

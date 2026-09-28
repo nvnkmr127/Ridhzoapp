@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { leadSources, leads, assignmentRules } from "@/db/schema/leads";
 import { leadDistributionRules, webhookEvents } from "@/db/schema/integrations";
 import { users, teams } from "@/db/schema/users";
-import { and, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import crypto from "crypto";
 import { encryptSecret, readSecret } from "@/lib/crypto/secret";
 import { UserFacingError } from "@/lib/actions/result";
@@ -131,7 +131,10 @@ export class LeadSourceService {
     await db.delete(leadSources).where(and(eq(leadSources.id, id), eq(leadSources.organizationId, organizationId)));
 
     const cfg = (source.config as Record<string, any>) ?? {};
-    if (source.type === "facebook_lead_ads" && cfg.pageId && cfg.pageAccessToken) {
+    // Only unsubscribe when no other source (any org) still uses this Page, or we'd cut off its leads too.
+    const stillUsed = cfg.pageId && (await db.select({ id: leadSources.id }).from(leadSources)
+      .where(and(eq(leadSources.type, "facebook_lead_ads"), sql`${leadSources.config}->>'pageId' = ${cfg.pageId}`)).limit(1)).length > 0;
+    if (source.type === "facebook_lead_ads" && cfg.pageId && cfg.pageAccessToken && !stillUsed) {
       try {
         const { MetaTokenRefreshService } = await import("@/domains/leads/metaTokenRefreshService");
         await MetaTokenRefreshService.unsubscribePageFromLeadgen(cfg.pageId, readSecret(cfg.pageAccessToken)!);
@@ -148,23 +151,7 @@ export class LeadSourceService {
     organizationId: string,
     page: { pageId: string; pageAccessToken: string; expiresAt?: Date | null; name?: string },
   ) {
-    // A Facebook Page belongs to exactly one org. If another org already connected it, refuse —
-    // otherwise ingestion for that Page becomes ambiguous and gets blocked for both tenants.
-    const conflict = await db
-      .select({ id: leadSources.id })
-      .from(leadSources)
-      .where(
-        and(
-          eq(leadSources.type, "facebook_lead_ads"),
-          ne(leadSources.organizationId, organizationId),
-          sql`${leadSources.config}->>'pageId' = ${page.pageId}`,
-        ),
-      )
-      .limit(1);
-    if (conflict.length > 0) {
-      throw new Error("This Facebook Page is already connected by another organization.");
-    }
-
+    // A Page may be connected by several orgs; FacebookIngestionService copies each lead into every one.
     const rows = await db
       .select()
       .from(leadSources)
