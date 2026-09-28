@@ -206,7 +206,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // Only fields this request sends are checked — a status change on an older lead must still work.
   const fieldErrors = leadEditFieldErrors(org, candidateLead as Record<string, unknown>, Object.keys(parsed.data).filter((k) => parsed.data[k as keyof typeof parsed.data] !== undefined));
   if (Object.keys(fieldErrors).length > 0) {
-    return NextResponse.json({ error: Object.values(fieldErrors)[0], fieldErrors }, { status: 422 });
+    return NextResponse.json({ error: Object.values(fieldErrors)[0], details: fieldErrors }, { status: 422 });
   }
 
   // Only this workspace's statuses (GET /api/v1/statuses) — an unknown key would strand the lead

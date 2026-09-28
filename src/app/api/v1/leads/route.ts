@@ -204,8 +204,14 @@ async function createLead(auth: ApiAuth, data: z.infer<typeof createSchema>) {
     const msg = e?.message || "";
     const m = msg.toLowerCase();
     // Custom-field validation failures are user errors, not server faults.
+    // `details` = { field: message } so the app can point at the exact field.
+    const details = e?.fieldErrors as Record<string, string> | undefined;
     if (e instanceof FieldValidationError || e?.code === "VALIDATION") {
-      return NextResponse.json({ error: msg }, { status: 422 });
+      return NextResponse.json({ error: msg, ...(details ? { details } : {}) }, { status: 422 });
+    }
+    // Duplicate email/phone found by LeadService.createLead: say which lead, on which field.
+    if (details) {
+      return NextResponse.json({ error: Object.values(details)[0], details }, { status: 409 });
     }
     if (m.includes("limit") || m.includes("plan")) {
       return NextResponse.json({ error: msg }, { status: 402 });

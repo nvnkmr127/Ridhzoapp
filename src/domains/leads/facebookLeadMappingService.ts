@@ -1,3 +1,4 @@
+import { parseBudget } from "@/lib/leads/budget";
 
 
 export interface FacebookFormField {
@@ -97,8 +98,9 @@ export class FacebookLeadMappingService {
         } else if (matchedRule.targetField === "phone") {
           phone = val;
         } else if (matchedRule.targetField === "expectedValue") {
-          const num = Number(val.replace(/[^0-9.]/g, ""));
-          if (!isNaN(num) && num > 0) expectedValue = num;
+          // Keep the lead's own words ("₹40–75 lakhs") — the number is our estimate of it.
+          customData.budget = val;
+          expectedValue = parseBudget(val) ?? expectedValue;
         } else if (matchedRule.targetField === "customData") {
           const key = matchedRule.customDataKey || field.name;
           customData[key] = val;
@@ -106,6 +108,8 @@ export class FacebookLeadMappingService {
       } else {
         // Fallback unmapped form questions into customData JSONB
         customData[field.name] = val;
+        // Custom budget questions ("approximate_budget?") still size the opportunity.
+        if (expectedValue == null && /budget/i.test(field.name)) expectedValue = parseBudget(val);
       }
     }
 

@@ -1,6 +1,6 @@
 import { eventBus, EventPayload } from "./emitter";
 import { db } from "@/db";
-import { automations, automationTriggers, leads, users } from "@/db/schema";
+import { automations, automationTriggers, leads, leadSources, users } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { automationQueue } from "@/lib/jobs/workers/automationWorker";
 import { enrichmentQueue } from "@/lib/jobs/workers/enrichmentWorker";
@@ -126,7 +126,12 @@ eventBus.on('lead.created', async (p) => {
   if (await DedupService.autoMergeOnCreate(p.leadId).catch(() => false)) return;
 
   dispatchTrigger('lead.created', p);
-  await ActivityService.addActivity({ leadId: p.leadId, userId: isUuid(p.userId) ? p.userId : undefined, type: 'note', content: 'Lead was created manually.' });
+  // Say where it actually came from — ad/webhook arrivals carry a source, hand-entered ones a user.
+  const [src] = p.sourceId
+    ? await db.select({ name: leadSources.name }).from(leadSources).where(eq(leadSources.id, p.sourceId)).limit(1).catch(() => [])
+    : [];
+  const origin = src ? `Lead came in from ${src.name}.` : isUuid(p.userId) ? 'Lead was created manually.' : 'Lead was created.';
+  await ActivityService.addActivity({ leadId: p.leadId, userId: isUuid(p.userId) ? p.userId : undefined, type: 'note', content: origin });
   await fireLeadWebhook(p.leadId, 'lead.created');
   // Lead distribution: forward a copy to every active recipient (no-op unless configured).
   // Isolated so a distribution failure can't skip CAPI/enrichment below.

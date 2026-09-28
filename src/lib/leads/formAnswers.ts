@@ -25,7 +25,9 @@ function toText(v: unknown): string {
   if (v == null) return "";
   if (Array.isArray(v)) return v.map(toText).filter(Boolean).join(", ");
   if (typeof v === "object") return JSON.stringify(v);
-  return String(v).trim();
+  const s = String(v).trim();
+  // Ad-form option keys ("residential_construction", "₹40–75_lakhs_") → readable words.
+  return s.includes("_") && !/[\s@]/.test(s) ? s.replace(/_+/g, " ").trim() : s;
 }
 
 export type FormAnswer = { key: string; label: string; value: string };

@@ -8,7 +8,7 @@ import { messageTemplates } from "@/db/schema";
 import { and, eq, desc } from "drizzle-orm";
 import { ok, fail, actionFail } from "@/lib/actions/result";
 import { getActionableLead } from "@/lib/leads/access";
-import { recordLeadContact, recordLeadReply } from "@/domains/leads/contactLog";
+import { CALL_OUTCOME_KEYS, recordLeadContact, recordLeadReply } from "@/domains/leads/contactLog";
 
 export async function listTemplates(channel?: string) {
   const { organizationId } = await requireOrg();
@@ -132,7 +132,7 @@ export async function sendEmailAction(input: z.infer<typeof emailSchema>) {
 const logContactSchema = z.object({
   leadId: z.guid(),
   channel: z.enum(["call", "whatsapp", "email"]),
-  outcome: z.enum(["answered", "no_answer", "busy", "wrong_number"]).optional(),
+  outcome: z.enum(CALL_OUTCOME_KEYS).optional(),
   note: z.string().trim().max(2000).optional(),
   message: z.string().trim().max(4000).optional(), // text prefilled into WhatsApp, if any
 });

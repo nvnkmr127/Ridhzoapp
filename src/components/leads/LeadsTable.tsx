@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { ChevronLeft, ChevronRight, Download, Tag, MessageCircle, Trash } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Download, Tag, MessageCircle, Trash } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
@@ -37,7 +37,19 @@ type Lead = {
   company?: string | null;
   customData?: unknown;
   score?: number | null; lastContactedAt?: Date | null; nextFollowUpAt?: Date | null;
+  lastNote?: { content: string; at: string } | null;
 };
+
+const STALE_DAYS = 3;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Days since anyone touched an open lead (call/message or a note), or null when it's fresh or closed.
+function staleDays(lead: Lead, category: StatusCategory | undefined): number | null {
+  if (category !== "open" && category !== "in_progress") return null;
+  const touches = [lead.lastContactedAt, lead.lastNote?.at, lead.createdAt].filter(Boolean).map((d) => new Date(d as string).getTime());
+  const days = Math.floor((Date.now() - Math.max(...touches)) / DAY_MS);
+  return days >= STALE_DAYS ? days : null;
+}
 
 function renderCustom(v: unknown): string {
   if (v == null || v === "") return "—";
@@ -185,6 +197,50 @@ export function LeadsTable({
     p.set("page", "1");
     router.replace(`/leads?${p.toString()}`);
   }
+
+  // Header click cycles asc → desc → default order (the service's "new first, then newest").
+  function SortHead({ field, children }: { field: string; children: React.ReactNode }) {
+    const active = searchParams.get("sort") === field;
+    const order = active ? searchParams.get("order") : null;
+    const toggle = () => {
+      const p = new URLSearchParams(searchParams.toString());
+      if (order === "desc") { p.delete("sort"); p.delete("order"); }
+      else { p.set("sort", field); p.set("order", order === "asc" ? "desc" : "asc"); }
+      p.set("page", "1");
+      router.replace(`/leads?${p.toString()}`);
+    };
+    return (
+      <TableHead aria-sort={order === "asc" ? "ascending" : order === "desc" ? "descending" : "none"}>
+        <button type="button" onClick={toggle} className="inline-flex items-center gap-1 hover:text-foreground">
+          {children}
+          {order === "asc" ? <ArrowUp className="h-3 w-3" /> : order === "desc" ? <ArrowDown className="h-3 w-3" /> : <ArrowUpDown className="h-3 w-3 opacity-40" />}
+        </button>
+      </TableHead>
+    );
+  }
+
+  // Inline status change from the row's badge — same action as the bulk bar, but keeps the selection.
+  const [savingStatus, setSavingStatus] = React.useState<string | null>(null);
+  async function changeStatus(lead: Lead, status: string) {
+    if (status === lead.status) return;
+    setSavingStatus(lead.id);
+    try {
+      const res = await bulkChangeLeadStatusAction({ leadIds: [lead.id], status });
+      if (!res.ok || res.data?.failed) {
+        toast({ variant: "destructive", title: "Couldn't change status", description: res.ok ? "You may not have access to this lead." : res.message });
+        return;
+      }
+      toast({ title: `${lead.name} → ${statusMap.get(status)?.label ?? status}` });
+      router.refresh();
+    } catch {
+      toast({ variant: "destructive", title: "Couldn't change status", description: "We couldn't reach the server. Please try again." });
+    } finally {
+      setSavingStatus(null);
+    }
+  }
+  const statusOptions = statusMap.size
+    ? [...statusMap.entries()].map(([key, v]) => ({ key, label: v.label, color: v.color }))
+    : STATUSES.map((s) => ({ key: s, label: s[0].toUpperCase() + s.slice(1), color: "#6B7280" }));
 
   const [tagName, setTagName] = React.useState("");
 
@@ -381,23 +437,28 @@ export function LeadsTable({
                   aria-label="Select all leads on page"
                 />
               </TableHead>
-              <TableHead>Name</TableHead>
+              <SortHead field="name">Name</SortHead>
               <TableHead>Contact</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Owner</TableHead>
+              <SortHead field="status">Status</SortHead>
+              <SortHead field="owner">Owner</SortHead>
+              <TableHead>Latest note</TableHead>
               {customColumns.map((c) => <TableHead key={c.key}>{c.label}</TableHead>)}
-              <TableHead>Score</TableHead>
+              <SortHead field="score">Score</SortHead>
+              <SortHead field="nextFollowUpAt">Follow-up</SortHead>
               <TableHead>Next action</TableHead>
-              <TableHead>Created</TableHead>
+              <SortHead field="createdAt">Created</SortHead>
               <TableHead className="w-24"><span className="sr-only">Actions</span></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {leads.map((lead) => (
+            {leads.map((lead) => {
+              const stale = staleDays(lead, statusMap.get(lead.status)?.category);
+              const followUp = lead.nextFollowUpAt ? new Date(lead.nextFollowUpAt) : null;
+              return (
               <TableRow
                 key={lead.id}
                 data-state={selected.has(lead.id) ? "selected" : undefined}
-                className="group cursor-pointer"
+                className={`group cursor-pointer ${stale ? "bg-amber-500/5" : ""}`}
                 onClick={(e) => openRow(e, lead.id)}
               >
                 <TableCell>
@@ -432,17 +493,25 @@ export function LeadsTable({
                   {!lead.phone && !lead.email ? <span className="text-muted-foreground">—</span> : null}
                 </TableCell>
                 <TableCell>
-                  {statusMap.get(lead.status) ? (
-                    <Badge
-                      variant="secondary"
-                      className="border-transparent"
-                      style={{ backgroundColor: `${statusMap.get(lead.status)!.color}22`, color: statusMap.get(lead.status)!.color }}
+                  <Select value={lead.status} onValueChange={(v) => changeStatus(lead, v)} disabled={savingStatus === lead.id}>
+                    <SelectTrigger
+                      aria-label={`Change status of ${lead.name}`}
+                      className="h-6 w-auto gap-1 whitespace-nowrap rounded-full border-transparent px-2.5 text-xs font-semibold"
+                      style={{ backgroundColor: `${statusMap.get(lead.status)?.color ?? "#6B7280"}22`, color: statusMap.get(lead.status)?.color ?? undefined }}
                     >
-                      {statusMap.get(lead.status)!.label}
-                    </Badge>
-                  ) : (
-                    <Badge variant={lead.status === "new" ? "default" : "secondary"} className="capitalize">{lead.status}</Badge>
-                  )}
+                      {statusMap.get(lead.status)?.label ?? <span className="capitalize">{lead.status}</span>}
+                    </SelectTrigger>
+                    <SelectContent>
+                      {statusOptions.map((o) => (
+                        <SelectItem key={o.key} value={o.key}>
+                          <span className="inline-flex items-center gap-2">
+                            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: o.color }} />
+                            {o.label}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </TableCell>
                 <TableCell className="text-sm">
                   {lead.ownerId ? (
@@ -451,6 +520,17 @@ export function LeadsTable({
                     <span className="text-amber-500">Unassigned</span>
                   )}
                 </TableCell>
+                <TableCell className="max-w-[18rem] text-xs">
+                  {lead.lastNote ? (
+                    <div title={lead.lastNote.content}>
+                      <p className="line-clamp-2 text-foreground/80">{lead.lastNote.content}</p>
+                      <LocalTime iso={lead.lastNote.at} mode="relative" className="text-muted-foreground" />
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                  {stale ? <div className="mt-0.5 font-medium text-amber-600 dark:text-amber-500">No contact in {stale}d</div> : null}
+                </TableCell>
                 {customColumns.map((c) => (
                   <TableCell key={c.key} className="text-sm text-muted-foreground max-w-[12rem] truncate">
                     {renderCustom((lead.customData as Record<string, unknown> | null)?.[c.key])}
@@ -458,6 +538,13 @@ export function LeadsTable({
                 ))}
                 <TableCell className="text-sm font-medium">
                   {lead.score != null ? lead.score : "—"}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-sm" suppressHydrationWarning>
+                  {followUp ? (
+                    <LocalTime iso={followUp} mode="shortDate" className={followUp.getTime() < Date.now() ? "font-medium text-destructive" : ""} />
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
                 </TableCell>
                 <TableCell>
                   {(() => {
@@ -498,7 +585,8 @@ export function LeadsTable({
                   </div>
                 </TableCell>
               </TableRow>
-            ))}
+              );
+            })}
           </TableBody>
         </Table>
 

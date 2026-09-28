@@ -33,8 +33,10 @@ interface LeadHeaderQuickActionsProps {
 
 const CALL_OUTCOMES = [
   { key: "answered", label: "Answered" },
-  { key: "no_answer", label: "No answer" },
+  { key: "no_answer", label: "RNR / no answer" },
   { key: "busy", label: "Busy / call back" },
+  { key: "switched_off", label: "Switched off" },
+  { key: "rejected", label: "Rejected" },
   { key: "wrong_number", label: "Wrong number" },
 ] as const;
 
@@ -139,7 +141,7 @@ export function LeadHeaderQuickActions({ lead }: LeadHeaderQuickActionsProps) {
     }
     closeCall();
     // A call that didn't connect almost always needs a retry — offer to schedule it right away.
-    if (outcome === "no_answer" || outcome === "busy") setReminderOpen(true);
+    if (outcome !== "wrong_number") setReminderOpen(true);
   };
 
   const closeCall = () => {
@@ -199,6 +201,12 @@ export function LeadHeaderQuickActions({ lead }: LeadHeaderQuickActionsProps) {
             <span>Call</span>
           </Button>
         )}
+
+        {/* Reps often dial from their own phone — log the outcome without the tel: link. */}
+        <Button variant="outline" size="sm" className={cn(actionBtn, "hidden sm:inline-flex")} title="Log a call you made from your phone" onClick={() => setCallOpen(true)}>
+          <Phone className="h-3.5 w-3.5" />
+          <span>Log call</span>
+        </Button>
 
         {/* WhatsApp and Email open the one in-app composer (templates, AI draft, "they replied"),
             instead of a separate quick-reply dialog and a bare chat link. */}
@@ -348,7 +356,7 @@ export function LeadHeaderQuickActions({ lead }: LeadHeaderQuickActionsProps) {
               <Textarea
                 value={callNote}
                 onChange={(e) => setCallNote(e.target.value)}
-                placeholder="Optional note — e.g. wants 2BHK under 80L, call back after 5 PM"
+                placeholder="Optional note — e.g. 30×40 site, G+2, call back after 5 PM"
                 className="min-h-[72px]"
               />
               <div className="grid grid-cols-2 gap-2">

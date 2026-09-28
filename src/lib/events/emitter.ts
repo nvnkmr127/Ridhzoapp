@@ -1,3 +1,4 @@
+import type { CallOutcome } from "@/domains/leads/contactLog";
 import { EventEmitter } from 'events';
 import { keepAlive } from "@/lib/keepAlive";
 
@@ -20,7 +21,7 @@ export type EventPayload = {
   // call.logged: what happened on the call, for automation conditions (call_outcome, call_duration_sec…)
   call?: {
     activityId: string;
-    outcome: "answered" | "no_answer" | "busy" | "wrong_number" | "missed" | "unknown";
+    outcome: CallOutcome | "missed" | "unknown";
     direction: "outgoing" | "incoming";
     durationSec: number | null; // null = logged by hand, no call log
     unansweredStreak: number; // outgoing calls in a row not picked up, this one included

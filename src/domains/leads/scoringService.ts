@@ -125,7 +125,7 @@ export class ScoringService {
       if (answered) answeredCalls++;
       // The lead picking up or calling back ends a run of unanswered calls.
       if (answered || incoming) streakOpen = false;
-      else if (streakOpen && /^Called — (No answer|Busy)/.test(text)) unansweredStreak++;
+      else if (streakOpen && /^Called — (No answer|Busy|Switched off|Call rejected)/.test(text)) unansweredStreak++;
     }
     return { answeredCalls, unansweredStreak, talkTimeSec, incomingCalls };
   }

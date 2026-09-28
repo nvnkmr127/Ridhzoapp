@@ -3,11 +3,11 @@ import { z } from "zod";
 import { authorizeApiRequest } from "@/lib/apiAuth";
 import { withIdempotency } from "@/lib/idempotency";
 import { canEditLeads, leadForApi, leadNotFound, readOnly } from "@/lib/meetingsApi";
-import { recordLeadContact } from "@/domains/leads/contactLog";
+import { CALL_OUTCOME_KEYS, recordLeadContact } from "@/domains/leads/contactLog";
 
 const schema = z.object({
   channel: z.enum(["call", "whatsapp", "email"]),
-  outcome: z.enum(["answered", "no_answer", "busy", "wrong_number"]).optional(),
+  outcome: z.enum(CALL_OUTCOME_KEYS).optional(),
   note: z.string().trim().max(2000).optional(),
   message: z.string().trim().max(4000).optional(),
   // From the Android call log after a tap-to-call (see /api/v1/calls/sync for the same fields).

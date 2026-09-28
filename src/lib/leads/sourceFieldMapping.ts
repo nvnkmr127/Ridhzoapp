@@ -2,6 +2,8 @@
 // for any source that arrives as a flat key→value map). Facebook has its own field_data-array mapper
 // but stores the SAME rule shape, so one config + one editor drives both.
 
+import { parseBudget } from "./budget";
+
 export interface SourceFieldMappingRule {
   // The raw field key as the source delivers it (Google column_id, etc.). Matched case-insensitively.
   facebookFieldKey: string;
@@ -41,8 +43,8 @@ export function applySourceFieldMappings(
       case "email": out.email = val; break;
       case "phone": out.phone = val; break;
       case "expectedValue": {
-        const num = Number(val.replace(/[^0-9.]/g, ""));
-        if (!isNaN(num) && num > 0) out.expectedValue = num;
+        out.customData.budget = val;
+        out.expectedValue = parseBudget(val) ?? out.expectedValue;
         break;
       }
       case "customData": out.customData[rule.customDataKey || key] = val; break;

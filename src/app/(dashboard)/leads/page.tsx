@@ -60,7 +60,8 @@ export default async function LeadsPage({
     }
   }
 
-  const [changeToken, views, usersList, sourcesList, tagsList, customFieldDefs, statusSchema, leadResult] = await Promise.all([
+  const showClosed = params.closed === "1";
+  const [changeToken, views, usersList, sourcesList, tagsList, customFieldDefs, statusSchema, leadResult, statusCounts] = await Promise.all([
     leadsChangeTokenAction(),
     SavedViewService.listViews(organizationId, userId, isAdmin),
     listUsersAction().catch(() => []),
@@ -75,6 +76,8 @@ export default async function LeadsPage({
       ownerId,
       segment,
       filters,
+      // Junk/lost stay out of the everyday list; picking a status or an advanced filter shows them.
+      hideJunkLost: !status && !filters && !showClosed,
       sortField,
       sortOrder,
       page,
@@ -82,7 +85,18 @@ export default async function LeadsPage({
       currentUserId: userId,
       enforceOwnerId: isAdmin ? undefined : userId,
     }),
+    LeadService.statusCounts(organizationId, isAdmin ? undefined : userId).catch(() => ({} as Record<string, number>)),
   ]);
+
+  // Status chips: every status that has leads, in the workspace's order. A chip toggles ?status=.
+  const chipHref = (patch: Record<string, string | null>) => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) if (typeof v === "string") p.set(k, v);
+    for (const [k, v] of Object.entries(patch)) (v == null ? p.delete(k) : p.set(k, v));
+    p.delete("page");
+    return `/leads?${p.toString()}`;
+  };
+  const statusChips = statusSchema.filter((st) => statusCounts[st.key]);
 
   const { data: leads, total, totalPages } = leadResult;
 
@@ -158,6 +172,28 @@ export default async function LeadsPage({
           <Link href="/leads" className="text-muted-foreground hover:text-foreground hover:underline">Clear</Link>
         </div>
       )}
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        {statusChips.map((st) => {
+          const active = status === st.key;
+          return (
+            <Link
+              key={st.key}
+              href={chipHref({ status: active ? null : st.key })}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${active ? "border-foreground bg-foreground text-background" : "border-border bg-card hover:bg-muted"}`}
+            >
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: st.color }} />
+              {st.label}
+              <span className={`tabular-nums ${active ? "opacity-80" : "text-muted-foreground"}`}>{statusCounts[st.key]}</span>
+            </Link>
+          );
+        })}
+        {!status && !filters && (
+          <Link href={chipHref({ closed: showClosed ? null : "1" })} className="ml-auto text-xs text-muted-foreground hover:text-foreground hover:underline">
+            {showClosed ? "Hide junk & lost" : "Show junk & lost"}
+          </Link>
+        )}
+      </div>
 
       <LeadsFilterBar
         views={views}

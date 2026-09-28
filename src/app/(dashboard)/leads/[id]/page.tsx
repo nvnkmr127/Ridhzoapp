@@ -1,4 +1,5 @@
 import { Phone, Mail, Sparkles, Flame, Radio, Braces, ClipboardList, Clock, ListChecks } from "lucide-react";
+import { formatInr } from "@/lib/leads/budget";
 import { bestContactWindow } from "@/domains/leads/bestContactTime";
 import { getOrgFormat } from "@/lib/format.server";
 import { CustomStatusSchemaService } from "@/domains/leads/customStatusSchemaService";
@@ -251,6 +252,9 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   const inboundCount = counts?.wa_in ?? waMessages.filter((msg) => msg.direction === "inbound").length;
   const waTotal = counts?.wa ?? waMessages.length;
   const outboundCount = waTotal - inboundCount;
+  // The lead's own budget words ("₹40–75 lakhs") beat our number; the number reads in lakhs/crores.
+  const budgetText = (typeof cd.budget === "string" && cd.budget.replace(/_/g, " ").trim()) || formatInr(lead.expectedValue);
+  const ownerName = usersList.find((u) => u.id === lead.ownerId)?.name ?? null;
   const answers = formAnswers(cd, Object.fromEntries(allCustomDefs.map((d) => [d.key, d.label])));
   const savedRecap = (cd._aiRecap as RecapCache | undefined) ?? null;
 
@@ -337,7 +341,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             <div className="min-w-0 flex-1 space-y-1.5">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <h2 className="break-words text-xl font-bold tracking-tight sm:text-2xl">{lead.name}</h2>
-              <LeadStatusControl leadId={lead.id} status={lead.status} className="h-8 w-auto min-w-[130px] text-xs" />
+              <LeadStatusControl leadId={lead.id} status={lead.status} hasFollowUp={!!lead.nextFollowUpAt} className="h-8 w-auto min-w-[130px] text-xs" />
               {stageName && (
                 <span className="text-xs text-muted-foreground lg:hidden" title="Pipeline stage — change it in Lead Management">
                   Stage: <span className="font-medium text-foreground">{stageName}</span>
@@ -359,6 +363,30 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               )}
               {!lead.phone && !lead.email && <span className="text-muted-foreground">No phone or email yet — use Edit to add one.</span>}
             </div>
+            {/* At a glance: what they want, what they can spend, who has them and when we last spoke. */}
+            <dl className="flex flex-wrap gap-x-5 gap-y-1.5 pt-1 text-xs">
+              {[
+                ["Budget", budgetText],
+                ["Requirement", typeof cd.requirement === "string" ? cd.requirement : null],
+              ]
+                .filter(([, v]) => v)
+                .map(([k, v]) => (
+                  <div key={k} className="min-w-0 max-w-full">
+                    <dt className="inline text-muted-foreground">{k}: </dt>
+                    <dd className="inline font-medium">{v}</dd>
+                  </div>
+                ))}
+              <div className="lg:hidden">
+                <dt className="inline text-muted-foreground">Owner: </dt>
+                <dd className={`inline font-medium ${ownerName ? "" : "text-amber-600 dark:text-amber-500"}`}>{ownerName ?? "Unassigned"}</dd>
+              </div>
+              <div>
+                <dt className="inline text-muted-foreground">Last contact: </dt>
+                <dd className="inline font-medium">
+                  {lead.lastContactedAt ? <LocalTime iso={lead.lastContactedAt} mode="relative" /> : <span className="text-amber-600 dark:text-amber-500">never</span>}
+                </dd>
+              </div>
+            </dl>
             {(callCount > 0 || waTotal > 0) && (
               <p className="text-xs text-muted-foreground">
                 {[

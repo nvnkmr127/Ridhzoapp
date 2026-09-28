@@ -73,7 +73,7 @@ describe("lead messaging actions", () => {
     getActionableLead.mockResolvedValueOnce(access);
     const res = await logLeadContactAction({ leadId: LEAD, channel: "call", outcome: "no_answer", note: "try after 5" });
     expect(res.ok).toBe(true);
-    expect(waInsert).toHaveBeenCalledWith(expect.objectContaining({ type: "call", content: "Called — No answer\nNote: try after 5" }));
+    expect(waInsert).toHaveBeenCalledWith(expect.objectContaining({ type: "call", content: "Called — No answer (RNR)\nNote: try after 5" }));
     expect(markLeadContacted).toHaveBeenCalledWith(LEAD, undefined);
   });
 

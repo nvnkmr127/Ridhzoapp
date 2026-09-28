@@ -724,7 +724,7 @@ export function GeneralSettingsForm({
           <Hint>
             Applies when your team adds or edits leads (web and phone app). Leads from ads, web forms and the public booking page are
             never rejected — if a required field is missing they&apos;re saved with a note and a &quot;missing-info&quot; tag.
-            Older leads missing a newly required field can still be updated; it&apos;s asked for when someone edits that field.
+            Older leads missing a newly required field still take status changes, notes and calls; it&apos;s asked for the next time someone opens Edit on that lead.
             More fields can be added in{" "}
             <Link href="/settings/custom-fields" className="underline underline-offset-2">Custom fields</Link>.
           </Hint>

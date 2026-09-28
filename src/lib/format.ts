@@ -1,6 +1,8 @@
 // Presentation settings for a tenant. Kept together so every money/date render uses the SAME source
 // (organizations.currency/locale/dateFormat/timezone) instead of a hardcoded "$"/"en-US"/browser tz.
 // This module is client-safe (pure Intl, no db import); server fetch lives in format.server.ts.
+import { formatInr } from "@/lib/leads/budget";
+
 export type OrgFormat = { currency: string; locale: string; dateFormat: string; timezone: string };
 
 export const DEFAULT_FORMAT: OrgFormat = { currency: "INR", locale: "en-IN", dateFormat: "DD/MM/YYYY", timezone: "Asia/Kolkata" };
@@ -12,6 +14,8 @@ export function formatCurrency(amount: number | string | null | undefined, fmt: 
   const value = Number.isFinite(n) ? (n as number) : 0;
   const currency = fmt.currency || DEFAULT_FORMAT.currency;
   const locale = fmt.locale || (currency === "INR" ? "en-IN" : DEFAULT_FORMAT.locale);
+  // Indian teams read big amounts in lakhs/crores: ₹57.5 L, ₹1.5 Cr.
+  if (currency === "INR" && value >= 1e5) return formatInr(value)!;
   try {
     return new Intl.NumberFormat(locale, { style: "currency", currency, maximumFractionDigits: 0 }).format(value);
   } catch {

@@ -14,11 +14,15 @@ import { keepAlive } from "@/lib/keepAlive";
 
 export const CALL_OUTCOMES = {
   answered: "Answered",
-  no_answer: "No answer",
+  no_answer: "No answer (RNR)",
   busy: "Busy / call back later",
+  switched_off: "Switched off / not reachable",
+  rejected: "Call rejected",
   wrong_number: "Wrong number",
 } as const;
 export type CallOutcome = keyof typeof CALL_OUTCOMES;
+/** For request validation: z.enum(CALL_OUTCOME_KEYS). */
+export const CALL_OUTCOME_KEYS = Object.keys(CALL_OUTCOMES) as [CallOutcome, ...CallOutcome[]];
 export type ContactChannel = "call" | "whatsapp" | "email";
 
 export type CallDirection = "outgoing" | "incoming";

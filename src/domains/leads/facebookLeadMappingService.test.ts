@@ -51,6 +51,15 @@ describe("FacebookLeadMappingService", () => {
     expect(mapped.customData["meta_ad_id"]).toBe("ad_888");
   });
 
+  it("reads an Indian lakh-range budget and keeps the lead's own words", () => {
+    const mapped = FacebookLeadMappingService.mapFacebookLeadToStandardLead({
+      id: "l1", created_time: "2026-09-20T06:31:56Z", form_id: "f1",
+      field_data: [{ name: "budget", values: ["₹40–75_lakhs_"] }],
+    } as FacebookLeadDetails);
+    expect(mapped.expectedValue).toBe(5_750_000);
+    expect(mapped.customData.budget).toBe("₹40–75_lakhs_");
+  });
+
   it("routes a form question to a custom field key when a mapping rule is provided", () => {
     const rawFbLead: FacebookLeadDetails = {
       id: "leadgen_1",

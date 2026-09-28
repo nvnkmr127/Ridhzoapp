@@ -50,12 +50,18 @@ export type ListLeadsOptions = {
   ids?: string[];
   /** A smart-segment chip's list (same SQL condition as the chip's count). */
   segment?: SmartSegmentKey;
+  /** Hide junk and every lost-category status (built-in or custom) — the list's default view. */
+  hideJunkLost?: boolean;
   /** Page-size ceiling. Defaults to 100 so a URL/client can't ask for the whole tenant; export raises it. */
   maxLimit?: number;
 };
 
 // Digits-only phone, the exact expression the trigram index in migration 0081 is built on — keep
 // them identical or Postgres falls back to scanning the tenant.
+// Notes the app writes itself (ingestion, edits, enrichment) — not a rep's context, so the list's
+// "latest note" preview skips them.
+const SYSTEM_NOTE_RE = "^(Lead (was created|came in from|came in without|details were updated|flagged as stale|enriched from)|Updated custom fields)";
+
 export const phoneDigitsSql = sql`regexp_replace(${leads.phone}, '[^0-9]', '', 'g')`;
 
 /**
@@ -505,6 +511,10 @@ export class LeadService {
 
     // Shortcut params
     if (options.status) baseConditions.push(eq(leads.status, options.status));
+    if (options.hideJunkLost) {
+      baseConditions.push(sql`${leads.status} NOT IN ('junk', 'lost')`);
+      baseConditions.push(sql`${leads.status} NOT IN (SELECT ${customStatusConfigs.key} FROM ${customStatusConfigs} WHERE ${customStatusConfigs.organizationId} = ${leads.organizationId} AND ${customStatusConfigs.category} = 'lost')`);
+    }
     if (!options.enforceOwnerId && options.ownerId) {
       if (options.ownerId === "null" || options.ownerId === "unassigned") {
         baseConditions.push(isNull(leads.ownerId));
@@ -551,6 +561,7 @@ export class LeadService {
     // Sorting
     let sortCol: any = leads.createdAt;
     if (options.sortField === "updatedAt") sortCol = leads.updatedAt;
+    else if (options.sortField === "owner") sortCol = sql`(SELECT lower(coalesce(nullif(trim(concat_ws(' ', u.first_name, u.last_name)), ''), u.email)) FROM users u WHERE u.id = "leads"."owner_id")`;
     else if (options.sortField === "name") sortCol = leads.name;
     else if (options.sortField === "status") sortCol = leads.status;
     else if (options.sortField === "ownerId") sortCol = leads.ownerId;
@@ -558,7 +569,8 @@ export class LeadService {
     else if (options.sortField === "priority") sortCol = leads.priority;
     else if (options.sortField === "score") sortCol = leads.score;
 
-    const orderExpr = options.sortOrder === "asc" ? asc(sortCol) : desc(sortCol);
+    // Blanks (no owner, no follow-up) sink to the bottom whichever way the column is sorted.
+    const orderExpr = options.sortOrder === "asc" ? sql`${sortCol} ASC NULLS LAST` : sql`${sortCol} DESC NULLS LAST`;
 
     // Default view surfaces unworked "new" leads first (then newest). An explicit column sort from
     // the user overrides this — their choice wins. `id` last: most sort columns aren't unique, and
@@ -573,6 +585,11 @@ export class LeadService {
           ...getTableColumns(leads),
           // Internal AI/scoring blobs are the bulk of custom_data and no list renders them.
           customData: sql<unknown>`${leads.customData} - '_aiRecap' - '_scoreFactors' - '_enrichment'`.as("custom_data"),
+          // Latest human note (system bookkeeping notes skipped) — the list's context preview.
+          lastNote: sql<{ content: string; at: string } | null>`(
+            SELECT json_build_object('content', left(a.content, 300), 'at', a.created_at AT TIME ZONE 'UTC') FROM ${activities} a
+            WHERE a.lead_id = "leads"."id" AND a.type = 'note' AND a.content !~ ${SYSTEM_NOTE_RE}
+            ORDER BY a.created_at DESC LIMIT 1)`.as("last_note"),
         })
         .from(leads)
         .where(where)
@@ -592,6 +609,16 @@ export class LeadService {
       limit,
       totalPages,
     };
+  }
+
+  /** Lead count per status for the list's status chips (tenant-wide, owner-scoped for reps). */
+  static async statusCounts(organizationId: string, enforceOwnerId?: string) {
+    const rows = await db
+      .select({ status: leads.status, n: count() })
+      .from(leads)
+      .where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt), ...(enforceOwnerId ? [eq(leads.ownerId, enforceOwnerId)] : [])))
+      .groupBy(leads.status);
+    return Object.fromEntries(rows.map((r) => [r.status, Number(r.n)])) as Record<string, number>;
   }
 
   // Lean feed for the dashboard "Today's priorities" panel. Instead of loading every lead and scoring

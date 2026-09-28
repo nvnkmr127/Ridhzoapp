@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
 import { changeLeadStatusAction } from "@/lib/actions/leads"
 import { cn } from "@/lib/utils"
+import { emitLeadAction } from "@/components/leads/leadEvents"
 import { getLossReasonsAction, getTenantStatusSchemaAction } from "@/lib/actions/customStatuses"
 import { DEFAULT_LOSS_REASONS } from "@/lib/leads/lossReasons"
 import type { CustomStatusItem } from "@/domains/leads/customStatusSchemaService"
@@ -28,7 +29,7 @@ function Dot({ color }: { color: string }) {
   return <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />;
 }
 
-export function LeadStatusControl({ leadId, status, className }: { leadId: string; status: string; className?: string }) {
+export function LeadStatusControl({ leadId, status, className, hasFollowUp = true }: { leadId: string; status: string; className?: string; hasFollowUp?: boolean }) {
   const router = useRouter();
   const { toast } = useToast();
   const [value, setValue] = React.useState(status);
@@ -77,6 +78,9 @@ export function LeadStatusControl({ leadId, status, className }: { leadId: strin
         return;
       }
       toast({ title: `Status → ${byKey.get(next)?.label ?? next}` });
+      // Still open and nothing scheduled → ask "when next?" right away (opens the header's follow-up picker).
+      const cat = categoryOf(next);
+      if (!hasFollowUp && (cat === "open" || cat === "in_progress")) emitLeadAction({ type: "followup" });
       router.refresh();
     } catch {
       setValue(prev);
