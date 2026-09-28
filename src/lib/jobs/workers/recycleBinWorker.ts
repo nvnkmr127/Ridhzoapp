@@ -2,6 +2,7 @@ import { Worker, Queue } from "bullmq";
 import { createRedis, quietErrors } from "../redis";
 import { LeadService } from "@/domains/leads/service";
 import { purgeExpiredIdempotencyKeys } from "@/lib/idempotency";
+import { MobilePushService } from "@/lib/push/mobile";
 
 export const RECYCLE_BIN_QUEUE_NAME = "recycle-bin-purge";
 
@@ -10,7 +11,10 @@ export async function processRecycleBinJob() {
   if (purgedCount) console.log(`[RECYCLE_BIN_WORKER] Auto-purged ${purgedCount} leads deleted 30+ days ago`);
   // Same daily sweep: forget mobile Idempotency-Keys once no queued retry can still send them.
   const idempotencyKeys = await purgeExpiredIdempotencyKeys();
-  return { purgedCount, idempotencyKeys };
+  // …and push tokens of app installs not seen for 60 days.
+  const staleDevices = await MobilePushService.pruneStale();
+  if (staleDevices) console.log(`[RECYCLE_BIN_WORKER] Pruned ${staleDevices} stale device tokens`);
+  return { purgedCount, idempotencyKeys, staleDevices };
 }
 
 export function createRecycleBinWorker(redisUrl?: string) {

@@ -32,9 +32,10 @@ export async function authorizeApiRequest(req: NextRequest): Promise<ApiAuth | {
       isMobileTokenRevoked(mobile),
       liveUser(mobile.sub, mobile.org),
       suspended(mobile.org),
-      rateLimited(`mobile:${mobile.sub}`),
+      rateLimited(`mobile:${mobile.sub}`, req, mobile.org),
     ]);
     if (revoked || !live) {
+      logRejection(req, 401, revoked ? "token_revoked" : "user_inactive", `mobile:${mobile.sub}`, mobile.org);
       return { error: NextResponse.json({ error: "Invalid or missing credentials" }, { status: 401 }) };
     }
     if (isSuspended) return { error: suspendedResponse() };
@@ -50,7 +51,7 @@ export async function authorizeApiRequest(req: NextRequest): Promise<ApiAuth | {
     if (key.scope === "read_only" && !isSafeMethod(req.method)) {
       return { error: NextResponse.json({ error: "This API key is read-only." }, { status: 403 }) };
     }
-    const limited = await rateLimited(`apikey:${key.id}`);
+    const limited = await rateLimited(`apikey:${key.id}`, req, key.organizationId);
     if (limited) return { error: limited };
     ApiKeyService.touchLastUsed(key.id); // best-effort, only once the request is actually allowed
     return { organizationId: key.organizationId };
@@ -63,9 +64,24 @@ function isSafeMethod(method: string): boolean {
   return method === "GET" || method === "HEAD";
 }
 
-async function rateLimited(principal: string): Promise<NextResponse | null> {
+// One structured line per rejection, so a Vercel log search answers "who, which tenant, which
+// endpoint, why" (the request line alone carries only path and status). Ids only, no personal data.
+function logRejection(req: NextRequest, status: number, reason: string, principal: string, org: string) {
+  console.warn(`[api-auth] ${JSON.stringify({ status, reason, method: req.method, path: req.nextUrl?.pathname, principal, org })}`);
+}
+
+// 429s: logged once per principal per window — a runaway client would otherwise log every request.
+const loggedLimits = new Set<string>();
+
+async function rateLimited(principal: string, req: NextRequest, org: string): Promise<NextResponse | null> {
   const r = await RateLimiter.checkLimit(`apiv1:${principal}`, RATE_LIMIT, RATE_WINDOW);
   if (r.success) return null;
+  const once = `${principal}:${r.reset}`;
+  if (!loggedLimits.has(once)) {
+    if (loggedLimits.size > 1000) loggedLimits.clear();
+    loggedLimits.add(once);
+    logRejection(req, 429, `over ${RATE_LIMIT}/${RATE_WINDOW}s`, principal, org);
+  }
   return NextResponse.json(
     { error: "Too many requests. Please slow down." },
     {

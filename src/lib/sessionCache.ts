@@ -7,7 +7,7 @@ const redis = createRedis();
 const key = (userId: string, orgId: string) => `session:v1:${userId}:${orgId}`;
 const TTL_SEC = 120; // 2 minutes: short enough for quick demotion/revocation, long enough to absorb traffic bursts
 
-const withTimeout = <T>(p: Promise<T>, ms = 500): Promise<T> =>
+export const withTimeout = <T>(p: Promise<T>, ms = 500): Promise<T> =>
   Promise.race([p, new Promise<never>((_, reject) => setTimeout(() => reject(new Error("redis timeout")), ms))]);
 
 export async function getMirroredSession(userId: string, orgId: string): Promise<{ roleId: string | null } | null | undefined> {

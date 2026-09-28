@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { deviceTokens } from "@/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, lt, sql } from "drizzle-orm";
 import { ExpoPushService } from "./expo";
 import { FcmPushService } from "./fcm";
 
@@ -20,7 +20,9 @@ export interface MobilePushMessage {
 const isExpoToken = (t: string) => t.startsWith("ExponentPushToken") || t.startsWith("ExpoPushToken");
 
 export const MobilePushService = {
-  // Upsert a device token (token is unique; re-registering the same device refreshes it).
+  // Idempotent: UNIQUE(token) makes it one row per device install. updated_at doubles as "last seen"
+  // (see pruneStale): a re-register only writes when the device changed hands or wasn't seen for a
+  // day, so an app that registers on every launch costs a read, not a write.
   async register(userId: string, organizationId: string, token: string, platform?: string) {
     await db
       .insert(deviceTokens)
@@ -28,7 +30,21 @@ export const MobilePushService = {
       .onConflictDoUpdate({
         target: deviceTokens.token,
         set: { userId, organizationId, platform, updatedAt: new Date() },
+        setWhere: sql`${deviceTokens.userId} <> excluded.user_id
+          OR ${deviceTokens.organizationId} <> excluded.organization_id
+          OR ${deviceTokens.platform} IS DISTINCT FROM excluded.platform
+          OR ${deviceTokens.updatedAt} < now() - interval '1 day'`,
       });
+  },
+
+  // Tokens not re-registered for 60 days belong to uninstalled / reinstalled apps (every launch
+  // re-registers, refreshing updated_at at most daily). A pruned device that comes back re-registers.
+  async pruneStale(days = 60) {
+    const rows = await db
+      .delete(deviceTokens)
+      .where(lt(deviceTokens.updatedAt, new Date(Date.now() - days * 24 * 60 * 60 * 1000)))
+      .returning({ id: deviceTokens.id });
+    return rows.length;
   },
 
   async remove(token: string) {
