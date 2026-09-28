@@ -51,6 +51,7 @@ export async function exportLeadsCsvAction(input: z.input<typeof schema>) {
       sortOrder: q.order || "desc",
       page: 1,
       limit: MAX_ROWS,
+      maxLimit: MAX_ROWS,
       currentUserId: userId,
       enforceOwnerId: isAdmin ? undefined : userId,
       ids: q.ids,

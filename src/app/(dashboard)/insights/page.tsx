@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { TrendingUp, Trophy, Network, HeartPulse } from "lucide-react";
 import { requireOrg, hasPermission } from "@/lib/rbac";
 import { redirect } from "next/navigation";
@@ -41,21 +42,26 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 import { AnalyticsCoordinator } from "@/domains/leads/analyticsCoordinator";
 import { SlaAnalyticsService } from "@/domains/leads/slaAnalyticsService";
 
-export default async function InsightsPage() {
-  const { organizationId } = await requireOrg();
-  // Revenue, every rep's performance and lead-level lists across the workspace: admins only.
-  if (!(await hasPermission("settings.manage"))) redirect("/my-dashboard");
-  const fmt = await getOrgFormat(organizationId);
-  // Money in the workspace's configured currency/locale (was hardcoded USD).
-  const money = (n: number) => formatCurrency(n, fmt);
+// Every report on this page, computed from one tenant snapshot. The reports themselves still run in
+// JS over the snapshot, so the result is cached per workspace for a few minutes instead of being
+// rebuilt on every view (it used to load the whole tenant and run ~20 reports in 5 sequential waves
+// per request).
+// ponytail: per-process TTL cache; move the heaviest reports to SQL aggregates if one workspace's
+// snapshot gets too big to hold, or if 5-minute-old numbers aren't acceptable.
+const INSIGHTS_TTL_MS = 5 * 60 * 1000;
+const insightsCache = new Map<string, { at: number; data: Promise<Awaited<ReturnType<typeof computeInsights>>> }>();
 
-  // Preload shared tenant datasets in ONE parallel round trip
+async function computeInsights(organizationId: string) {
   const [tenantLeads, tenantUsers] = await Promise.all([
     AnalyticsCoordinator.getTenantLeads(organizationId),
     AnalyticsCoordinator.getTenantUsers(organizationId),
   ]);
-
-  const [forecast, winLoss, sourceRoi, health, bestTime, qualification, velocity, aging] = await Promise.all([
+  // All independent of each other — one wave, not three.
+  const [
+    forecast, winLoss, sourceRoi, health, bestTime, qualification, velocity, aging,
+    stagnant, cohorts, ltv, geo, channels, team, digest, sourceAnswer,
+    capacities, overdue, sla,
+  ] = await Promise.all([
     RevenueForecastService.getRevenueForecast(organizationId, tenantLeads),
     WinLossAnalyticsService.getWinLossAnalytics(organizationId, tenantLeads),
     SourceRoiAnalyticsService.getLeadSourceRoiMetrics(organizationId, tenantLeads),
@@ -64,9 +70,6 @@ export default async function InsightsPage() {
     LeadQualificationMatrixService.getQualificationReport(organizationId, tenantLeads),
     PipelineVelocityService.getVelocityMetrics(organizationId, tenantLeads),
     PipelineAgingService.getPipelineAgingMatrix(organizationId, tenantLeads),
-  ]);
-
-  const [stagnant, cohorts, ltv, geo, channels, team, digest, sourceAnswer] = await Promise.all([
     StageStagnationService.getStagnantLeads(organizationId, 10, tenantLeads),
     LeadCohortAnalyticsService.getCohortAnalytics(organizationId, tenantLeads),
     CustomerLtvAnalyticsService.getLtvAnalytics(organizationId, tenantLeads),
@@ -75,19 +78,46 @@ export default async function InsightsPage() {
     TeamPerformanceService.getTeamLeaderboard(organizationId, undefined, tenantUsers),
     ActivityDigestService.getDailyActivityDigest(organizationId, undefined, tenantUsers),
     answerRateBySource(organizationId),
-  ]);
-
-  const [capacities, overdue, sla] = await Promise.all([
     CapacityAssignmentService.getRepCapacities(organizationId, 25, tenantUsers),
     FollowUpEscalationService.getOverdueFollowUps(organizationId),
     SlaAnalyticsService.getSlaMetrics(organizationId, 15, tenantLeads),
   ]);
-
   const scorecard = await PipelineScorecardService.getPipelineScorecard(organizationId, {
     health,
     sla,
     stagnantLeads: stagnant,
   });
+  return {
+    forecast, winLoss, sourceRoi, health, bestTime, qualification, velocity, aging,
+    stagnant, cohorts, ltv, geo, channels, team, digest, sourceAnswer,
+    capacities, overdue, sla, scorecard,
+  };
+}
+
+function getInsights(organizationId: string, fresh: boolean) {
+  const hit = insightsCache.get(organizationId);
+  if (!fresh && hit && Date.now() - hit.at < INSIGHTS_TTL_MS) return hit;
+  const entry = { at: Date.now(), data: computeInsights(organizationId) };
+  entry.data.catch(() => insightsCache.delete(organizationId)); // never cache a failure
+  insightsCache.set(organizationId, entry);
+  return entry;
+}
+
+export default async function InsightsPage({ searchParams }: { searchParams: Promise<{ fresh?: string }> }) {
+  const { organizationId } = await requireOrg();
+  // Revenue, every rep's performance and lead-level lists across the workspace: admins only.
+  if (!(await hasPermission("settings.manage"))) redirect("/my-dashboard");
+  const fresh = (await searchParams).fresh === "1";
+  const [fmt, snapshot] = await Promise.all([getOrgFormat(organizationId), Promise.resolve(getInsights(organizationId, fresh))]);
+  // Money in the workspace's configured currency/locale (was hardcoded USD).
+  const money = (n: number) => formatCurrency(n, fmt);
+  const {
+    forecast, winLoss, sourceRoi, health, bestTime, qualification, velocity, aging,
+    stagnant, cohorts, ltv, geo, channels, team, digest, sourceAnswer,
+    capacities, overdue, scorecard,
+  } = await snapshot.data;
+  const updatedMins = Math.floor((Date.now() - snapshot.at) / 60_000);
+
   const GRADE_COLOR: Record<string, string> = { A: "text-emerald-500", B: "text-lime-500", C: "text-amber-500", D: "text-rose-500" };
 
   return (
@@ -95,6 +125,10 @@ export default async function InsightsPage() {
       <div>
         <h2 className="text-3xl font-bold tracking-tight">Insights</h2>
         <p className="text-sm text-muted-foreground">Forecast, win/loss, source ROI, and pipeline health at a glance.</p>
+        <p className="text-xs text-muted-foreground">
+          Updated {updatedMins < 1 ? "just now" : `${updatedMins} min ago`} ·{" "}
+          <Link href="/insights?fresh=1" className="underline hover:text-foreground">Refresh</Link>
+        </p>
       </div>
 
       {/* Pipeline scorecard — composite grade */}

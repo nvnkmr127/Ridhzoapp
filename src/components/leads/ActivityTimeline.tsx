@@ -5,6 +5,7 @@ import { Phone, MessageSquare, Mail, StickyNote, Bell, Paperclip, Eye, Sparkles,
 import type { LucideIcon } from "lucide-react";
 import { LocalTime } from "@/components/LocalTime";
 import { cn } from "@/lib/utils";
+import { loadOlderActivitiesAction } from "@/lib/actions/leads";
 
 type Activity = {
   id: string;
@@ -54,9 +55,38 @@ function meta(type: string) {
   );
 }
 
-export function ActivityTimeline({ activities }: { activities: Activity[] }) {
+// `hasMore`: the server sent only the newest page; "Load older" pages further back via leadId.
+export function ActivityTimeline({ activities: initial, leadId, hasMore: initialHasMore = false }: { activities: Activity[]; leadId?: string; hasMore?: boolean }) {
   const [filter, setFilter] = React.useState<"all" | Group>("all");
   const [shown, setShown] = React.useState(PAGE);
+  // Older pages fetched on demand, appended below the server-rendered newest page (which stays live
+  // with router.refresh()).
+  const [older, setOlder] = React.useState<Activity[]>([]);
+  const [hasMore, setHasMore] = React.useState(initialHasMore);
+  const [loadingOlder, setLoadingOlder] = React.useState(false);
+  const [olderError, setOlderError] = React.useState<string | null>(null);
+  const activities = React.useMemo(() => {
+    const seen = new Set(initial.map((a) => a.id));
+    return [...initial, ...older.filter((a) => !seen.has(a.id))];
+  }, [initial, older]);
+
+  async function loadOlder() {
+    const last = activities[activities.length - 1];
+    if (!leadId || !last) return;
+    setLoadingOlder(true);
+    setOlderError(null);
+    try {
+      const res = await loadOlderActivitiesAction(leadId, { createdAt: new Date(last.createdAt).toISOString(), id: last.id });
+      if (!res.ok) throw new Error(res.message);
+      setOlder((o) => [...o, ...(res.data.activities as unknown as Activity[])]);
+      setHasMore(res.data.hasMore);
+      setShown((n) => n + PAGE);
+    } catch (e) {
+      setOlderError(e instanceof Error ? e.message : "Couldn't load older activity.");
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
 
   const counts = React.useMemo(() => {
     const c: Record<string, number> = { all: activities.length };
@@ -128,6 +158,17 @@ export function ActivityTimeline({ activities }: { activities: Activity[] }) {
           Show {Math.min(PAGE, visible.length - shown)} more of {visible.length - shown} older
         </button>
       )}
+      {visible.length <= shown && hasMore && leadId && (
+        <button
+          type="button"
+          onClick={loadOlder}
+          disabled={loadingOlder}
+          className="w-full rounded-lg border border-border py-2 text-xs font-medium text-muted-foreground hover:text-foreground disabled:opacity-60"
+        >
+          {loadingOlder ? "Loading…" : "Load older activity"}
+        </button>
+      )}
+      {olderError && <p className="text-center text-xs text-destructive">{olderError}</p>}
     </div>
   );
 }

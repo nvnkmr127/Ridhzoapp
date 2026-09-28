@@ -1,16 +1,19 @@
 "use server";
 
-import { requireOrg, requirePermission } from "@/lib/rbac";
+import { hasPermission, requirePermission } from "@/lib/rbac";
 import { DedupService } from "@/domains/leads/dedupService";
+import { filterAccessibleLeadIds } from "@/lib/leads/access";
 import { LeadService } from "@/domains/leads/service";
 import { AuditService } from "@/domains/audit/service";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { ok, fail, actionFail } from "@/lib/actions/result";
 
+// Same gate and scope as the Duplicates page: mergers only, and only admins see the whole workspace.
 export async function findDuplicatesAction() {
-  const { organizationId } = await requireOrg();
-  return DedupService.findDuplicateGroups(organizationId);
+  const { organizationId, userId } = await requirePermission("leads.merge");
+  const isAdmin = await hasPermission("settings.manage");
+  return DedupService.findDuplicateGroups(organizationId, { enforceOwnerId: isAdmin ? undefined : userId });
 }
 
 export async function setAutoMergeAction(enabled: boolean) {
@@ -36,6 +39,9 @@ export async function mergeLeadsAction(input: z.infer<typeof mergeSchema>) {
   if (!parsed.success) return fail("VALIDATION", "Select a primary and a duplicate lead to merge.");
   const { primaryId, duplicateId } = parsed.data;
   try {
+    // A merger who isn't an admin may only merge leads they can open (the page only lists those).
+    const allowed = await filterAccessibleLeadIds([primaryId, duplicateId], { userId, organizationId });
+    if (allowed.length !== 2) return fail("NOT_FOUND", "Lead not found");
     // Snapshot the duplicate's identity before merge() hard-deletes it — otherwise the audit
     // entry's only reference to the merged lead is an id that resolves to nothing afterwards.
     const duplicate = await LeadService.getLead(duplicateId, organizationId);

@@ -23,13 +23,19 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const [results, setResults] = React.useState<UniversalSearchResults>({ leads: [], users: [] });
   const [loading, setLoading] = React.useState(false);
 
-  // Debounced universal search (leads and team members).
+  // Debounced universal search (leads and team members). `latest` drops responses that arrive after
+  // a newer query was typed, so a slow earlier search can't overwrite the current results.
+  const latest = React.useRef(0);
   React.useEffect(() => {
-    if (query.trim().length < 2) { setResults({ leads: [], users: [] }); return; }
+    const id = ++latest.current;
+    if (query.trim().length < 2) { setResults({ leads: [], users: [] }); setLoading(false); return; }
     setLoading(true);
     const t = setTimeout(async () => {
-      try { setResults(await searchUniversalAction(query)); } catch { setResults({ leads: [], users: [] }); }
-      finally { setLoading(false); }
+      let next: UniversalSearchResults = { leads: [], users: [] };
+      try { next = await searchUniversalAction(query); } catch { /* show "No results." */ }
+      if (id !== latest.current) return;
+      setResults(next);
+      setLoading(false);
     }, 200);
     return () => clearTimeout(t);
   }, [query]);

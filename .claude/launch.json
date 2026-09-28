@@ -29,6 +29,15 @@
       "port": 3002
     },
     {
+      "name": "ridhzo-audit",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "env DATABASE_URL=postgresql://postgres@localhost:55433/ridhzo REDIS_URL= RESEND_API_KEY= AI_GATEWAY_API_KEY= FIREBASE_PRIVATE_KEY= RAZORPAY_KEY_SECRET= R2_SECRET_ACCESS_KEY= SENTRY_DSN= NEXT_PUBLIC_SENTRY_DSN= NEXTAUTH_URL=http://localhost:3004 NEXT_PUBLIC_APP_URL=http://localhost:3004 npx next dev -p 3004"
+      ],
+      "port": 3004
+    },
+    {
       "name": "ridhzo-website",
       "runtimeExecutable": "bash",
       "runtimeArgs": [

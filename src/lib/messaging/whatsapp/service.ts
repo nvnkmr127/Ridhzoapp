@@ -50,10 +50,18 @@ export function chooseSend(
 
 export const WhatsAppService = {
   // Full thread for a lead, oldest first — drives the conversation view.
-  async listForLead(leadId: string) {
-    return db.select().from(whatsappMessages)
+  // Oldest → newest. With `limit`, only the most recent `limit` messages (still oldest → newest).
+  async listForLead(leadId: string, limit?: number) {
+    if (limit == null) {
+      return db.select().from(whatsappMessages)
+        .where(eq(whatsappMessages.leadId, leadId))
+        .orderBy(whatsappMessages.createdAt);
+    }
+    const rows = await db.select().from(whatsappMessages)
       .where(eq(whatsappMessages.leadId, leadId))
-      .orderBy(whatsappMessages.createdAt);
+      .orderBy(desc(whatsappMessages.createdAt))
+      .limit(limit);
+    return rows.reverse();
   },
 
   async send(input: SendWhatsAppInput) {

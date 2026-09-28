@@ -23,13 +23,14 @@ export function LeadPager({ leadId }: { leadId: string }) {
   const ctx = useListContext(leadId);
   if (!ctx) return null;
   const i = ctx.ids.indexOf(leadId);
-  const prev = ctx.ids[i - 1];
-  const next = ctx.ids[i + 1];
+  // At the edge of this page, step onto the list's previous/next page instead of stopping.
+  const prev = ctx.ids[i - 1] ? `/leads/${ctx.ids[i - 1]}` : ctx.prevPageUrl ?? null;
+  const next = ctx.ids[i + 1] ? `/leads/${ctx.ids[i + 1]}` : ctx.nextPageUrl ?? null;
   return (
     <div className="flex items-center gap-1 text-xs text-muted-foreground">
       <Button variant="ghost" size="icon" className="h-8 w-8" disabled={!prev} aria-label="Previous lead" asChild={!!prev}>
         {prev ? (
-          <Link href={`/leads/${prev}`}>
+          <Link href={prev} aria-label={ctx.ids[i - 1] ? "Previous lead" : "Previous page of leads"}>
             <ChevronLeft className="h-4 w-4" />
           </Link>
         ) : (
@@ -41,7 +42,7 @@ export function LeadPager({ leadId }: { leadId: string }) {
       </span>
       <Button variant="ghost" size="icon" className="h-8 w-8" disabled={!next} aria-label="Next lead" asChild={!!next}>
         {next ? (
-          <Link href={`/leads/${next}`}>
+          <Link href={next} aria-label={ctx.ids[i + 1] ? "Next lead" : "Next page of leads"}>
             <ChevronRight className="h-4 w-4" />
           </Link>
         ) : (

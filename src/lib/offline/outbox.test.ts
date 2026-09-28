@@ -5,6 +5,8 @@ import {
   removeOfflineLead,
   clearOfflineOutbox,
   flushOfflineOutbox,
+  retryFailedOfflineLeads,
+  discardFailedOfflineLeads,
 } from "./outbox";
 import { createLeadAction } from "@/lib/actions/leads";
 
@@ -170,19 +172,47 @@ describe("Offline Outbox Sync", () => {
     expect(getOfflineOutbox("org_2")).toHaveLength(1);
   });
 
-  it("drops poisoned leads after 5 failed sync attempts to prevent infinite stuck queues", async () => {
-    vi.mocked(createLeadAction).mockResolvedValue({
-      ok: false,
-      code: "VALIDATION",
-      message: "Invalid field format",
-    });
+  it("stops retrying after 5 failed attempts but keeps the lead (marked failed) until the user acts", async () => {
+    vi.mocked(createLeadAction).mockResolvedValue({ ok: false, code: "SERVER", message: "Server internal error" });
+    enqueueOfflineLead({ name: "Stuck Lead" }, "org_retry");
 
-    enqueueOfflineLead({ name: "Poisoned Lead" }, "org_retry");
+    for (let i = 0; i < 5; i++) await flushOfflineOutbox(undefined, "org_retry");
+    const [item] = getOfflineOutbox("org_retry");
+    expect(item).toMatchObject({ failed: true, attempts: 5, lastError: "Server internal error" });
 
-    for (let i = 0; i < 5; i++) {
-      await flushOfflineOutbox(undefined, "org_retry");
-    }
+    await flushOfflineOutbox(undefined, "org_retry");
+    expect(createLeadAction).toHaveBeenCalledTimes(5); // failed items aren't retried automatically
 
-    expect(getOfflineOutbox("org_retry")).toHaveLength(0);
+    retryFailedOfflineLeads("org_retry");
+    expect(getOfflineOutbox("org_retry")[0]).toMatchObject({ failed: false, attempts: 0 });
+    discardFailedOfflineLeads("org_retry");
+    expect(getOfflineOutbox("org_retry")).toHaveLength(1); // only failed ones are discarded
+  });
+
+  it("marks a validation rejection failed at once — retrying can't fix it", async () => {
+    vi.mocked(createLeadAction).mockResolvedValue({ ok: false, code: "VALIDATION", message: "Invalid field format" });
+    enqueueOfflineLead({ name: "Bad Lead" }, "org_v");
+    const r = await flushOfflineOutbox(undefined, "org_v");
+    expect(r.gaveUp).toBe(1);
+    expect(getOfflineOutbox("org_v")[0]).toMatchObject({ failed: true });
+    discardFailedOfflineLeads("org_v");
+    expect(getOfflineOutbox("org_v")).toHaveLength(0);
+  });
+
+  it("replays every attempt with the item's idempotency key", async () => {
+    vi.mocked(createLeadAction).mockResolvedValue({ ok: true, data: { id: "x" } as any });
+    const item = enqueueOfflineLead({ name: "Keyed" }, "org_k", "11111111-2222-3333-4444-555555555555");
+    await flushOfflineOutbox(undefined, "org_k");
+    expect(createLeadAction).toHaveBeenCalledWith(item.payload, { idempotencyKey: "11111111-2222-3333-4444-555555555555" });
+  });
+
+  it("stops the run on a network error (still offline) and keeps the rest queued", async () => {
+    vi.mocked(createLeadAction).mockRejectedValue(new TypeError("Failed to fetch"));
+    enqueueOfflineLead({ name: "A" }, "org_n");
+    enqueueOfflineLead({ name: "B" }, "org_n");
+    const r = await flushOfflineOutbox(undefined, "org_n");
+    expect(createLeadAction).toHaveBeenCalledTimes(1);
+    expect(r.failed).toBe(1);
+    expect(getOfflineOutbox("org_n")).toHaveLength(2);
   });
 });

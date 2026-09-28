@@ -6,10 +6,39 @@ import { useOfflineSync } from "@/hooks/use-offline-sync";
 import { Button } from "@/components/ui/button";
 
 export function OfflineStatusIndicator({ organizationId }: { organizationId?: string } = {}) {
-  const { isOnline, pendingCount, isSyncing, syncNow } = useOfflineSync(organizationId);
+  const { isOnline, pendingCount, failedCount, isSyncing, syncNow, retryFailed, discardFailed } = useOfflineSync(organizationId);
 
-  if (isOnline && pendingCount === 0) {
+  if (isOnline && pendingCount === 0 && failedCount === 0) {
     return null;
+  }
+
+  // Leads that stopped retrying are never dropped silently — the user decides.
+  if (isOnline && pendingCount === 0 && failedCount > 0) {
+    return (
+      <div className="flex items-center gap-1">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={retryFailed}
+          disabled={isSyncing}
+          className="h-7 gap-1.5 border-destructive/40 bg-destructive/10 text-xs font-medium text-destructive hover:bg-destructive/20"
+          title="These offline leads couldn't be saved. Retry sends them again."
+        >
+          <RefreshCw className={`h-3 w-3 ${isSyncing ? "animate-spin" : ""}`} />
+          <span>{failedCount} not saved · Retry</span>
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 text-xs text-muted-foreground"
+          onClick={() => {
+            if (window.confirm(`Discard ${failedCount} unsaved lead${failedCount === 1 ? "" : "s"} from this device? This can't be undone.`)) discardFailed();
+          }}
+        >
+          Discard
+        </Button>
+      </div>
+    );
   }
 
   if (!isOnline) {

@@ -42,9 +42,10 @@ export default async function DuplicatesPage() {
     );
   }
 
-  const { organizationId } = await requireOrg();
+  const { organizationId, userId } = await requireOrg();
   const [groups, org] = await Promise.all([
-    DedupService.findDuplicateGroups(organizationId),
+    // Owner isolation: someone with leads.merge but not admin only sees duplicates among their own leads.
+    DedupService.findDuplicateGroups(organizationId, { enforceOwnerId: isAdmin ? undefined : userId }),
     OrgService.getOrganization(organizationId),
   ]);
 

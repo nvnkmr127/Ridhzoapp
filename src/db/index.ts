@@ -9,6 +9,16 @@ declare global {
   var _dbClient: postgres.Sql | undefined;
 }
 
+// Remote DBs must use TLS — "prefer" silently falls back to plaintext. An explicit ?sslmode= in the
+// URL wins (e.g. sslmode=disable for a compose-network Postgres without certificates); local hosts
+// default to no TLS.
+function sslFor(url: string | undefined): false | "require" | "prefer" | "verify-full" {
+  const mode = url?.match(/[?&]sslmode=([a-z-]+)/)?.[1];
+  if (mode === "disable") return false;
+  if (mode === "prefer" || mode === "verify-full" || mode === "require") return mode;
+  return /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(url ?? "") ? false : "require";
+}
+
 function getClient(): postgres.Sql {
   if (!globalThis._dbClient) {
     const isProd = process.env.NODE_ENV === "production";
@@ -19,7 +29,7 @@ function getClient(): postgres.Sql {
       idle_timeout: isProd ? 30 : 300, // Keep pool warm so navigation clicks do not wait for new TCP handshakes
       connect_timeout: 10, // Generous handshake timeout for cloud proxy
       max_lifetime: 60 * 30, // 30m max connection lifetime
-      ssl: connectionString?.includes("localhost") ? false : "prefer",
+      ssl: sslFor(connectionString),
       onnotice: () => {},
       // Never in production: logging every query WITH bound params leaks lead PII (names, emails,
       // phones) and reset-token hashes into stdout/persisted logs.

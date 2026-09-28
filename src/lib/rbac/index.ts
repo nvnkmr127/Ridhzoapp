@@ -87,10 +87,8 @@ export async function isSuperAdmin(): Promise<boolean> {
   return Boolean(session?.user?.isSuperAdmin);
 }
 
-const roleCache = new Map<string, { role: { name: string; permissions: string[]; organizationId: string | null } | null; exp: number }>();
-
 // Resolve the current user's role (name + permissions + tenant) from the roleId carried in the JWT.
-// Cached per request and in-memory (60s TTL) so role lookup doesn't block every page navigation.
+// Cached per request, and briefly in memory (lib/rbac/roleCache — cleared on role edits).
 const currentRole = cache(async function currentRole(): Promise<{ name: string; permissions: string[]; organizationId: string | null } | null> {
   const session = await getSession();
   let roleId = session?.user?.roleId;
@@ -117,18 +115,17 @@ const currentRole = cache(async function currentRole(): Promise<{ name: string; 
     return null;
   }
 
-  const now = Date.now();
-  const cached = roleCache.get(roleId);
-  let res = cached && cached.exp > now ? cached.role : undefined;
-  if (res === undefined) {
+  // Shared short-TTL cache that role edits clear immediately (forgetRole) — the same one the /api/v1
+  // path uses. The old private 60s map here was never cleared, so web permission changes lagged.
+  const cached = await cachedRole(roleId, async () => {
     const [role] = await db
       .select({ name: roles.name, permissions: roles.permissions, organizationId: roles.organizationId })
       .from(roles)
       .where(eq(roles.id, roleId))
       .limit(1);
-    res = role ? { name: role.name, permissions: role.permissions ?? [], organizationId: role.organizationId } : null;
-    roleCache.set(roleId, { role: res, exp: now + 60_000 });
-  }
+    return role ?? null;
+  });
+  const res = cached ? { name: cached.name, permissions: cached.permissions ?? [], organizationId: cached.organizationId } : null;
   // Defense in depth: a tenant role only counts inside its own org (writes already enforce this).
   if (res?.organizationId && res.organizationId !== session?.user?.organizationId && !session?.user?.isSuperAdmin) return null;
   return res;

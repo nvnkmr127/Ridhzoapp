@@ -20,6 +20,7 @@ import {
   gte,
   exists,
   count,
+  getTableColumns,
 } from "drizzle-orm";
 import { eventBus } from "@/lib/events/emitter";
 import { ActivityService } from "@/domains/activities/service";
@@ -27,6 +28,7 @@ import { FilterGroup, FilterRule } from "@/domains/savedViews/service";
 import { normalizeEmail, normalizePhone } from "@/lib/leads/normalize";
 import { PlanService } from "@/domains/billing/planService";
 import { assertRequiredLeadFields } from "@/lib/leads/requiredFields";
+import { SmartSegmentationService, type SmartSegmentKey } from "./smartSegmentationService";
 
 export type ListLeadsOptions = {
   organizationId: string;
@@ -45,7 +47,29 @@ export type ListLeadsOptions = {
   enforceOwnerId?: string;
   /** Restrict to these lead ids (e.g. exporting the rows a user ticked). */
   ids?: string[];
+  /** A smart-segment chip's list (same SQL condition as the chip's count). */
+  segment?: SmartSegmentKey;
+  /** Page-size ceiling. Defaults to 100 so a URL/client can't ask for the whole tenant; export raises it. */
+  maxLimit?: number;
 };
+
+// Digits-only phone, the exact expression the trigram index in migration 0081 is built on — keep
+// them identical or Postgres falls back to scanning the tenant.
+export const phoneDigitsSql = sql`regexp_replace(${leads.phone}, '[^0-9]', '', 'g')`;
+
+/**
+ * One search condition for every lead search box (leads list, command palette, mobile API): name /
+ * email / company contain the term, or the phone's digits contain the term's digits — so
+ * "98765 43210" matches "+919876543210" everywhere.
+ */
+export function leadSearchCondition(raw: string) {
+  const term = raw.trim();
+  const like = `%${term}%`;
+  const digits = term.replace(/[^0-9]/g, "");
+  const conds = [ilike(leads.name, like), ilike(leads.email, like), ilike(leads.company, like)];
+  conds.push(digits.length >= 3 ? sql`${phoneDigitsSql} ILIKE ${"%" + digits + "%"}` : ilike(leads.phone, like));
+  return or(...conds)!;
+}
 
 export class LeadService {
   static async createLead(
@@ -439,7 +463,7 @@ export class LeadService {
 
   static async listLeads(options: ListLeadsOptions) {
     const page = Math.max(options.page || 1, 1);
-    const limit = Math.max(options.limit || 50, 1);
+    const limit = Math.min(Math.max(options.limit || 50, 1), options.maxLimit ?? 100);
     const offset = (page - 1) * limit;
 
     // Recycled (soft-deleted) leads never appear in normal lists.
@@ -452,24 +476,11 @@ export class LeadService {
 
     // Global Search (Name, Phone, Email, Company)
     if (options.search && options.search.trim()) {
-      const term = options.search.trim();
-      const rawDigits = term.replace(/[^0-9]/g, "");
+      baseConditions.push(leadSearchCondition(options.search));
+    }
 
-      const searchConds = [
-        ilike(leads.name, `%${term}%`),
-        ilike(leads.email, `%${term}%`),
-        ilike(leads.company, `%${term}%`),
-      ];
-
-      if (rawDigits.length >= 3) {
-        searchConds.push(
-          sql`regexp_replace(${leads.phone}, '[^0-9]', '', 'g') ILIKE ${"%" + rawDigits + "%"}`,
-        );
-      } else {
-        searchConds.push(ilike(leads.phone, `%${term}%`));
-      }
-
-      baseConditions.push(or(...searchConds)!);
+    if (options.segment && options.segment !== "hot_leads") {
+      baseConditions.push((await SmartSegmentationService.conditions(options.organizationId))[options.segment]);
     }
 
     // Shortcut params
@@ -530,13 +541,24 @@ export class LeadService {
     const orderExpr = options.sortOrder === "asc" ? asc(sortCol) : desc(sortCol);
 
     // Default view surfaces unworked "new" leads first (then newest). An explicit column sort from
-    // the user overrides this — their choice wins.
+    // the user overrides this — their choice wins. `id` last: most sort columns aren't unique, and
+    // without a tiebreaker offset paging repeats or skips rows between pages.
     const orderBy = options.sortField
-      ? [orderExpr]
-      : [sql`(${leads.status} = 'new') desc`, desc(leads.createdAt)];
+      ? [orderExpr, desc(leads.id)]
+      : [sql`(${leads.status} = 'new') desc`, desc(leads.createdAt), desc(leads.id)];
 
     const [data, [{ total }]] = await Promise.all([
-      db.select().from(leads).where(where).orderBy(...orderBy).limit(limit).offset(offset),
+      db
+        .select({
+          ...getTableColumns(leads),
+          // Internal AI/scoring blobs are the bulk of custom_data and no list renders them.
+          customData: sql<unknown>`${leads.customData} - '_aiRecap' - '_scoreFactors' - '_enrichment'`.as("custom_data"),
+        })
+        .from(leads)
+        .where(where)
+        .orderBy(...orderBy)
+        .limit(limit)
+        .offset(offset),
       db.select({ total: count() }).from(leads).where(where),
     ]);
 

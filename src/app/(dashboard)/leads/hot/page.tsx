@@ -34,18 +34,27 @@ function waLink(phone: string | null) {
   return digits.length >= 6 ? `https://wa.me/${digits}` : null;
 }
 
-export default async function HotLeadsPage() {
+const PAGE_SIZE = 50;
+
+export default async function HotLeadsPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
+  const page = Math.max(1, Number((await searchParams).page) || 1);
   const [{ userId, organizationId }, isAdmin] = await Promise.all([
     requireOrg(),
     hasPermission("settings.manage"),
   ]);
   const enforceOwnerId = isAdmin ? undefined : userId;
   const fmt = await getOrgFormat(organizationId);
-  const [report, engaged, ignored] = await Promise.all([
-    LeadConversionPredictorService.getConversionPredictions(organizationId, enforceOwnerId),
+  const [engaged, ignored] = await Promise.all([
     ContentSharingService.recentlyEngagedLeadIds(organizationId),
     ContentSharingService.ignoredShares(organizationId, undefined, enforceOwnerId),
   ]);
+  // Scored, filtered and paged in SQL — this page used to load and render every open lead.
+  const report = await LeadConversionPredictorService.getConversionPredictions(organizationId, enforceOwnerId, {
+    engagedIds: [...engaged],
+    limit: PAGE_SIZE,
+    offset: (page - 1) * PAGE_SIZE,
+  });
+  const totalPages = Math.max(1, Math.ceil(report.hotCount / PAGE_SIZE));
 
   function nudgeLink(phone: string | null, title: string) {
     const digits = (phone ?? "").replace(/[^0-9]/g, "");
@@ -55,14 +64,7 @@ export default async function HotLeadsPage() {
 
   // Surface the leads worth acting on first: moderate probability and up, PLUS anyone who
   // just opened content (a live buying signal), then float content-openers to the top.
-  const hot = report.leads
-    .filter((l) => l.conversionProbability >= 35 || engaged.has(l.id))
-    .sort((a, b) => {
-      const ae = engaged.has(a.id) ? 1 : 0;
-      const be = engaged.has(b.id) ? 1 : 0;
-      if (ae !== be) return be - ae;
-      return b.conversionProbability - a.conversionProbability;
-    });
+  const hot = report.leads; // already content-openers first, then by probability
 
   return (
     <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6">
@@ -165,6 +167,25 @@ export default async function HotLeadsPage() {
               })}
             </TableBody>
           </Table>
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between border-t px-3 py-2 text-sm text-muted-foreground">
+              <span>
+                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, report.hotCount)} of {report.hotCount}
+              </span>
+              <div className="flex gap-2">
+                {page > 1 ? (
+                  <Button variant="outline" size="sm" asChild><Link href={`/leads/hot?page=${page - 1}`}>Previous</Link></Button>
+                ) : (
+                  <Button variant="outline" size="sm" disabled>Previous</Button>
+                )}
+                {page < totalPages ? (
+                  <Button variant="outline" size="sm" asChild><Link href={`/leads/hot?page=${page + 1}`}>Next</Link></Button>
+                ) : (
+                  <Button variant="outline" size="sm" disabled>Next</Button>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

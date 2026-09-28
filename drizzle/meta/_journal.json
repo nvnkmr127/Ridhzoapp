@@ -568,6 +568,13 @@
       "when": 1790557665381,
       "tag": "0080_lead_sync_stamp",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1790560156134,
+      "tag": "0081_lead_phone_digits_trgm",
+      "breakpoints": true
     }
   ]
 }

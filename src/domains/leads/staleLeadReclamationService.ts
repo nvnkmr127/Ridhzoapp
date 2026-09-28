@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { CustomStatusSchemaService } from "./customStatusSchemaService";
 import { leads } from "@/db/schema";
-import { and, eq, inArray, lt, or, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, lt, or, isNull, sql } from "drizzle-orm";
 import { ActivityService } from "@/domains/activities/service";
 
 export interface StaleLeadSummary {
@@ -19,15 +19,33 @@ export class StaleLeadReclamationService {
   /**
    * Identifies leads with no contact activity exceeding the inactivity threshold.
    */
+  private static async staleWhere(organizationId: string, daysInactiveThreshold: number, enforceOwnerId?: string) {
+    const { openKeys } = await CustomStatusSchemaService.resolver(organizationId); // custom statuses count by category
+    const thresholdDate = new Date(Date.now() - daysInactiveThreshold * 24 * 60 * 60 * 1000);
+    return and(
+      eq(leads.organizationId, organizationId),
+      isNull(leads.deletedAt),
+      openKeys.length ? inArray(leads.status, openKeys) : sql`false`,
+      ...(enforceOwnerId ? [eq(leads.ownerId, enforceOwnerId)] : []),
+      or(
+        lt(leads.lastContactedAt, thresholdDate),
+        and(isNull(leads.lastContactedAt), lt(leads.createdAt, thresholdDate))
+      )
+    );
+  }
+
+  /**
+   * Identifies leads with no contact activity exceeding the inactivity threshold, most inactive first.
+   * Pass limit/offset from list screens — without them every stale lead is returned (bulk reclaim).
+   */
   static async detectStaleLeads(
     organizationId: string,
     daysInactiveThreshold: number = 14,
-    enforceOwnerId?: string
+    enforceOwnerId?: string,
+    page?: { limit: number; offset?: number }
   ): Promise<StaleLeadSummary[]> {
-    const { openKeys } = await CustomStatusSchemaService.resolver(organizationId); // custom statuses count by category
-    const thresholdDate = new Date(Date.now() - daysInactiveThreshold * 24 * 60 * 60 * 1000);
-
-    const candidates = await db
+    const where = await this.staleWhere(organizationId, daysInactiveThreshold, enforceOwnerId);
+    const q = db
       .select({
         id: leads.id,
         name: leads.name,
@@ -38,18 +56,9 @@ export class StaleLeadReclamationService {
         createdAt: leads.createdAt,
       })
       .from(leads)
-      .where(
-        and(
-          eq(leads.organizationId, organizationId),
-          isNull(leads.deletedAt),
-          inArray(leads.status, openKeys),
-          ...(enforceOwnerId ? [eq(leads.ownerId, enforceOwnerId)] : []),
-          or(
-            lt(leads.lastContactedAt, thresholdDate),
-            and(isNull(leads.lastContactedAt), lt(leads.createdAt, thresholdDate))
-          )
-        )
-      );
+      .where(where)
+      .orderBy(asc(sql`coalesce(${leads.lastContactedAt}, ${leads.createdAt})`), asc(leads.id));
+    const candidates = page ? await q.limit(page.limit).offset(page.offset ?? 0) : await q;
 
     const now = Date.now();
     return candidates.map((c) => {
@@ -60,6 +69,12 @@ export class StaleLeadReclamationService {
         daysInactive,
       };
     });
+  }
+
+  static async countStaleLeads(organizationId: string, daysInactiveThreshold: number = 14, enforceOwnerId?: string): Promise<number> {
+    const where = await this.staleWhere(organizationId, daysInactiveThreshold, enforceOwnerId);
+    const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(leads).where(where);
+    return Number(row?.n ?? 0);
   }
 
   /**

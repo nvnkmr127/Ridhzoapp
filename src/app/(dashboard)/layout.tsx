@@ -30,44 +30,48 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const superAdmin = await isSuperAdmin();
-  const { userId, organizationId } = await requireOrg();
+  const [superAdmin, { userId, organizationId }] = await Promise.all([isSuperAdmin(), requireOrg()]);
+
+  // Everything below is independent — one round of queries instead of ~8 sequential ones (each paid
+  // the remote DB round-trip, and every router.refresh() re-runs this layout).
+  const [maintenance, billingInfo, canAdmin, canSources, orgFormat, [me]] = await Promise.all([
+    superAdmin
+      ? Promise.resolve({ enabled: false, message: "" })
+      : PlatformConfigService.getGlobalCached<{ enabled: boolean; message: string }>("maintenance_mode", { enabled: false, message: "" }),
+    BillingLifecycleService.getTenantBillingStatus(organizationId),
+    hasPermission("settings.manage"),
+    hasPermission("sources.manage"),
+    getOrgFormat(organizationId),
+    db.select({ language: users.language, firstName: users.firstName, lastName: users.lastName, email: users.email, phone: users.phone }).from(users).where(eq(users.id, userId)).limit(1),
+  ]);
 
   // Maintenance mode: lock the app for everyone except super-admins (who need in to turn it off /
   // finish the work). Enforced here so enabling the toggle actually gates tenants, not just reflects
   // its own state in the console.
-  if (!superAdmin) {
-    const maintenance = await PlatformConfigService.getGlobalCached<{ enabled: boolean; message: string }>(
-      "maintenance_mode",
-      { enabled: false, message: "" },
-    );
-    if (maintenance.enabled) {
-      return (
-        <div className="flex min-h-dvh flex-col items-center justify-center bg-background p-6 text-center">
-          <div className="mx-auto max-w-md space-y-4 rounded-2xl border border-border bg-card p-8 shadow-sm">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/10 text-amber-600">
-              <Wrench className="h-6 w-6" />
-            </div>
-            <h1 className="text-xl font-semibold tracking-tight">Under maintenance</h1>
-            <p className="text-sm text-muted-foreground">
-              {maintenance.message?.trim() || "System is undergoing scheduled maintenance. Please check back shortly."}
-            </p>
+  if (maintenance.enabled) {
+    return (
+      <div className="flex min-h-dvh flex-col items-center justify-center bg-background p-6 text-center">
+        <div className="mx-auto max-w-md space-y-4 rounded-2xl border border-border bg-card p-8 shadow-sm">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-500/10 text-amber-600">
+            <Wrench className="h-6 w-6" />
           </div>
+          <h1 className="text-xl font-semibold tracking-tight">Under maintenance</h1>
+          <p className="text-sm text-muted-foreground">
+            {maintenance.message?.trim() || "System is undergoing scheduled maintenance. Please check back shortly."}
+          </p>
         </div>
-      );
-    }
+      </div>
+    );
   }
 
-  const billingInfo = await BillingLifecycleService.getTenantBillingStatus(organizationId);
   const effectivePlan = billingInfo
     ? (billingInfo.status === "locked" || billingInfo.status === "free" ? "free" : billingInfo.plan)
     : undefined;
+  // Depends on the billing status above, so it's the one query that waits.
   const usageStats = await PlanService.getUsageStats(organizationId, effectivePlan);
   // Admins whose device clock differs from the workspace timezone get a one-click "use my timezone" banner.
-  const [canAdmin, canSources] = await Promise.all([hasPermission("settings.manage"), hasPermission("sources.manage")]);
   const allowed = [canAdmin && "settings.manage", canSources && "sources.manage"].filter((p): p is string => !!p);
-  const workspaceTz = (await getOrgFormat(organizationId)).timezone;
-  const [me] = await db.select({ language: users.language, firstName: users.firstName, lastName: users.lastName, email: users.email, phone: users.phone }).from(users).where(eq(users.id, userId)).limit(1);
+  const workspaceTz = orgFormat.timezone;
   const lang = isLang(me?.language) ? me.language : "en";
 
   return (

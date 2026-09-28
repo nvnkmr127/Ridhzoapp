@@ -16,9 +16,17 @@ import { LeadsFilterBar } from "@/components/leads/LeadsFilterBar";
 import { LeadsTable } from "@/components/leads/LeadsTable";
 import { LeadsAutoRefresh } from "@/components/leads/LeadsAutoRefresh";
 import { listUsersAction } from "@/lib/actions/users";
+import { leadsChangeTokenAction } from "@/lib/actions/leads";
 import { LeadSourceService } from "@/domains/leads/sourceService";
 import { TagService } from "@/domains/tags/service";
 import { CustomFieldService } from "@/domains/customFields/service";
+import { SMART_SEGMENT_KEYS } from "@/domains/leads/smartSegmentationService";
+
+const SEGMENT_LABEL: Record<string, string> = {
+  high_value_at_risk: "High value deals at risk",
+  unassigned_new: "Unassigned new leads",
+  stale_high_priority: "Stale high priority leads",
+};
 
 export default async function LeadsPage({
   searchParams,
@@ -32,12 +40,16 @@ export default async function LeadsPage({
   const search = typeof params.search === "string" ? params.search : undefined;
   const status = typeof params.status === "string" ? params.status : undefined;
   const ownerId = typeof params.owner === "string" ? params.owner : undefined;
-  const sortField = typeof params.sort === "string" ? params.sort : "createdAt";
+  const segment = SMART_SEGMENT_KEYS.find((k) => k === params.segment && k !== "hot_leads");
+  // No ?sort → the service's default order (unworked "new" leads first, then newest).
+  const sortField = typeof params.sort === "string" ? params.sort : undefined;
   const sortOrder = (typeof params.order === "string" && (params.order === "asc" || params.order === "desc"))
     ? params.order
     : "desc";
   const page = typeof params.page === "string" ? parseInt(params.page, 10) || 1 : 1;
-  const limit = typeof params.pageSize === "string" ? parseInt(params.pageSize, 10) || 20 : 20;
+  const PAGE_SIZES = [10, 20, 50, 100];
+  const requestedSize = typeof params.pageSize === "string" ? parseInt(params.pageSize, 10) : 20;
+  const limit = PAGE_SIZES.includes(requestedSize) ? requestedSize : 20;
 
   let filters: any = undefined;
   if (typeof params.filters === "string") {
@@ -48,7 +60,8 @@ export default async function LeadsPage({
     }
   }
 
-  const [views, usersList, sourcesList, tagsList, customFieldDefs, statusSchema, leadResult] = await Promise.all([
+  const [changeToken, views, usersList, sourcesList, tagsList, customFieldDefs, statusSchema, leadResult] = await Promise.all([
+    leadsChangeTokenAction(),
     SavedViewService.listViews(organizationId, userId, isAdmin),
     listUsersAction().catch(() => []),
     LeadSourceService.getSources(organizationId).catch(() => []),
@@ -60,6 +73,7 @@ export default async function LeadsPage({
       search,
       status,
       ownerId,
+      segment,
       filters,
       sortField,
       sortOrder,
@@ -84,12 +98,12 @@ export default async function LeadsPage({
         return { ...l, customData: cd };
       });
 
-  const hasActiveFilters = Boolean(search || status || ownerId || filters);
+  const hasActiveFilters = Boolean(search || status || ownerId || filters || segment);
 
   return (
     // pb-24: room below the table for the floating assistant button, which otherwise covers the pager.
     <div className="flex-1 space-y-4 p-4 pb-24 pt-4 sm:p-8 sm:pb-28 sm:pt-6">
-      <LeadsAutoRefresh />
+      <LeadsAutoRefresh initialToken={changeToken} />
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Leads</h2>
@@ -137,6 +151,13 @@ export default async function LeadsPage({
       <Suspense fallback={null}>
         <SmartSegments />
       </Suspense>
+
+      {segment && (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="rounded-full border border-border bg-muted px-3 py-1 font-medium">{SEGMENT_LABEL[segment]}</span>
+          <Link href="/leads" className="text-muted-foreground hover:text-foreground hover:underline">Clear</Link>
+        </div>
+      )}
 
       <LeadsFilterBar
         views={views}

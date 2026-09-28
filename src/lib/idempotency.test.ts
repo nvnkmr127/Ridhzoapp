@@ -25,7 +25,7 @@ vi.mock("@/db", () => ({
   },
 }));
 
-import { withIdempotency } from "./idempotency";
+import { withIdempotency, actionOnce } from "./idempotency";
 
 const auth = { organizationId: "org-1", userId: "user-1" };
 const KEY = "0b7c5a1e-2f7d-4c1a-9f6e-3d2b1a0c9e8f";
@@ -97,5 +97,32 @@ describe("withIdempotency", () => {
     await withIdempotency(req("bad key!"), auth, "notes:l1", handler);
     expect(row).toBeNull();
     expect(handler).toHaveBeenCalledOnce();
+  });
+});
+
+describe("actionOnce (server actions)", () => {
+  beforeEach(() => { row = null; });
+  const scope = { organizationId: "org-1", userId: "user-1", route: "createLeadAction" };
+
+  it("runs once and replays the first successful result for the same key", async () => {
+    const run = vi.fn().mockResolvedValue({ ok: true, data: { id: "lead-1" } });
+    const first = await actionOnce(scope, "offline-key-123", run);
+    const second = await actionOnce(scope, "offline-key-123", run);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(second).toEqual(first);
+  });
+
+  it("releases the key when the action fails, so a retry runs for real", async () => {
+    const run = vi.fn().mockResolvedValueOnce({ ok: false, code: "SERVER", message: "boom" }).mockResolvedValueOnce({ ok: true, data: 1 });
+    await actionOnce(scope, "offline-key-456", run);
+    expect(await actionOnce(scope, "offline-key-456", run)).toEqual({ ok: true, data: 1 });
+    expect(run).toHaveBeenCalledTimes(2);
+  });
+
+  it("runs normally without a usable key", async () => {
+    const run = vi.fn().mockResolvedValue({ ok: true, data: 1 });
+    await actionOnce(scope, undefined, run);
+    await actionOnce(scope, undefined, run);
+    expect(run).toHaveBeenCalledTimes(2);
   });
 });

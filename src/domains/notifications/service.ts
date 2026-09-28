@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { notifications, users, roles } from "@/db/schema";
 import { and, desc, eq, isNull, inArray, lt, sql } from "drizzle-orm";
 import { keepAlive } from "@/lib/keepAlive";
+import { escapeHtml } from "@/lib/utils";
 
 // High-signal notification types that also warrant an email. Chatty ones (self-completions) don't.
 const EMAIL_TYPES = new Set(["new_lead", "lead_assigned", "follow_up_due", "follow_up_overdue", "sla_escalation", "meeting_scheduled", "meeting_reminder"]);
@@ -83,7 +84,8 @@ export class NotificationService {
       await sendEmail({
         to: user.email,
         subject: data.title,
-        html: `<p>${data.body ?? data.title}</p><p><a href="${link}">Open in Ridhzo</a></p>`,
+        // Title/body carry lead data from public forms and webhooks — escape before it becomes HTML.
+        html: `<p>${escapeHtml(data.body ?? data.title)}</p><p><a href="${escapeHtml(link)}">Open in Ridhzo</a></p>`,
       });
     } catch (e) {
       console.error("[notifications] email failed", e);

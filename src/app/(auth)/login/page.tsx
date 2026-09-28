@@ -31,6 +31,14 @@ const loginSchema = z.object({
 
 type LoginValues = z.infer<typeof loginSchema>;
 
+// Where to go after signing in: the page the user was sent here from (middleware sets ?callbackUrl=),
+// same-origin paths only — never an absolute or protocol-relative URL (open redirect).
+function afterLoginPath(): string {
+  if (typeof window === "undefined") return "/";
+  const cb = new URLSearchParams(window.location.search).get("callbackUrl");
+  return cb && cb.startsWith("/") && !cb.startsWith("//") && !cb.startsWith("/\\") ? cb : "/";
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [status, setStatus] = useState<Status>(null);
@@ -78,7 +86,7 @@ export default function LoginPage() {
       } else {
         setRedirecting(true);
         setSuccess("Logged in. Opening your dashboard…");
-        router.push("/");
+        router.push(afterLoginPath());
       }
     } catch {
       setError("We couldn't reach the server. Check your connection and try again.");
@@ -89,7 +97,7 @@ export default function LoginPage() {
     setError(null);
     setGoogleLoading(true);
     try {
-      await signIn("google", { callbackUrl: "/" });
+      await signIn("google", { callbackUrl: afterLoginPath() });
     } catch {
       setError("Couldn't open Google sign-in. Check your connection and try again.");
       setGoogleLoading(false);
@@ -151,7 +159,7 @@ export default function LoginPage() {
       } else {
         setRedirecting(true);
         setSuccess("Verified. Opening your dashboard…");
-        router.push("/");
+        router.push(afterLoginPath());
       }
     } catch (err: any) {
       console.error("[phone-login] verifyOtp error:", err);
@@ -165,7 +173,7 @@ export default function LoginPage() {
     setError(null);
     const result = await signIn("credentials", { redirect: false, email: DEV_EMAIL, password: DEV_PASSWORD });
     if (result?.error) setError("Dev auto-login failed — is the DB seeded (npm run db:seed)?");
-    else router.push("/");
+    else router.push(afterLoginPath());
   };
 
   useEffect(() => {

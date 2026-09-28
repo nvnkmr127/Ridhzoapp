@@ -9,8 +9,12 @@ import { LeadService } from "@/domains/leads/service";
 import { CustomFieldService } from "@/domains/customFields/service";
 import { AuditService } from "@/domains/audit/service";
 import { PlanService } from "@/domains/billing/planService";
-import { ActivityService } from "@/domains/activities/service";
+import { ActivityService, LEAD_ACTIVITY_PAGE } from "@/domains/activities/service";
 import { ok, fail, actionFail, zodFieldErrors, type ActionResult } from "@/lib/actions/result";
+import { db } from "@/db";
+import { leads } from "@/db/schema";
+import { actionOnce } from "@/lib/idempotency";
+import { and, eq, sql } from "drizzle-orm";
 
 const emptyStringToUndefined = z.string().regex(/^\s*$/).transform(() => "");
 const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -40,11 +44,23 @@ const createLeadSchema = z.object({
   customData: z.record(z.string(), z.unknown()).optional(),
 });
 
+// idempotencyKey: the web offline queue sends one per queued lead, so replaying a lead whose first
+// attempt did reach the server (response lost) returns that lead instead of creating it twice.
 export async function createLeadAction(
   input: z.infer<typeof createLeadSchema>,
+  opts: { idempotencyKey?: string } = {},
 ): Promise<ActionResult<Awaited<ReturnType<typeof LeadService.createLead>>>> {
   const { userId, organizationId } = await requirePermission("leads.edit");
+  return actionOnce({ organizationId, userId, route: "createLeadAction" }, opts.idempotencyKey, () =>
+    createLead(input, userId, organizationId),
+  );
+}
 
+async function createLead(
+  input: z.infer<typeof createLeadSchema>,
+  userId: string,
+  organizationId: string,
+): Promise<ActionResult<Awaited<ReturnType<typeof LeadService.createLead>>>> {
   const parsed = createLeadSchema.safeParse(input);
   if (!parsed.success) {
     return fail("VALIDATION", "Please fix the highlighted fields.", zodFieldErrors(parsed.error));
@@ -678,6 +694,41 @@ export async function leadLiveFingerprintAction(leadId: string): Promise<string 
     const { userId, organizationId } = await requireOrg();
     await assertLeadAccess(id, { userId, organizationId });
     return await leadLiveFingerprint(id, organizationId);
+  } catch {
+    return null;
+  }
+}
+
+// "Load older" on the lead timeline: the profile renders the newest LEAD_ACTIVITY_PAGE activities and
+// pages further back from the oldest one shown (keyset on created_at, id).
+export async function loadOlderActivitiesAction(leadId: string, before: { createdAt: string; id: string }) {
+  try {
+    const id = z.guid().parse(leadId);
+    const beforeId = z.guid().parse(before.id);
+    const beforeAt = new Date(before.createdAt);
+    if (Number.isNaN(beforeAt.getTime())) return fail("VALIDATION", "Invalid cursor");
+    const { userId, organizationId } = await requireOrg();
+    await assertLeadAccess(id, { userId, organizationId });
+    const rows = await ActivityService.getLeadActivities(id, LEAD_ACTIVITY_PAGE, { createdAt: beforeAt, id: beforeId });
+    return ok({ activities: rows, hasMore: rows.length === LEAD_ACTIVITY_PAGE });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+// Cheap "did any lead this viewer sees change?" token for the leads list's auto-refresh. sync_at is
+// stamped by a trigger on every insert/update/soft-delete (migration 0080). Admins: the workspace's
+// newest stamp (index-backed). Reps: count + newest stamp over their own leads, so a lead reassigned
+// away (count drops) or to them (newer stamp) also moves it.
+export async function leadsChangeTokenAction(): Promise<string | null> {
+  try {
+    const { userId, organizationId } = await requireOrg();
+    const all = await hasPermission("settings.manage");
+    const [row] = await db
+      .select({ n: all ? sql<number>`0` : sql<number>`count(*) filter (where ${leads.deletedAt} is null)::int`, at: sql<string>`max(${leads.syncAt})::text` })
+      .from(leads)
+      .where(and(eq(leads.organizationId, organizationId), all ? undefined : eq(leads.ownerId, userId)));
+    return `${row?.n ?? 0}|${row?.at ?? ""}`;
   } catch {
     return null;
   }

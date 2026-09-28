@@ -1,11 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { SlaAnalyticsService } from "./slaAnalyticsService";
 
-vi.mock("@/db", () => ({
-  db: {
-    select: vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn().mockResolvedValue([
+const rows = [
           {
             id: "lead-1",
             createdAt: new Date(Date.now() - 30 * 60 * 1000), // 30 mins ago
@@ -24,7 +20,14 @@ vi.mock("@/db", () => ({
             lastContactedAt: null, // uncontacted -> SLA Breached
             status: "new",
           },
-        ]),
+        ];
+
+// The SQL path returns Postgres' aggregate row; the preloaded path runs the same rules in JS.
+vi.mock("@/db", () => ({
+  db: {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({
+        where: vi.fn().mockResolvedValue([{ total: 3, contacted: 2, compliant: 1, breached: 2, avg: 25 }]),
       })),
     })),
   },
@@ -32,7 +35,7 @@ vi.mock("@/db", () => ({
 
 describe("SlaAnalyticsService", () => {
   it("should calculate SLA compliance metrics correctly", async () => {
-    const metrics = await SlaAnalyticsService.getSlaMetrics("org-1", 15);
+    const metrics = await SlaAnalyticsService.getSlaMetrics("org-1", 15, rows);
 
     expect(metrics.totalLeads).toBe(3);
     expect(metrics.contactedLeads).toBe(2);
@@ -40,6 +43,19 @@ describe("SlaAnalyticsService", () => {
     expect(metrics.slaCompliantCount).toBe(1);
     expect(metrics.slaBreachedCount).toBe(2);
     expect(metrics.avgFirstContactMinutes).toBe(25); // (10 + 40) / 2
+  });
+
+  it("maps the SQL aggregate to the same shape (dashboard path)", async () => {
+    const metrics = await SlaAnalyticsService.getSlaMetrics("org-1", 15);
+    expect(metrics).toEqual({
+      totalLeads: 3,
+      contactedLeads: 2,
+      uncontactedLeads: 1,
+      slaBreachedCount: 2,
+      slaCompliantCount: 1,
+      complianceRatePercentage: 33.3,
+      avgFirstContactMinutes: 25,
+    });
   });
 
   it("measures response time to the FIRST contact, not the latest follow-up", async () => {

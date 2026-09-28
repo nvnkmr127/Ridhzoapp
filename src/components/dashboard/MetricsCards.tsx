@@ -10,9 +10,11 @@ export async function MetricsCards({
   filters: AnalyticsFilters;
   hidePipelineValue?: boolean;
 }) {
-  const metrics = await AnalyticsService.getLeadMetrics(filters);
-  const followUpMetrics = await AnalyticsService.getFollowUpMetrics(filters);
-  const fmt = hidePipelineValue ? null : await getOrgFormat(filters.organizationId);
+  const [metrics, followUpMetrics, fmt] = await Promise.all([
+    AnalyticsService.getLeadMetrics(filters),
+    AnalyticsService.getFollowUpMetrics(filters),
+    hidePipelineValue ? Promise.resolve(null) : getOrgFormat(filters.organizationId),
+  ]);
 
   return (
     <div className={`grid gap-4 ${hidePipelineValue ? "md:grid-cols-3" : "md:grid-cols-2 lg:grid-cols-4"}`}>

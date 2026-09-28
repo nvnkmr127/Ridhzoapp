@@ -277,7 +277,12 @@ export async function sendWhatsAppOtpAction(input: z.infer<typeof sendOtpSchema>
       );
     }
   } else {
-    // Unconfigured / dev fallback: log code for local testing
+    // Never "send" a code nobody receives in production (and never put one in the server logs).
+    if (process.env.NODE_ENV === "production") {
+      console.error("[watxio-otp] WhatsApp OTP is not configured (WATXIO_API_KEY / WATXIO_BASE_URL)");
+      return fail("SERVER", "WhatsApp sign-in isn't available right now. Sign up with Google or email instead.");
+    }
+    // Dev fallback: log the code for local testing.
     console.log(`\n========================================`);
     console.log(`[WATXIO WHATSAPP OTP] Phone: ${formatted} | Code: ${code}`);
     console.log(`========================================\n`);

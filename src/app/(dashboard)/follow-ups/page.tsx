@@ -15,15 +15,22 @@ import { followUpTypeLabel } from "@/lib/followUps/types";
 import Link from "next/link";
 import { LocalTime } from "@/components/LocalTime";
 
-const LIST_LIMIT = 500;
+// Each section shows its soonest SECTION_STEP rows; "Show more" grows that section by another step
+// (?o= / ?t= / ?l=). The counters come from one COUNT query, so they're always the full totals.
+const SECTION_STEP = 25;
 type View = "mine" | "team" | "unassigned";
 
-export default async function FollowUpsDashboard({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
+type SP = { view?: string; o?: string; t?: string; l?: string };
+
+export default async function FollowUpsDashboard({ searchParams }: { searchParams: Promise<SP> }) {
   const { userId, organizationId } = await requireOrg();
   // Admins (settings.manage) can also see the whole team's list and the follow-ups nobody owns —
   // e.g. sequence/automation steps on unassigned leads, which otherwise remind no one.
   const canSeeTeam = await hasPermission("settings.manage");
-  const requested = (await searchParams).view;
+  const sp = await searchParams;
+  const requested = sp.view;
+  const shown = (v: string | undefined) => Math.min(Math.max(Number(v) || SECTION_STEP, SECTION_STEP), 1000);
+  const limits = { o: shown(sp.o), t: shown(sp.t), l: shown(sp.l) };
   const view: View = canSeeTeam && (requested === "team" || requested === "unassigned") ? requested : "mine";
 
   const [dialCode, { timezone }, orgUsers] = await Promise.all([
@@ -48,7 +55,15 @@ export default async function FollowUpsDashboard({ searchParams }: { searchParam
   const tomorrowStart = startOfZonedDay(now, timezone, 1);
   const weekStart = startOfZonedDay(now, timezone, -zonedParts(now, timezone).weekday);
   const iso = (d: Date) => d.toISOString();
-  const [[counts], rows] = await Promise.all([
+  const section = (range: SQL, limit: number) =>
+    db
+      .select({ followUp: followUps, lead: { id: leads.id, name: leads.name, phone: leads.phone } })
+      .from(followUps)
+      .innerJoin(leads, eq(followUps.leadId, leads.id))
+      .where(and(scope, eq(followUps.status, "pending"), range))
+      .orderBy(asc(followUps.dueAt), asc(followUps.id))
+      .limit(limit);
+  const [[counts], overdue, today, later] = await Promise.all([
     db
       .select({
         overdue: sql<number>`count(*) filter (where ${followUps.status} = 'pending' and ${followUps.dueAt} < ${iso(now)}::timestamp)`,
@@ -59,20 +74,22 @@ export default async function FollowUpsDashboard({ searchParams }: { searchParam
       .from(followUps)
       .innerJoin(leads, eq(followUps.leadId, leads.id))
       .where(scope),
-    db
-      .select({ followUp: followUps, lead: { id: leads.id, name: leads.name, phone: leads.phone } })
-      .from(followUps)
-      .innerJoin(leads, eq(followUps.leadId, leads.id))
-      .where(and(scope, eq(followUps.status, "pending")))
-      .orderBy(asc(followUps.dueAt))
-      .limit(LIST_LIMIT),
+    section(sql`${followUps.dueAt} < ${iso(now)}::timestamp`, limits.o),
+    section(sql`${followUps.dueAt} >= ${iso(now)}::timestamp and ${followUps.dueAt} < ${iso(tomorrowStart)}::timestamp`, limits.t),
+    section(sql`${followUps.dueAt} >= ${iso(tomorrowStart)}::timestamp`, limits.l),
   ]);
   const n = (v: unknown) => Number(v ?? 0);
   const totalPending = n(counts?.overdue) + n(counts?.today) + n(counts?.later);
 
-  const overdue = rows.filter((f) => f.followUp.dueAt < now);
-  const today = rows.filter((f) => f.followUp.dueAt >= now && f.followUp.dueAt < tomorrowStart);
-  const later = rows.filter((f) => f.followUp.dueAt >= tomorrowStart);
+  const moreHref = (key: "o" | "t" | "l") => {
+    const p = new URLSearchParams();
+    if (view !== "mine") p.set("view", view);
+    for (const k of ["o", "t", "l"] as const) {
+      const v = k === key ? limits[k] + SECTION_STEP : limits[k];
+      if (v !== SECTION_STEP) p.set(k, String(v));
+    }
+    return `/follow-ups${p.size ? `?${p}` : ""}`;
+  };
   const showAssignee = view !== "mine";
 
   const tabs: { key: View; label: string }[] = [
@@ -123,14 +140,11 @@ export default async function FollowUpsDashboard({ searchParams }: { searchParam
       </div>
 
       <div className="space-y-4">
-        {totalPending > rows.length && (
-          <p className="text-xs text-muted-foreground">Showing the {rows.length} soonest of {totalPending} pending follow-ups.</p>
-        )}
-        <Section title="Overdue" tone="bad" rows={overdue} dialCode={dialCode} people={people} nameOf={nameOf} showAssignee={showAssignee} />
-        <Section title="Later today" rows={today} dialCode={dialCode} people={people} nameOf={nameOf} showAssignee={showAssignee} />
-        <Section title="Upcoming" rows={later} dialCode={dialCode} people={people} nameOf={nameOf} showAssignee={showAssignee} />
+        <Section title="Overdue" tone="bad" rows={overdue} total={n(counts?.overdue)} moreHref={moreHref("o")} dialCode={dialCode} people={people} nameOf={nameOf} showAssignee={showAssignee} />
+        <Section title="Later today" rows={today} total={n(counts?.today)} moreHref={moreHref("t")} dialCode={dialCode} people={people} nameOf={nameOf} showAssignee={showAssignee} />
+        <Section title="Upcoming" rows={later} total={n(counts?.later)} moreHref={moreHref("l")} dialCode={dialCode} people={people} nameOf={nameOf} showAssignee={showAssignee} />
 
-        {rows.length === 0 && (
+        {totalPending === 0 && (
           <div className="rounded-md border border-dashed p-8 text-center space-y-2">
             <p className="font-medium">{view === "unassigned" ? "Every follow-up has someone on it." : "You're all caught up."}</p>
             <p className="text-sm text-muted-foreground">Add a follow-up here, or from a lead&apos;s Follow-ups tab, to be reminded when it&apos;s due.</p>
@@ -147,10 +161,12 @@ type Row = {
 };
 
 function Section({
-  title, rows, tone, ...rest
+  title, rows, total, moreHref, tone, ...rest
 }: {
   title: string;
   rows: Row[];
+  total: number;
+  moreHref: string;
   tone?: "bad";
   dialCode: string | null;
   people: { id: string; name: string }[];
@@ -160,8 +176,13 @@ function Section({
   if (rows.length === 0) return null;
   return (
     <div className={`p-4 rounded-md space-y-2 border ${tone === "bad" ? "border-destructive/30 bg-destructive/5" : "border-border bg-muted"}`}>
-      <h3 className={`font-semibold ${tone === "bad" ? "text-destructive" : "text-foreground"}`}>{title} ({rows.length})</h3>
+      <h3 className={`font-semibold ${tone === "bad" ? "text-destructive" : "text-foreground"}`}>{title} ({total})</h3>
       {rows.map((f) => <FollowUpRow key={f.followUp.id} f={f} overdue={tone === "bad"} {...rest} />)}
+      {total > rows.length && (
+        <Link href={moreHref} scroll={false} className="block rounded border border-border bg-card py-2 text-center text-xs font-medium text-muted-foreground hover:text-foreground">
+          Show more ({total - rows.length} not shown)
+        </Link>
+      )}
     </div>
   );
 }

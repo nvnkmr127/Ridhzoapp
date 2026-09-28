@@ -1,7 +1,10 @@
 import { db } from "@/db";
 import { activities } from "@/db/schema/activities";
 import { users } from "@/db/schema/users";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
+
+/** How many activities the lead profile loads at a time (initial render and each "Load older"). */
+export const LEAD_ACTIVITY_PAGE = 100;
 
 export class ActivityService {
   static async addActivity(data: { leadId: string; userId?: string; type: string; content?: string }) {
@@ -14,7 +17,8 @@ export class ActivityService {
     return activity;
   }
 
-  static async getLeadActivities(leadId: string, limit?: number) {
+  // Newest first. `before` pages further back (keyset on created_at, id) for "Load older".
+  static async getLeadActivities(leadId: string, limit?: number, before?: { createdAt: Date; id: string }, types?: string[]) {
     const rows = await db
       .select({
         id: activities.id,
@@ -33,8 +37,12 @@ export class ActivityService {
       })
       .from(activities)
       .leftJoin(users, eq(activities.userId, users.id))
-      .where(eq(activities.leadId, leadId))
-      .orderBy(desc(activities.createdAt))
+      .where(and(
+        eq(activities.leadId, leadId),
+        types?.length ? inArray(activities.type, types) : undefined,
+        before ? sql`(${activities.createdAt}, ${activities.id}) < (${before.createdAt.toISOString().replace("Z", "")}::timestamp, ${before.id}::uuid)` : undefined,
+      ))
+      .orderBy(desc(activities.createdAt), desc(activities.id))
       .limit(limit ?? Number.MAX_SAFE_INTEGER);
 
     const assignRegex = /Lead was assigned to user ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi;

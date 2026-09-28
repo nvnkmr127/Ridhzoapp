@@ -95,6 +95,11 @@ export class AnalyticsService {
     return { ...filters, timeZone: timezone };
   }
 
+  /** The lead scope every dashboard chart uses (org, not deleted, owner/team, date range in the workspace tz). */
+  static async leadWhere(filters: AnalyticsFilters) {
+    return and(...this.buildLeadConditions(await this.withTz(filters)));
+  }
+
   private static buildLeadConditions(filters: AnalyticsFilters) {
     // Exclude soft-deleted leads (recycle bin) so metrics/charts match the leads list — a deleted
     // lead must drop out of Total Leads and every other count that routes through here.
@@ -167,9 +172,11 @@ export class AnalyticsService {
       conditions.push(or(eq(followUps.userId, filters.ownerId), eq(leads.ownerId, filters.ownerId))!);
     }
 
+    // The date range scopes the period totals (created / completed in it). Overdue, due today and
+    // upcoming describe NOW, so they ignore it — "Today" used to show only overdue follow-ups that
+    // happened to be created today.
     const { start, end } = this.getDateRangeBounds(filters);
-    if (start) conditions.push(gte(followUps.createdAt, start));
-    if (end) conditions.push(lte(followUps.createdAt, end));
+    const inRange = and(start ? gte(followUps.createdAt, start) : undefined, end ? lte(followUps.createdAt, end) : undefined) ?? sql`true`;
 
     const now = new Date();
     const endOfToday = startOfZonedDay(now, filters.timeZone || "UTC", 1);
@@ -177,8 +184,8 @@ export class AnalyticsService {
     // overlap: "due today" is what's still ahead today, so the two add up without double counting.
     const [r] = await db
       .select({
-        total: sql<number>`count(*)::int`,
-        completed: sql<number>`count(*) filter (where ${eq(followUps.status, "completed")})::int`,
+        total: sql<number>`count(*) filter (where ${inRange})::int`,
+        completed: sql<number>`count(*) filter (where ${and(inRange, eq(followUps.status, "completed"))})::int`,
         // Column-aware operators, so the Date params get encoded like any other timestamp filter.
         overdue: sql<number>`count(*) filter (where ${and(eq(followUps.status, "pending"), lt(followUps.dueAt, now))})::int`,
         dueToday: sql<number>`count(*) filter (where ${and(eq(followUps.status, "pending"), gte(followUps.dueAt, now), lt(followUps.dueAt, endOfToday))})::int`,

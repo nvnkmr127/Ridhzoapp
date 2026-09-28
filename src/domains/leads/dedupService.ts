@@ -21,26 +21,36 @@ const REASSIGN = [activities, followUps, meetings, leadStatusHistory, whatsappMe
 export class DedupService {
   // Groups of leads in the org that share a normalized email or phone. Cheap heuristic, good enough
   // for a review screen. ponytail: exact-match only; fuzzy/name matching if it proves necessary.
-  static async findDuplicateGroups(organizationId: string) {
-    const rows = await db
-      .select({ id: leads.id, name: leads.name, email: leads.email, phone: leads.phone, createdAt: leads.createdAt })
-      .from(leads)
-      .where(eq(leads.organizationId, organizationId));
+  static async findDuplicateGroups(organizationId: string, opts: { enforceOwnerId?: string; maxGroups?: number } = {}) {
+    // Matching happens in Postgres: only rows whose key is shared come back (was: every lead of the
+    // tenant, recycle bin included, loaded into Node). Recycled leads are excluded; reps without
+    // admin rights only see duplicates among their own leads.
+    const owner = opts.enforceOwnerId ? sql`and owner_id = ${opts.enforceOwnerId}` : sql``;
+    const live = sql`organization_id = ${organizationId} and deleted_at is null ${owner}`;
+    const res = await db.execute(sql`
+      with keyed as (
+        select id, 'e:' || lower(email) as k from ${leads} where ${live} and coalesce(email, '') <> ''
+        union all
+        select id, 'p:' || regexp_replace(phone, '[^0-9]', '', 'g') from ${leads}
+          where ${live} and regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g') <> ''
+      ),
+      dup as (select k from keyed group by k having count(*) > 1 order by k limit ${opts.maxGroups ?? 200})
+      select keyed.k, l.id, l.name, l.email, l.phone, l.created_at
+      from keyed join dup on dup.k = keyed.k join ${leads} l on l.id = keyed.id
+      order by keyed.k, l.created_at, l.id`);
+    const rows = res as unknown as { k: string; id: string; name: string; email: string | null; phone: string | null; created_at: Date | string }[];
 
-    const byKey = new Map<string, typeof rows>();
+    type Row = { id: string; name: string; email: string | null; phone: string | null; createdAt: Date };
+    const byKey = new Map<string, Row[]>();
     for (const r of rows) {
-      for (const key of [r.email && `e:${r.email.toLowerCase()}`, r.phone && `p:${r.phone.replace(/\D/g, "")}`]) {
-        if (!key) continue;
-        const g = byKey.get(key) ?? [];
-        g.push(r);
-        byKey.set(key, g);
-      }
+      const g = byKey.get(r.k) ?? [];
+      g.push({ id: r.id, name: r.name, email: r.email, phone: r.phone, createdAt: new Date(r.created_at) });
+      byKey.set(r.k, g);
     }
     // Dedupe leads that matched on both email and phone into one group per set of ids.
     const seen = new Set<string>();
-    const groups: { key: string; leads: typeof rows }[] = [];
+    const groups: { key: string; leads: Row[] }[] = [];
     for (const [key, g] of byKey) {
-      if (g.length < 2) continue;
       const sig = g.map((l) => l.id).sort().join(",");
       if (seen.has(sig)) continue;
       seen.add(sig);
@@ -125,8 +135,8 @@ export class DedupService {
     const owned = await db
       .select({ id: leads.id })
       .from(leads)
-      .where(and(eq(leads.organizationId, organizationId), sql`${leads.id} in (${primaryId}, ${duplicateId})`));
-    if (owned.length !== 2) throw new Error("Both leads must belong to your organization");
+      .where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt), sql`${leads.id} in (${primaryId}, ${duplicateId})`));
+    if (owned.length !== 2) throw new Error("Both leads must belong to your organization and not be in the recycle bin");
 
     await db.transaction(async (tx) => {
       for (const table of REASSIGN) {

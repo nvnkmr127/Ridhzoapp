@@ -6,7 +6,7 @@ import { OrgService } from "@/domains/organizations/service";
 import { AuditService } from "@/domains/audit/service";
 import { escapeHtml } from "@/lib/utils";
 import { sendEmail, appUrl } from "@/lib/mail/mailer";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
 
@@ -94,6 +94,7 @@ export async function acceptInvitationAction(input: z.infer<typeof acceptSchema>
       entityId: user.id,
       metadata: { email: user.email, roleId: user.roleId },
     });
+    revalidateTag("active-users"); // the new teammate shows up in owner/assignee pickers right away
     return ok({ accepted: true });
   } catch (e) {
     // Invalid/expired/already-used token surfaces here.

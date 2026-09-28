@@ -5,11 +5,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { PlusCircle, Search, User, PieChart, Sparkles } from "lucide-react";
+import { PlusCircle, Search, User } from "lucide-react";
 import { useT } from "@/components/LanguageProvider";
 import { signOut } from "next-auth/react";
 import { isPlaceholderEmail } from "@/lib/auth/googleLink";
@@ -18,10 +17,9 @@ import Link from "next/link";
 import { QuickAddLeadDrawer } from "@/components/leads/QuickAddLeadDrawer";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 import { OfflineStatusIndicator } from "@/components/layout/OfflineStatusIndicator";
+import { clearOfflineOutbox, getOfflineOutbox } from "@/lib/offline/outbox";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { MobileSidebar } from "@/components/layout/MobileSidebar";
-import { Badge } from "@/components/ui/badge";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { UsageMenuSection } from "@/components/layout/UsageMenuSection";
 
 type UsageStats = {
@@ -166,10 +164,20 @@ export function Header({
               <Link href="/profile">Profile</Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => signOut({ callbackUrl: "/login" })}>Logout</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => logout(organizationId)}>Logout</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
     </div>
   );
+}
+
+// Leads queued offline live in this browser's storage, keyed by workspace. Signing out must clear
+// them, or the next person to sign in here would upload them under their own account.
+function logout(organizationId?: string) {
+  const unsynced = getOfflineOutbox(organizationId).length;
+  if (unsynced > 0 && !window.confirm(`${unsynced} lead${unsynced === 1 ? " hasn't" : "s haven't"} synced yet and will be lost if you log out now. Log out anyway?`)) return;
+  clearOfflineOutbox(organizationId);
+  clearOfflineOutbox(); // pre-workspace-keyed queue
+  void signOut({ callbackUrl: "/login" });
 }

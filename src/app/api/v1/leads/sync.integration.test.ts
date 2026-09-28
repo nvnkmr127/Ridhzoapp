@@ -86,6 +86,38 @@ describe.skipIf(!url)("GET /api/v1/leads?sync=1 (phone incremental sync)", () =>
     expect(delta.data.map((d: any) => [d.id, d.score])).toEqual([[l.id, 77]]);
   });
 
+  it("a write that commits late is never skipped: rows stamped after it wait until it commits", async () => {
+    const { eq } = await import("drizzle-orm");
+    const [early] = await db.insert(leads).values({ organizationId: auth.organizationId, name: "Early", ownerId: auth.userId }).returning();
+    let after: string | null = null;
+    for (let page = await feed(); ; page = await feed(after)) {
+      after = page.next;
+      if (page.done) break;
+    }
+
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let stamped!: () => void;
+    const didWrite = new Promise<void>((r) => (stamped = r));
+    // A slow transaction writes first (stamped now) but commits only after a later write was synced.
+    const slow = db.transaction(async (tx) => {
+      await tx.update(leads).set({ name: "Slow" }).where(eq(leads.id, early.id));
+      stamped();
+      await held;
+    });
+    await didWrite;
+    const [later] = await db.insert(leads).values({ organizationId: auth.organizationId, name: "Later", ownerId: auth.userId }).returning();
+
+    const during = await feed(after);
+    expect(during.data.map((d) => d.id)).not.toContain(later.id); // held back behind the open writer
+    after = during.next;
+
+    release();
+    await slow;
+    const done = await feed(after);
+    expect(Object.fromEntries(done.data.map((d) => [d.id, d.name]))).toEqual({ [early.id]: "Slow", [later.id]: "Later" });
+  });
+
   it("PATCH with base: merges untouched fields, refuses a field changed elsewhere (409)", async () => {
     const { PATCH } = await import("./[id]/route");
     const saved = { ...auth };

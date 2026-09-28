@@ -100,7 +100,7 @@ export class ContentSharingService {
    * Content that was shared but never opened, older than the given age — the "who's ignoring
    * you" list for re-engagement. Oldest first.
    */
-  static async ignoredShares(organizationId: string, olderThanMs = 24 * 60 * 60 * 1000, enforceOwnerId?: string) {
+  static async ignoredShares(organizationId: string, olderThanMs = 24 * 60 * 60 * 1000, enforceOwnerId?: string, limit = 50) {
     const before = new Date(Date.now() - olderThanMs);
     return db
       .select({
@@ -122,7 +122,8 @@ export class ContentSharingService {
           lt(sharedLinks.createdAt, before),
         ),
       )
-      .orderBy(asc(sharedLinks.createdAt));
+      .orderBy(asc(sharedLinks.createdAt))
+      .limit(limit);
   }
 
   /** Org-level content engagement for the dashboard: opens in the window + currently-ignored count. */

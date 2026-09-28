@@ -5,6 +5,8 @@ import { db } from "@/db";
 import { leads, users, roles } from "@/db/schema";
 import { and, eq, or, ilike, desc, isNull, sql } from "drizzle-orm";
 import { PlatformService, type FoundOrg } from "@/domains/platform/service";
+import { leadSearchCondition } from "@/domains/leads/service";
+import { visibleToUserSql } from "@/lib/leads/access";
 
 export type SearchLead = {
   id: string;
@@ -48,8 +50,9 @@ export async function searchUniversalAction(query: string): Promise<UniversalSea
           .where(and(
             eq(leads.organizationId, organizationId),
             isNull(leads.deletedAt),
-            ...(!isAdmin && userId ? [eq(leads.ownerId, userId)] : []),
-            or(ilike(leads.name, like), ilike(leads.email, like), ilike(leads.phone, like), ilike(leads.company, like)),
+            // Same rule as the lead profile: only leads this person can open.
+            ...(!isAdmin && userId ? [visibleToUserSql(userId)] : []),
+            leadSearchCondition(q),
           ))
           .orderBy(desc(leads.createdAt))
           .limit(10)

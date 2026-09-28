@@ -1,7 +1,19 @@
 import { createRedis } from "@/lib/jobs/redis";
 
-// Plain command client (no maxRetriesPerRequest:null) so commands fail fast and checkLimit fails open.
+// Plain command client (no maxRetriesPerRequest:null) so commands fail fast and checkLimit can fall back.
 const redis = createRedis();
+
+let lastWarned = 0;
+const local = new Map<string, { count: number; reset: number }>();
+
+function localIncr(key: string, reset: number): number {
+  const now = Date.now();
+  if (local.size > 10_000) for (const [k, v] of local) if (v.reset <= now) local.delete(k); // drop expired windows
+  const hit = local.get(key);
+  const next = hit && hit.reset > now ? { count: hit.count + 1, reset: hit.reset } : { count: 1, reset };
+  local.set(key, next);
+  return next.count;
+}
 
 export class RateLimiter {
   static async checkLimit(key: string, limit: number, windowSeconds: number): Promise<{ success: boolean; limit: number; remaining: number; reset: number }> {
@@ -31,13 +43,15 @@ export class RateLimiter {
         reset: resetTime,
       };
     } catch (e) {
-      // Redis unreachable — FAIL OPEN. Rate limiting is a safeguard, not a hard
-      // dependency; letting a cache outage block login/webhooks would be worse than
-      // briefly not throttling. The connection error is already logged by ioredis.
-      // ponytail: fail-open counter; add a fallback in-memory limiter if abuse during
-      // Redis outages becomes a real problem.
-      console.error("[rate-limit] check failed, allowing request", e);
-      return { success: true, limit, remaining: limit, reset: resetTime };
+      // Redis unreachable: fall back to a per-process counter rather than no limit at all (a cache
+      // outage mustn't block logins, but it mustn't switch off brute-force protection either).
+      // ponytail: per-instance, so the effective limit is limit × instances during an outage.
+      if (Date.now() - lastWarned > 30_000) {
+        lastWarned = Date.now();
+        console.error("[rate-limit] Redis unavailable, using in-memory limits:", e instanceof Error ? e.message : e);
+      }
+      const count = localIncr(redisKey, resetTime);
+      return { success: count <= limit, limit, remaining: Math.max(0, limit - count), reset: resetTime };
     }
   }
 }

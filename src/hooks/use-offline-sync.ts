@@ -4,6 +4,8 @@ import * as React from "react";
 import {
   getOfflineOutbox,
   flushOfflineOutbox,
+  retryFailedOfflineLeads,
+  discardFailedOfflineLeads,
   OFFLINE_OUTBOX_EVENT,
   OfflineLeadItem,
 } from "@/lib/offline/outbox";
@@ -13,11 +15,13 @@ export function useOfflineSync(organizationId?: string) {
   const { toast } = useToast();
   const [isOnline, setIsOnline] = React.useState(true);
   const [pendingCount, setPendingCount] = React.useState(0);
+  const [failedCount, setFailedCount] = React.useState(0);
   const [isSyncing, setIsSyncing] = React.useState(false);
 
   const refreshCount = React.useCallback(() => {
     const items = getOfflineOutbox(organizationId);
-    setPendingCount(items.length);
+    setPendingCount(items.filter((i) => !i.failed).length);
+    setFailedCount(items.filter((i) => i.failed).length);
   }, [organizationId]);
 
   const runSync = React.useCallback(async () => {
@@ -43,7 +47,13 @@ export function useOfflineSync(organizationId?: string) {
           description: dup.message || "A lead with these details already exists — it was not added again.",
         });
       }
-      if (result.failed > 0) {
+      if (result.gaveUp > 0) {
+        toast({
+          variant: "destructive",
+          title: `${result.gaveUp} offline lead${result.gaveUp === 1 ? "" : "s"} couldn't be saved`,
+          description: "They're kept on this device. Use Retry or Discard next to the sync status at the top.",
+        });
+      } else if (result.failed > 0) {
         const firstErr = result.items.find((i) => !i.success)?.error;
         toast({
           variant: "destructive",
@@ -57,11 +67,23 @@ export function useOfflineSync(organizationId?: string) {
     }
   }, [toast, refreshCount, organizationId]);
 
+  const retryFailed = React.useCallback(() => {
+    retryFailedOfflineLeads(organizationId);
+    void runSync();
+  }, [organizationId, runSync]);
+
+  const discardFailed = React.useCallback(() => {
+    discardFailedOfflineLeads(organizationId);
+    refreshCount();
+  }, [organizationId, refreshCount]);
+
   React.useEffect(() => {
     if (typeof window === "undefined") return;
 
     setIsOnline(navigator.onLine);
     refreshCount();
+    // Leads queued before a reload/restart shouldn't wait for the next "online" event or a click.
+    if (navigator.onLine && getOfflineOutbox(organizationId).some((i) => !i.failed)) void runSync();
 
     const handleOnline = () => {
       setIsOnline(true);
@@ -93,7 +115,10 @@ export function useOfflineSync(organizationId?: string) {
   return {
     isOnline,
     pendingCount,
+    failedCount,
     isSyncing,
     syncNow: runSync,
+    retryFailed,
+    discardFailed,
   };
 }

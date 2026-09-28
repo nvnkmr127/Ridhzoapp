@@ -16,24 +16,31 @@ function waLink(phone: string | null, name: string) {
   return digits.length >= 6 ? `https://wa.me/${digits}?text=${text}` : null;
 }
 
+const PAGE_SIZE = 50;
+
 export default async function ColdLeadsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ days?: string }>;
+  searchParams: Promise<{ days?: string; page?: string }>;
 }) {
   const [{ userId, organizationId }, isAdmin] = await Promise.all([
     requireOrg(),
     hasPermission("settings.manage"),
   ]);
-  const days = Math.max(1, Number((await searchParams).days) || 14);
-  const stale = (await StaleLeadReclamationService.detectStaleLeads(
-    organizationId,
-    days,
-    isAdmin ? undefined : userId
-  )).sort((a, b) => b.daysInactive - a.daysInactive);
+  const sp = await searchParams;
+  const days = Math.min(365, Math.max(1, Number(sp.days) || 14));
+  const page = Math.max(1, Number(sp.page) || 1);
+  const owner = isAdmin ? undefined : userId;
+  // Most inactive first, one page at a time (this used to render every stale lead).
+  const [stale, total] = await Promise.all([
+    StaleLeadReclamationService.detectStaleLeads(organizationId, days, owner, { limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE }),
+    StaleLeadReclamationService.countStaleLeads(organizationId, days, owner),
+  ]);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageHref = (p: number) => `/leads/cold?days=${days}&page=${p}`;
 
   return (
-    <div className="space-y-6">
+    <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <Button asChild variant="ghost" size="icon" aria-label="Go back">
@@ -50,12 +57,12 @@ export default async function ColdLeadsPage({
             </p>
           </div>
         </div>
-        {stale.length > 0 && <ReclaimStaleButton days={days} />}
+        {total > 0 && <ReclaimStaleButton days={days} />}
       </div>
 
       <Card className="rounded-2xl">
         <CardHeader>
-          <CardTitle className="text-base">{stale.length} cold {stale.length === 1 ? "lead" : "leads"}</CardTitle>
+          <CardTitle className="text-base">{total} cold {total === 1 ? "lead" : "leads"}</CardTitle>
         </CardHeader>
         <CardContent>
           {stale.length === 0 ? (
@@ -119,6 +126,25 @@ export default async function ColdLeadsPage({
                 })}
               </TableBody>
             </Table>
+          )}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between border-t pt-3 mt-3 text-sm text-muted-foreground">
+              <span>
+                {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
+              </span>
+              <div className="flex gap-2">
+                {page > 1 ? (
+                  <Button variant="outline" size="sm" asChild><Link href={pageHref(page - 1)}>Previous</Link></Button>
+                ) : (
+                  <Button variant="outline" size="sm" disabled>Previous</Button>
+                )}
+                {page < totalPages ? (
+                  <Button variant="outline" size="sm" asChild><Link href={pageHref(page + 1)}>Next</Link></Button>
+                ) : (
+                  <Button variant="outline" size="sm" disabled>Next</Button>
+                )}
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>

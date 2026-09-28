@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
-import { and, desc, eq, isNull, ilike, or, sql } from "drizzle-orm";
-import { LeadService } from "@/domains/leads/service";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { LeadService, leadSearchCondition } from "@/domains/leads/service";
 import { CustomFieldService, FieldValidationError } from "@/domains/customFields/service";
 import { PlanService } from "@/domains/billing/planService";
 import { authorizeApiRequest, type ApiAuth } from "@/lib/apiAuth";
@@ -60,11 +60,7 @@ export async function GET(req: NextRequest) {
   if (search) {
     // Match name/email/company (case-insensitive) or phone digits, so mobile can search the
     // whole org, not just the first page it happened to load.
-    const like = `%${search}%`;
-    const phoneDigits = search.replace(/\D/g, "");
-    const conds = [ilike(leads.name, like), ilike(leads.email, like), ilike(leads.company, like)];
-    if (phoneDigits) conds.push(sql`regexp_replace(${leads.phone}, '\\D', '', 'g') ILIKE ${`%${phoneDigits}%`}`);
-    where.push(or(...conds)!);
+    where.push(leadSearchCondition(search));
   }
 
   const rows = await db
@@ -104,8 +100,16 @@ async function changesFeed(auth: ApiAuth, after: string | null, limit: number) {
   const { canSeeAllLeads } = await import("@/lib/meetingsApi");
   const { CustomFieldService } = await import("@/domains/customFields/service");
   const [all, defs] = await Promise.all([canSeeAllLeads(auth), CustomFieldService.listCached(auth.organizationId)]);
-  // sync_at: stamped (ms, UTC) by a trigger on every write to the row — see migration 0080.
-  const where = [eq(leads.organizationId, auth.organizationId)];
+  // sync_at: stamped (ms, UTC) by a trigger on every write to the row — see migration 0080. A row
+  // becomes visible when its transaction COMMITS, which can be after rows stamped later were already
+  // served and the cursor moved past it. So only serve rows stamped before the oldest still-running
+  // writing transaction began: anything such a transaction writes is stamped at or after its start,
+  // and is served on a later sync, once committed. No long writers → no hold-back.
+  const horizon = sql`coalesce((select date_trunc('milliseconds', min(xact_start) at time zone 'utc') from pg_stat_activity where backend_xid is not null and datname = current_database()), 'infinity'::timestamp)`;
+  const where = [eq(leads.organizationId, auth.organizationId), sql`${leads.syncAt} < ${horizon}`];
+  // A rep's first sync only needs their own leads (nothing to mark gone yet) — don't page through the
+  // whole workspace for it. Incremental syncs still see every change so reassigned leads go "gone".
+  if (!after && !all) where.push(eq(leads.ownerId, auth.userId!));
   if (after) {
     const iso = new Date(afterAt).toISOString().replace("Z", ""); // sync_at is naive UTC
     where.push(sql`(${leads.syncAt}, ${leads.id}) > (${iso}::timestamp, ${afterId}::uuid)`);

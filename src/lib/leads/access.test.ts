@@ -39,9 +39,17 @@ describe("lead access rule", () => {
     await expect(assertLeadAccess("l1", ctx)).resolves.toBeUndefined();
   });
 
-  it("filters bulk selections down to the rep's own leads", async () => {
-    rows.mockReturnValue([{ id: "a", ownerId: "me" }, { id: "b", ownerId: "colleague" }]);
+  // Bulk filtering runs in SQL (owner, or working on the lead via a meeting/follow-up); the rows
+  // Postgres returns are exactly the ones kept.
+  it("keeps only the ids the visibility query returns", async () => {
+    rows.mockReturnValue([{ id: "a" }]);
     isAdmin.mockResolvedValue(false);
     await expect(filterAccessibleLeadIds(["a", "b"], ctx)).resolves.toEqual(["a"]);
+  });
+
+  it("lets someone assigned a follow-up on the lead act on it", async () => {
+    rows.mockReturnValueOnce([{ ownerId: "colleague" }]).mockReturnValueOnce([{ id: "l1" }]); // lead, then: works on it
+    isAdmin.mockResolvedValue(false);
+    await expect(assertLeadAccess("l1", ctx)).resolves.toBeUndefined();
   });
 });

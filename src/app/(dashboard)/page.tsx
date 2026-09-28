@@ -9,8 +9,8 @@ import { DashboardDateFilter } from "@/components/dashboard/DashboardDateFilter"
 import { requireOrg, hasPermission } from "@/lib/rbac";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { automations, leadSources } from "@/db/schema";
-import { and, count, eq } from "drizzle-orm";
+import { automations, leadSources, leads } from "@/db/schema";
+import { and, count, eq, isNull } from "drizzle-orm";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { Users } from "lucide-react";
@@ -58,16 +58,21 @@ export default async function ExecutiveDashboardPage({
     dateRange: (typeof params.range === "string" ? params.range : "all") as any,
   };
 
-  const [leadsBySource, pipelineDistribution, leadsByOwner, recentActivity, sla, content, speed, org] = await Promise.all([
+  const [leadsBySource, pipelineDistribution, leadsByOwner, recentActivity, sla, content, speed, org, firstLeads] = await Promise.all([
     AnalyticsService.getLeadsBySource(filters),
     AnalyticsService.getPipelineDistribution(filters),
     AnalyticsService.getLeadsByOwner(filters),
     AnalyticsService.getRecentActivity(filters),
-    SlaAnalyticsService.getSlaMetrics(organizationId),
+    // Same scope as the charts beside it (date range / owner / team), aggregated in SQL.
+    AnalyticsService.leadWhere(filters).then((where) => SlaAnalyticsService.getSlaMetrics(organizationId, 15, undefined, where)),
     ContentSharingService.orgEngagementStats(organizationId),
     HabitService.speedBenchmark(organizationId),
     OrgService.getOrganization(organizationId),
+    // "New workspace?" checks (empty state, setup guide under 5 leads) ignore the filters — a quiet
+    // "Today" isn't an empty workspace. Counting stops at 5.
+    db.select({ id: leads.id }).from(leads).where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt))).limit(5),
   ]);
+  const workspaceLeads = firstLeads.length;
 
   // First two weeks (the trial): show what Ridhzo already did for them — proof before the trial ends.
   const ageDays = org ? Math.floor((Date.now() - new Date(org.createdAt).getTime()) / 86_400_000) : 99;
@@ -76,11 +81,11 @@ export default async function ExecutiveDashboardPage({
 
   const slaOnTrack = sla.complianceRatePercentage >= 80;
   const isAdmin = await hasPermission("settings.manage");
-  const progress = isAdmin && sla.totalLeads < 5 ? await getSetupProgress(organizationId, sla.totalLeads) : null;
+  const progress = isAdmin && workspaceLeads < 5 ? await getSetupProgress(organizationId, workspaceLeads) : null;
 
   // Brand-new workspace: a wall of zeros and empty charts reads as broken. Show the setup steps (or,
   // for invited members, what to expect) until the first lead arrives.
-  if (sla.totalLeads === 0) {
+  if (workspaceLeads === 0) {
     return (
       <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6">
         <div>

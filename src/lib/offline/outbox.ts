@@ -23,7 +23,27 @@ export interface OfflineLeadItem {
   createdAt: number;
   attempts: number;
   lastError?: string;
+  /** Sent with every attempt, so a retry of a lead that already reached the server doesn't create it twice. */
+  idempotencyKey?: string;
+  /** Gave up retrying automatically (rejected by the server, or 5 failed attempts). Kept until the user retries or discards it. */
+  failed?: boolean;
 }
+
+export const MAX_ATTEMPTS = 5;
+
+/** A request that never got an answer (offline, DNS, connection reset) — the only case worth queueing. */
+export function isNetworkError(e: unknown): boolean {
+  return e instanceof TypeError; // fetch() rejects with TypeError when the request can't complete
+}
+
+function newKey(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
+// Items queued before keys existed have ids like "offline_<ts>_<rand>" — derive a valid key from it.
+const keyOf = (item: OfflineLeadItem) => item.idempotencyKey ?? item.id.replace(/_/g, "-");
 
 function notifyOutboxChange(orgId?: string) {
   if (typeof window === "undefined") return;
@@ -41,34 +61,35 @@ export function getOfflineOutbox(orgId?: string): OfflineLeadItem[] {
   }
 }
 
-export function enqueueOfflineLead(payload: OfflineLeadPayload, orgId?: string): OfflineLeadItem {
-  const current = getOfflineOutbox(orgId);
+function saveOutbox(items: OfflineLeadItem[], orgId?: string) {
+  try {
+    localStorage.setItem(getOfflineOutboxStorageKey(orgId), JSON.stringify(items));
+    notifyOutboxChange(orgId);
+  } catch (err) {
+    console.error("[OfflineOutbox] failed to save outbox", err);
+  }
+}
+
+/** Queue a lead. Pass the idempotency key the online attempt already used, if there was one. */
+export function enqueueOfflineLead(payload: OfflineLeadPayload, orgId?: string, idempotencyKey: string = newKey()): OfflineLeadItem {
   const newItem: OfflineLeadItem = {
     id: `offline_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     payload,
     organizationId: orgId,
     createdAt: Date.now(),
     attempts: 0,
+    idempotencyKey,
   };
-  const updated = [newItem, ...current];
-  try {
-    localStorage.setItem(getOfflineOutboxStorageKey(orgId), JSON.stringify(updated));
-    notifyOutboxChange(orgId);
-  } catch (err) {
-    console.error("[OfflineOutbox] failed to save lead offline", err);
-  }
+  saveOutbox([newItem, ...getOfflineOutbox(orgId)], orgId);
   return newItem;
 }
 
+export function newOfflineIdempotencyKey(): string {
+  return newKey();
+}
+
 export function removeOfflineLead(id: string, orgId?: string): void {
-  const current = getOfflineOutbox(orgId);
-  const filtered = current.filter((item) => item.id !== id);
-  try {
-    localStorage.setItem(getOfflineOutboxStorageKey(orgId), JSON.stringify(filtered));
-    notifyOutboxChange(orgId);
-  } catch (err) {
-    console.error("[OfflineOutbox] failed to remove lead", err);
-  }
+  saveOutbox(getOfflineOutbox(orgId).filter((item) => item.id !== id), orgId);
 }
 
 export function clearOfflineOutbox(orgId?: string): void {
@@ -80,82 +101,91 @@ export function clearOfflineOutbox(orgId?: string): void {
   }
 }
 
+/** Put failed items back in the automatic queue (the user pressed Retry). */
+export function retryFailedOfflineLeads(orgId?: string): void {
+  saveOutbox(getOfflineOutbox(orgId).map((i) => (i.failed ? { ...i, failed: false, attempts: 0 } : i)), orgId);
+}
+
+/** Drop the items the user chose to discard after they failed. */
+export function discardFailedOfflineLeads(orgId?: string): void {
+  saveOutbox(getOfflineOutbox(orgId).filter((i) => !i.failed), orgId);
+}
+
 function updateOfflineLead(item: OfflineLeadItem, orgId?: string): void {
-  const current = getOfflineOutbox(orgId);
-  const updated = current.map((i) => (i.id === item.id ? item : i));
-  try {
-    localStorage.setItem(getOfflineOutboxStorageKey(orgId), JSON.stringify(updated));
-    notifyOutboxChange(orgId);
-  } catch (err) {
-    console.error("[OfflineOutbox] failed to update lead", err);
-  }
+  saveOutbox(getOfflineOutbox(orgId).map((i) => (i.id === item.id ? item : i)), orgId);
 }
 
 export interface SyncResults {
   synced: number;
   failed: number;
+  /** Items that stopped retrying on this run and now need the user (Retry / Discard). */
+  gaveUp: number;
   duplicates: { name: string; message: string }[];
   items: { id: string; success: boolean; error?: string }[];
+}
+
+const EMPTY: SyncResults = { synced: 0, failed: 0, gaveUp: 0, duplicates: [], items: [] };
+
+// One tab at a time: every open tab hears "online", and without a lock each would replay the same queue.
+async function withOutboxLock(orgId: string | undefined, fn: () => Promise<SyncResults>): Promise<SyncResults> {
+  const locks = typeof navigator !== "undefined" ? (navigator as Navigator & { locks?: LockManager }).locks : undefined;
+  if (!locks?.request) return fn();
+  let out: SyncResults = EMPTY;
+  await locks.request(`ridhzo-offline-outbox-${orgId ?? "default"}`, { ifAvailable: true }, async (lock) => {
+    if (lock) out = await fn(); // null lock: another tab is already flushing this queue
+  });
+  return out;
 }
 
 export async function flushOfflineOutbox(
   onLeadSynced?: (lead: OfflineLeadItem) => void,
   orgId?: string,
 ): Promise<SyncResults> {
-  if (typeof window === "undefined" || !navigator.onLine) {
-    return { synced: 0, failed: 0, duplicates: [], items: [] };
-  }
+  if (typeof window === "undefined" || !navigator.onLine) return EMPTY;
+  return withOutboxLock(orgId, () => flush(onLeadSynced, orgId));
+}
 
-  const items = getOfflineOutbox(orgId);
-  if (items.length === 0) {
-    return { synced: 0, failed: 0, duplicates: [], items: [] };
-  }
+async function flush(onLeadSynced: ((lead: OfflineLeadItem) => void) | undefined, orgId?: string): Promise<SyncResults> {
+  const items = getOfflineOutbox(orgId).filter((i) => !i.failed);
+  if (items.length === 0) return EMPTY;
 
-  let synced = 0;
-  let failed = 0;
-  const duplicates: { name: string; message: string }[] = [];
-  const itemResults: { id: string; success: boolean; error?: string }[] = [];
+  const res: SyncResults = { synced: 0, failed: 0, gaveUp: 0, duplicates: [], items: [] };
+  const failAttempt = (item: OfflineLeadItem, error: string, permanent: boolean) => {
+    res.failed++;
+    res.items.push({ id: item.id, success: false, error });
+    const attempts = (item.attempts || 0) + 1;
+    const failed = permanent || attempts >= MAX_ATTEMPTS;
+    if (failed) res.gaveUp++;
+    // Never dropped silently: a lead that stops retrying stays queued, marked failed, for the user.
+    updateOfflineLead({ ...item, attempts, lastError: error, failed }, orgId);
+  };
 
   for (const item of items) {
     try {
-      const res = await createLeadAction(item.payload);
-      if (res.ok) {
+      const r = await createLeadAction(item.payload, { idempotencyKey: keyOf(item) });
+      if (r.ok) {
         removeOfflineLead(item.id, orgId);
-        synced++;
-        itemResults.push({ id: item.id, success: true });
+        res.synced++;
+        res.items.push({ id: item.id, success: true });
         onLeadSynced?.(item);
-      } else {
-        // If it was rejected as a duplicate, drop it so it does not block the queue. Match on the
-        // CONFLICT code — the server phrases duplicates several ways ("Duplicate phone number:
-        // already used by lead X", "...already exists"), so a message-substring check misses most
-        // of them and leaves the older of two same-contact offline leads stuck forever.
-        const isDuplicate = res.code === "CONFLICT" || res.message?.toLowerCase().includes("already exists");
-        if (isDuplicate) {
-          removeOfflineLead(item.id, orgId);
-          duplicates.push({ name: item.payload.name, message: res.message });
-          itemResults.push({ id: item.id, success: true });
-        } else {
-          failed++;
-          itemResults.push({ id: item.id, success: false, error: res.message });
-          const attempts = (item.attempts || 0) + 1;
-          if (attempts >= 5) {
-            removeOfflineLead(item.id, orgId);
-          } else {
-            updateOfflineLead({ ...item, attempts, lastError: res.message }, orgId);
-          }
-        }
+        continue;
       }
-    } catch (err: any) {
-      failed++;
-      itemResults.push({ id: item.id, success: false, error: err?.message || "Sync network error" });
-      const attempts = (item.attempts || 0) + 1;
-      if (attempts >= 5) {
+      // Rejected as a duplicate: drop it so it doesn't block the queue. Match on the CONFLICT code —
+      // the server phrases duplicates several ways ("Duplicate phone number: already used by lead X",
+      // "...already exists"), so a message-substring check misses most of them.
+      if (r.code === "CONFLICT" || r.message?.toLowerCase().includes("already exists")) {
         removeOfflineLead(item.id, orgId);
-      } else {
-        updateOfflineLead({ ...item, attempts, lastError: err?.message || "Sync network error" }, orgId);
+        res.duplicates.push({ name: item.payload.name, message: r.message });
+        res.items.push({ id: item.id, success: true });
+        continue;
       }
+      // Validation / permission / plan-limit answers won't change by retrying.
+      failAttempt(item, r.message, ["VALIDATION", "FORBIDDEN", "LIMIT", "UNAUTHENTICATED"].includes(r.code));
+    } catch (err: any) {
+      failAttempt(item, err?.message || "Sync network error", false);
+      if (isNetworkError(err)) break; // offline again — stop, the rest would fail the same way
     }
   }
 
-  return { synced, failed, duplicates, items: itemResults };
+  return res;
 }

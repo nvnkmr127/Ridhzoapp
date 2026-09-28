@@ -5,8 +5,8 @@ vi.mock("@/db", () => ({
   db: {
     select: vi.fn(() => ({
       from: vi.fn(() => ({
-        where: vi.fn().mockImplementation(() =>
-          Promise.resolve([
+        where: vi.fn().mockImplementation(() => {
+          const rows = [
             {
               id: "lead-stale-1",
               name: "Old Lead",
@@ -16,8 +16,10 @@ vi.mock("@/db", () => ({
               lastContactedAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000), // 20 days ago
               createdAt: new Date("2026-07-01"),
             },
-          ])
-        ),
+          ];
+          // Awaitable (status-category lookup) and orderable (stale query; no page = every row).
+          return Object.assign(Promise.resolve(rows), { orderBy: () => Promise.resolve(rows) });
+        }),
       })),
     })),
     update: vi.fn(() => ({

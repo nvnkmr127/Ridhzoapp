@@ -21,8 +21,9 @@ import { LiveNextBestAction } from "@/components/leads/LiveNextBestAction";
 import { leadLiveFingerprint } from "@/lib/leads/liveFingerprint";
 import { requireOrg, hasPermission } from "@/lib/rbac";
 import { CustomFieldService } from "@/domains/customFields/service";
-import { ActivityService } from "@/domains/activities/service";
+import { ActivityService, LEAD_ACTIVITY_PAGE } from "@/domains/activities/service";
 import { notFound } from "next/navigation";
+import { LeadNoAccess } from "@/components/leads/LeadNoAccess";
 import { Badge } from "@/components/ui/badge";
 import { ActivityTimeline } from "@/components/leads/ActivityTimeline";
 import { LeadBackButton, LeadPager } from "@/components/leads/LeadNav";
@@ -51,14 +52,14 @@ import { LeadAttachmentsTab } from "@/components/leads/LeadAttachmentsTab";
 import { LeadMeetingsTab } from "@/components/meetings/LeadMeetingsTab";
 import { MeetingScheduler } from "@/components/meetings/MeetingScheduler";
 import { MeetingService } from "@/domains/meetings/service";
-import { attendsMeetingWith } from "@/lib/leads/access";
+import { worksOnLead } from "@/lib/leads/access";
 import { modeLabel } from "@/domains/meetings/format";
 import { GoogleCalendarService } from "@/domains/integrations/googleCalendarService";
 import { isConfigured as googleConfigured } from "@/lib/integrations/google";
 import { LocalTime } from "@/components/LocalTime";
 import { ATTRIBUTION_LABELS, SOURCE_TYPE_LABELS } from "@/lib/leads/profile";
 import { db } from "@/db";
-import { leads, leadAttachments, followUps, leadPipelineStages, users } from "@/db/schema";
+import { leads, leadAttachments, followUps, leadPipelineStages, users, activities as activitiesTable, whatsappMessages } from "@/db/schema";
 import { eq, and, ne, isNull, or, desc, sql } from "drizzle-orm";
 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -68,25 +69,27 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     notFound();
   }
 
-  const startMs = Date.now();
   const { userId, organizationId } = await requireOrg();
 
-  // 1. Fetch lead first — if missing, 404 immediately and skip all child queries.
-  const lead = await LeadService.getLead(id, organizationId);
+  // 1. The lead, plus the viewer/workspace lookups that don't depend on it — one round trip.
+  const [lead, isFieldAdmin, allCustomDefs, orgFmt, dialCode] = await Promise.all([
+    LeadService.getLead(id, organizationId),
+    hasPermission("settings.manage"),
+    CustomFieldService.listCached(organizationId),
+    getOrgFormat(organizationId),
+    orgDialCode(organizationId),
+  ]);
   if (!lead) {
     notFound();
   }
-
-  const isFieldAdmin = await hasPermission("settings.manage");
-  // Owner, admins, and anyone assigned to a meeting with this lead (see lib/leads/access).
-  if (!isFieldAdmin && lead.ownerId !== userId && !(await attendsMeetingWith(id, userId))) {
-    notFound();
+  // Owner, admins, and anyone working on it — a meeting or follow-up assigned to them (lib/leads/access).
+  if (!isFieldAdmin && lead.ownerId !== userId && !(await worksOnLead(id, userId))) {
+    return <LeadNoAccess />;
   }
 
   // Fetch the org's custom-field defs once (cached) — used both to strip admin-only values for
   // non-admins and to hand the detail component its defs on the server, so the custom fields render
   // on first paint instead of after a client round-trip.
-  const allCustomDefs = await CustomFieldService.listCached(organizationId);
   if (!isFieldAdmin && lead.customData && typeof lead.customData === "object") {
     const cd = { ...(lead.customData as Record<string, unknown>) };
     for (const f of allCustomDefs) if (f.adminOnly) delete cd[f.key];
@@ -106,6 +109,9 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   // 2. Fan out independent child reads directly without redundant auth/middleware wrappers.
   const [
     activities,
+    noteActivities,
+    counts,
+    statusCategory,
     waMessages,
     leadTags,
     attachments,
@@ -122,20 +128,36 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     meetingLocations,
     calendarConnected,
   ] = await Promise.all([
-    ActivityService.getLeadActivities(id),
-    WhatsAppService.listForLead(id),
+    // Newest page only; the timeline pages further back on demand ("Load older").
+    ActivityService.getLeadActivities(id, LEAD_ACTIVITY_PAGE),
+    ActivityService.getLeadActivities(id, 200, undefined, ["note"]),
+    // True totals for tab labels and call stats — the lists above and below are capped.
+    db.execute(sql`select
+        (select count(*)::int from ${activitiesTable} a where a.lead_id = ${id}) as acts,
+        (select count(*)::int from ${activitiesTable} a where a.lead_id = ${id} and a.type = 'note') as notes,
+        (select count(*)::int from ${activitiesTable} a where a.lead_id = ${id} and a.type = 'call') as calls,
+        (select count(*)::int from ${activitiesTable} a where a.lead_id = ${id} and a.type = 'call'
+           and (coalesce(a.duration_sec, 0) > 0 or a.content ~ '^(Called|Incoming call) — Answered')) as answered,
+        (select count(*)::int from ${whatsappMessages} w where w.lead_id = ${id}) as wa,
+        (select count(*)::int from ${whatsappMessages} w where w.lead_id = ${id} and w.direction = 'inbound') as wa_in`)
+      .then((r) => (r as unknown as { acts: number; notes: number; calls: number; answered: number; wa: number; wa_in: number }[])[0])
+      .catch(() => null),
+    CustomStatusSchemaService.getStatusCategory(organizationId, lead.status).catch(() => undefined),
+    WhatsAppService.listForLead(id, 200),
     TagService.getForLead(id),
     db
       .select()
       .from(leadAttachments)
       .where(and(eq(leadAttachments.leadId, id), eq(leadAttachments.organizationId, organizationId)))
       .orderBy(desc(leadAttachments.createdAt))
+      .limit(200)
       .catch(() => []),
     db
       .select()
       .from(followUps)
       .where(eq(followUps.leadId, id))
       .orderBy(desc(followUps.dueAt))
+      .limit(200)
       .catch(() => []),
     ContentSharingService.listForLead(id).catch(() => []),
     OrgService.getOrganization(organizationId).catch(() => null),
@@ -173,10 +195,6 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     googleConfigured() ? GoogleCalendarService.isConnected(userId).catch(() => false) : Promise.resolve(false),
   ]);
 
-  const durationMs = Date.now() - startMs;
-  if (durationMs > 200) {
-    console.warn(`[PERF WARNING] LeadDetailPage /leads/${id} took ${durationMs}ms`);
-  }
 
   const dupCount = duplicateRows.length;
 
@@ -210,24 +228,24 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   }
   const whatsappMode: "personal" | "bsp" = org?.whatsappMode === "bsp" ? "bsp" : "personal";
 
-  // Status by CATEGORY so custom statuses get the same coaching/banners as the built-in ones.
-  const statusCategory = await CustomStatusSchemaService.getStatusCategory(organizationId, lead.status).catch(() => undefined);
   // Dialable number for Call/WhatsApp links. Older leads may be saved without a country code
   // ("9876543210"), which WhatsApp can't open — complete them with the workspace's default.
-  const dialPhone = normalizePhone(lead.phone, await orgDialCode(organizationId)) ?? null;
+  const dialPhone = normalizePhone(lead.phone, dialCode) ?? null;
   const stageName = stagesList.find((st) => st.id === lead.stageId)?.name ?? null;
-  const callStats = ScoringService.callStats(activities);
+  // Streak/talk-time from the recent page; the answered total from SQL (the page is capped).
+  const callStats = { ...ScoringService.callStats(activities), ...(counts ? { answeredCalls: counts.answered } : {}) };
   // When this lead replies / picks up — shown as a "best time to reach them" hint.
   const contactWindow = bestContactWindow(
     [
       ...waMessages.filter((msg) => msg.direction === "inbound").map((msg) => new Date(msg.createdAt)),
       ...activities.filter((a) => a.type === "call" && /Called — Answered/.test(a.content ?? "")).map((a) => new Date(a.createdAt)),
     ],
-    (await getOrgFormat(organizationId)).timezone,
+    orgFmt.timezone,
   );
-  const callCount = activities.filter((a) => a.type === "call").length;
-  const inboundCount = waMessages.filter((msg) => msg.direction === "inbound").length;
-  const outboundCount = waMessages.length - inboundCount;
+  const callCount = counts?.calls ?? activities.filter((a) => a.type === "call").length;
+  const inboundCount = counts?.wa_in ?? waMessages.filter((msg) => msg.direction === "inbound").length;
+  const waTotal = counts?.wa ?? waMessages.length;
+  const outboundCount = waTotal - inboundCount;
   const answers = formAnswers(cd, Object.fromEntries(allCustomDefs.map((d) => [d.key, d.label])));
   const savedRecap = (cd._aiRecap as RecapCache | undefined) ?? null;
 
@@ -265,7 +283,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
         ? "border-orange-500/40 bg-orange-500/5"
         : "border-border bg-card";
 
-  const notesCount = activities.filter((a) => a.type === "note").length;
+  const notesCount = counts?.notes ?? noteActivities.length;
   const initials =
     lead.name
       ?.split(" ")
@@ -336,7 +354,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               )}
               {!lead.phone && !lead.email && <span className="text-muted-foreground">No phone or email yet — use Edit to add one.</span>}
             </div>
-            {(callCount > 0 || waMessages.length > 0) && (
+            {(callCount > 0 || waTotal > 0) && (
               <p className="text-xs text-muted-foreground">
                 {[
                   callCount > 0 && `${callCount} call${callCount === 1 ? "" : "s"}${callStats.answeredCalls ? ` · ${callStats.answeredCalls} answered` : ""}`,
@@ -523,10 +541,14 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             <LeadWorkspaceTabs
               defaultValue="activity"
               tabs={[
-                { value: "activity", label: `Activity (${activities.length})`, content: <ActivityTimeline activities={activities} /> },
+                {
+                  value: "activity",
+                  label: `Activity (${counts?.acts ?? activities.length})`,
+                  content: <ActivityTimeline activities={activities} leadId={lead.id} hasMore={activities.length === LEAD_ACTIVITY_PAGE} />,
+                },
                 {
                   value: "whatsapp",
-                  label: `WhatsApp (${waMessages.length})`,
+                  label: `WhatsApp (${waTotal})`,
                   content: (
                     <>
                       <WhatsAppThread messages={waMessages} />
@@ -542,7 +564,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                     </>
                   ),
                 },
-                { value: "notes", label: `Notes (${notesCount})`, content: <LeadNotesTab leadId={lead.id} initialNotes={activities.filter((a) => a.type === "note")} /> },
+                { value: "notes", label: `Notes (${notesCount})`, content: <LeadNotesTab leadId={lead.id} initialNotes={noteActivities} /> },
                 {
                   value: "meetings",
                   label: `Meetings (${leadMeetings.filter((mt) => mt.status === "scheduled").length})`,

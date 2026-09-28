@@ -27,6 +27,9 @@ export async function sendEmail(mail: Mail, organizationId?: string): Promise<vo
 
   const r = resend();
   if (!r) {
+    // Production must not report success for mail that went nowhere — or log bodies that carry
+    // password-reset and invitation links.
+    if (process.env.NODE_ENV === "production") throw new Error("Email is not configured (RESEND_API_KEY)");
     console.log(`[mail:dev] to=${mail.to} subject="${mail.subject}"\n${mail.html}`);
     return;
   }

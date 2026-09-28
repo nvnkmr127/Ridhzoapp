@@ -1,81 +1,45 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { LeadConversionPredictorService } from "./leadConversionPredictorService";
+import { LeadConversionPredictorService, tierFor } from "./leadConversionPredictorService";
 import { db } from "@/db";
 
-vi.mock("@/db", () => ({
-  db: {
-    select: vi.fn(),
-  },
+vi.mock("@/db", () => ({ db: { select: vi.fn() } }));
+vi.mock("./customStatusSchemaService", () => ({
+  CustomStatusSchemaService: { resolver: vi.fn().mockResolvedValue({ openKeys: ["new", "active"] }) },
 }));
 
+// Scoring itself runs in Postgres (PROBABILITY); these cover the tiers and the row mapping.
+function chain(result: unknown) {
+  const c: any = {};
+  for (const k of ["from", "where", "orderBy", "limit"]) c[k] = vi.fn(() => c);
+  c.offset = vi.fn().mockResolvedValue(result);
+  c.then = undefined;
+  return c;
+}
+
 describe("LeadConversionPredictorService", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  beforeEach(() => vi.clearAllMocks());
+
+  it("maps probability to tiers", () => {
+    expect(tierFor(100)).toBe("very_high");
+    expect(tierFor(75)).toBe("very_high");
+    expect(tierFor(74)).toBe("high");
+    expect(tierFor(55)).toBe("high");
+    expect(tierFor(54)).toBe("moderate");
+    expect(tierFor(35)).toBe("moderate");
+    expect(tierFor(34)).toBe("low");
   });
 
-  it("should return zero metrics when organization has no active leads", async () => {
-    const mockFrom = vi.fn().mockReturnValue({
-      where: vi.fn().mockResolvedValue([]),
-    });
-    (db.select as any).mockReturnValue({ from: mockFrom });
+  it("returns SQL aggregates and one mapped page", async () => {
+    const agg = { from: vi.fn(() => ({ where: vi.fn().mockResolvedValue([{ total: 40, avg: 41.26, highCount: 3, highValue: 9000, hotCount: 12 }]) })) };
+    const page = chain([
+      { id: "l1", name: "A", phone: null, email: null, status: "active", score: 90, expectedValue: "5000.00", ownerId: "u1", probability: 80 },
+    ]);
+    (db.select as any).mockReturnValueOnce(agg).mockReturnValueOnce(page);
 
-    const result = await LeadConversionPredictorService.getConversionPredictions("org-empty");
+    const r = await LeadConversionPredictorService.getConversionPredictions("org", undefined, { limit: 1000 });
 
-    expect(result).toEqual({
-      totalActiveLeads: 0,
-      averageConversionProbability: 0,
-      totalHighProbabilityValue: 0,
-      highProbabilityLeadsCount: 0,
-      leads: [],
-    });
-  });
-
-  it("should calculate conversion predictions and rank leads by probability", async () => {
-    const mockLeads = [
-      {
-        id: "lead-1",
-        name: "Acme High Priority",
-        phone: "+1234567890",
-        email: "contact@acme.com",
-        company: "Acme Inc",
-        status: "active",
-        priority: "high",
-        score: 90,
-        expectedValue: "50000.00",
-        nextFollowUpAt: new Date(Date.now() + 86400000),
-        lastContactedAt: new Date(),
-        createdAt: new Date(),
-        ownerId: "user-1",
-      },
-      {
-        id: "lead-2",
-        name: "Cold Lead",
-        phone: null,
-        email: null,
-        company: null,
-        status: "new",
-        priority: "low",
-        score: 10,
-        expectedValue: "1000.00",
-        nextFollowUpAt: null,
-        lastContactedAt: null,
-        createdAt: new Date(Date.now() - 30 * 86400000),
-        ownerId: null,
-      },
-    ];
-
-    const mockFrom = vi.fn().mockReturnValue({
-      where: vi.fn().mockResolvedValue(mockLeads),
-    });
-    (db.select as any).mockReturnValue({ from: mockFrom });
-
-    const result = await LeadConversionPredictorService.getConversionPredictions("org-123");
-
-    expect(result.totalActiveLeads).toBe(2);
-    expect(result.leads.length).toBe(2);
-    expect(result.leads[0].id).toBe("lead-1");
-    expect(result.leads[0].likelihoodTier).toBe("very_high");
-    expect(result.highProbabilityLeadsCount).toBe(1);
-    expect(result.totalHighProbabilityValue).toBe(50000);
+    expect(r).toMatchObject({ totalActiveLeads: 40, averageConversionProbability: 41.3, highProbabilityLeadsCount: 3, totalHighProbabilityValue: 9000, hotCount: 12 });
+    expect(r.leads[0]).toMatchObject({ id: "l1", expectedValue: 5000, conversionProbability: 80, likelihoodTier: "very_high" });
+    expect(page.limit).toHaveBeenCalledWith(100); // page size is capped
   });
 });

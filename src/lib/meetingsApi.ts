@@ -5,7 +5,7 @@ import { hasPermissionForRoleId } from "@/lib/rbac";
 import { LeadService } from "@/domains/leads/service";
 import { MeetingService, type Meeting } from "@/domains/meetings/service";
 import type { ApiAuth } from "@/lib/apiAuth";
-import { attendsMeetingWith } from "@/lib/leads/access";
+import { worksOnLead } from "@/lib/leads/access";
 
 // Shared access rules for the /api/v1 lead and meeting routes — the same ones the web app uses:
 // API keys see the whole org; a mobile user sees their own leads (all of them if admin), leads they
@@ -32,7 +32,7 @@ export async function leadForApi(auth: ApiAuth, leadId: string) {
   // Independent reads — together, not one DB round trip after the other (every lead route pays this).
   const [lead, all] = await Promise.all([LeadService.getLead(leadId, auth.organizationId), canSeeAllLeads(auth)]);
   if (!lead) return null;
-  if (auth.userId && lead.ownerId !== auth.userId && !all && !(await attendsMeetingWith(leadId, auth.userId))) return null;
+  if (auth.userId && lead.ownerId !== auth.userId && !all && !(await worksOnLead(leadId, auth.userId))) return null;
   return lead;
 }
 

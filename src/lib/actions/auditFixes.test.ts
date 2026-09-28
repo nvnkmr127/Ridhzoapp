@@ -23,6 +23,11 @@ vi.mock("@/domains/organizations/service", () => ({
   OrgService: { getOrganization: vi.fn(), updateOrganization: vi.fn() },
 }));
 vi.mock("@/db", () => ({ db: {} }));
+// The merge action now checks the caller can open both leads; an admin here can.
+vi.mock("@/lib/leads/access", async (orig) => ({
+  ...(await orig<typeof import("@/lib/leads/access")>()),
+  filterAccessibleLeadIds: vi.fn(async (ids: string[]) => ids),
+}));
 
 import { updateRoleAction } from "./roles";
 import { bulkDeleteLeadsAction } from "./leads";

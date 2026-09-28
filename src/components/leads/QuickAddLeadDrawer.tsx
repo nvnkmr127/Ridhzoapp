@@ -17,7 +17,7 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { createLeadAction } from "@/lib/actions/leads"
-import { enqueueOfflineLead } from "@/lib/offline/outbox"
+import { enqueueOfflineLead, isNetworkError, newOfflineIdempotencyKey } from "@/lib/offline/outbox"
 import { listCustomFieldsAction } from "@/lib/actions/customFields"
 import { listUsersAction } from "@/lib/actions/users"
 import { CustomFieldInputs, defaultCustomValues, type CustomFieldDef } from "@/components/leads/CustomFieldInputs"
@@ -151,8 +151,12 @@ export function QuickAddLeadDrawer({
       customData: customMerged,
     };
 
+    // One key per submit: the online attempt and any queued replay share it, so a lead whose first
+    // request did reach the server is never created twice.
+    const idempotencyKey = newOfflineIdempotencyKey();
+
     if (typeof window !== "undefined" && !navigator.onLine) {
-      enqueueOfflineLead(leadPayload, organizationId);
+      enqueueOfflineLead(leadPayload, organizationId, idempotencyKey);
       toast({
         title: "Saved offline ⚡",
         description: "You're offline. Lead was saved locally and will auto-sync once reconnected.",
@@ -165,7 +169,7 @@ export function QuickAddLeadDrawer({
     }
 
     try {
-      const res = await createLeadAction(leadPayload);
+      const res = await createLeadAction(leadPayload, { idempotencyKey });
       if (!res.ok) {
         const displayError = res.message;
         // Map server field errors back onto the matching inputs for inline display.
@@ -206,9 +210,19 @@ export function QuickAddLeadDrawer({
       setCustomValues({});
       setServerError(null);
       router.refresh();
-    } catch {
-      // Transport-level failure (offline or network dropped mid-request)
-      enqueueOfflineLead(leadPayload, organizationId);
+    } catch (err) {
+      // Only a request that never got an answer is queued. Anything else (a server crash, an app
+      // update mid-session) isn't fixed by replaying later — say so and keep what they typed.
+      if (!isNetworkError(err)) {
+        const updated = err instanceof Error && /Server Action/i.test(err.message);
+        const message = updated
+          ? "Ridhzo was just updated. Reload the page, then save again — your entry is still here."
+          : "Something went wrong saving this lead. Your entry is still here — please try again.";
+        setServerError(message);
+        toast({ variant: "destructive", title: "Unable to create lead", description: message });
+        return;
+      }
+      enqueueOfflineLead(leadPayload, organizationId, idempotencyKey);
       toast({
         title: "Connection dropped — Saved offline ⚡",
         description: "Could not reach server. Lead was safely saved locally and will auto-sync when online.",

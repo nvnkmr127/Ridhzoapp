@@ -7,7 +7,7 @@ import { MeetingService } from "@/domains/meetings/service";
 
 vi.mock("@/lib/apiAuth", () => ({ authorizeApiRequest: vi.fn() }));
 vi.mock("@/lib/rbac", () => ({ hasPermissionForRoleId: vi.fn() }));
-vi.mock("@/lib/leads/access", () => ({ attendsMeetingWith: vi.fn().mockResolvedValue(false) }));
+vi.mock("@/lib/leads/access", () => ({ worksOnLead: vi.fn().mockResolvedValue(false) }));
 vi.mock("@/domains/leads/service", () => ({ LeadService: { getLead: vi.fn() } }));
 vi.mock("@/domains/meetings/service", () => ({ MeetingService: { create: vi.fn(), listForLead: vi.fn(), canAutoMeet: vi.fn(), get: vi.fn() } }));
 

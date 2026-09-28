@@ -3,7 +3,9 @@
 // Per-tab (sessionStorage); every access is guarded because storage can be unavailable.
 const KEY = "ridhzo_lead_list";
 
-export type LeadListContext = { ids: string[]; url: string };
+// prevPageUrl / nextPageUrl: the list's neighbouring pages, so the pager can keep going past the
+// first/last lead on this page.
+export type LeadListContext = { ids: string[]; url: string; prevPageUrl?: string | null; nextPageUrl?: string | null };
 
 export function saveLeadListContext(ctx: LeadListContext) {
   try {

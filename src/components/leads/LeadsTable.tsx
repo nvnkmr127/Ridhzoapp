@@ -107,8 +107,18 @@ export function LeadsTable({
 
   // Remember this list (order + filters) so a lead's profile can go back to it and step prev/next.
   React.useEffect(() => {
-    saveLeadListContext({ ids: leads.map((l) => l.id), url: window.location.pathname + window.location.search });
-  }, [leads]);
+    const pageUrl = (n: number) => {
+      const p = new URLSearchParams(window.location.search);
+      p.set("page", String(n));
+      return `${window.location.pathname}?${p}`;
+    };
+    saveLeadListContext({
+      ids: leads.map((l) => l.id),
+      url: window.location.pathname + window.location.search,
+      prevPageUrl: page > 1 ? pageUrl(page - 1) : null,
+      nextPageUrl: page < totalPages ? pageUrl(page + 1) : null,
+    });
+  }, [leads, page, totalPages]);
 
   const [leadToDelete, setLeadToDelete] = React.useState<Lead | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = React.useState(false);
