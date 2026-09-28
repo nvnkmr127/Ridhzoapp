@@ -193,6 +193,19 @@ export class LeadService {
     return newLead;
   }
 
+  // Compare-and-swap on the lead's version: bumps updatedAt only if it's still `seen` (ms precision,
+  // like updateLead's check). false = someone wrote to the lead in between. Holding the new version
+  // also makes a racing web save (EditLeadDialog sends expectedUpdatedAt) fail instead of winning.
+  static async claimVersion(leadId: string, organizationId: string, seen: Date): Promise<boolean> {
+    const seenIso = seen.toISOString().replace("Z", ""); // updated_at is naive UTC
+    const [row] = await db
+      .update(leads)
+      .set({ updatedAt: new Date() })
+      .where(and(eq(leads.id, leadId), eq(leads.organizationId, organizationId), sql`date_trunc('milliseconds', ${leads.updatedAt}) = ${seenIso}::timestamp`))
+      .returning({ id: leads.id });
+    return !!row;
+  }
+
   static async updateLead(
     leadId: string,
     data: Partial<{ name: string; email: string; phone: string; company: string }>,

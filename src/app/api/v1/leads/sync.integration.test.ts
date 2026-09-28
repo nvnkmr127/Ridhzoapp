@@ -73,6 +73,19 @@ describe.skipIf(!url)("GET /api/v1/leads?sync=1 (phone incremental sync)", () =>
     expect(renamed.customData).toEqual({ note: 2 }); // server-internal blobs stay off the phone
   });
 
+  it("a write that doesn't touch updatedAt (score job, raw SQL) still reaches the phones", async () => {
+    const { eq } = await import("drizzle-orm");
+    const [l] = await db.insert(leads).values({ organizationId: auth.organizationId, name: "Quiet", ownerId: auth.userId }).returning();
+    let after: string | null = null;
+    for (let page = await feed(); ; page = await feed(after)) {
+      after = page.next;
+      if (page.done) break;
+    }
+    await db.update(leads).set({ score: 77 }).where(eq(leads.id, l.id)); // no updatedAt
+    const delta = await feed(after);
+    expect(delta.data.map((d: any) => [d.id, d.score])).toEqual([[l.id, 77]]);
+  });
+
   it("PATCH with base: merges untouched fields, refuses a field changed elsewhere (409)", async () => {
     const { PATCH } = await import("./[id]/route");
     const saved = { ...auth };
@@ -88,6 +101,14 @@ describe.skipIf(!url)("GET /api/v1/leads?sync=1 (phone incremental sync)", () =>
       expect(clash.status).toBe(409);
       expect((await clash.json()).conflicts).toEqual([{ field: "company", server: "Acme" }]);
       expect((await patch({ company: "Beta" })).status).toBe(200); // "keep mine": sent without base
+
+      // The phone's save claims the version: a web save made from the copy before it is refused, not applied.
+      const { LeadService } = await import("@/domains/leads/service");
+      const { eq } = await import("drizzle-orm");
+      const [before] = await db.select().from(leads).where(eq(leads.id, l.id));
+      expect(await LeadService.claimVersion(l.id, auth.organizationId, new Date(before.updatedAt.getTime() - 5))).toBe(false);
+      expect((await patch({ name: "Phone", base: { name: "Asha R" } })).status).toBe(200);
+      await expect(LeadService.updateLead(l.id, { name: "Web" }, "", auth.organizationId, before.updatedAt)).rejects.toMatchObject({ code: "CONFLICT" });
     } finally {
       Object.assign(auth, saved);
     }

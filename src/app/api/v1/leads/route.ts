@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
-import { and, desc, eq, gte, isNull, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, ilike, or, sql } from "drizzle-orm";
 import { LeadService } from "@/domains/leads/service";
 import { CustomFieldService, FieldValidationError } from "@/domains/customFields/service";
 import { PlanService } from "@/domains/billing/planService";
@@ -104,14 +104,13 @@ async function changesFeed(auth: ApiAuth, after: string | null, limit: number) {
   const { canSeeAllLeads } = await import("@/lib/meetingsApi");
   const { CustomFieldService } = await import("@/domains/customFields/service");
   const [all, defs] = await Promise.all([canSeeAllLeads(auth), CustomFieldService.listCached(auth.organizationId)]);
-  // Writes stamp updatedAt from a JS Date (ms), inserts from now() (µs): compare at ms, the cursor's precision.
-  const at = sql`date_trunc('milliseconds', ${leads.updatedAt})`;
+  // sync_at: stamped (ms, UTC) by a trigger on every write to the row — see migration 0080.
   const where = [eq(leads.organizationId, auth.organizationId)];
   if (after) {
-    const iso = new Date(afterAt).toISOString().replace("Z", ""); // updated_at is naive UTC
-    where.push(gte(leads.updatedAt, new Date(afterAt)), sql`(${at}, ${leads.id}) > (${iso}::timestamp, ${afterId}::uuid)`);
+    const iso = new Date(afterAt).toISOString().replace("Z", ""); // sync_at is naive UTC
+    where.push(sql`(${leads.syncAt}, ${leads.id}) > (${iso}::timestamp, ${afterId}::uuid)`);
   }
-  const rows = await db.select().from(leads).where(and(...where)).orderBy(at, leads.id).limit(limit);
+  const rows = await db.select().from(leads).where(and(...where)).orderBy(leads.syncAt, leads.id).limit(limit);
 
   const hidden = new Set(["_aiRecap", "_enrichment", "_scoreFactors", ...(all ? [] : defs.filter((d) => d.adminOnly).map((d) => d.key))]);
   const data = rows.map((l) => {
@@ -120,7 +119,7 @@ async function changesFeed(auth: ApiAuth, after: string | null, limit: number) {
     return { ...l, customData, gone: false };
   });
   const last = rows[rows.length - 1];
-  return NextResponse.json({ data, next: last ? `${last.updatedAt.toISOString()}|${last.id}` : after, done: rows.length < limit });
+  return NextResponse.json({ data, next: last ? `${last.syncAt.toISOString()}|${last.id}` : after, done: rows.length < limit });
 }
 
 const createSchema = z.object({

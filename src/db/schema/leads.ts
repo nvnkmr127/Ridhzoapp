@@ -73,6 +73,9 @@ export const leads = pgTable('leads', {
   deletedBy: uuid('deleted_by').references(() => users.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  // Stamped by a DB trigger (migration 0080) on every insert/update, whatever the code path — the
+  // phones' incremental-sync cursor. updatedAt stays the "someone edited it" time analytics rely on.
+  syncAt: timestamp('sync_at').default(sql`date_trunc('milliseconds', now() at time zone 'utc')`).notNull(),
 }, (table) => ({
   orgIdx: index('leads_org_idx').on(table.organizationId),
   emailIdx: index('leads_email_idx').on(table.email),
@@ -88,7 +91,7 @@ export const leads = pgTable('leads', {
   orgStatusCreatedIdx: index('leads_org_status_created_idx').on(table.organizationId, table.status, table.createdAt),
   orgSourceIdx: index('leads_org_source_idx').on(table.organizationId, table.sourceId),
   // Phones' incremental sync (GET /api/v1/leads?sync=1): changes after a cursor, oldest first.
-  orgUpdatedIdx: index('leads_org_updated_idx').on(table.organizationId, table.updatedAt),
+  orgSyncIdx: index('leads_org_sync_idx').on(table.organizationId, table.syncAt, table.id),
   // Duplicate check on the lead profile matches email case-insensitively (lower(email) = …).
   orgLowerEmailIdx: index('leads_org_lower_email_idx').on(table.organizationId, sql`lower(${table.email})`),
   // Enforce per-tenant dedup at the DB layer (replaces the racy check-then-insert).

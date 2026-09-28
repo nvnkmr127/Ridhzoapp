@@ -160,17 +160,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Invalid body", details: parsed.error.issues }, { status: 422 });
 
-  const currentLead = await leadForApi(auth, id);
+  let currentLead = await leadForApi(auth, id);
   if (!currentLead) return leadNotFound();
   if (!(await canEditLeads(auth))) return readOnly();
 
   if (parsed.data.base) {
     const { base, ...patch } = parsed.data;
-    const conflicts = leadConflicts(currentLead as Record<string, unknown>, patch, base as Record<string, unknown>);
-    // ponytail: checked before the write, not in the same statement — a web save landing in the
-    // few ms between still wins. Row lock (SELECT … FOR UPDATE) if that ever matters.
-    if (conflicts.length) {
-      return NextResponse.json({ error: "This lead was changed by someone else.", code: "conflict", conflicts }, { status: 409 });
+    // Check, then claim the version the check saw (compare-and-swap). Written in between? Re-read and
+    // check again, so a change landing mid-request is never overwritten unseen.
+    for (let attempt = 0; ; attempt++) {
+      const conflicts = leadConflicts(currentLead as Record<string, unknown>, patch, base as Record<string, unknown>);
+      if (conflicts.length) {
+        return NextResponse.json({ error: "This lead was changed by someone else.", code: "conflict", conflicts }, { status: 409 });
+      }
+      if (await LeadService.claimVersion(id, auth.organizationId, currentLead.updatedAt)) break;
+      const fresh = attempt < 2 ? await leadForApi(auth, id) : null;
+      if (!fresh) return NextResponse.json({ error: "This lead is being changed by someone else. Try again." }, { status: 409 });
+      currentLead = fresh;
     }
   }
 
