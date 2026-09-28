@@ -11,7 +11,7 @@ export function formatCurrency(amount: number | string | null | undefined, fmt: 
   const n = typeof amount === "string" ? Number(amount) : amount ?? 0;
   const value = Number.isFinite(n) ? (n as number) : 0;
   const currency = fmt.currency || DEFAULT_FORMAT.currency;
-  const locale = fmt.locale || DEFAULT_FORMAT.locale;
+  const locale = fmt.locale || (currency === "INR" ? "en-IN" : DEFAULT_FORMAT.locale);
   try {
     return new Intl.NumberFormat(locale, { style: "currency", currency, maximumFractionDigits: 0 }).format(value);
   } catch {

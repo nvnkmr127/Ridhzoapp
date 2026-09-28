@@ -11,6 +11,7 @@ interface WatxioConfig {
   baseUrl: string;
   apiKey: string;
   phoneNumberId?: string;
+  tenantId?: string;
 }
 
 // Normalize base URL to ensure it ends in /api/v1
@@ -23,25 +24,29 @@ function normalizeBaseUrl(raw: string): string {
 
 // True when the WhatsApp Business API (Watxio BSP) env is set.
 export function isConfigured(): boolean {
-  return Boolean(process.env.WATXIO_BASE_URL && process.env.WATXIO_API_KEY);
+  return Boolean(process.env.WATXIO_BASE_URL?.trim() && process.env.WATXIO_API_KEY?.trim());
 }
 
 function config(): WatxioConfig {
-  const baseUrl = process.env.WATXIO_BASE_URL;
-  const apiKey = process.env.WATXIO_API_KEY;
-  if (!baseUrl || !apiKey) {
+  const baseUrl = process.env.WATXIO_BASE_URL?.trim();
+  const rawApiKey = process.env.WATXIO_API_KEY?.trim();
+  if (!baseUrl || !rawApiKey) {
     throw new Error("Watxio not configured: set WATXIO_BASE_URL and WATXIO_API_KEY");
   }
+  // Strip accidental enclosing quotes from .env definitions
+  const apiKey = rawApiKey.replace(/^["']|["']$/g, "").trim();
+
   return {
     baseUrl: normalizeBaseUrl(baseUrl),
     apiKey,
-    phoneNumberId: process.env.WATXIO_PHONE_NUMBER_ID,
+    phoneNumberId: process.env.WATXIO_PHONE_NUMBER_ID?.trim(),
+    tenantId: process.env.WATXIO_TENANT_ID?.trim(),
   };
 }
 
 // idempotencyKey → X-Idempotency-Key: a retried send with the same key isn't delivered twice.
 async function post(path: string, body: unknown, idempotencyKey?: string): Promise<any> {
-  const { baseUrl, apiKey } = config();
+  const { baseUrl, apiKey, tenantId } = config();
   const url = `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
 
   const res = await fetch(url, {
@@ -50,6 +55,7 @@ async function post(path: string, body: unknown, idempotencyKey?: string): Promi
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
       Accept: "application/json",
+      ...(tenantId ? { "X-Tenant-ID": tenantId } : {}),
       ...(idempotencyKey ? { "X-Idempotency-Key": idempotencyKey } : {}),
     },
     body: JSON.stringify(body),
@@ -57,6 +63,9 @@ async function post(path: string, body: unknown, idempotencyKey?: string): Promi
 
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error(`Watxio 401 (Unauthenticated): check WATXIO_API_KEY token validity or expiration. ${JSON.stringify(json)}`);
+    }
     throw new Error(`Watxio ${res.status}: ${JSON.stringify(json)}`);
   }
   return json;

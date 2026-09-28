@@ -28,8 +28,9 @@ async function seed() {
       name: 'Acme Corp',
       slug: 'acme-corp',
       plan: 'starter',
-      timezone: 'UTC',
-      currency: 'USD',
+      timezone: 'Asia/Kolkata',
+      currency: 'INR',
+      locale: 'en-IN',
     })
     .onConflictDoNothing();
 

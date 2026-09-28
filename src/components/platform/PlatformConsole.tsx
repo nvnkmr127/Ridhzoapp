@@ -4392,7 +4392,7 @@ export function PlatformConsole({
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs font-medium text-foreground">Base Amount ($ / ₹)</label>
+                <label className="text-xs font-medium text-foreground">Base Amount</label>
                 <Input
                   type="number"
                   min="0"

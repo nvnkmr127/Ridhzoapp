@@ -16,7 +16,7 @@ export interface LeadFieldDefinition {
 }
 
 export const CONFIGURABLE_LEAD_FIELDS: readonly LeadFieldDefinition[] = [
-  { key: "budget", label: "Budget", type: "text", placeholder: "e.g. ₹50,000 or $5,000" },
+  { key: "budget", label: "Budget", type: "text", placeholder: "e.g. 50,000" },
   { key: "company", label: "Company", type: "text", placeholder: "Company name" },
   { key: "location", label: "Location", type: "text", placeholder: "City, area, or region" },
   { key: "industry", label: "Industry", type: "text", placeholder: "e.g. Real Estate, Retail" },

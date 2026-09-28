@@ -114,7 +114,7 @@ export class MetaCapiService {
     if (input.value !== undefined) {
       payload.custom_data = {
         value: input.value,
-        currency: input.currency || "USD",
+        currency: input.currency || "INR",
         content_name: input.eventName,
       };
     }

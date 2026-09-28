@@ -66,7 +66,7 @@ export function buildEvent(
   const custom_data: Record<string, unknown> = {};
   if (typeof lead.value === "number" && lead.value > 0) {
     custom_data.value = lead.value;
-    custom_data.currency = (lead.currency || "USD").toUpperCase();
+    custom_data.currency = (lead.currency || "INR").toUpperCase();
   }
 
   return {
@@ -96,7 +96,7 @@ export function buildCrmLeadEvent(
   };
   if (typeof opts.value === "number" && opts.value > 0) {
     custom_data.value = opts.value;
-    custom_data.currency = (opts.currency || "USD").toUpperCase();
+    custom_data.currency = (opts.currency || "INR").toUpperCase();
   }
   return {
     event_name: eventName,

@@ -273,6 +273,7 @@ export interface BusinessLike {
   website: string | null;
   phone?: string | null;
   city?: string | null;
+  currency?: string | null;
   /** Optional free-text description the tenant writes ("what we sell"). See organizations.aiContext. */
   aiContext?: string | null;
 }
@@ -290,6 +291,7 @@ export function businessPreamble(org: BusinessLike): string {
   s += ".";
   // Lets drafts end with a real "call us on …" instead of a placeholder.
   if (org.phone) s += ` Business phone: ${org.phone}.`;
+  if (org.currency) s += ` Workspace currency is ${org.currency}. All monetary values, quotes, and pricing must use ${org.currency} — never use $ unless the workspace currency is USD.`;
   if (org.aiContext?.trim()) s += ` About the business: ${org.aiContext.trim()}`;
   s +=
     " Represent ONLY this business's own products and services. The lead's name, company, or stated" +
