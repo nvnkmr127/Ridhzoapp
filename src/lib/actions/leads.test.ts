@@ -100,6 +100,32 @@ describe("createLeadAction", () => {
     );
   });
 
+  it("preserves configurable fields (budget, location, etc.) in customData", async () => {
+    (LeadService.createLead as any).mockResolvedValue({
+      id: "lead-budget",
+      name: "Budget Lead",
+    });
+
+    const res = await createLeadAction({
+      name: "Budget Lead",
+      budget: "50,000",
+      location: "San Francisco",
+    });
+
+    expect(res.ok).toBe(true);
+    expect(LeadService.createLead).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Budget Lead",
+        customData: expect.objectContaining({
+          budget: "50,000",
+          location: "San Francisco",
+        }),
+      }),
+      "user-1",
+      "org-1",
+    );
+  });
+
   it("accepts seed UUIDs (e.g. 00000000-0000-0000-0000-000000000001) for ownerId", async () => {
     (LeadService.createLead as any).mockResolvedValue({
       id: "lead-3",

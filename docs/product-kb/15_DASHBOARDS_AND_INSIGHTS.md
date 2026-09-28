@@ -9,14 +9,15 @@ Each rep's personal command centre for the day.
 | New leads | My leads not yet worked |
 | Active leads | My leads in conversation |
 | Win rate | Won ÷ (won + lost + unqualified) |
-| Pipeline value | Value of my open deals |
+| Pipeline value | Value of my open deals (formatted in your workspace currency, e.g. ₹50.0K / ₹1.5L) |
 | Due today | My follow-ups due today |
 | Overdue | My missed follow-ups |
 | Follow-up completion rate | How consistently I complete follow-ups |
+| **Calls & Answer Rate** | Total calls made today, total talk time, and personal call answer rate % |
 
-Plus: today's follow-ups and meetings, recent leads, and quick actions.
+Plus: today's follow-ups and meetings, recent leads with lead scores, and quick actions.
 
-**Use case:** A rep opens Ridhzo at 9:30 AM, sees 6 follow-ups due and 2 overdue, and clears them before new leads come in.
+**Use case:** A rep opens Ridhzo at 9:30 AM, sees 6 follow-ups due, their call answer rate at 65%, and clears priority callbacks first.
 
 ## 2. Executive Dashboard (for owners & managers)
 The business at a glance, filterable by date range, team and source.
@@ -26,10 +27,12 @@ The business at a glance, filterable by date range, team and source.
 | **Average speed to first response** | Faster response = more sales |
 | **Leads contacted within 5 minutes (%)** | The gold standard of speed-to-lead |
 | **Median response time** | Fair benchmark, ignores outliers |
+| **Call Answer Rate (%)** | Percentage of calls successfully answered across reps |
+| **Total Call Duration & Volume** | Total phone activity logged automatically from Android devices |
 | **SLA compliance & breaches** | Leads contacted within your target window (default 15 min) and how many were missed |
 | Total / new / active leads | Funnel volume |
 | Win rate | Sales efficiency |
-| Pipeline value | Money in play |
+| Pipeline value | Money in play (formatted in workspace currency) |
 | Overdue & due-today follow-ups | Execution discipline |
 | Follow-up completion rate | Team consistency |
 | **Content opened (last 7 days)** | Buying intent from shared brochures/links |
@@ -45,15 +48,16 @@ For leaders who want to optimise the whole sales engine.
 |---|---|
 | **Pipeline health grade (A–D)** | Overall score combining response SLA, engagement, stuck deals and momentum |
 | **Source ROI** | Win rate and revenue per lead source/campaign — where to spend ad money |
-| **Team leaderboard** | Leads handled, win rate, revenue and follow-ups per rep |
-| **Revenue forecast** | Pipeline value weighted by stage probability |
+| **Call Performance & Pickup Rates** | Answer rates, peak pickup hours of the day, and talk-time correlation to conversions |
+| **Team leaderboard** | Leads handled, calls made, answer rate, win rate, revenue and follow-ups per rep |
+| **Revenue forecast** | Pipeline value weighted by stage probability in your operational currency |
 | **Win/loss analysis** | Win rate and grouped loss reasons (price, competitor, fit, ghosted) |
 | **Funnel velocity** | Average time between stages; where deals slow down |
 | **Stuck deals** | Deals sitting too long in one stage, with risk level |
 | **Pipeline aging** | Open deals by age (0–7, 8–14, 15–30, 30+ days) and value at risk |
 | **Engagement health** | Leads grouped Healthy / Needs attention / At risk / Critical |
 | **Engagement momentum** | Leads heating up vs cooling down week over week |
-| **Best contact times** | Hours and days when leads respond most |
+| **Best contact times** | Hours and days when leads answer calls and respond most |
 | **Channel mix** | Share of WhatsApp, calls, email, notes |
 | **Territory / geography** | Leads, win rate and revenue by city/region |
 | **Cohorts** | How each month's leads convert or drop over time |

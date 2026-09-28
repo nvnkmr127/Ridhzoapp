@@ -12,13 +12,14 @@ Ridhzo is designed so a busy business owner can go from signup to receiving thei
 ## Setup in 5 steps
 
 ### 1. Sign up (1 minute)
-Sign up with email & password or **Google**. Phone number + OTP login is also supported. Your workspace starts on a **14-day Starter trial**.
+Sign up with email & password or **Google**. Mobile phone number + OTP login is also supported (via SMS/Watxio). Your workspace starts on a **14-day Starter trial**.
 
 ### 2. Connect a lead source (2–3 minutes)
 Go to **Settings → Lead Sources** and pick one:
 - **Facebook / Instagram Lead Ads** — click Connect, log in to Facebook, choose your Page. Done. New leads arrive in seconds. You can also **Sync Past Leads**.
 - **Google Lead Form Ads** — copy the webhook URL + key into your Google Ads lead form.
 - **Hosted web form** — build a form in the visual editor, share the link or paste the embed code into your website.
+- **Android Call Sync** — install the Android app and grant call-log permissions so phone calls automatically sync with leads.
 - **Website webhook / API** — for developers or tools like Zapier/Make/Pabbly.
 - **CSV import** — upload your existing leads from Excel/Google Sheets.
 
@@ -27,24 +28,25 @@ Go to **Settings → Lead Sources** and pick one:
 
 ### 4. Turn on auto-assignment & alerts (1 minute)
 - Enable round-robin so each new lead goes to the next available rep.
-- Allow **push notifications** on your phone so you hear about every lead instantly.
+- Allow **push notifications** on your mobile app so you hear about every lead instantly on dedicated high-priority channels.
 - Optional: set **New-lead alerts** to email/WhatsApp managers or partners.
 
 ### 5. Set up your first templates & automation (2 minutes)
 - Edit the ready-made WhatsApp/email templates ("Hi {{first_name}}, thanks for your enquiry…").
-- Pick an **automation template** (e.g., "New lead → assign round-robin → schedule follow-up tomorrow").
+- Pick an **automation template** (e.g., "New lead → assign round-robin → schedule follow-up tomorrow" or "Call logged → auto-complete follow-up").
 
 That's it. Every new lead now lands in Ridhzo, gets assigned, alerts the owner, and has a follow-up scheduled.
 
 ## A typical day in Ridhzo (sales rep)
 1. Phone buzzes: *"New lead: Priya Sharma — 2BHK enquiry (Facebook)"*.
 2. Tap the notification → lead profile opens → tap **WhatsApp** → template pre-filled with Priya's name → send. (Under 30 seconds.)
-3. Change status to *Contacted*, set a follow-up for tomorrow 11 AM.
-4. Open **My Dashboard** each morning: today's follow-ups, overdue tasks, new leads, meetings.
-5. Before leaving for a site visit, open the meeting → **Check in** with GPS on arrival → record outcome after.
+3. Or tap **Call** → make the call from your Android phone → Ridhzo automatically logs the call, duration, and answered status, and auto-completes any pending follow-up.
+4. Review **AI Suggestions** on the lead profile: 1-click update status to *Qualified* and 1-click fill budget field from the call notes.
+5. Open **My Dashboard** each morning: today's follow-ups, overdue tasks, new leads, meetings, and call answer rates.
+6. Before leaving for a site visit, open the meeting → **Check in** with GPS on arrival → record outcome after.
 
 ## A typical week (owner/manager)
-- **Executive Dashboard:** leads this week, conversion rate, revenue by source, pipeline.
+- **Executive Dashboard:** leads this week, conversion rate, revenue by source, call answer rates, pipeline.
 - **Going Cold:** one click "Escalate all to High" to push neglected leads back into priority.
 - **Insights:** which source gives the best win rate, which rep is closing, pipeline health grade.
 - **Audit log:** who changed or deleted what.
@@ -52,18 +54,22 @@ That's it. Every new lead now lands in Ridhzo, gets assigned, alerts the owner, 
 ## Ease-of-use features
 | Feature | Why it makes life easier |
 |---|---|
-| **Quick Add** (global "+" button) | Add a lead from any screen in seconds, even offline |
-| **Command palette / global search** (Ctrl/⌘ + K) | Find any lead by name, phone (any format), email or company instantly |
+| **Quick Add** (global "+" button) | Add a lead from any screen in seconds, even offline with automatic conflict detection |
+| **Command palette / global search** (Ctrl/⌘ + K) | Find any lead by name, phone (trigram search in any format), or email instantly |
 | **One-tap actions** | Call, WhatsApp, SMS, email with one tap from the lead card |
+| **Caller ID on Android** | Incoming lead calls display caller identity directly using pre-cached lead keys |
+| **Automatic Call Logging** | Android device sync logs talk duration, answer status, and timestamps without manual input |
+| **Live Next Best Action** | Real-time stream recommending the single next move to progress each lead |
+| **1-Click AI Suggestions** | Auto-populate fields and update stage transitions with a single tap |
 | **Saved views** | Save your favourite filters ("My hot leads from Facebook") |
 | **Bulk actions** | Assign, tag, change status, message or export hundreds of leads at once |
-| **Templates with auto-fill** | {{first_name}}, {{company}} etc. filled automatically |
+| **Templates with auto-fill** | {{first_name}}, {{phone}}, custom fields filled automatically |
 | **AI drafts** | Get a ready-to-send reply in the lead's language |
 | **Automation templates** | Start from proven workflows instead of a blank screen |
-| **Offline mode** | Leads added without internet are saved and synced later |
-| **Installable app** | Home-screen icon, full-screen app, push notifications |
-| **Friendly limits & errors** | Plain messages like "Your plan allows 3 seats. Upgrade to add more." |
+| **Offline mode** | Leads added/edited without internet are saved and synced safely with version conflict protection |
+| **Native mobile app & PWA** | Native Android APK or home-screen app with high-priority notification channels |
+| **In-app Support Tickets** | File and track support requests directly inside Settings → Support |
 
 ## Support & onboarding
 - In-app empty states tell you exactly what to do next ("Connect Facebook ads or your website so new leads land here automatically — or add one by hand to try it out.").
-- Support tickets are handled by the Ridhzo team from the platform console.
+- **In-app Support Ticket Management:** Create, track, and manage support tickets right from Settings → Support, handled directly by the Ridhzo team.

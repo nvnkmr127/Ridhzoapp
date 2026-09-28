@@ -50,14 +50,16 @@ Managed at **Settings → Lead Sources**. Each source shows live stats (leads re
 **Use case:** An insurance advisor moves 2,000 old contacts from Excel into Ridhzo in five minutes.
 
 ### 7. Manual Entry & Quick Add
-- Global **Quick Add** button from any screen: name, phone (with country code), email, company, owner, custom fields.
-- **Works offline** — saved on the device and synced automatically when internet returns.
+- Global **Quick Add** button from any screen: name, phone (with country code), email, optional company, owner, custom fields.
+- **Works offline** — saved on the device with version claiming and synced automatically with conflict detection when internet returns.
 
-**Use case:** An agent at a property expo adds 40 walk-in visitors on their phone with patchy network — none are lost.
+**Use case:** An agent at a property expo adds 40 walk-in visitors on their phone with patchy network — none are lost or overwritten.
 
-### 8. Missed-Call → Instant WhatsApp
-- Connect any telephony provider (Exotel, Knowlarity, Twilio, etc.) to Ridhzo's missed-call webhook.
-- When a customer's call is missed, Ridhzo matches the caller to a lead and **auto-sends a WhatsApp** so the enquiry is followed up immediately; the event is logged on the lead's timeline.
+### 8. Android Device Call Sync & Smart Missed-Calls
+- **Automatic Android Call Logging:** Reps install the Ridhzo Android app; calls made, answered, or missed are synced automatically with timestamps and exact talk durations.
+- **Caller ID Directory:** Ridhzo pre-downloads active lead phone keys to the rep's phone. When a lead calls, the rep sees the caller's lead name instantly before picking up.
+- **Smart Missed-Call Alerts:** If a lead calls a rep and the rep misses it, the rep's phone already displayed the native missed-call alert. Ridhzo smartly suppresses redundant duplicate push alerts to that phone while logging the missed call on the timeline and triggering team automations.
+- **Telephony Webhook Integration:** Connect virtual telephony numbers (Exotel, Knowlarity, Twilio, etc.) to Ridhzo's missed-call webhook. Missed calls automatically trigger instant WhatsApp replies so no inbound enquiry goes cold.
 
 ### 9. Inbound Email → Lead Timeline
 - Email replies from leads can be logged automatically on their timeline, and can trigger automations (set in **Settings → Lead Intelligence**).
@@ -70,18 +72,20 @@ Managed at **Settings → Lead Sources**. Each source shows live stats (leads re
 | Step | What happens |
 |---|---|
 | Field mapping | Standard + custom fields mapped automatically from every source |
-| Phone normalisation | Numbers in any format (+91 98765 43210, 9876543210) are matched correctly |
+| Phone normalisation | Fast trigram (`pg_trgm`) index matches numbers in any format (+91 98765 43210, 9876543210) instantly |
 | Duplicate check | Same phone/email → flagged or auto-merged (optional auto-merge) |
+| Call & Activity sync | Device calls, audio logs, and message history linked to matching lead record |
 | Attribution | Source, form, campaign and UTM data saved |
 | Enrichment (optional) | Fill missing details from your data provider |
 | Assignment | Round-robin / capacity / rules / automation |
-| Alerts | Push, in-app with sound, email, WhatsApp |
-| Automations | "Lead created" workflows run instantly |
+| Alerts | High-priority push channels, in-app with sound, email, WhatsApp |
+| Automations | "Lead created" or "Call logged" workflows run instantly |
 
 ## Why it matters
 - **Speed:** leads are in your hand seconds after they submit — not the next morning from a spreadsheet.
-- **Nothing lost:** no copy-paste from Facebook Lead Center, no forgotten email enquiries.
-- **Clear ROI:** you know exactly which source and campaign produced each lead and each sale.
+- **Zero manual logging:** Android call sync automatically records talk time and calls without reps typing notes.
+- **Nothing lost:** no copy-paste from Facebook Lead Center, no forgotten email enquiries, no missed calls ignored.
+- **Clear ROI:** you know exactly which source and campaign produced each lead, each call, and each sale.
 
 ## Plan limits
-Free: 1 source · Starter: 5 sources · Unlimited: unlimited sources.
+Free: 1 source · Starter: 5 sources · Unlimited: unlimited sources. (Device call sync is available on all plans).

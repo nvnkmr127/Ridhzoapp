@@ -8,25 +8,28 @@ Each playbook shows a real workflow using Ridhzo features that exist today.
 **Challenge:** Hundreds of Facebook/Google leads per project, slow callbacks, site visits not tracked, brokers losing leads.
 
 **Ridhzo setup:**
-- Sources: Facebook Lead Ads (one form per project), Google Lead Form Ads, hosted form for hoardings via QR code.
-- Custom fields: Budget (currency), Configuration (2BHK/3BHK), Preferred location, Possession timeline.
+- Sources: Facebook Lead Ads (one form per project), Google Lead Form Ads, hosted form for hoardings via QR code, Android call sync.
+- Custom fields: Budget (currency in INR), Configuration (2BHK/3BHK), Preferred location, Possession timeline.
 - Statuses: New → Contacted → Site Visit Scheduled → Site Visit Done → Negotiation → Booked / Lost.
+- Status Playbooks & AI: Stage-specific guidance for site visits, plus 1-click field updates for budget and preferred towers.
+- Automatic Call Sync & Caller ID: Reps call buyers; Android sync logs talk time automatically and auto-completes follow-ups; incoming calls show buyer's lead name.
 - Automation: New lead from "Project A" → assign round-robin within Project A team → WhatsApp brochure → follow-up in 1 hour.
 - Meetings: Site visits with saved project locations, Google Maps pin in confirmation, GPS check-in.
 - Sequence: 14-day nurture with walkthrough video, price sheet, offer deadline.
 - Tracked links: know the moment a buyer opens the floor plan.
 
-**Result story:** "Our response time dropped from 3 hours to 4 minutes and site visits went up 2×."
+**Result story:** "Our response time dropped from 3 hours to 4 minutes, all rep calls are tracked automatically without paperwork, and site visits went up 2×."
 
 ---
 
 ## 2. Education & Coaching (institutes, universities, ed-tech, study abroad)
 - Sources: Google Search lead forms, Instagram ads, website enquiry form, CSV from education fairs.
+- Android Call Sync: Counsellor calls to students/parents logged with duration; answered calls automatically close pending callbacks.
 - Custom fields: Course, Qualification, City, Intake (month/year), Parent phone.
 - Teams: Counsellors by language (Hindi, Telugu, English) — team-based rotation.
 - Booking page: Parents book campus visits or counselling slots.
 - Sequence: Course info → scholarship → fee deadline → final reminder.
-- Insights: Source ROI to see which campaign brings enrolments, not just enquiries.
+- Insights: Source ROI and call answer rate analytics to see which campaign brings enrolments, not just enquiries.
 
 ---
 

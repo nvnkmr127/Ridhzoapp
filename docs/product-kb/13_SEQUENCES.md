@@ -5,7 +5,7 @@ A **sequence** is a series of messages sent automatically over days — e.g., Wh
 
 ## Key capabilities
 - **Multi-step, multi-channel:** each step is WhatsApp or email, with a delay (Day 0, 2, 5…).
-- **Personalisation tokens:** `{{first_name}}`, `{{name}}`, `{{company}}`, `{{email}}`, `{{phone}}`.
+- **Personalisation tokens:** `{{first_name}}`, `{{name}}`, `{{phone}}`, `{{email}}`, and any custom field token `{{custom_field_key}}` (with `{{company}}` available for B2B).
 - **Attachments/links** on steps — brochures, price sheets, decks.
 - **AI Sequence Drafter:** type a goal — *"Nurture a new real-estate lead over two weeks toward booking a site visit"* — and AI drafts the full schedule, channels and messages. Edit and save.
 - **AI "improve" for any message** to make it clearer or more persuasive.

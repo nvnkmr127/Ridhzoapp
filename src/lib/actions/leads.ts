@@ -67,7 +67,7 @@ async function createLead(
   }
 
   const { OrgService } = await import("@/domains/organizations/service");
-  const { resolveLeadFieldConfig, findMissingMandatoryLeadFields } = await import("@/lib/leads/fieldConfig");
+  const { resolveLeadFieldConfig, findMissingMandatoryLeadFields, CUSTOM_DATA_LEAD_FIELDS } = await import("@/lib/leads/fieldConfig");
   const org = await OrgService.getOrganization(organizationId);
   const fieldConfig = resolveLeadFieldConfig(org?.leadFieldConfig);
 
@@ -108,9 +108,15 @@ async function createLead(
 
     // Validate + clean org-defined custom fields. Admin-only fields are gated by role.
     const isAdmin = await hasPermission("settings.manage");
-    const customData = await CustomFieldService.validate(organizationId, parsed.data.customData ?? {}, { isAdmin, isNew: true });
+    const validatedCustom = await CustomFieldService.validate(organizationId, parsed.data.customData ?? {}, { isAdmin, isNew: true });
+    const finalCustomData: Record<string, unknown> = { ...validatedCustom };
+    for (const key of CUSTOM_DATA_LEAD_FIELDS) {
+      if (customDataMerged[key] !== undefined) {
+        finalCustomData[key] = customDataMerged[key];
+      }
+    }
 
-    const lead = await LeadService.createLead({ ...data, customData }, userId, organizationId);
+    const lead = await LeadService.createLead({ ...data, customData: finalCustomData }, userId, organizationId);
 
     revalidatePath('/');
     revalidatePath('/my-dashboard');

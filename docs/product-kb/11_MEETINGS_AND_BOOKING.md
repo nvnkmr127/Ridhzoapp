@@ -23,6 +23,7 @@ Durations: 15, 30, 45, 60, 90 or 120 minutes.
 - **Add to Google Calendar** link, and automatic **Google Calendar sync** when connected.
 - **GPS check-in** — field reps check in on arrival; location and time are recorded (proof of visit).
 - **Outcomes** — mark Completed, No-show or Cancelled, write the outcome, and set the next follow-up in the same step. Optionally notify the lead.
+- **Role-based meeting permissions** — control who can schedule, reassign, or log meeting outcomes.
 - **Reopen** a meeting if plans change.
 - **Customisable meeting message templates.**
 - **Meetings page** — all upcoming and past meetings for you or the team.

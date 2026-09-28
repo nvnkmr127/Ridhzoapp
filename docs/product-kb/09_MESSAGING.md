@@ -9,15 +9,17 @@
 - The message is logged on the lead's timeline.
 
 ### 2. WhatsApp Business API mode (automation)
-Connect the official WhatsApp Business API (via Ridhzo's WhatsApp partner) to unlock:
+Connect the official WhatsApp Business API (via Ridhzo's WhatsApp integration partners like Watxio or Meta Cloud API with organization tenant ID isolation) to unlock:
 - **Send from inside Ridhzo** — conversation view with delivery and read receipts.
 - **Incoming replies** land on the lead's timeline and can trigger automations (and AI auto-tagging on paid plans).
 - **Approved templates** for messages outside WhatsApp's 24-hour window; free text inside it — Ridhzo picks the right one automatically.
 - **Auto-send on new lead** (via automations), **sequences**, **campaigns**, **missed-call auto-reply** and **WhatsApp new-lead alerts**.
+- **Direct billing:** Billed directly via Meta/your provider without artificial CRM message credits.
 
 ## Message templates (Settings → Templates)
 - Create reusable WhatsApp and email templates.
-- **Personalisation tokens** filled automatically: `{{first_name}}`, `{{name}}`, `{{email}}`, `{{phone}}`, `{{company}}`.
+- **Personalisation tokens** filled automatically: `{{first_name}}`, `{{name}}`, `{{phone}}`, `{{email}}`, and any custom field token like `{{custom_field_key}}` (the `{{company}}` token remains available if your team uses it).
+- Currency amounts automatically format using your organization's configured currency (e.g. ₹50,000).
 - Use templates from the lead profile, bulk campaigns, automations and sequences.
 - Example: *"Hi {{first_name}}, thanks for your interest in Green Acres! When is a good time for a quick call?"*
 
@@ -26,9 +28,10 @@ Connect the official WhatsApp Business API (via Ridhzo's WhatsApp partner) to un
 - Per-lead failures (no phone, outside the 24-hour window) are counted and never stop the batch.
 - In personal mode, a reminder note is logged on each lead to send manually.
 
-## Email
-- Connect your own **SMTP** (Gmail, Google Workspace, Zoho Mail, Outlook, Amazon SES, etc.) in **Settings → Email** so emails go from *your* address.
-- **Test connection** before saving; passwords encrypted with AES-256-GCM.
+## Email (Settings → Email)
+- Connect your own **SMTP** (Gmail, Google Workspace, Zoho Mail, Outlook, Amazon SES, etc.) so emails go from *your* address.
+- **Custom Reply-To:** Configure a dedicated reply-to address so customer responses route directly to your central inbox or support team.
+- **Email Verification & Error Tracking:** Live connection test before saving, clear diagnostic error messages if credentials expire, and AES-256-GCM encryption.
 - Used for one-off emails, sequences, meeting confirmations, new-lead alerts and notifications. A built-in fallback sender keeps system emails flowing.
 - Replies can be logged back on the lead timeline (Lead Intelligence settings).
 

@@ -147,6 +147,11 @@ export function QuickAddLeadDrawer({
       email: values.email || undefined,
       phone: values.phone || undefined,
       company: fieldConfig.company !== "hidden" ? (values.company || undefined) : undefined,
+      budget: fieldConfig.budget !== "hidden" ? (values.budget || undefined) : undefined,
+      location: fieldConfig.location !== "hidden" ? (values.location || undefined) : undefined,
+      industry: fieldConfig.industry !== "hidden" ? (values.industry || undefined) : undefined,
+      companySize: fieldConfig.companySize !== "hidden" ? (values.companySize || undefined) : undefined,
+      websiteUrl: fieldConfig.websiteUrl !== "hidden" ? (values.websiteUrl || undefined) : undefined,
       ownerId: values.ownerId || undefined,
       customData: customMerged,
     };
@@ -175,9 +180,7 @@ export function QuickAddLeadDrawer({
         // Map server field errors back onto the matching inputs for inline display.
         if (res.fieldErrors && Object.keys(res.fieldErrors).length > 0) {
           for (const [key, message] of Object.entries(res.fieldErrors)) {
-            if (key === "name" || key === "email" || key === "phone" || key === "company" || key === "ownerId") {
-              form.setError(key as any, { message });
-            }
+            form.setError(key as any, { message });
           }
         } else {
           // Precise fallback only if no structured fieldErrors were returned

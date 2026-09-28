@@ -26,9 +26,10 @@ function getClient(): postgres.Sql {
       prepare: true, // Prepared statements eliminate query re-parsing on Postgres
       fetch_types: false, // Prevents redundant pg_type queries on connection
       max: isProd ? 20 : 10, // Avoid socket starvation when mobile screens fire parallel subqueries
-      idle_timeout: isProd ? 30 : 300, // Keep pool warm so navigation clicks do not wait for new TCP handshakes
+      idle_timeout: 20, // Proactively close idle sockets before remote cloud proxies terminate them
       connect_timeout: 10, // Generous handshake timeout for cloud proxy
-      max_lifetime: 60 * 30, // 30m max connection lifetime
+      max_lifetime: 60 * 10, // 10m connection lifetime avoids stale sockets across proxy limits
+      keep_alive: 10, // TCP keepalive probes prevent firewalls/proxies from dropping idle connections
       ssl: sslFor(connectionString),
       onnotice: () => {},
       // Never in production: logging every query WITH bound params leaks lead PII (names, emails,

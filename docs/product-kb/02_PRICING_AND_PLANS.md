@@ -1,6 +1,6 @@
 # Pricing & Plans
 
-Ridhzo has three simple plans. All prices in Indian Rupees, **exclusive of 18% GST**. GST invoices are generated for every payment (add your GSTIN in Billing settings).
+Ridhzo has three simple plans. All standard prices are in Indian Rupees (INR / ₹), **exclusive of 18% GST**. Multi-currency / dynamic organization currency settings are supported. GST invoices are generated for every payment (add your GSTIN in Billing settings).
 
 ## Plan summary
 
@@ -11,26 +11,30 @@ Ridhzo has three simple plans. All prices in Indian Rupees, **exclusive of 18% G
 | **Best for** | Individuals getting started | Solo agents & growing teams | Teams that want no limits |
 | Team members (seats) | 1 | 3 | Unlimited |
 | Leads | 300 | 5,000 | Unlimited |
-| Lead sources (Facebook, Google, forms, webhooks…) | 1 | 5 | Unlimited |
+| Lead sources (Facebook, Google, forms, webhooks, Android sync) | 1 | 5 | Unlimited |
 | Automations | 2 | 15 | Unlimited |
 | Sequences (drip campaigns) | 1 | 10 | Unlimited |
 | AI credits per month | 15 | 300 | 2,000 |
-| AI auto-tagging of incoming replies | — | ✓ | ✓ |
+| AI auto-tagging & 1-click suggestions | — | ✓ | ✓ |
 | "Powered by Ridhzo" on hosted web forms | Shown | Removed | Removed |
-| Lead list, pipeline, follow-ups, meetings, templates, dashboards, mobile app, push alerts | ✓ | ✓ | ✓ |
+| Lead list, table scores, pipeline, follow-ups, meetings, templates, dashboards, mobile app, Android call sync, offline sync, push alerts | ✓ | ✓ | ✓ |
 
-> Core features — lead inbox, pipeline, follow-ups, reminders, one-tap WhatsApp, templates, dashboards, the mobile app and notifications — are available on **every plan, including Free**. Plans differ by **volume limits** (seats, leads, sources, automations, sequences, AI credits) and branding.
+> Core features — lead inbox, table lead scores, pipeline, follow-ups, reminders, one-tap WhatsApp, templates, dashboards, the mobile app, Android device call sync, offline incremental sync, and push notifications — are available on **every plan, including Free**. Plans differ by **volume limits** (seats, leads, sources, automations, sequences, AI credits) and branding.
 
 ## Free trial
 - Every new workspace starts with a **14-day free trial of Starter** — no card needed to sign up.
 - When the trial ends, the workspace moves to **Free** automatically unless you subscribe. **No data is deleted.**
 
+## Team seats calculation
+- Seats are counted only for **active users** and **pending active invitations**.
+- Deactivated and soft-deleted team members are excluded, so you never pay for past employees.
+
 ## What is an AI credit?
-One AI credit = one AI generation: drafting a reply, summarizing a lead, one AI Assistant turn, generating a sequence, or improving a message. Credits reset on the 1st of each month. If an AI call fails, the credit is refunded automatically and you get a standard (non-AI) template instead.
+One AI credit = one AI generation via `consumeAiCredit`: drafting a reply, summarizing a lead, generating a sequence, 1-click field suggestion, or one AI Assistant turn. Credits reset on the 1st of each month. If an AI call fails, the credit is refunded automatically and you get a standard fallback instead.
 
 ## What happens at a limit?
 - You get a clear message ("Your plan allows 300 leads. Upgrade to add more.") and an **Upgrade** button.
-- Nothing already in your account is deleted.
+- Nothing already in your account is deleted. Deleted leads in the Recycle Bin do not count towards active lead quotas.
 - If you downgrade and have more automations/sequences than the new plan allows, the **oldest ones keep running** and the rest are paused until you upgrade again.
 
 ## Payments & billing
@@ -57,4 +61,5 @@ One AI credit = one AI generation: drafting a reply, summarizing a lead, one AI 
 **Do I lose my data if I downgrade?** No. Your leads, history and settings stay.
 **Can I get a refund?** Contact the Ridhzo team; cancellation stops the next renewal.
 **Is GST included?** No, 18% GST is added and shown on your invoice.
-**Do WhatsApp Business API message fees apply?** Official WhatsApp Business API conversations are billed by Meta/your WhatsApp provider, separately from Ridhzo. Personal one-tap WhatsApp is free.
+**Are currencies configurable?** Yes, while defaults are in INR (₹), workspace currency settings support your preferred operational currency.
+**Do WhatsApp Business API message fees apply?** Official WhatsApp Business API conversations are billed directly by Meta/your WhatsApp provider (e.g. Watxio) with no arbitrary CRM markup credits. Personal one-tap WhatsApp is completely free.

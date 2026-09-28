@@ -6,10 +6,10 @@ The **Leads** hub is where your team finds, sorts and works every lead. It is bu
 ## Key capabilities
 
 ### Lead list
-- Clean list/table of all leads with name, phone, source, status, owner, score, next follow-up and tags.
-- **Server-side search** across name, phone, email and company. Phone search works in any format (`9876543210`, `+91 98765 43210`, `98765 43210`). Email search by full address, part, or domain (`@company.com`).
-- **Sort** by newest, last updated, name, status, owner, next follow-up or score.
-- Fast pagination; filters and search are kept in the URL so you can bookmark or share a view.
+- **Faster-to-scan table:** Streamlined layout showing lead name, contact icons, source, stage, owner, **lead score badge directly in table**, next follow-up, and tags.
+- **Server-side search with trigram indexing (`pg_trgm`):** Ultra-fast phone matching across any format (`9876543210`, `+91 98765 43210`, `98765 43210`), plus instant search by name, email, or company.
+- **Sort:** By newest, last updated, name, status, owner, next follow-up, or score.
+- **High-performance pagination:** Cursor-based and offset pagination ensuring instant page transitions even with tens of thousands of leads.
 
 ### Advanced filters
 - Filter by **status, owner, team, source, tags, dates, score and any custom field**.
@@ -31,12 +31,19 @@ One-tap segments that surface what needs attention: **hot leads**, **high-value 
 - Add tags
 - Send a WhatsApp **campaign** (up to 500 leads per send)
 - Export to CSV
-- Delete (to recycle bin)
+- Delete (to recycle bin) or purge (permanent deletion for authorized admins)
 
 ### Tags
 - Unlimited free-form tags (e.g., "2BHK", "Budget 50L+", "Webinar-Sept").
 - Tags can trigger automations ("Tag added: VIP → assign to senior rep").
 - AI can auto-tag incoming replies (paid plans).
+
+### Configurable Lead Fields (`Settings → Lead Fields`)
+Admins have complete control over lead fields across the organisation:
+- **Field visibility:** Toggle on/off standard fields (e.g. company, alternate phone) to keep forms and cards uncluttered. Note: the `company` field is completely optional and no longer requireable by default.
+- **Required fields:** Designate mandatory fields for lead creation or stage progression.
+- **Field ordering:** Reorder fields to match your sales reps' exact qualification flow.
+- **Default values & validation:** Set standard fallback values and format checks.
 
 ### Custom fields
 Capture the details that matter to *your* business. 10 field types:
@@ -46,7 +53,7 @@ Capture the details that matter to *your* business. 10 field types:
 | Text | Preferred location |
 | Long text | Requirements |
 | Number | Family size |
-| Currency | Budget (₹, $, €, £ accepted and stored as a number, so it can be summed & sorted) |
+| Currency | Budget (defaults to ₹ INR, configurable per organization; stored as a clean number for summing and sorting) |
 | Date | Expected move-in date |
 | Date & time | Callback time |
 | Dropdown (single) | Property type: Apartment / Villa / Plot |
@@ -54,10 +61,10 @@ Capture the details that matter to *your* business. 10 field types:
 | Checkbox | Loan required? |
 | URL | LinkedIn profile |
 
-Fields can be grouped into tabs, marked required, and used in filters, forms, imports, API and automations.
+Custom fields can be grouped into tabs, used in filters, web forms, imports, mobile app sync, API, and automations.
 
 ### Hot Leads (`Leads → Hot`)
-Leads with the highest **lead score** — the ones most likely to convert right now — surface automatically. The score considers status, profile completeness, how recently they were contacted, activity volume and WhatsApp engagement, and decays over time if a lead goes quiet.
+Leads with the highest **lead score** surface automatically. The score calculates status stage, profile completeness, recent interactions, call durations, activity volume, and WhatsApp engagement, and decays over time if a lead goes quiet.
 
 ### Going Cold (`Leads → Cold`)
 An automatic safety net: open leads with **no contact for 14+ days** (or never contacted 14 days after arriving).
@@ -68,12 +75,13 @@ An automatic safety net: open leads with **no contact for 14+ days** (or never c
 
 ### Duplicates (`Leads → Duplicates`)
 - Finds leads sharing the same phone or email.
-- **Merge** in one click — notes, activities, follow-ups, messages and tags are combined into one record.
+- **Merge** in one click — notes, activities, call logs, follow-ups, messages and tags are combined into one record.
 - Optional **auto-merge** for new incoming duplicates.
 
-### Recycle Bin (`Leads → Recycle Bin`)
-- Deleted leads are kept for **30 days** and can be restored with one click.
-- Only users with the "purge" permission can permanently delete.
+### Recycle Bin & Lead Purge (`Leads → Recycle Bin`)
+- Deleted leads are kept in the Recycle Bin for **30 days** and can be restored with one click.
+- Deleted leads do not count towards plan lead limits.
+- **Lead Purge:** Authorized admins with purge permission can permanently delete leads (either individually or in bulk via the purge endpoint) for strict data hygiene and privacy compliance.
 
 ### Export
 Export all or filtered leads to CSV (permission-controlled).

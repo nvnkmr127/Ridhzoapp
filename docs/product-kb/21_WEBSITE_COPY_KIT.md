@@ -26,19 +26,22 @@ Ready-to-use copy for the Ridhzo website, ads and social posts. All claims match
 
 ## Feature blocks (headline + 1 line)
 - **All your leads, one inbox** — Facebook, Instagram, Google, website, API, CSV, missed calls. No more spreadsheets.
-- **Instant alerts** — Push notifications with sound, on your phone, in seconds.
+- **Instant alerts & high-priority push** — Push notifications with sound on phone and desktop in seconds, with direct tap routing.
+- **Automatic Android call sync** — Phone calls, talk time, and outcomes synced automatically without reps typing notes.
+- **Smart Caller ID** — Incoming lead calls show the lead's name directly on the rep's phone before answering.
 - **One-tap WhatsApp** — Personalised messages with the lead's name, ready to send.
 - **Automatic assignment** — Round-robin, by team, by capacity or by rules. Fair and fast.
-- **Never forget a follow-up** — Reminders, calendar and overdue alerts for every lead.
+- **Never forget a follow-up** — Reminders, calendar, overdue escalation, and auto-complete on answered calls.
+- **Live Next Best Action** — Real-time stream guiding reps on the exact next move to advance every deal.
+- **1-Click AI Suggestions** — Auto-populate missing lead fields and advance stages with a single tap.
+- **Status Playbooks** — Proven stage-specific talk tracks, qualification questions, and objection handling.
 - **Drip sequences** — WhatsApp and email follow-ups that run themselves.
-- **Automations** — WHEN a lead arrives, IF it matches, THEN assign, message, tag, schedule. No code.
+- **Automations** — WHEN a lead arrives or call is logged, IF it matches, THEN assign, message, tag, schedule. No code.
 - **Meetings & site visits** — Confirmations with map links, GPS check-in, public booking page.
-- **AI that helps, not replaces** — Draft replies in any language, summarise leads, ask the AI Assistant anything.
-- **Pipeline board** — Drag and drop deals through your own custom stages.
 - **Hot & Going Cold lists** — See who's ready to buy and who's slipping away.
-- **Dashboards that matter** — Response time, win rate, revenue by source, team leaderboard.
-- **Works on your phone** — Install in one tap. Works offline. Hindi & Telugu supported.
-- **Secure by design** — Roles & permissions, audit log, encrypted secrets, 30-day recycle bin.
+- **Dashboards that matter** — Response time, call answer rates, win rate, revenue by source, team leaderboard.
+- **Works on your phone** — Native Android APK and PWA. Offline sync with conflict detection. Hindi & Telugu supported.
+- **Secure by design** — Least-privilege roles, support tickets, audit log, encrypted secrets, 30-day recycle bin, permanent purge.
 
 ## Pricing page copy
 **Headline:** Simple pricing. No per-user surprises.
@@ -46,20 +49,21 @@ Ready-to-use copy for the Ridhzo website, ads and social posts. All claims match
 - **Free — ₹0 forever.** For individuals getting started. 1 user · 300 leads · 1 lead source · 2 automations · 1 sequence · 15 AI credits/month.
 - **Starter — ₹249/month** (₹2,490/year). For solo agents & growing teams. 3 users · 5,000 leads · 5 sources · 15 automations · 10 sequences · 300 AI credits · no Ridhzo branding on forms.
 - **Unlimited — ₹449/month** (₹4,490/year). Unlimited leads, users & full access. Unlimited sources, automations and sequences · 2,000 AI credits.
-**Footnote:** Prices exclude 18% GST. Yearly plans include 2 months free. Cancel anytime.
+**Footnote:** Prices exclude 18% GST. Yearly plans include 2 months free. Dynamic currency support. Cancel anytime.
 
 ## Social proof / outcome lines (use with real customer data when available)
 - "From 3-hour callbacks to 3-minute replies."
+- "Our reps' calls and talk times are tracked automatically — no more end-of-day spreadsheets."
 - "One extra closed deal pays for Ridhzo for years."
-- "Our reps finally know what to do every morning."
+- "Our reps finally know what to do every morning with live next best actions."
 
 ## Objection handling
 | Objection | Answer |
 |---|---|
-| "We already use Excel / Google Sheets." | Sheets don't alert you, assign leads, remind you or message customers. Import your sheet into Ridhzo in 5 minutes. |
+| "We already use Excel / Google Sheets." | Sheets don't alert you, sync phone calls, assign leads, remind you or message customers. Import your sheet into Ridhzo in 5 minutes. |
 | "CRMs are complicated." | Ridhzo is built for the phone and set up in 10 minutes. No training needed. |
 | "It's expensive." | Free forever plan. Unlimited users for ₹449/month — less than one lead's ad cost. |
-| "My team only uses WhatsApp." | Perfect — Ridhzo is WhatsApp-first. One tap opens the chat with the message ready. |
+| "My team only uses WhatsApp and phone calls." | Perfect — Ridhzo is WhatsApp-first and auto-syncs Android phone calls and durations. |
 | "I'm worried about data." | Every workspace is isolated, secrets are encrypted, and you control access with roles. |
 | "We have a website developer's form already." | Connect it with our webhook or API — or embed a Ridhzo form. |
 
@@ -72,8 +76,9 @@ Ready-to-use copy for the Ridhzo website, ads and social posts. All claims match
 
 ## SEO keywords (by intent)
 - **Core:** lead management software, lead CRM, CRM for small business India, simple CRM app, sales CRM for WhatsApp
+- **Call Tracking & Mobile:** Android call sync CRM, automatic call logging CRM, sales caller ID app, mobile sales CRM India
 - **Source-specific:** Facebook lead ads CRM, Facebook leads to WhatsApp, Instagram lead ads integration, Google lead form ads CRM
-- **Feature:** lead auto assignment round robin, WhatsApp CRM, lead follow-up reminder app, drip WhatsApp sequence, missed call to WhatsApp
+- **Feature:** lead auto assignment round robin, WhatsApp CRM, lead follow-up reminder app, drip WhatsApp sequence, missed call to WhatsApp, live next best action CRM
 - **Industry:** real estate CRM India, CRM for education institutes, CRM for insurance agents, clinic lead management, CRM for interior designers
 - **Comparison:** Privyr alternative, affordable Zoho CRM alternative, simple HubSpot alternative for small business
 
