@@ -33,8 +33,9 @@ export class AutomationEngine {
       const [leadRow] = await db.select().from(leads).where(eq(leads.id, leadId)).limit(1);
       if (!leadRow) throw new Error(`Lead ${leadId} not found for condition evaluation`);
 
-      const config = conditionsData[0].config as any;
-      if (config && Object.keys(config).length > 0) {
+      // Every condition row must pass (AND) — not just the first. Empty configs are ignored.
+      const groups = conditionsData.map((c) => c.config as any).filter((c) => c && Object.keys(c).length > 0);
+      if (groups.length > 0) {
         // Attach tags so `tag` conditions can match (evaluator reads lead.tag as a comma string).
         const { TagService } = await import("@/domains/tags/service");
         const tags = await TagService.getForLead(leadId).catch(() => [] as { name: string }[]);
@@ -45,8 +46,7 @@ export class AutomationEngine {
           ? { call_outcome: call.outcome, call_direction: call.direction, call_duration_sec: call.durationSec ?? 0, call_unanswered_streak: call.unansweredStreak }
           : {};
         const lead = { ...leadRow, tag: tagStr, tags: tagStr, ...callFields };
-        const passed = this.evaluateConditionGroup(lead, config);
-        if (!passed) {
+        if (!groups.every((g) => this.evaluateConditionGroup(lead, g))) {
           return { skipped: true, executedCount: 0 };
         }
       }
@@ -170,11 +170,12 @@ export class AutomationEngine {
         });
         break;
 
-      case 'enroll_in_sequence':
+      case 'enroll_in_sequence': {
         if (!config.sequenceId) throw new Error("Missing sequenceId for enroll_in_sequence");
         const { SequenceService } = await import("@/domains/leads/sequenceService");
         await SequenceService.enrollFromAutomation(config.sequenceId, leadId);
         break;
+      }
 
       case 'send_whatsapp':
         // Instant-reply to a fresh lead: outside the 24h window, so a template is required.

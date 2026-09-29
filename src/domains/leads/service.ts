@@ -74,6 +74,10 @@ export function leadSearchCondition(raw: string) {
   const like = `%${term}%`;
   const digits = term.replace(/[^0-9]/g, "");
   const conds = [ilike(leads.name, like), ilike(leads.email, like), ilike(leads.company, like)];
+  // Reference numbers: "CRN-2609-0042" (or a fragment of it) and "#1042" / "1042" for the Lead #.
+  if (/^crn-?[0-9-]*$/i.test(term) || /^[0-9]{4}-[0-9]+$/.test(term)) conds.push(ilike(leads.crn, `%${term}%`));
+  const num = /^#?(\d{1,9})$/.exec(term);
+  if (num) conds.push(eq(leads.displayId, Number(num[1])));
   conds.push(digits.length >= 3 ? sql`${phoneDigitsSql} ILIKE ${"%" + digits + "%"}` : ilike(leads.phone, like));
   return or(...conds)!;
 }
@@ -687,6 +691,18 @@ export class LeadService {
       .where(and(eq(leads.id, leadId), eq(leads.organizationId, organizationId), isNull(leads.deletedAt)))
       .returning();
     return deletedLead;
+  }
+
+  // Soft-delete many leads in ONE statement; returns the ids actually deleted (already-gone or
+  // foreign ids simply don't come back).
+  static async bulkDeleteLeads(leadIds: string[], deletedById: string, organizationId: string): Promise<string[]> {
+    if (leadIds.length === 0) return [];
+    const validBy = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(deletedById) ? deletedById : null;
+    const rows = await db.update(leads)
+      .set({ deletedAt: new Date(), deletedBy: validBy, updatedAt: new Date() })
+      .where(and(inArray(leads.id, leadIds), eq(leads.organizationId, organizationId), isNull(leads.deletedAt)))
+      .returning({ id: leads.id });
+    return rows.map((r) => r.id);
   }
 
   static async listDeletedLeads(organizationId: string) {

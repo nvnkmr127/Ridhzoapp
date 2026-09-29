@@ -67,6 +67,7 @@ export async function bulkUpdateLeadStatusAction(leadIds: string[], newStatus: s
   // (the sibling bulkChangeLeadStatusAction did; this path had slipped through with requireOrg).
   const { userId, organizationId } = await requirePermission("leads.edit");
   if (!leadIds || leadIds.length === 0) throw new Error("No lead IDs provided");
+  if (leadIds.length > 500) throw new Error("Select at most 500 leads at a time");
 
   // Route through the single canonical status engine so won/lost bookkeeping (won_at, loss reason,
   // follow-up cancellation) and custom-status categories apply — same path as single/bulk edits.

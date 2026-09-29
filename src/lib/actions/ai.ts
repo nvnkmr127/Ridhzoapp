@@ -24,7 +24,10 @@ const draftSchema = z.object({
 export async function draftLeadReplyAction(
   data: unknown,
 ): Promise<{ draft: string; subject?: string; ai: boolean; outOfCredits?: boolean }> {
-  const { leadId, channel, tone, language } = draftSchema.parse(data);
+  const parsed = draftSchema.safeParse(data);
+  // A readable message, not a raw Zod error dump, reaches the client.
+  if (!parsed.success) throw new Error("Couldn't draft a reply: choose a channel, tone and language and try again.");
+  const { leadId, channel, tone, language } = parsed.data;
   const access = await getActionableLead(leadId);
   if (!access) throw new Error("Lead not found");
   return draftReplyForLead(access.lead, access.organizationId, { channel, tone, language });
@@ -33,7 +36,9 @@ export async function draftLeadReplyAction(
 // AI recap — a one-glance "where this lead stands", plus AI suggestions (custom fields, status, next
 // step). Saved on the lead and reused until the lead changes, so opening the page again costs no AI call.
 export async function summarizeLeadAction(data: unknown): Promise<RecapResult> {
-  const { leadId, refresh } = z.object({ leadId: z.guid(), refresh: z.boolean().optional() }).parse(data);
+  const parsed = z.object({ leadId: z.guid(), refresh: z.boolean().optional() }).safeParse(data);
+  if (!parsed.success) throw new Error("That lead isn't valid.");
+  const { leadId, refresh } = parsed.data;
   const access = await getActionableLead(leadId);
   if (!access) throw new Error("Lead not found");
   return recapForLead(access.lead, access.organizationId, refresh);

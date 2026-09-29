@@ -20,8 +20,8 @@ ALTER TABLE "lead_seq_counters" ADD CONSTRAINT "lead_seq_counters_lead_id_leads_
 CREATE UNIQUE INDEX "leads_org_crn_unique" ON "leads" USING btree ("organization_id","crn");--> statement-breakpoint
 -- Backfill: CRN per org per creation month, lifecycle/timeline numbers per lead in chronological order.
 WITH n AS (
-  SELECT id, to_char(created_at, 'YYMM') AS p,
-         row_number() OVER (PARTITION BY organization_id, to_char(created_at, 'YYMM') ORDER BY created_at, id) AS rn
+  SELECT id, to_char(created_at at time zone 'utc', 'YYMM') AS p,
+         row_number() OVER (PARTITION BY organization_id, to_char(created_at at time zone 'utc', 'YYMM') ORDER BY created_at, id) AS rn
   FROM leads
 )
 UPDATE leads l SET crn = 'CRN-' || n.p || '-' || lpad(n.rn::text, 4, '0') FROM n WHERE l.id = n.id;--> statement-breakpoint

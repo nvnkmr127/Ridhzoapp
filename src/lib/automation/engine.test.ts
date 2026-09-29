@@ -130,3 +130,31 @@ describe('resolveDueAt (relative due dates)', () => {
     expect(resolveDueAt({})).toBeNull();
   });
 });
+
+describe('AutomationEngine — multiple condition rows', () => {
+  beforeEach(() => (db.select as any).mockReset()); // drop any unconsumed queued results
+
+  // selects in order: conditions, the lead row, then (if it passes) the actions list
+  function mockRun(conds: any[], lead: any) {
+    (db.select as any)
+      .mockReturnValueOnce({ from: () => ({ where: () => Promise.resolve(conds.map((config) => ({ config }))) }) })
+      .mockReturnValueOnce({ from: () => ({ where: () => ({ limit: () => Promise.resolve([lead]) }) }) })
+      .mockReturnValueOnce({ from: () => ({ where: () => ({ orderBy: () => Promise.resolve([]) }) }) });
+  }
+
+  it('skips when ANY row fails, not only the first', async () => {
+    mockRun(
+      [{ field: 'status', operator: 'equals', value: 'new' }, { field: 'score', operator: 'greater_than', value: 500 }],
+      { status: 'new', score: 10 },
+    );
+    expect(await AutomationEngine.evaluateAndExecute('a', 'l')).toMatchObject({ skipped: true });
+  });
+
+  it('runs when every row passes', async () => {
+    mockRun(
+      [{ field: 'status', operator: 'equals', value: 'new' }, { field: 'score', operator: 'greater_than', value: 5 }],
+      { status: 'new', score: 10 },
+    );
+    expect(await AutomationEngine.evaluateAndExecute('a', 'l')).toMatchObject({ skipped: false });
+  });
+});

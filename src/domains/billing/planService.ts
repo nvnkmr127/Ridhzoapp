@@ -126,11 +126,21 @@ export class PlanService {
     }
   }
 
-  static async assertCanAddLead(organizationId: string) {
-    const stats = await this.getUsageStats(organizationId);
-    if (stats.leads.max === Infinity) return;
-    if (stats.leads.current >= stats.leads.max) {
-      throw new Error(`Your plan allows ${stats.leads.max} leads. Upgrade to add more.`);
+  // `adding` = how many leads the caller is about to create (a bulk import passes its batch size).
+  // Counts directly rather than via getUsageStats, which swallows DB errors and would report 0 used
+  // — letting a transient failure through as "under the limit".
+  static async assertCanAddLead(organizationId: string, adding = 1) {
+    const max = limitsFor(await this.plan(organizationId)).leads;
+    if (max === Infinity) return;
+    const res = await db.select({ n: count() }).from(leads).where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt)));
+    const row = Array.isArray(res) ? res[0] : res;
+    const current = Number(row?.n ?? 0);
+    if (current + adding > max) {
+      throw new Error(
+        adding > 1
+          ? `Your plan allows ${max} leads and you have ${current}, so ${adding} more won't fit. Remove some rows or upgrade.`
+          : `Your plan allows ${max} leads. Upgrade to add more.`,
+      );
     }
   }
 

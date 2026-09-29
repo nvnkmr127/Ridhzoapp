@@ -5,7 +5,14 @@ import { SequenceService } from "@/domains/leads/sequenceService";
 export const SEQUENCE_QUEUE_NAME = "sequence-runner";
 
 export async function processSequenceJob() {
-  const { processed } = await SequenceService.runDue();
+  // A full batch means more may be waiting: keep draining (bounded) rather than one batch per 5 min.
+  const BATCH = 200;
+  let processed = 0;
+  for (let round = 0; round < 10; round++) {
+    const r = await SequenceService.runDue(BATCH);
+    processed += r.processed;
+    if (r.scanned < BATCH) break;
+  }
   if (processed) console.log(`[SEQUENCE_WORKER] Delivered ${processed} sequence steps`);
   return { processed };
 }

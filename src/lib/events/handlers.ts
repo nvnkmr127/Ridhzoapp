@@ -130,7 +130,7 @@ eventBus.on('lead.created', async (p) => {
   const [src] = p.sourceId
     ? await db.select({ name: leadSources.name }).from(leadSources).where(eq(leadSources.id, p.sourceId)).limit(1).catch(() => [])
     : [];
-  const origin = src ? `Lead came in from ${src.name}.` : isUuid(p.userId) ? 'Lead was created manually.' : 'Lead was created.';
+  const origin = p.source === 'import' ? (src ? `Lead was imported (${src.name}).` : 'Lead was imported.') : src ? `Lead came in from ${src.name}.` : isUuid(p.userId) ? 'Lead was created manually.' : 'Lead was created.';
   await ActivityService.addActivity({ leadId: p.leadId, userId: isUuid(p.userId) ? p.userId : undefined, type: 'note', content: origin });
   await fireLeadWebhook(p.leadId, 'lead.created');
   // Lead distribution: forward a copy to every active recipient (no-op unless configured).
@@ -139,7 +139,7 @@ eventBus.on('lead.created', async (p) => {
   await LeadDistributionService.distribute(p.leadId).catch((e) => console.error("[distribution] failed", p.leadId, e));
   // Meta CAPI: report the lead capture so ad campaigns can optimise (no-op unless configured).
   const { MetaCapiService } = await import("@/domains/leads/metaCapiService");
-  await MetaCapiService.track(p.leadId, 'Lead');
+  if (p.source !== 'import') await MetaCapiService.track(p.leadId, 'Lead');
   // Enrich in the background (no-op when no provider is configured). jobId = leadId dedupes a
   // double-fire, and the worker itself is a no-op if enrichment is off, so this is always safe.
   await enrichmentQueue.add(`enrich-${p.leadId}`, { leadId: p.leadId }, { jobId: `enrich-${p.leadId}` });

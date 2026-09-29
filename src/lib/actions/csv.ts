@@ -1,10 +1,11 @@
 "use server";
 
 import { z } from "zod";
-import { requireOrg } from "@/lib/rbac";
+import { assertWritable, requirePermission } from "@/lib/rbac";
 import { ingestionQueue } from "@/lib/jobs/workers/ingestionWorker";
 import { db } from "@/db";
-import { webhookEvents } from "@/db/schema";
+import { webhookEvents, users, teams } from "@/db/schema";
+import { and, eq, isNull } from "drizzle-orm";
 import { parse } from "csv-parse/sync";
 import { LeadSourceService } from "@/domains/leads/sourceService";
 import { ok, fail, actionFail } from "@/lib/actions/result";
@@ -15,12 +16,15 @@ const MAX_CSV_BYTES = 1_000_000;
 const uploadCsvSchema = z.object({
   sourceId: z.string(),
   csvContent: z.string(),
-  teamId: z.string().optional(),
-  ownerId: z.string().optional(),
+  // "" (nothing picked) → undefined; anything else must be a real id, checked against the workspace below.
+  teamId: z.union([z.guid(), z.literal("")]).optional().transform((v) => v || undefined),
+  ownerId: z.union([z.guid(), z.literal("")]).optional().transform((v) => v || undefined),
 });
 
-export async function uploadCsvAction(input: z.infer<typeof uploadCsvSchema>) {
-  const { organizationId } = await requireOrg();
+export async function uploadCsvAction(input: z.input<typeof uploadCsvSchema>) {
+  // Bulk-creating leads is a lead edit, same gate as the direct import (and no read-only sessions).
+  await assertWritable();
+  const { organizationId } = await requirePermission("leads.edit");
 
   const parsed = uploadCsvSchema.safeParse(input);
   if (!parsed.success) {
@@ -40,6 +44,19 @@ export async function uploadCsvAction(input: z.infer<typeof uploadCsvSchema>) {
   const source = await LeadSourceService.getSource(sourceId);
   if (!source || source.organizationId !== organizationId) {
     return fail("NOT_FOUND", "That lead source is invalid or no longer available. Pick another and try again.");
+  }
+
+  // Owner/team come from the client: they must belong to THIS workspace, or a crafted request
+  // could attach the imported leads to another tenant's user or team.
+  if (ownerId) {
+    const [owner] = await db.select({ id: users.id }).from(users)
+      .where(and(eq(users.id, ownerId), eq(users.organizationId, organizationId), isNull(users.deletedAt))).limit(1);
+    if (!owner) return fail("VALIDATION", "The selected owner isn't a member of this workspace.");
+  }
+  if (teamId) {
+    const [team] = await db.select({ id: teams.id }).from(teams)
+      .where(and(eq(teams.id, teamId), eq(teams.organizationId, organizationId))).limit(1);
+    if (!team) return fail("VALIDATION", "The selected team doesn't exist in this workspace.");
   }
 
   // 1. Parse CSV

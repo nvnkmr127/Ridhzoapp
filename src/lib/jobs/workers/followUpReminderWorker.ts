@@ -5,7 +5,6 @@ import { createRedis, quietErrors } from "../redis";
 import { db } from "@/db";
 import { followUps, leads, reminders, users } from "@/db/schema";
 import { NotificationService } from "@/domains/notifications/service";
-import { ActivityService } from "@/domains/activities/service";
 
 export const FOLLOWUP_REMINDER_QUEUE_NAME = "follow-up-reminder-scan";
 
@@ -53,7 +52,8 @@ export async function processFollowUpReminderScan() {
             .where(and(eq(reminders.followUpId, followUps.id), eq(reminders.remindAt, followUps.dueAt), sql`${reminders.sentAt} IS NOT NULL`)),
         ),
       ),
-    );
+    )
+    .limit(500); // a backlog drains over the next scans instead of loading in one go
 
   let sent = 0;
   const recipients = await pickRecipients(due.map(({ followUp, lead }) => ({ assignee: followUp.userId, owner: lead.ownerId })));
@@ -63,23 +63,26 @@ export async function processFollowUpReminderScan() {
     // The look-back window bounds how long it's re-checked. (It shows under Follow-ups → Unassigned.)
     if (!targetUserId || !lead.organizationId) continue;
 
-    await NotificationService.create({
-      userId: targetUserId,
-      type: "follow_up_due",
-      title: "Follow-up due: {title}",
-      titleVars: { title: followUp.title },
-      body: "Follow up with {name} ({type})",
-      bodyVars: { name: lead.name, type: followUp.type },
-      leadId: lead.id,
-    });
-    await ActivityService.addActivity({
-      leadId: lead.id,
-      userId: targetUserId,
-      type: "note",
-      content: `Reminder sent: ${followUp.title}`,
-    });
-    // Mark as reminded so the next scan skips it (idempotency).
-    await db.insert(reminders).values({ followUpId: followUp.id, remindAt: followUp.dueAt, sentAt: new Date() });
+    // One bad row (a notification/DB error) must not abort the scan — every later follow-up would
+    // otherwise be blocked, and the same list retried forever. It stays unmarked, so the next scan
+    // (within the look-back window) tries it again.
+    try {
+      await NotificationService.create({
+        userId: targetUserId,
+        type: "follow_up_due",
+        title: "Follow-up due: {title}",
+        titleVars: { title: followUp.title },
+        body: "Follow up with {name} ({type})",
+        bodyVars: { name: lead.name, type: followUp.type },
+        leadId: lead.id,
+      });
+      // Mark as reminded so the next scan skips it (idempotency). No timeline note: the bell
+      // notification is the record, and a note per reminder just clutters the lead's history.
+      await db.insert(reminders).values({ followUpId: followUp.id, remindAt: followUp.dueAt, sentAt: new Date() });
+    } catch (e) {
+      console.error("[FOLLOWUP_REMINDER_WORKER] reminder failed for follow-up", followUp.id, e);
+      continue;
+    }
     sent++;
   }
 
@@ -123,25 +126,32 @@ export async function processOverdueFollowUps(now = new Date()) {
       .returning({ id: followUps.id });
     if (!claimed) continue;
     const target = recipients[i];
-    if (target && lead.organizationId) {
-      await NotificationService.create({
-        userId: target,
-        type: "follow_up_overdue",
-        title: "Overdue: {title}",
-        titleVars: { title: followUp.title },
-        body: "Follow-up with {name} was due and hasn't been done.",
-        bodyVars: { name: lead.name },
+    try {
+      if (target && lead.organizationId) {
+        await NotificationService.create({
+          userId: target,
+          type: "follow_up_overdue",
+          title: "Overdue: {title}",
+          titleVars: { title: followUp.title },
+          body: "Follow-up with {name} was due and hasn't been done.",
+          bodyVars: { name: lead.name },
+          leadId: lead.id,
+        });
+      }
+      eventBus.emit("follow_up.overdue", {
         leadId: lead.id,
+        userId: followUp.userId ?? undefined,
+        followUpId: followUp.id,
+        type: followUp.type,
+        title: followUp.title,
+        changes: { dueAt: new Date(followUp.dueAt).toISOString() },
       });
+    } catch (e) {
+      // Give the claim back so the alert isn't lost, and carry on with the rest.
+      console.error("[FOLLOWUP_REMINDER_WORKER] overdue alert failed for follow-up", followUp.id, e);
+      await db.update(followUps).set({ overdueNotifiedAt: null }).where(eq(followUps.id, followUp.id)).catch(() => {});
+      continue;
     }
-    eventBus.emit("follow_up.overdue", {
-      leadId: lead.id,
-      userId: followUp.userId ?? undefined,
-      followUpId: followUp.id,
-      type: followUp.type,
-      title: followUp.title,
-      changes: { dueAt: new Date(followUp.dueAt).toISOString() },
-    });
     alerted++;
   }
   if (alerted > 0) console.log(`[FOLLOWUP_REMINDER_WORKER] ${alerted} follow-ups went overdue`);

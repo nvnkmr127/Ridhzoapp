@@ -16,7 +16,7 @@ vi.mock("@/domains/roles/service", () => ({
   RoleService: { update: vi.fn(), getById: vi.fn(), remove: vi.fn(), create: vi.fn() },
 }));
 vi.mock("@/domains/leads/service", () => ({
-  LeadService: { deleteLead: vi.fn(), getLead: vi.fn(), emptyRecycleBin: vi.fn() },
+  LeadService: { deleteLead: vi.fn(), bulkDeleteLeads: vi.fn(), getLead: vi.fn(), emptyRecycleBin: vi.fn() },
 }));
 vi.mock("@/domains/leads/dedupService", () => ({ DedupService: { merge: vi.fn(), findDuplicateGroups: vi.fn() } }));
 vi.mock("@/domains/organizations/service", () => ({
@@ -62,7 +62,7 @@ describe("role.update audit — A3", () => {
 
 describe("lead.bulk_delete audit — A1/A8", () => {
   it("does not log when nothing was actually deleted", async () => {
-    (LeadService.deleteLead as any).mockResolvedValue(undefined); // every id was already gone
+    (LeadService.bulkDeleteLeads as any).mockResolvedValue([]); // every id was already gone
 
     const res = await bulkDeleteLeadsAction({ leadIds: ["11111111-1111-1111-1111-111111111111"] });
 
@@ -73,7 +73,7 @@ describe("lead.bulk_delete audit — A1/A8", () => {
   it("logs counts and a sample of the deleted ids when something was deleted", async () => {
     const id1 = "11111111-1111-1111-1111-111111111111";
     const id2 = "22222222-2222-2222-2222-222222222222";
-    (LeadService.deleteLead as any).mockImplementation((id: string) => (id === id1 ? { id } : undefined));
+    (LeadService.bulkDeleteLeads as any).mockResolvedValue([id1]);
 
     await bulkDeleteLeadsAction({ leadIds: [id1, id2] });
 

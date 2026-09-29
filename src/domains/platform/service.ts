@@ -39,6 +39,7 @@ import {
   leadPipelines,
   leadPipelineStages,
   leadCounters,
+  crnCounters,
   customStatusConfigs,
 } from "@/db/schema";
 import { count, desc, eq, isNull, isNotNull, and, or, ilike, like, sql, gte, inArray } from "drizzle-orm";
@@ -1213,6 +1214,7 @@ export class PlatformService {
       await tx.delete(leadPipelineStages).where(eq(leadPipelineStages.organizationId, organizationId));
       await tx.delete(leadPipelines).where(eq(leadPipelines.organizationId, organizationId));
       await tx.delete(leadCounters).where(eq(leadCounters.organizationId, organizationId));
+      await tx.delete(crnCounters).where(eq(crnCounters.organizationId, organizationId));
       await tx.delete(customStatusConfigs).where(eq(customStatusConfigs.organizationId, organizationId));
       await tx.delete(messageTemplates).where(eq(messageTemplates.organizationId, organizationId));
 

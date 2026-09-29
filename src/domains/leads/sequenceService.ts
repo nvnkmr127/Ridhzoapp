@@ -305,7 +305,7 @@ export class SequenceService {
 
   // Scan worker entry point: deliver every due step, then advance or complete the enrolment.
   // Only enrollments of ACTIVE (non-paused) sequences run.
-  static async runDue(limit = 200): Promise<{ processed: number }> {
+  static async runDue(limit = 200): Promise<{ processed: number; scanned: number }> {
     const now = new Date();
     const MAX_RETRIES = 3;
     const CLAIM_LEASE_MS = 15 * 60 * 1000; // if a worker crashes mid-send, the row frees after this
@@ -324,6 +324,7 @@ export class SequenceService {
       .from(sequenceEnrollments)
       .innerJoin(sequences, eq(sequenceEnrollments.sequenceId, sequences.id))
       .where(and(eq(sequenceEnrollments.status, "active"), eq(sequences.isActive, true), lte(sequenceEnrollments.nextRunAt, now)))
+      .orderBy(asc(sequenceEnrollments.nextRunAt)) // oldest-overdue first, so a backlog can't starve them
       .limit(limit);
 
     const windowCache = new Map<string, SendWindow>();
@@ -343,8 +344,19 @@ export class SequenceService {
       return win;
     };
 
+    // A sequence's steps are the same for every enrollment in it — read them once per scan.
+    const stepsCache = new Map<string, (typeof sequenceSteps.$inferSelect)[]>();
+    const stepsFor = async (sequenceId: string) => {
+      if (!stepsCache.has(sequenceId)) {
+        stepsCache.set(sequenceId, await db.select().from(sequenceSteps).where(eq(sequenceSteps.sequenceId, sequenceId)).orderBy(asc(sequenceSteps.stepIndex)));
+      }
+      return stepsCache.get(sequenceId)!;
+    };
+
     let processed = 0;
     for (const enr of due) {
+      // One enrollment throwing must not abort the rest of the scan (its claim lease frees it to retry).
+      try {
       // Atomic claim: push nextRunAt to a lease in the future only if it's still the value we read.
       // A second concurrent scan (or worker) sees the future value and its WHERE no longer matches,
       // so exactly one worker delivers each step. On crash, the lease expires and it retries.
@@ -375,7 +387,7 @@ export class SequenceService {
         continue;
       }
 
-      const steps = await db.select().from(sequenceSteps).where(eq(sequenceSteps.sequenceId, enr.sequenceId)).orderBy(asc(sequenceSteps.stepIndex));
+      const steps = await stepsFor(enr.sequenceId);
       const step = steps[enr.currentStep];
       if (!step) {
         await db.update(sequenceEnrollments).set({ status: "completed", nextRunAt: null }).where(eq(sequenceEnrollments.id, enr.id));
@@ -410,8 +422,11 @@ export class SequenceService {
       } else {
         await db.update(sequenceEnrollments).set({ status: "completed", retryCount: 0, nextRunAt: null }).where(eq(sequenceEnrollments.id, enr.id));
       }
+      } catch (e) {
+        console.error("[SEQUENCE] step failed for enrollment", enr.id, e);
+      }
     }
-    return { processed };
+    return { processed, scanned: due.length };
   }
 
   // Attempt one send. Returns whether it sent; `permanent` = can't ever send as-is (no email/phone,

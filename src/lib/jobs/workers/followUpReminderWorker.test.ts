@@ -5,14 +5,15 @@ let dueRows: any[] = [];
 let activeUsers: { id: string }[] = [];
 const inserted: any[] = [];
 const notify = vi.fn();
+let limitCalls = 0; // 1st .limit() = the due scan, 2nd = the overdue scan (empty here)
 
-// First select = due follow-ups (…where()), then the active-users lookup (…where()), then the overdue scan (…limit()).
+// First select = due follow-ups (…limit()), then the active-users lookup (…where()), then the overdue scan (…limit()).
 vi.mock("@/db", () => {
   return {
     db: {
       select: () => ({
         from: () => ({
-          innerJoin: () => ({ where: () => Object.assign(Promise.resolve(dueRows), { limit: async () => [] }) }),
+          innerJoin: () => ({ where: () => ({ limit: async () => (limitCalls++ === 0 ? dueRows : []) }) }),
           where: async () => activeUsers,
         }),
       }),
@@ -22,7 +23,6 @@ vi.mock("@/db", () => {
   };
 });
 vi.mock("@/domains/notifications/service", () => ({ NotificationService: { create: (...a: any[]) => notify(...a) } }));
-vi.mock("@/domains/activities/service", () => ({ ActivityService: { addActivity: vi.fn() } }));
 vi.mock("@/lib/events/emitter", () => ({ eventBus: { emit: vi.fn() } }));
 vi.mock("../redis", () => ({ createRedis: vi.fn(), quietErrors: vi.fn() }));
 vi.mock("bullmq", () => ({ Worker: vi.fn(), Queue: vi.fn() }));
@@ -35,7 +35,7 @@ const fu = (userId: string | null) => ({
 });
 
 describe("follow-up due reminders", () => {
-  beforeEach(() => { inserted.length = 0; notify.mockReset(); });
+  beforeEach(() => { inserted.length = 0; notify.mockReset(); limitCalls = 0; });
 
   it("records the reminder against the follow-up's due time (so a snooze reminds again)", async () => {
     dueRows = [fu("rep")];
@@ -58,5 +58,22 @@ describe("follow-up due reminders", () => {
     await processFollowUpReminderScan();
     expect(notify).not.toHaveBeenCalled();
     expect(inserted).toHaveLength(0);
+  });
+});
+
+describe("a failing follow-up doesn't block the others", () => {
+  beforeEach(() => { inserted.length = 0; notify.mockReset(); limitCalls = 0; });
+
+  it("keeps going after one notification throws, and leaves the failed one unmarked", async () => {
+    dueRows = [
+      { ...fu("rep"), followUp: { id: "bad", userId: "rep", dueAt: due, title: "Bad", type: "call" } },
+      fu("rep"),
+    ];
+    activeUsers = [{ id: "rep" }];
+    notify.mockRejectedValueOnce(new Error("boom"));
+    await processFollowUpReminderScan();
+    expect(notify).toHaveBeenCalledTimes(2);
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]).toMatchObject({ followUpId: "f1" });
   });
 });

@@ -289,27 +289,22 @@ export async function deleteLeadAction(id: string) {
   }
 }
 
-const bulkDeleteSchema = z.object({ leadIds: z.array(uuidSchema).min(1) });
+// One request handles at most this many leads — keeps a single action bounded.
+const MAX_BULK = 500;
+const bulkDeleteSchema = z.object({ leadIds: z.array(uuidSchema).min(1).max(MAX_BULK) });
 
 // Soft-delete many leads to the recycle bin at once. Reports partial success —
 // one failing row never aborts the batch.
 export async function bulkDeleteLeadsAction(input: z.infer<typeof bulkDeleteSchema>) {
   const { userId, organizationId } = await requirePermission("leads.delete");
   const parsed = bulkDeleteSchema.safeParse(input);
-  if (!parsed.success) return fail("VALIDATION", "Select at least one lead to delete.");
+  if (!parsed.success) return fail("VALIDATION", `Select between 1 and ${MAX_BULK} leads to delete.`);
   const { leadIds } = parsed.data;
-  let deleted = 0;
-  let failed = 0;
-  const deletedIds: string[] = [];
-  for (const id of leadIds) {
-    try {
-      const row = await LeadService.deleteLead(id, userId, organizationId);
-      if (row) { deleted++; deletedIds.push(id); }
-      else failed++;
-    } catch {
-      failed++;
-    }
-  }
+  // Only leads this person can open (same rule as bulk status/assign), removed in one statement.
+  const allowed = await filterAccessibleLeadIds(leadIds, { userId, organizationId });
+  const deletedIds = await LeadService.bulkDeleteLeads(allowed, userId, organizationId);
+  const deleted = deletedIds.length;
+  const failed = leadIds.length - deleted;
   // Only record the operation if it actually deleted something — a batch that matched nothing
   // (every id already gone, or all foreign to this org) shouldn't leave an entry behind.
   if (deleted > 0) {
@@ -394,7 +389,7 @@ export async function changeLeadStatusAction(id: string, status: string, reason?
 }
 
 const bulkChangeStatusSchema = z.object({
-  leadIds: z.array(uuidSchema).min(1),
+  leadIds: z.array(uuidSchema).min(1).max(MAX_BULK),
   status: z.string().min(1),
 });
 
@@ -403,7 +398,7 @@ export async function bulkChangeLeadStatusAction(input: z.infer<typeof bulkChang
   const { userId, organizationId } = await requirePermission("leads.edit");
 
   const parsed = bulkChangeStatusSchema.safeParse(input);
-  if (!parsed.success) return fail("VALIDATION", "Select at least one lead and a status.");
+  if (!parsed.success) return fail("VALIDATION", `Select 1–${MAX_BULK} leads and a status.`);
 
   let updated = 0;
   let failed = 0;
@@ -550,6 +545,7 @@ export const bulkAssignLeadAction = async (input: { leadIds: string[], ownerId: 
   const { userId, organizationId } = await requirePermission("leads.edit");
 
   if (!input.leadIds || input.leadIds.length === 0) return fail("VALIDATION", "Select at least one lead.");
+  if (input.leadIds.length > MAX_BULK) return fail("VALIDATION", `Select at most ${MAX_BULK} leads at a time.`);
   if (!input.ownerId && !input.teamId) return fail("VALIDATION", "Choose a user or a team to assign to.");
 
   try {

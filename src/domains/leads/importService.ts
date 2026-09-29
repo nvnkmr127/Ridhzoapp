@@ -1,8 +1,11 @@
 import { db } from "@/db";
 import { emailKey, phoneKey } from "@/lib/leads/dedupKeys";
 import { orgDialCode } from "@/lib/leads/orgDialCode";
-import { leads, leadSources, users } from "@/db/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import { leads, leadSources, leadStatusHistory, users } from "@/db/schema";
+import { and, eq, isNull, inArray, or, sql } from "drizzle-orm";
+import { phoneKeySql } from "@/lib/leads/dedupKeys";
+import { eventBus } from "@/lib/events/emitter";
+import { keepAlive } from "@/lib/keepAlive";
 import { PlanService } from "@/domains/billing/planService";
 import { normalizeEmail, normalizePhone } from "@/lib/leads/normalize";
 import { CustomStatusSchemaService } from "@/domains/leads/customStatusSchemaService";
@@ -86,18 +89,55 @@ function cleanNumericValue(val?: string | null): { valid: boolean; value: string
   return { valid: true, value: num.toFixed(2) };
 }
 
+// Imported leads go through the same new-lead pipeline as any other arrival (automations, webhook,
+// distribution, enrichment, activity note) — but paced, so a 5,000-row file doesn't fire 5,000
+// handlers at once and starve the DB pool. `source: "import"` tells the handler to skip Meta CAPI
+// (historical leads aren't new ad conversions) and to not notify the owner once per row.
+const ANNOUNCE_BATCH = 25;
+const ANNOUNCE_GAP_MS = 500;
+function announceImported(ids: string[], userId: string | null, sourceId?: string | null) {
+  keepAlive(
+    (async () => {
+      for (let i = 0; i < ids.length; i += ANNOUNCE_BATCH) {
+        for (const leadId of ids.slice(i, i + ANNOUNCE_BATCH)) {
+          eventBus.emit("lead.created", { leadId, userId: userId ?? undefined, sourceId: sourceId ?? undefined, source: "import" });
+        }
+        if (i + ANNOUNCE_BATCH < ids.length) await new Promise((r) => setTimeout(r, ANNOUNCE_GAP_MS));
+      }
+    })(),
+    "import lead.created events",
+  );
+}
+
 export class LeadImportService {
   // Validates each row and flags duplicates — both against existing org leads and earlier
   // rows in the same file. Pure read; used by both the simulate and commit paths.
   static async analyze(organizationId: string, rows: ImportRow[], opts: { isAdmin?: boolean } = {}): Promise<ImportAnalysis> {
-    const existing = await db
-      .select({ email: leads.email, phone: leads.phone })
-      .from(leads)
-      .where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt)));
-
-    // Same-person rule as every other duplicate check (lib/leads/dedupKeys).
-    const existingEmails = new Set(existing.map((e) => emailKey(e.email)).filter(Boolean));
-    const existingPhones = new Set(existing.map((e) => phoneKey(e.phone)).filter(Boolean));
+    // Only look up the emails/phones that appear in the file (in chunks) — not every lead the
+    // workspace has. Same-person rule as every other duplicate check (lib/leads/dedupKeys).
+    const fileEmails = [...new Set(rows.map((r) => emailKey(r.email)).filter(Boolean))];
+    const filePhones = [...new Set(rows.map((r) => phoneKey(digits(r.phone))).filter(Boolean))];
+    const existingEmails = new Set<string>();
+    const existingPhones = new Set<string>();
+    const LOOKUP_CHUNK = 2000;
+    for (let i = 0; i < Math.max(fileEmails.length, filePhones.length); i += LOOKUP_CHUNK) {
+      const es = fileEmails.slice(i, i + LOOKUP_CHUNK);
+      const ps = filePhones.slice(i, i + LOOKUP_CHUNK);
+      const conds = [
+        es.length ? inArray(sql`lower(trim(${leads.email}))`, es) : undefined,
+        ps.length ? inArray(phoneKeySql, ps) : undefined,
+      ].filter((c): c is NonNullable<typeof c> => !!c);
+      const found = await db
+        .select({ email: leads.email, phone: leads.phone })
+        .from(leads)
+        .where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt), or(...conds)));
+      for (const e of found) {
+        const ek = emailKey(e.email);
+        const pk = phoneKey(e.phone);
+        if (ek) existingEmails.add(ek);
+        if (pk) existingPhones.add(pk);
+      }
+    }
 
     // Fetch custom-field defs ONCE, then validate every row against them in memory.
     const customDefs = await CustomFieldService.list(organizationId);
@@ -204,7 +244,8 @@ export class LeadImportService {
     }
 
     if (toInsert.length > 0) {
-      await PlanService.assertCanAddLead(organizationId);
+      // The whole batch must fit the plan, not just the first lead.
+      await PlanService.assertCanAddLead(organizationId, toInsert.length);
       const dialCode = await orgDialCode(organizationId);
 
       // Canonicalize contact keys the same way every other ingestion path does, so imported leads
@@ -214,11 +255,14 @@ export class LeadImportService {
       const validStatuses = new Set((await CustomStatusSchemaService.getTenantStatusSchema(organizationId)).map((s) => s.key));
       const fallbackStatus = (config.fallbackStatus && validStatuses.has(config.fallbackStatus)) ? config.fallbackStatus : "new";
 
-      // Batch in chunks of 250 rows to avoid exceeding Postgres parameter limits
+      // Batch in chunks of 250 rows to avoid exceeding Postgres parameter limits. A row that loses a
+      // race with a concurrent create (or maps to an existing key differently formatted) is skipped
+      // by ON CONFLICT DO NOTHING instead of aborting the chunks already saved; the count is real.
       const CHUNK_SIZE = 250;
+      const created: { id: string; ownerId: string | null }[] = [];
       for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
         const chunk = toInsert.slice(i, i + CHUNK_SIZE);
-        await db.insert(leads).values(
+        const inserted = await db.insert(leads).values(
           chunk.map((r) => {
             const wanted = r.status?.trim().toLowerCase().slice(0, 50);
             return {
@@ -234,8 +278,19 @@ export class LeadImportService {
               customData: r.cleanedCustomData ?? {},
             };
           })
-        );
+        ).onConflictDoNothing().returning({ id: leads.id, ownerId: leads.ownerId, status: leads.status });
+
+        // Opening status, like a hand-created lead, so "time in first status" analytics see it.
+        if (inserted.length) {
+          await db.insert(leadStatusHistory).values(
+            inserted.map((l) => ({ leadId: l.id, oldStatus: null, newStatus: l.status, changedById: userId })),
+          );
+        }
+        created.push(...inserted);
       }
+
+      announceImported(created.map((l) => l.id), userId, config.sourceId);
+      return { imported: created.length, skipped: analysis.duplicateCount + analysis.errorCount + (toInsert.length - created.length) };
     }
 
     return { imported: toInsert.length, skipped: analysis.duplicateCount + analysis.errorCount };

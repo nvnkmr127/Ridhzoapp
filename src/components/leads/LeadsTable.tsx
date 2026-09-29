@@ -471,7 +471,7 @@ export function LeadsTable({
                     aria-label={`Select ${lead.name}`}
                   />
                 </TableCell>
-                <TableCell className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">{lead.crn ?? "—"}</TableCell>
+                <TableCell className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">{lead.crn ?? (lead.displayId != null ? `#${lead.displayId}` : "—")}</TableCell>
                 <TableCell className="max-w-[16rem]">
                   <div className="flex items-baseline gap-2">
                     <Link href={`/leads/${lead.id}`} className="truncate font-medium text-foreground hover:underline">

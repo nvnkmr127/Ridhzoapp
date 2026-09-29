@@ -140,3 +140,27 @@ describe("PlanService AI credits", () => {
     expect(await PlanService.aiCredits("org")).toEqual({ used: 0, max: 15 });
   });
 });
+
+describe("PlanService.assertCanAddLead", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("allows a single lead just under the limit and blocks it at the limit", async () => {
+    queueResults([[{ plan: "free" }], [{ n: 299 }]]); // free = 300 leads
+    await expect(PlanService.assertCanAddLead("org")).resolves.toBeUndefined();
+    queueResults([[{ plan: "free" }], [{ n: 300 }]]);
+    await expect(PlanService.assertCanAddLead("org")).rejects.toThrow(/300 leads/);
+  });
+
+  it("checks the whole batch: 299 + 50 doesn't fit a 300-lead plan", async () => {
+    queueResults([[{ plan: "free" }], [{ n: 299 }]]);
+    await expect(PlanService.assertCanAddLead("org", 50)).rejects.toThrow(/50 more won't fit/);
+  });
+
+  it("a DB error is not read as 'zero leads used'", async () => {
+    let i = 0;
+    (db.select as any).mockImplementation(() => ({
+      from: () => ({ where: () => (i++ === 0 ? { limit: () => Promise.resolve([{ plan: "free" }]), then: (r: any) => Promise.resolve([{ plan: "free" }]).then(r) } : Promise.reject(new Error("db down"))) }),
+    }));
+    await expect(PlanService.assertCanAddLead("org")).rejects.toThrow("db down");
+  });
+});
