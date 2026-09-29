@@ -76,6 +76,7 @@ export function UsersManager({
   const [form, setForm] = React.useState(emptyForm);
   const [saving, setSaving] = React.useState(false);
   const [inviteOpen, setInviteOpen] = React.useState(false);
+  const [way, setWay] = React.useState<"link" | "phone" | "password">("link");
   const [inviteEmail, setInviteEmail] = React.useState("");
   const [inviteRole, setInviteRole] = React.useState(defaultRoleId);
   const [inviting, setInviting] = React.useState(false);
@@ -202,14 +203,14 @@ export function UsersManager({
   }, [users, query, show]);
 
   async function create() {
-    const trimmedEmail = form.email.trim();
-    const trimmedPhone = form.phone.trim();
-    if (!trimmedEmail && trimmedPhone.replace(/\D/g, "").length < 7) {
-      toast({ variant: "destructive", title: "Email or phone required", description: "Enter an email address or a phone number they'll sign in with." });
+    const trimmedEmail = way === "phone" ? "" : form.email.trim();
+    const trimmedPhone = way === "phone" ? form.phone.trim() : "";
+    if (way === "phone" && trimmedPhone.replace(/\D/g, "").length < 7) {
+      toast({ variant: "destructive", title: "Mobile number required", description: "Enter a valid mobile number, with country code if it isn't local." });
       return;
     }
-    if (form.password.length < 6) {
-      toast({ variant: "destructive", title: "Password too short", description: "Initial password must be at least 6 characters." });
+    if (way === "password" && (!trimmedEmail || form.password.length < 6)) {
+      toast({ variant: "destructive", title: "Email and password required", description: "Enter an email and an initial password of at least 6 characters." });
       return;
     }
     setSaving(true);
@@ -219,7 +220,7 @@ export function UsersManager({
         phone: trimmedPhone || undefined,
         firstName: form.firstName.trim() || undefined,
         lastName: form.lastName.trim() || undefined,
-        password: form.password,
+        password: way === "phone" ? undefined : form.password,
         roleId: form.roleId,
       });
       if (!res.ok) {
@@ -229,7 +230,10 @@ export function UsersManager({
       const newUser = res.data as User;
       setUsers((prev) => [...prev.filter((u) => u.id !== newUser.id), newUser]);
       setForm(emptyForm);
-      toast({ title: "Member added", description: "Share the password with them securely; they can change it after signing in." });
+      toast({
+        title: "Member added",
+        description: way === "phone" ? "They can sign in with their mobile number and the WhatsApp code." : "Share the password with them securely; they can change it after signing in.",
+      });
     } catch {
       toast({ variant: "destructive", title: "Could not add member", description: "We couldn't reach the server. Please try again." });
     } finally {
@@ -335,43 +339,64 @@ export function UsersManager({
 
         {inviteOpen && (
           <div className="p-4 sm:p-6 border-b bg-muted/30 space-y-3">
-            <p className="text-sm text-muted-foreground">They&apos;ll get an email link and set their own password.</p>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Input type="email" placeholder="teammate@company.com" aria-label="Email to invite" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); invite(); } }} className="flex-1" autoFocus />
-              <Select value={inviteRole} onValueChange={setInviteRole}>
-                <SelectTrigger className="sm:w-40" aria-label="Role"><SelectValue placeholder="Role" /></SelectTrigger>
-                <SelectContent><RoleOptions /></SelectContent>
-              </Select>
-              <Button onClick={() => invite()} disabled={inviting || !inviteEmail.trim() || !inviteRole} className="gap-2">
-                <Mail className="h-4 w-4" />{inviting ? "Sending…" : "Send invite"}
-              </Button>
+            <div role="tablist" aria-label="How to add them" className="flex flex-wrap gap-2">
+              {([["link", "Email link"], ["phone", "Mobile + OTP"], ["password", "Email + password"]] as const).map(([k, label]) => (
+                <Button key={k} type="button" role="tab" aria-selected={way === k} size="sm" variant={way === k ? "default" : "outline"} onClick={() => setWay(k)}>{label}</Button>
+              ))}
             </div>
-            <details className="text-sm">
-              <summary className="cursor-pointer text-muted-foreground">No email? Add them directly with a phone number and a password you choose</summary>
-              <form onSubmit={(e) => { e.preventDefault(); create(); }} className="space-y-3 pt-3">
+
+            {way === "link" && (
+              <>
+                <p className="text-sm text-muted-foreground">They&apos;ll get an email link and set their own password.</p>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Input type="email" placeholder="teammate@company.com" aria-label="Email to invite" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); invite(); } }} className="flex-1" autoFocus />
+                  <Select value={inviteRole} onValueChange={setInviteRole}>
+                    <SelectTrigger className="sm:w-40" aria-label="Role"><SelectValue placeholder="Role" /></SelectTrigger>
+                    <SelectContent><RoleOptions /></SelectContent>
+                  </Select>
+                  <Button onClick={() => invite()} disabled={inviting || !inviteEmail.trim() || !inviteRole} className="gap-2">
+                    <Mail className="h-4 w-4" />{inviting ? "Sending…" : "Send invite"}
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {way !== "link" && (
+              <form onSubmit={(e) => { e.preventDefault(); create(); }} className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  {way === "phone"
+                    ? "Add their mobile number. They sign in by entering it and the WhatsApp code we send — no password needed."
+                    : "You choose their email and first password. Share it securely; they can change it after signing in."}
+                </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <Input placeholder="First name" aria-label="First name" value={form.firstName} onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))} />
                   <Input placeholder="Last name" aria-label="Last name" value={form.lastName} onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))} />
-                  <Input type="email" placeholder="Email (optional if you add a phone)" aria-label="Email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
-                  <Input type="tel" inputMode="tel" placeholder="Phone number (used to sign in)" aria-label="Phone number" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
-                  <div>
-                    <PasswordInput placeholder="Initial password (min 6 characters)" aria-label="Initial password" value={form.password}
-                      onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} />
-                    {form.password && form.password.length < 6 && <p className="text-xs text-destructive mt-1">Must be at least 6 characters</p>}
-                  </div>
+                  {way === "phone" ? (
+                    <Input type="tel" inputMode="tel" placeholder="Mobile number, e.g. +91 98765 43210" aria-label="Phone number" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} autoFocus />
+                  ) : (
+                    <>
+                      <Input type="email" placeholder="Email (used to sign in)" aria-label="Email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} autoFocus />
+                      <div>
+                        <PasswordInput placeholder="Initial password (min 6 characters)" aria-label="Initial password" value={form.password}
+                          onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} />
+                        {form.password && form.password.length < 6 && <p className="text-xs text-destructive mt-1">Must be at least 6 characters</p>}
+                      </div>
+                    </>
+                  )}
                   <Select value={form.roleId} onValueChange={(v) => setForm((f) => ({ ...f, roleId: v }))}>
                     <SelectTrigger aria-label="Role"><SelectValue placeholder="Role" /></SelectTrigger>
                     <SelectContent><RoleOptions /></SelectContent>
                   </Select>
                 </div>
                 <div className="flex justify-end">
-                  <Button type="submit" variant="outline" disabled={saving || (!form.email.trim() && !form.phone.trim()) || !form.roleId} className="gap-2">
+                  <Button type="submit" disabled={saving || !form.roleId || (way === "phone" ? !form.phone.trim() : !form.email.trim() || form.password.length < 6)} className="gap-2">
                     <UserPlus className="h-4 w-4" />{saving ? "Adding…" : "Add member"}
                   </Button>
                 </div>
               </form>
-            </details>
+            )}
+            <p className="text-xs text-muted-foreground">After they join we&apos;ll prompt them to add anything missing — email, mobile number, or Google for faster sign-in.</p>
           </div>
         )}
 

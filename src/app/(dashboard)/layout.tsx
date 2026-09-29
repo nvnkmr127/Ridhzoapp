@@ -1,3 +1,4 @@
+import { ProfileGapsBanner } from "@/components/layout/ProfileGapsBanner";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { InstallPwaBanner } from "@/components/layout/InstallPwaBanner";
@@ -86,6 +87,7 @@ export default async function DashboardLayout({
         <InstallPwaBanner />
         {canAdmin && <TimezoneBanner workspaceTz={workspaceTz} />}
         <EnablePushButton mode="banner" />
+        <ProfileGapsBanner email={me?.email ?? null} phone={me?.phone ?? null} />
         <Header 
           isSuperAdmin={superAdmin} 
           organizationId={organizationId} 

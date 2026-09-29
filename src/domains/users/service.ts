@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { db } from "@/db";
 import { UserFacingError } from "@/lib/actions/result";
 import { handOverFollowUps } from "@/domains/follow-ups/state";
@@ -48,7 +49,7 @@ export class UserService {
 
   static async create(
     organizationId: string,
-    input: { email?: string; phone?: string; firstName?: string; lastName?: string; password: string; roleId: string },
+    input: { email?: string; phone?: string; firstName?: string; lastName?: string; password?: string; roleId: string },
   ) {
     // Added by phone number: no email, so they get the same placeholder address a WhatsApp signup does
     // (they sign in with the number — password or WhatsApp code).
@@ -72,7 +73,8 @@ export class UserService {
       .where(eq(users.email, cleanEmail))
       .limit(1);
 
-    const passwordHash = await bcrypt.hash(input.password, 10);
+    // No password = added by phone number: they prove it's theirs with a WhatsApp code (and can set a password later).
+    const passwordHash = await bcrypt.hash(input.password ?? crypto.randomUUID(), 10);
 
     if (existing) {
       if (existing.organizationId === organizationId && existing.deletedAt) {
@@ -104,6 +106,7 @@ export class UserService {
         lastName: input.lastName,
         roleId: input.roleId,
         passwordHash,
+        passwordSet: !!input.password,
         isActive: true,
       })
       .returning(publicCols);

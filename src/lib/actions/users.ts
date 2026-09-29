@@ -47,9 +47,10 @@ const createUserSchema = z.object({
   phone: z.string().trim().max(30).optional(),
   firstName: z.string().trim().max(255).optional(),
   lastName: z.string().trim().max(255).optional(),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  password: z.string().min(6, "Password must be at least 6 characters").optional(), // none = phone + WhatsApp code
   roleId: z.guid({ message: "Pick a role for this person." }),
-}).refine((v) => v.email || (v.phone && v.phone.replace(/\D/g, "").length >= 7), { message: "Enter an email or a phone number.", path: ["email"] });
+}).refine((v) => v.password || !v.email, { message: "Set a password, or add them by phone number only.", path: ["password"] })
+  .refine((v) => v.email || (v.phone && v.phone.replace(/\D/g, "").length >= 7), { message: "Enter an email or a phone number.", path: ["email"] });
 
 export async function createUserAction(input: z.infer<typeof createUserSchema>) {
   const { organizationId, userId } = await requirePermission("users.manage");
