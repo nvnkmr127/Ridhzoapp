@@ -8,6 +8,7 @@ import { organizations } from './organizations';
 export const activities = pgTable('activities', {
   id: uuid('id').defaultRandom().primaryKey(),
   leadId: uuid('lead_id').references(() => leads.id).notNull(),
+  seq: integer('seq'), // per-lead timeline number (CRN-…-T7); assigned by DB trigger
   userId: uuid('user_id').references(() => users.id),
   type: varchar('type', { length: 50 }).notNull(), // email, call, meeting, note
   content: text('content'),

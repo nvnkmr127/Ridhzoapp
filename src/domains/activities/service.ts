@@ -23,6 +23,7 @@ export class ActivityService {
       .select({
         id: activities.id,
         leadId: activities.leadId,
+        seq: activities.seq,
         userId: activities.userId,
         type: activities.type,
         content: activities.content,

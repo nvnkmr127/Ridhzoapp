@@ -32,7 +32,7 @@ import { exportLeadsCsvAction } from "@/lib/actions/exportLeads";
 import { LocalTime } from "@/components/LocalTime";
 
 type Lead = {
-  id: string; displayId?: number | null; name: string; email: string | null; phone: string | null; status: string; createdAt: Date;
+  id: string; displayId?: number | null; crn?: string | null; name: string; email: string | null; phone: string | null; status: string; createdAt: Date;
   ownerId?: string | null;
   company?: string | null;
   customData?: unknown;
@@ -475,7 +475,7 @@ export function LeadsTable({
                     <Link href={`/leads/${lead.id}`} className="truncate font-medium text-foreground hover:underline">
                       {lead.name}
                     </Link>
-                    {lead.displayId != null ? <span className="shrink-0 text-xs tabular-nums text-muted-foreground">#{lead.displayId}</span> : null}
+                    {lead.crn ? <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{lead.crn}</span> : lead.displayId != null ? <span className="shrink-0 text-xs tabular-nums text-muted-foreground">#{lead.displayId}</span> : null}
                   </div>
                   {lead.company ? <div className="truncate text-xs text-muted-foreground">{lead.company}</div> : null}
                 </TableCell>

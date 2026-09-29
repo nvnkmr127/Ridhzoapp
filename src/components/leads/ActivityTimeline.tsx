@@ -9,6 +9,7 @@ import { loadOlderActivitiesAction } from "@/lib/actions/leads";
 
 type Activity = {
   id: string;
+  seq?: number | null;
   type: string;
   content: string | null;
   userName?: string | null;
@@ -56,7 +57,7 @@ function meta(type: string) {
 }
 
 // `hasMore`: the server sent only the newest page; "Load older" pages further back via leadId.
-export function ActivityTimeline({ activities: initial, leadId, hasMore: initialHasMore = false }: { activities: Activity[]; leadId?: string; hasMore?: boolean }) {
+export function ActivityTimeline({ activities: initial, leadId, crn, hasMore: initialHasMore = false }: { activities: Activity[]; leadId?: string; crn?: string | null; hasMore?: boolean }) {
   const [filter, setFilter] = React.useState<"all" | Group>("all");
   const [shown, setShown] = React.useState(PAGE);
   // Older pages fetched on demand, appended below the server-rendered newest page (which stays live
@@ -138,6 +139,7 @@ export function ActivityTimeline({ activities: initial, leadId, hasMore: initial
                 <div className="flex items-baseline gap-2">
                   <span className="text-xs font-semibold text-foreground">{m.label}</span>
                   {a.userName && <span className="text-xs text-muted-foreground">by {a.userName}</span>}
+                  {crn && a.seq != null && <span className="text-[10px] tabular-nums text-muted-foreground/70">{crn}-T{a.seq}</span>}
                 </div>
                 <span className="text-xs text-muted-foreground">
                   <LocalTime iso={a.createdAt} mode="datetime" />

@@ -48,6 +48,7 @@ export const assignmentRules = pgTable('assignment_rules', {
 export const leads = pgTable('leads', {
   id: uuid('id').defaultRandom().primaryKey(),
   displayId: integer('display_id'), // human-friendly per-org sequential number (Lead #1042); assigned by DB trigger on insert
+  crn: varchar('crn', { length: 32 }), // customer reference number, CRN-YYMM-0001; assigned by DB trigger on insert
   organizationId: uuid('organization_id').references(() => organizations.id).notNull(), // tenant; backfilled
   name: varchar('name', { length: 255 }).notNull(),
   phone: varchar('phone', { length: 255 }),
@@ -106,6 +107,7 @@ export const leads = pgTable('leads', {
     .where(sql`${table.deletedAt} IS NULL AND ${table.phone} IS NOT NULL AND ${table.phone} <> ''`),
   // Per-tenant sequential display number. Multiple NULLs are allowed pre-backfill.
   orgDisplayIdUnique: uniqueIndex('leads_org_display_id_unique').on(table.organizationId, table.displayId),
+  orgCrnUnique: uniqueIndex('leads_org_crn_unique').on(table.organizationId, table.crn),
 }));
 
 // Per-org counter for the human-friendly lead number. A trigger bumps last_value atomically on
@@ -115,9 +117,28 @@ export const leadCounters = pgTable('lead_counters', {
   lastValue: integer('last_value').notNull().default(0),
 });
 
+// Per-org, per-month counter behind leads.crn (bumped by trigger, like lead_counters).
+export const crnCounters = pgTable('crn_counters', {
+  organizationId: uuid('organization_id').notNull().references(() => organizations.id),
+  period: varchar('period', { length: 4 }).notNull(), // YYMM
+  lastValue: integer('last_value').notNull().default(0),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.organizationId, table.period] }),
+}));
+
+// Per-lead counters for lifecycle (kind 'L') and timeline (kind 'T') entry numbers, bumped by triggers.
+export const leadSeqCounters = pgTable('lead_seq_counters', {
+  leadId: uuid('lead_id').notNull().references(() => leads.id, { onDelete: 'cascade' }),
+  kind: varchar('kind', { length: 1 }).notNull(),
+  lastValue: integer('last_value').notNull().default(0),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.leadId, table.kind] }),
+}));
+
 export const leadStatusHistory = pgTable('lead_status_history', {
   id: uuid('id').defaultRandom().primaryKey(),
   leadId: uuid('lead_id').references(() => leads.id).notNull(),
+  seq: integer('seq'), // per-lead lifecycle number (CRN-…-L3); assigned by DB trigger
   oldStatus: varchar('old_status', { length: 50 }),
   newStatus: varchar('new_status', { length: 50 }).notNull(),
   changedById: uuid('changed_by_id').references(() => users.id),

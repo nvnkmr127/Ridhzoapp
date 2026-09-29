@@ -71,11 +71,12 @@ export async function exportLeadsCsvAction(input: z.input<typeof schema>) {
     const stageName = new Map(stages.map((s) => [s.id, s.name]));
     const fields = (defs as { key: string; label: string; adminOnly?: boolean; disabled?: boolean }[]).filter((f) => !f.disabled && (isAdmin || !f.adminOnly));
 
-    const headers = ["Lead #", "Name", "Phone", "Email", "Company", "Status", "Stage", "Owner", "Source", "Score", "Expected value", "Created", "Last contacted", "Next follow-up", ...fields.map((f) => f.label)];
+    const headers = ["Lead #", "CRN", "Name", "Phone", "Email", "Company", "Status", "Stage", "Owner", "Source", "Score", "Expected value", "Created", "Last contacted", "Next follow-up", ...fields.map((f) => f.label)];
     const body = rows.map((l) => {
       const cd = (l.customData as Record<string, unknown> | null) ?? {};
       return [
         l.displayId ?? "",
+        l.crn ?? "",
         l.name,
         l.phone,
         l.email,

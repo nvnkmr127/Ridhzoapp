@@ -199,6 +199,7 @@ export async function buildLeadProfile(lead: Lead, ctx: { userId: string | null;
     // Dialable number for Call/WhatsApp: older leads saved without a country code get the workspace's.
     dialPhone: normalizePhone(lead.phone, dialCode) ?? lead.phone ?? null,
     displayId: lead.displayId ?? null,
+    crn: lead.crn ?? null,
     createdAt: lead.createdAt,
     statusCategory: statusCategory ?? null,
     stage: stages.find((s) => s.id === lead.stageId) ?? null,

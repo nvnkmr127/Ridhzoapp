@@ -610,6 +610,13 @@
       "when": 1790651384558,
       "tag": "0086_daily_summary_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1790672949538,
+      "tag": "0087_lead_crn",
+      "breakpoints": true
     }
   ]
 }

@@ -15,6 +15,7 @@ export const ALLOWED_STATUS_TRANSITIONS: Record<LeadStatus, LeadStatus[]> = {
 
 export interface StatusHistoryEntry {
   id: string;
+  seq: number | null; // lifecycle number; ref is `${lead.crn}-L${seq}`
   leadId: string;
   oldStatus: string | null;
   newStatus: string;
@@ -114,6 +115,7 @@ export class LeadStatusService {
     const history = await db
       .select({
         id: leadStatusHistory.id,
+        seq: leadStatusHistory.seq,
         leadId: leadStatusHistory.leadId,
         oldStatus: leadStatusHistory.oldStatus,
         newStatus: leadStatusHistory.newStatus,
@@ -144,6 +146,7 @@ export class LeadStatusService {
 
       entries.push({
         id: current.id,
+        seq: current.seq,
         leadId: current.leadId,
         oldStatus: current.oldStatus,
         newStatus: current.newStatus,

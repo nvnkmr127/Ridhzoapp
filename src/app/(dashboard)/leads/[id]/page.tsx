@@ -441,9 +441,9 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               </p>
             )}
             <p className="text-xs text-muted-foreground">
-              {lead.displayId != null && (
+              {(lead.crn || lead.displayId != null) && (
                 <>
-                  <span className="font-medium tabular-nums text-foreground">Lead #{lead.displayId}</span>
+                  <span className="font-medium tabular-nums text-foreground">{lead.crn ?? `Lead #${lead.displayId}`}</span>
                   {" · "}
                 </>
               )}
@@ -548,7 +548,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 {
                   value: "activity",
                   label: `Activity (${counts?.acts ?? activities.length})`,
-                  content: <ActivityTimeline activities={activities} leadId={lead.id} hasMore={activities.length === LEAD_ACTIVITY_PAGE} />,
+                  content: <ActivityTimeline activities={activities} leadId={lead.id} crn={lead.crn} hasMore={activities.length === LEAD_ACTIVITY_PAGE} />,
                 },
                 {
                   value: "whatsapp",
