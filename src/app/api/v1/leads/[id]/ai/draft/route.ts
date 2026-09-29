@@ -7,7 +7,7 @@ import { RateLimiter } from "@/lib/rate-limit";
 
 const schema = z.object({
   channel: z.enum(["whatsapp", "email"]).default("whatsapp"),
-  tone: z.enum(["friendly", "professional", "short"]).default("friendly"),
+  tone: z.enum(["auto", "friendly", "professional", "short"]).default("auto"),
   language: z.string().trim().max(40).default("auto"),
 });
 

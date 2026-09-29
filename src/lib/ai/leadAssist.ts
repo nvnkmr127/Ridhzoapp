@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
@@ -16,6 +17,8 @@ import type { LeadService } from "@/domains/leads/service";
 type Lead = NonNullable<Awaited<ReturnType<typeof LeadService.getLead>>>;
 
 export const TONES = {
+  // "auto" = no per-draft override: the business profile's own tone (if set) applies.
+  auto: "in the business's usual voice — warm and natural if none is given",
   friendly: "warm and friendly, like a helpful person — not salesy",
   professional: "polite and professional",
   short: "very brief — one or two short sentences",
@@ -34,11 +37,19 @@ function draftSystem(channel: "whatsapp" | "email", tone: keyof typeof TONES, la
       : "Return ONLY the WhatsApp message text (under 60 words) — no preamble, no quotes.";
   return (
     `You are helping a salesperson write the next ${channel === "email" ? "email" : "WhatsApp message"} to a lead. ` +
-    `Tone: ${TONES[tone]}. ${lang} Be specific to what the lead asked for (their form answers and messages) ` +
+    `Tone: ${TONES[tone]}. ${lang} If the lead's latest message is unanswered, reply to it directly first (answer their question, acknowledge what they said) before anything else. Be specific to what the lead asked for (their form answers and messages) ` +
     "and to where the conversation is; don't repeat what was already sent. End with one clear next step. " +
     "Follow the business's emoji and sign-off preferences if given; otherwise no emojis unless natural. Use ONLY facts from the context — never invent prices, offers, dates or details. " +
     shape
   );
+}
+
+// Models often wrap the message in quotes/code fences or add "Here's a draft:" — none of that should reach the send box.
+function cleanDraft(raw: string): string {
+  let t = raw.replace(/^```\w*\s*|\s*```$/g, "").trim();
+  t = t.replace(/^(?:here(?:'s| is)[^\n]*:|sure[^\n]*:)\s*\n+/i, "").trim();
+  const q = t.match(/^["“]([\s\S]*)["”]$/);
+  return (q ? q[1] : t).trim();
 }
 
 export async function draftReplyForLead(
@@ -65,18 +76,19 @@ export async function draftReplyForLead(
     return { ...fallback, ai: false };
   }
 
+  const cleaned = cleanDraft(raw);
   if (channel === "email") {
-    const m = raw.match(/^\s*Subject:\s*(.+)\n+([\s\S]*)$/i);
-    return m ? { subject: m[1].trim(), draft: m[2].trim(), ai: true } : { subject: fallback.subject, draft: raw, ai: true };
+    const m = cleaned.match(/^\s*Subject:\s*(.+)\n+([\s\S]*)$/i);
+    return m ? { subject: m[1].trim(), draft: m[2].trim(), ai: true } : { subject: fallback.subject, draft: cleaned, ai: true };
   }
-  return { draft: raw, ai: true };
+  return { draft: cleaned, ai: true };
 }
 
 const RECAP_SYSTEM = `You brief a busy salesperson on one lead and propose concrete updates for them to approve.
 Recap: plain, specific, factual — what the lead wants (from their answers, notes and messages), where things stand right now given the latest activity, and the single most useful next step.
 Suggestions are only proposals the rep accepts or dismisses, so only make ones the context clearly supports.`;
 
-export type RecapCache = { text: string; at: string; sig: string; plan?: LeadPlan; dismissed?: string[] };
+export type RecapCache = { text: string; at: string; sig: string; bsig?: string; plan?: LeadPlan; dismissed?: string[] };
 
 export type RecapResult = {
   summary: string;
@@ -100,7 +112,18 @@ export type RecapResult = {
 // it's out of date (stale, without its suggestions), or `pending` when there is none yet.
 export async function recapForLead(lead: Lead, organizationId: string, refresh = false, opts: { cachedOnly?: boolean } = {}): Promise<RecapResult> {
   const leadId = lead.id;
-  const { activities, extras, text: context, signature: sig, fieldDefs, statuses } = await leadAiContext(lead, organizationId);
+  const [{ activities, extras, text: context, signature: leadSig, fieldDefs, statuses }, org] = await Promise.all([
+    leadAiContext(lead, organizationId),
+    loadAiBusiness(organizationId, { sourceId: lead.sourceId }),
+  ]);
+  // The recap is grounded in the business context too — editing it (what you sell, rules, currency,
+  // the source note) must not leave recaps written under the old one. Reference docs are per-request
+  // snippets, so they stay out of the signature.
+  const bsig = createHash("sha1")
+    .update(JSON.stringify([org.name, org.industry, org.city, org.currency, org.phone, org.aiContext, org.aiProfile, org.sourceContext]))
+    .digest("hex")
+    .slice(0, 12);
+  const sig = `${leadSig}:${bsig}`;
 
   const cached = (lead.customData as { _aiRecap?: RecapCache } | null)?._aiRecap;
   if (!refresh && cached?.sig === sig) {
@@ -145,9 +168,9 @@ export async function recapForLead(lead: Lead, organizationId: string, refresh =
     now: extras.now ?? new Date(),
   };
 
-  const org = await loadAiBusiness(organizationId, { sourceId: lead.sourceId, query: context });
-  const system = leadSystemPrompt(org, `${RECAP_SYSTEM}\n\n${briefFormatInstructions(planInput, extras.timezone ?? "UTC")}`);
-  const raw = await generateText(system, context, 900);
+  const orgWithKnowledge = await loadAiBusiness(organizationId, { sourceId: lead.sourceId, query: context });
+  const system = leadSystemPrompt(orgWithKnowledge, `${RECAP_SYSTEM}\n\n${briefFormatInstructions(planInput, extras.timezone ?? "UTC")}`);
+  const raw = await generateText(system, context, 1400);
   if (!raw) {
     await PlanService.refundAiCredit(organizationId);
     return { summary: `Status is ${extras.statusLabel ?? lead.status}. Review recent activity and follow up.`, ai: false };

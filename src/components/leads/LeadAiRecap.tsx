@@ -8,7 +8,7 @@ import { usePlan } from "@/components/billing/PlanGate";
 import { AiLeadSuggestions } from "@/components/leads/AiLeadSuggestions";
 import type { LeadPlan } from "@/lib/ai/leadPlan";
 
-type Recap = { text: string; at?: string; plan?: LeadPlan };
+type Recap = { text: string; at?: string; plan?: LeadPlan; ai?: boolean };
 
 function ago(iso?: string) {
   if (!iso) return "";
@@ -58,7 +58,7 @@ export function LeadAiRecap({
           if (!auto) openUpgrade();
           return;
         }
-        setRecap({ text: res.summary, at: res.generatedAt, plan: res.plan });
+        setRecap({ text: res.summary, at: res.generatedAt, plan: res.plan, ai: res.ai });
       } catch {
         setError("Couldn't generate a recap right now. Try again in a moment.");
       } finally {
@@ -93,7 +93,7 @@ export function LeadAiRecap({
           <AiLeadSuggestions leadId={leadId} plan={recap.plan} onChange={(plan) => setRecap((r) => (r ? { ...r, plan } : r))} />
         )}
         <div className="flex items-center justify-between pl-6 text-[11px] text-muted-foreground">
-          <span>{recap.at ? `AI recap · ${ago(recap.at)}` : "Recap"}</span>
+          <span>{recap.ai === false ? "Basic summary — AI couldn't run, tap Refresh" : recap.at ? `AI recap · ${ago(recap.at)}` : "Recap"}</span>
           <button type="button" onClick={() => run(true)} disabled={loading} className="flex items-center gap-1 hover:text-foreground disabled:opacity-50">
             <RefreshCw className="h-3 w-3" /> Refresh
           </button>

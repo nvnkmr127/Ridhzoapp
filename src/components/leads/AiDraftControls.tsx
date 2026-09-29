@@ -9,6 +9,7 @@ import { usePlan } from "@/components/billing/PlanGate";
 import { useLeadAction, type LeadUiAction } from "@/components/leads/leadEvents";
 
 const TONES = [
+  { key: "auto", label: "Auto tone" },
   { key: "friendly", label: "Friendly" },
   { key: "professional", label: "Professional" },
   { key: "short", label: "Short" },
@@ -33,7 +34,7 @@ export function AiDraftControls({
 }) {
   const { toast } = useToast();
   const { openUpgrade } = usePlan();
-  const [tone, setTone] = React.useState<Tone>("friendly");
+  const [tone, setTone] = React.useState<Tone>("auto");
   const [language, setLanguage] = React.useState("auto");
   const [drafting, setDrafting] = React.useState(false);
   const [drafted, setDrafted] = React.useState(false);

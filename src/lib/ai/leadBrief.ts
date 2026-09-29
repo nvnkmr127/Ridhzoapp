@@ -118,13 +118,31 @@ function fmtWhen(d: Date | null | undefined, now: Date): string {
   return `${fmtDate(d)} (${rel})`;
 }
 
+// "2026-10-03 15:00 IST" in the workspace timezone (UTC when unknown/invalid) — a draft that quotes a
+// meeting time must quote the one the lead and rep actually see.
+function fmtLocal(d: Date, timeZone?: string): string {
+  const at = new Date(d);
+  try {
+    const p = Object.fromEntries(
+      new Intl.DateTimeFormat("en-CA", { timeZone: timeZone || "UTC", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "short" })
+        .formatToParts(at)
+        .map((x) => [x.type, x.value]),
+    );
+    return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute} ${p.timeZoneName}`;
+  } catch {
+    return `${at.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+  }
+}
+
 const clip = (s: string, n = 300) => (s.length > n ? `${s.slice(0, n)}…` : s);
 // Keep lead-written text from closing our fence early.
 const fence = (s: string, n = 300) => clip(s.replace(/<\/?lead_data>/gi, "").replace(/\s+/g, " ").trim(), n);
 
 /** Compact, factual context block fed to the model. Only CRM-known data goes in. */
 export function buildLeadContext(lead: LeadLike, activities: ActivityLike[], extras: LeadExtras = {}): string {
-  const nextScheduled = extras.meetings?.filter((m) => m.status === "scheduled").at(-1);
+  // A "scheduled" meeting whose time has passed was never closed out — it isn't upcoming.
+  const nowForMeetings = (extras.now ?? new Date()).getTime();
+  const nextScheduled = extras.meetings?.filter((m) => m.status === "scheduled" && new Date(m.startAt).getTime() >= nowForMeetings).at(-1);
   // Same rule as the profile's Next Best Action card: an open in the last 3 days is a buying signal.
   const nowMs = (extras.now ?? new Date()).getTime();
   const recentOpen = extras.contentOpens?.find(
@@ -186,7 +204,7 @@ export function buildLeadContext(lead: LeadLike, activities: ActivityLike[], ext
   if (extras.unansweredStreak) lines.push(`Unanswered calls in a row: ${extras.unansweredStreak}`);
   if (extras.bestContactTime) lines.push(`Usually responds: ${extras.bestContactTime}`);
   if (nextScheduled) {
-    lines.push(`Upcoming meeting: ${nextScheduled.title} on ${new Date(nextScheduled.startAt).toISOString().slice(0, 16).replace("T", " ")} UTC (${nextScheduled.durationMinutes} min)`);
+    lines.push(`Upcoming meeting: ${nextScheduled.title} on ${fmtLocal(nextScheduled.startAt, extras.timezone)} (${nextScheduled.durationMinutes} min)`);
   }
   if (extras.contentOpens?.length) {
     lines.push(`Content shared: ${extras.contentOpens.map((c) => `"${c.title}" (opened ${c.viewCount}×${c.lastViewedAt ? `, last ${fmtWhen(c.lastViewedAt, now)}` : ""})`).join("; ")}`);
@@ -236,7 +254,7 @@ export function buildLeadContext(lead: LeadLike, activities: ActivityLike[], ext
   if (extras.meetings?.length) {
     data.push("Meetings (newest first):");
     for (const m of extras.meetings.slice(0, 5)) {
-      data.push(`- [${fmtWhen(m.startAt, now)}] ${m.title} — ${m.status}${m.where ? ` at ${fence(m.where)}` : ""}${m.outcome ? `. Outcome: ${fence(m.outcome)}` : ""}`);
+      data.push(`- [${fmtWhen(m.startAt, now)}, ${fmtLocal(m.startAt, extras.timezone)}] ${m.title} — ${m.status}${m.where ? ` at ${fence(m.where)}` : ""}${m.outcome ? `. Outcome: ${fence(m.outcome)}` : ""}`);
     }
   }
   if (extras.followUps?.length) {

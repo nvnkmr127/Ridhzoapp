@@ -16,7 +16,7 @@ import { PlanService } from "@/domains/billing/planService";
 const draftSchema = z.object({
   leadId: z.guid(),
   channel: z.enum(["whatsapp", "email"]).default("whatsapp"),
-  tone: z.enum(["friendly", "professional", "short"]).default("friendly"),
+  tone: z.enum(["auto", "friendly", "professional", "short"]).default("auto"),
   // Free text so any language works ("Hindi", "Hinglish", "Tamil"…); "auto" = match the lead.
   language: z.string().trim().max(40).default("auto"),
 });

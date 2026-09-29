@@ -110,3 +110,21 @@ describe("briefFormatInstructions", () => {
     expect(s).toContain("today is 2026-09-26, timezone Asia/Kolkata");
   });
 });
+
+describe("parseLeadBrief — malformed model output", () => {
+  const input = { fields: [], current: {}, coerce: (_k: string, v: unknown) => v, statuses: [], currentStatus: "new", now: new Date() };
+
+  it("never shows raw JSON: recovers the recap from a truncated reply", () => {
+    const { recap, plan } = parseLeadBrief('{"recap": "Wants a 3BHK near Hitech City, visit Saturday.", "fields": [{"key": "bud', input);
+    expect(recap).toBe("Wants a 3BHK near Hitech City, visit Saturday.");
+    expect(plan.fields).toEqual([]);
+  });
+
+  it("gives a plain message when nothing is recoverable", () => {
+    expect(parseLeadBrief('{"fields": [{"key": "bud', input).recap).toMatch(/Refresh/);
+  });
+
+  it("still passes through a plain-text reply", () => {
+    expect(parseLeadBrief("Wants a 3BHK.", input).recap).toBe("Wants a 3BHK.");
+  });
+});

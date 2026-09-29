@@ -220,3 +220,18 @@ describe("buildLeadContext — privacy & safety", () => {
     expect(ctx).toContain("Expected deal value: 8000000");
   });
 });
+
+describe("buildLeadContext — meetings", () => {
+  const now = new Date("2026-10-01T00:00:00Z");
+  const mtg = (startAt: string, status = "scheduled") => ({ mode: "online", title: "Online meeting", startAt: new Date(startAt), durationMinutes: 30, status, where: "", outcome: null });
+
+  it("shows the upcoming meeting in the workspace timezone, not UTC", () => {
+    const ctx = buildLeadContext(baseLead, [], { now, timezone: "Asia/Kolkata", meetings: [mtg("2026-10-03T09:30:00Z")] });
+    expect(ctx).toMatch(/Upcoming meeting: Online meeting on 2026-10-03 15:00/);
+  });
+
+  it("ignores a 'scheduled' meeting whose time already passed", () => {
+    const ctx = buildLeadContext(baseLead, [], { now, meetings: [mtg("2026-09-10T09:30:00Z")] });
+    expect(ctx).not.toContain("Upcoming meeting:");
+  });
+});

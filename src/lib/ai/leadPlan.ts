@@ -97,9 +97,26 @@ function extractJson(raw: string): Record<string, unknown> | null {
  */
 export function parseLeadBrief(raw: string, input: PlanInput): { recap: string; plan: LeadPlan } {
   const json = extractJson(raw);
-  if (!json) return { recap: raw.trim(), plan: EMPTY_PLAN };
-  const recap = text(json.recap, 600) || raw.trim();
+  if (!json) return { recap: recapFromBrokenJson(raw), plan: EMPTY_PLAN };
+  // Never show raw JSON to the rep: if "recap" is missing, the reply isn't a usable brief.
+  const recap = text(json.recap, 600) || recapFromBrokenJson(raw);
   return { recap, plan: validatePlan(json, input) };
+}
+
+// A reply that looks like JSON but doesn't parse (cut off at the token limit, trailing commas…) must not
+// land on the profile as `{"recap": "...` — pull the recap string out if it's there, else say so.
+function recapFromBrokenJson(raw: string): string {
+  const t = raw.replace(/^```(?:json)?\s*|\s*```$/gi, "").trim();
+  if (!/^[{[]/.test(t)) return t.slice(0, 600);
+  const m = t.match(/"recap"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (m) {
+    try {
+      return text(JSON.parse(`"${m[1]}"`), 600);
+    } catch {
+      /* fall through */
+    }
+  }
+  return "Couldn't read the AI's summary this time — tap Refresh to try again.";
 }
 
 export function validatePlan(json: Record<string, unknown>, input: PlanInput): LeadPlan {
