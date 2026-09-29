@@ -1,3 +1,4 @@
+import { cleanFormAnswer } from "@/lib/leads/answerText";
 import { parseBudget } from "@/lib/leads/budget";
 
 
@@ -99,15 +100,15 @@ export class FacebookLeadMappingService {
           phone = val;
         } else if (matchedRule.targetField === "expectedValue") {
           // Keep the lead's own words ("₹40–75 lakhs") — the number is our estimate of it.
-          customData.budget = val;
+          customData.budget = cleanFormAnswer(val);
           expectedValue = parseBudget(val) ?? expectedValue;
         } else if (matchedRule.targetField === "customData") {
           const key = matchedRule.customDataKey || field.name;
-          customData[key] = val;
+          customData[key] = cleanFormAnswer(val);
         }
       } else {
         // Fallback unmapped form questions into customData JSONB
-        customData[field.name] = val;
+        customData[field.name] = cleanFormAnswer(val);
         // Custom budget questions ("approximate_budget?") still size the opportunity.
         if (expectedValue == null && /budget/i.test(field.name)) expectedValue = parseBudget(val);
       }

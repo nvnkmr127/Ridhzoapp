@@ -3,6 +3,7 @@
 // but stores the SAME rule shape, so one config + one editor drives both.
 
 import { parseBudget } from "./budget";
+import { cleanFormAnswer } from "./answerText";
 
 export interface SourceFieldMappingRule {
   // The raw field key as the source delivers it (Google column_id, etc.). Matched case-insensitively.
@@ -35,7 +36,7 @@ export function applySourceFieldMappings(
     if (!val) continue;
     const rule = rules.find((r) => r.facebookFieldKey.toLowerCase() === key.toLowerCase());
     if (!rule) {
-      out.customData[key] = val;
+      out.customData[key] = cleanFormAnswer(val);
       continue;
     }
     switch (rule.targetField) {
@@ -43,11 +44,11 @@ export function applySourceFieldMappings(
       case "email": out.email = val; break;
       case "phone": out.phone = val; break;
       case "expectedValue": {
-        out.customData.budget = val;
+        out.customData.budget = cleanFormAnswer(val);
         out.expectedValue = parseBudget(val) ?? out.expectedValue;
         break;
       }
-      case "customData": out.customData[rule.customDataKey || key] = val; break;
+      case "customData": out.customData[rule.customDataKey || key] = cleanFormAnswer(val); break;
     }
   }
   return out;

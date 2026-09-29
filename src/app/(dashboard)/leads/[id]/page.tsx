@@ -45,6 +45,8 @@ import { LeadSequencesCard } from "@/components/leads/LeadSequencesCard";
 import { LeadAiRecap } from "@/components/leads/LeadAiRecap";
 import type { RecapCache } from "@/lib/ai/leadAssist";
 import { visiblePlan } from "@/lib/ai/leadPlan";
+import { PreCallBrief } from "@/components/leads/PreCallBrief";
+import { preCallBrief } from "@/lib/leads/preCallBrief";
 import { LeadInsightsCard } from "@/components/leads/LeadInsightsCard";
 import { SectionCard } from "@/components/leads/SectionCard";
 import { SequenceService } from "@/domains/leads/sequenceService";
@@ -265,7 +267,8 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     .sort((a, b) => new Date(b.lastViewedAt!).getTime() - new Date(a.lastViewedAt!).getTime())[0];
 
   // Earliest still-scheduled meeting (listForLead is newest first).
-  const scheduledMeeting = leadMeetings.filter((mt) => mt.status === "scheduled").at(-1);
+  // A "scheduled" meeting whose time has passed was never closed out — it isn't upcoming.
+  const scheduledMeeting = leadMeetings.filter((mt) => mt.status === "scheduled" && new Date(mt.startAt).getTime() >= Date.now()).at(-1);
   const nextMeeting = scheduledMeeting
     ? { startAt: scheduledMeeting.startAt, durationMinutes: scheduledMeeting.durationMinutes, label: modeLabel(scheduledMeeting.mode) }
     : null;
@@ -281,6 +284,21 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     statusCategory,
     unansweredStreak: callStats.unansweredStreak,
     meeting: nextMeeting,
+  });
+  // "Brief me": last conversation, what's still unknown, what to do next — from what's already loaded.
+  const aiNext = savedRecap?.plan?.next && !savedRecap.dismissed?.includes(savedRecap.plan.next.id) ? savedRecap.plan.next : null;
+  const brief = preCallBrief({
+    activities,
+    messages: waMessages,
+    missing: [
+      ...leadFields.filter((f) => !f.value).map((f) => f.label),
+      ...(visibleCustomDefs as { key: string; label: string; required?: boolean }[])
+        .filter((d) => d.required && (cd[d.key] == null || cd[d.key] === ""))
+        .map((d) => d.label),
+    ],
+    next: aiNext ? { title: aiNext.title, reason: aiNext.reason } : { title: nba.label, reason: nba.reason },
+    upcomingMeeting: nextMeeting ? `${nextMeeting.label} · ${new Date(nextMeeting.startAt).toLocaleString("en-IN", { timeZone: orgFmt.timezone, dateStyle: "medium", timeStyle: "short" })}` : null,
+    now: new Date(),
   });
   // Change token the live NBA card polls against. Started before the profile reads so it's never
   // newer than what this render shows (at worst a change lands in between and costs one extra refresh).
@@ -342,6 +360,24 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <h2 className="break-words text-xl font-bold tracking-tight sm:text-2xl">{lead.name}</h2>
               <LeadStatusControl leadId={lead.id} status={lead.status} hasFollowUp={!!lead.nextFollowUpAt} className="h-8 w-auto min-w-[130px] text-xs" />
+              <PreCallBrief brief={brief} />
+              <LeadInsightsCard variant="chip"
+              score={lead.score}
+              customData={lead.customData}
+              leadInfo={{
+                status: lead.status,
+                phone: lead.phone,
+                email: lead.email,
+                company: lead.company,
+                lastContactedAt: lead.lastContactedAt,
+                nextFollowUpAt: lead.nextFollowUpAt,
+                statusCategory,
+                hasInboundMsg: inboundCount > 0,
+                contentViews: shares.reduce((n, sh) => n + sh.viewCount, 0),
+                hasFormAnswers: answers.length > 0,
+                ...callStats,
+              }}
+              />
               {stageName && (
                 <span className="text-xs text-muted-foreground lg:hidden" title="Pipeline stage — change it in Lead Management">
                   Stage: <span className="font-medium text-foreground">{stageName}</span>
@@ -494,26 +530,6 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             </div>
           )}
 
-          <div className={m("order-6")}>
-            <LeadInsightsCard
-              score={lead.score}
-              customData={lead.customData}
-              leadInfo={{
-                status: lead.status,
-                phone: lead.phone,
-                email: lead.email,
-                company: lead.company,
-                lastContactedAt: lead.lastContactedAt,
-                nextFollowUpAt: lead.nextFollowUpAt,
-                statusCategory,
-                hasInboundMsg: inboundCount > 0,
-                contentViews: shares.reduce((n, sh) => n + sh.viewCount, 0),
-                hasFormAnswers: answers.length > 0,
-                ...callStats,
-              }}
-            />
-          </div>
-
           <div className={m("order-7")}>
             <ShareContentCard leadId={lead.id} leadPhone={dialPhone} initialShares={shares} />
           </div>
@@ -521,71 +537,6 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           <div className={m("order-8")}>
             <ReengagementPlanCard leadId={lead.id} organizationId={organizationId} />
           </div>
-
-          {leadFields.length > 0 && (
-            <div className={m("order-9")}>
-              <SectionCard icon={ListChecks} title="Lead details">
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  {leadFields.map((f) => (
-                    <div key={f.key} className="min-w-0">
-                      <span className="block text-xs text-muted-foreground">{f.label}</span>
-                      {!f.value ? (
-                        <p className="font-medium text-amber-700 dark:text-amber-400">Not filled — required</p>
-                      ) : f.type === "url" && /^https?:\/\//i.test(f.value) ? (
-                        <a href={f.value} target="_blank" rel="noopener noreferrer nofollow" className="break-all font-medium underline underline-offset-2">{f.value}</a>
-                      ) : (
-                        <p className="break-words font-medium">{f.value}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </SectionCard>
-            </div>
-          )}
-
-          <div className={m("order-9")}>
-            <SectionCard icon={Radio} title="Lead Source">
-              <div className="space-y-3 text-sm">
-                <div>
-                  <span className="block text-xs text-muted-foreground">Source</span>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium">{sourceName}</p>
-                    {sourceType && (
-                      <Badge variant="secondary" className="text-xs font-normal capitalize">
-                        {sourceType}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-                {attribution.map(([label, value]) => (
-                  <div key={label}>
-                    <span className="block text-xs text-muted-foreground">{label}</span>
-                    <p className="break-words font-medium">{value}</p>
-                  </div>
-                ))}
-              </div>
-            </SectionCard>
-          </div>
-
-          {/* Hidden for reps when the workspace has no extra fields — they can't set them up anyway. */}
-          {(visibleCustomDefs.length > 0 || isFieldAdmin) && (
-            <div className={m("order-10")}>
-              <SectionCard icon={Braces} title="More details">
-                {(() => {
-                  const activeCustomDefs = visibleCustomDefs.filter(
-                    (f: any) => leadFieldConfig[f.key as keyof typeof leadFieldConfig] !== "hidden"
-                  );
-                  return (
-                    <LeadCustomFields
-                      leadId={lead.id}
-                      initialData={(lead.customData as Record<string, unknown>) ?? {}}
-                      initialDefs={activeCustomDefs}
-                    />
-                  );
-                })()}
-              </SectionCard>
-            </div>
-          )}
         </div>
 
         {/* Right column (desktop): conversation & history */}
@@ -642,6 +593,75 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
 
           <div className={m("order-5")}>
             <LeadSequencesCard leadId={lead.id} availableSequences={availableSequences} initialEnrolled={enrolledSequences} whatsappMode={whatsappMode} />
+          </div>
+
+          {/* Reference cards sit under the conversation on desktop, so the left column stays short
+              (coaching + score) and the two columns end near each other. */}
+          <div className="contents lg:mt-6 lg:grid lg:grid-cols-2 lg:items-start lg:gap-6">
+          {leadFields.length > 0 && (
+            <div className={m("order-9")}>
+              <SectionCard icon={ListChecks} title="Lead details">
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  {leadFields.map((f) => (
+                    <div key={f.key} className="min-w-0">
+                      <span className="block text-xs text-muted-foreground">{f.label}</span>
+                      {!f.value ? (
+                        <p className="font-medium text-amber-700 dark:text-amber-400">Not filled — required</p>
+                      ) : f.type === "url" && /^https?:\/\//i.test(f.value) ? (
+                        <a href={f.value} target="_blank" rel="noopener noreferrer nofollow" className="break-all font-medium underline underline-offset-2">{f.value}</a>
+                      ) : (
+                        <p className="break-words font-medium">{f.value}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
+            </div>
+          )}
+
+          <div className={m("order-9")}>
+            <SectionCard icon={Radio} title="Lead Source">
+              <div className="space-y-3 text-sm">
+                <div>
+                  <span className="block text-xs text-muted-foreground">Source</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium">{sourceName}</p>
+                    {sourceType && (
+                      <Badge variant="secondary" className="text-xs font-normal capitalize">
+                        {sourceType}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                {attribution.map(([label, value]) => (
+                  <div key={label}>
+                    <span className="block text-xs text-muted-foreground">{label}</span>
+                    <p className="break-words font-medium">{value}</p>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          </div>
+
+          {/* Hidden for reps when the workspace has no extra fields — they can't set them up anyway. */}
+          {(visibleCustomDefs.length > 0 || isFieldAdmin) && (
+            <div className={`${m("order-10")} lg:col-span-2`}>
+              <SectionCard icon={Braces} title="More details">
+                {(() => {
+                  const activeCustomDefs = visibleCustomDefs.filter(
+                    (f: any) => leadFieldConfig[f.key as keyof typeof leadFieldConfig] !== "hidden"
+                  );
+                  return (
+                    <LeadCustomFields
+                      leadId={lead.id}
+                      initialData={(lead.customData as Record<string, unknown>) ?? {}}
+                      initialDefs={activeCustomDefs}
+                    />
+                  );
+                })()}
+              </SectionCard>
+            </div>
+          )}
           </div>
         </div>
       </div>

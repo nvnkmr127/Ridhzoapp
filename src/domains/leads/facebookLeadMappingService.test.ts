@@ -57,7 +57,8 @@ describe("FacebookLeadMappingService", () => {
       field_data: [{ name: "budget", values: ["₹40–75_lakhs_"] }],
     } as FacebookLeadDetails);
     expect(mapped.expectedValue).toBe(5_750_000);
-    expect(mapped.customData.budget).toBe("₹40–75_lakhs_");
+    // Meta sends multiple-choice answers as slugs; store them as readable text.
+    expect(mapped.customData.budget).toBe("₹40–75 lakhs");
   });
 
   it("routes a form question to a custom field key when a mapping rule is provided", () => {

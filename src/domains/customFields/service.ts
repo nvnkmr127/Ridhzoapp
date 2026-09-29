@@ -1,3 +1,4 @@
+import { matchOption } from "@/lib/leads/answerText";
 import { db } from "@/db";
 import { customFieldDefs, leads, leadSources, leadDistributionRules, automations, automationConditions } from "@/db/schema";
 import { and, asc, eq, max, sql } from "drizzle-orm";
@@ -349,16 +350,20 @@ export class CustomFieldService {
           break;
         }
         case "select":
-          if (options.length && !options.includes(String(raw))) throw new FieldValidationError(`${def.label} must be one of: ${options.join(", ")}`);
-          clean[def.key] = raw;
+          {
+            // Forms send "yes" for the option "Yes" — store the option as the workspace wrote it.
+            const hit = matchOption(options, raw);
+            if (options.length && hit === undefined) throw new FieldValidationError(`${def.label} must be one of: ${options.join(", ")}`);
+            clean[def.key] = hit ?? raw;
+          }
           break;
         case "multiselect": {
           const arr = Array.isArray(raw) ? raw.map(String) : String(raw).split(",").map((s) => s.trim()).filter(Boolean);
           if (options.length) {
-            const bad = arr.find((v) => !options.includes(v));
+            const bad = arr.find((v) => matchOption(options, v) === undefined);
             if (bad) throw new FieldValidationError(`${def.label} has an invalid option: ${bad}`);
           }
-          clean[def.key] = arr;
+          clean[def.key] = arr.map((v) => matchOption(options, v) ?? v);
           break;
         }
         default: // text, textarea

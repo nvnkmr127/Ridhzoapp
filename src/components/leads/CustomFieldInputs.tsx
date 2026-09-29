@@ -1,5 +1,6 @@
 "use client";
 
+import { matchOption } from "@/lib/leads/answerText";
 import * as React from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -47,7 +48,9 @@ export function CustomFieldInputs({
   if (visible.length === 0) return null;
 
   function renderField(f: CustomFieldDef) {
-    const val = String(values[f.key] ?? "");
+    // A stored "yes" still shows as the option "Yes" (older imports kept the form's raw casing).
+    const rawVal = String(values[f.key] ?? "");
+    const val = f.type === "select" ? (matchOption(f.options ?? [], rawVal) ?? rawVal) : rawVal;
     const req = f.required;
     const id = `cf-${f.key}`;
     return (
