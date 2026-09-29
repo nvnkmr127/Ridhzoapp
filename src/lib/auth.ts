@@ -190,7 +190,7 @@ export const authOptions: NextAuthOptions = {
         try {
           const parsed = z
             .object({
-              email: z.string().trim().email(),
+              email: z.string().trim().min(3), // an email or a phone number
               password: z.string().min(1),
             })
             .safeParse(credentials);
@@ -209,11 +209,8 @@ export const authOptions: NextAuthOptions = {
           ]);
           if (!byEmail.success || !byIp.success) throw new Error("RATE_LIMITED");
 
-          const [user] = await db
-            .select()
-            .from(users)
-            .where(and(eq(users.email, email), isNull(users.deletedAt)))
-            .limit(1);
+          const { findLoginUser } = await import("@/lib/auth/loginIdentifier");
+          const user = await findLoginUser(email);
 
           if (!user) return null;
 

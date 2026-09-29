@@ -26,6 +26,7 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 const publicCols = {
   id: users.id,
   email: users.email,
+  phone: users.phone,
   firstName: users.firstName,
   lastName: users.lastName,
   isActive: users.isActive,
@@ -47,9 +48,24 @@ export class UserService {
 
   static async create(
     organizationId: string,
-    input: { email: string; firstName?: string; lastName?: string; password: string; roleId: string },
+    input: { email?: string; phone?: string; firstName?: string; lastName?: string; password: string; roleId: string },
   ) {
-    const cleanEmail = input.email.trim().toLowerCase();
+    // Added by phone number: no email, so they get the same placeholder address a WhatsApp signup does
+    // (they sign in with the number — password or WhatsApp code).
+    const { normalizePhone } = await import("@/lib/leads/normalize");
+    const { orgDialCode } = await import("@/lib/leads/orgDialCode");
+    const { PHONE_EMAIL_DOMAIN } = await import("@/lib/auth/googleLink");
+    const phone = normalizePhone(input.phone, await orgDialCode(organizationId));
+    if (phone) {
+      const last = phone.replace(/\D/g, "").slice(-10);
+      const [taken] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(isNull(users.deletedAt), sql`right(regexp_replace(${users.phone}, '\D', '', 'g'), 10) = ${last}`))
+        .limit(1);
+      if (taken) throw new UserFacingError("A user with that phone number already exists.");
+    }
+    const cleanEmail = input.email?.trim().toLowerCase() || `${(phone ?? "").replace(/\D/g, "")}${PHONE_EMAIL_DOMAIN}`;
     const [existing] = await db
       .select({ id: users.id, organizationId: users.organizationId, deletedAt: users.deletedAt, firstName: users.firstName, lastName: users.lastName, roleId: users.roleId })
       .from(users)
@@ -83,6 +99,7 @@ export class UserService {
       .values({
         organizationId,
         email: cleanEmail,
+        phone,
         firstName: input.firstName,
         lastName: input.lastName,
         roleId: input.roleId,

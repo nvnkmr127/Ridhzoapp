@@ -25,7 +25,7 @@ const DEV_EMAIL = process.env.NEXT_PUBLIC_DEV_LOGIN_EMAIL || "admin@acme.com";
 const DEV_PASSWORD = process.env.NEXT_PUBLIC_DEV_LOGIN_PASSWORD || "password123";
 
 const loginSchema = z.object({
-  email: z.string().trim().email("Enter a valid email address"),
+  email: z.string().trim().min(3, "Enter your email or phone number"),
   password: z.string().min(1, "Enter your password"),
 });
 
@@ -337,11 +337,13 @@ export default function LoginPage() {
                 className="space-y-4"
               >
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="email">Email or phone</Label>
                   <Input
                     id="email"
-                    type="email"
-                    placeholder="m@example.com"
+                    type="text"
+                    inputMode="email"
+                    autoComplete="username"
+                    placeholder="m@example.com or 98765 43210"
                     {...form.register("email")}
                   />
                   {form.formState.errors.email && (

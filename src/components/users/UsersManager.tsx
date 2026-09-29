@@ -22,12 +22,15 @@ import { UserPlus, Plus, Trash2, Mail, MoreHorizontal, Pencil, Check, X, RotateC
 type User = {
   id: string;
   email: string;
+  phone?: string | null;
   firstName: string | null;
   lastName: string | null;
   isActive: boolean;
   roleId: string | null;
   teamId: string | null;
 };
+// Members added by phone number have a placeholder email — show their number instead.
+const contact = (u: { email: string; phone?: string | null }) => (u.email.endsWith("@phone.ridhzo.com") ? u.phone || u.email : u.email);
 type Team = { id: string; name: string };
 type Role = { id: string; name: string };
 // `link` is only present for invites created in this session whose email failed to send —
@@ -69,7 +72,7 @@ export function UsersManager({
   const [editingTeam, setEditingTeam] = React.useState<{ id: string; name: string } | null>(null);
   const [query, setQuery] = React.useState("");
   const [show, setShow] = React.useState<"all" | "active" | "inactive">("all");
-  const emptyForm = { firstName: "", lastName: "", email: "", password: "", roleId: defaultRoleId };
+  const emptyForm = { firstName: "", lastName: "", email: "", phone: "", password: "", roleId: defaultRoleId };
   const [form, setForm] = React.useState(emptyForm);
   const [saving, setSaving] = React.useState(false);
   const [inviteOpen, setInviteOpen] = React.useState(false);
@@ -200,8 +203,9 @@ export function UsersManager({
 
   async function create() {
     const trimmedEmail = form.email.trim();
-    if (!trimmedEmail) {
-      toast({ variant: "destructive", title: "Email required", description: "Please enter an email address." });
+    const trimmedPhone = form.phone.trim();
+    if (!trimmedEmail && trimmedPhone.replace(/\D/g, "").length < 7) {
+      toast({ variant: "destructive", title: "Email or phone required", description: "Enter an email address or a phone number they'll sign in with." });
       return;
     }
     if (form.password.length < 6) {
@@ -211,7 +215,8 @@ export function UsersManager({
     setSaving(true);
     try {
       const res = await createUserAction({
-        email: trimmedEmail,
+        email: trimmedEmail || undefined,
+        phone: trimmedPhone || undefined,
         firstName: form.firstName.trim() || undefined,
         lastName: form.lastName.trim() || undefined,
         password: form.password,
@@ -343,12 +348,13 @@ export function UsersManager({
               </Button>
             </div>
             <details className="text-sm">
-              <summary className="cursor-pointer text-muted-foreground">No email? Add them directly with a password you choose</summary>
+              <summary className="cursor-pointer text-muted-foreground">No email? Add them directly with a phone number and a password you choose</summary>
               <form onSubmit={(e) => { e.preventDefault(); create(); }} className="space-y-3 pt-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <Input placeholder="First name" aria-label="First name" value={form.firstName} onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))} />
                   <Input placeholder="Last name" aria-label="Last name" value={form.lastName} onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))} />
-                  <Input type="email" placeholder="Email (used to sign in)" aria-label="Email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
+                  <Input type="email" placeholder="Email (optional if you add a phone)" aria-label="Email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
+                  <Input type="tel" inputMode="tel" placeholder="Phone number (used to sign in)" aria-label="Phone number" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
                   <div>
                     <PasswordInput placeholder="Initial password (min 6 characters)" aria-label="Initial password" value={form.password}
                       onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} />
@@ -360,7 +366,7 @@ export function UsersManager({
                   </Select>
                 </div>
                 <div className="flex justify-end">
-                  <Button type="submit" variant="outline" disabled={saving || !form.email.trim() || !form.roleId} className="gap-2">
+                  <Button type="submit" variant="outline" disabled={saving || (!form.email.trim() && !form.phone.trim()) || !form.roleId} className="gap-2">
                     <UserPlus className="h-4 w-4" />{saving ? "Adding…" : "Add member"}
                   </Button>
                 </div>
@@ -379,11 +385,11 @@ export function UsersManager({
               <div key={u.id} className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium truncate">{fullName(u) || u.email}</span>
+                    <span className="font-medium truncate">{fullName(u) || contact(u)}</span>
                     {isSelf && <Badge variant="outline">You</Badge>}
                     {!u.isActive && <Badge variant="secondary">Deactivated</Badge>}
                   </div>
-                  {fullName(u) && <p className="text-sm text-muted-foreground truncate">{u.email}</p>}
+                  {fullName(u) && <p className="text-sm text-muted-foreground truncate">{contact(u)}</p>}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <Select value={u.roleId ?? ""} onValueChange={(v) => assignRole(u, v)} disabled={isSelf}>

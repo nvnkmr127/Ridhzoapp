@@ -35,18 +35,24 @@ function draftSystem(channel: "whatsapp" | "email", tone: keyof typeof TONES, la
     channel === "email"
       ? 'Return a short email as: first line "Subject: <subject>", then a blank line, then the body (under 120 words).'
       : "Return ONLY the WhatsApp message text (under 60 words) — no preamble, no quotes.";
+  const wrap = " Do not explain or think out loud: wrap the final message in <message></message> tags and write nothing outside them.";
   return (
     `You are helping a salesperson write the next ${channel === "email" ? "email" : "WhatsApp message"} to a lead. ` +
     `Tone: ${TONES[tone]}. ${lang} If the lead's latest message is unanswered, reply to it directly first (answer their question, acknowledge what they said) before anything else. Be specific to what the lead asked for (their form answers and messages) ` +
     "and to where the conversation is; don't repeat what was already sent. End with one clear next step. " +
     "Follow the business's emoji and sign-off preferences if given; otherwise no emojis unless natural. Use ONLY facts from the context — never invent prices, offers, dates or details. " +
-    shape
+    shape +
+    wrap
   );
 }
 
 // Models often wrap the message in quotes/code fences or add "Here's a draft:" — none of that should reach the send box.
-function cleanDraft(raw: string): string {
-  let t = raw.replace(/^```\w*\s*|\s*```$/g, "").trim();
+export function cleanDraft(raw: string): string {
+  // Some models think out loud in the reply. The message is inside <message> (an unclosed one at the
+  // end counts, for a reply cut off by the token limit); reasoning tags are dropped.
+  const noThink = raw.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, "");
+  const tagged = noThink.match(/<message>([\s\S]*?)(?:<\/message>|$)/gi)?.pop()?.replace(/^<message>|<\/message>$/gi, "");
+  let t = (tagged ?? noThink).replace(/^```\w*\s*|\s*```$/g, "").trim();
   t = t.replace(/^(?:here(?:'s| is)[^\n]*:|sure[^\n]*:)\s*\n+/i, "").trim();
   const q = t.match(/^["“]([\s\S]*)["”]$/);
   return (q ? q[1] : t).trim();
@@ -77,6 +83,12 @@ export async function draftReplyForLead(
   }
 
   const cleaned = cleanDraft(raw);
+  // Untagged reasoning ("Let me analyze…", "Wait, …") or an essay is not a message to send: better the
+  // plain starter than a wall of analysis in the send box.
+  if (!/<message>/i.test(raw) && (cleaned.split(/\s+/).length > (channel === "email" ? 220 : 110) || /^\s*(let me|wait,|okay,|first,? i)/im.test(cleaned))) {
+    await PlanService.refundAiCredit(organizationId);
+    return { ...fallback, ai: false };
+  }
   if (channel === "email") {
     const m = cleaned.match(/^\s*Subject:\s*(.+)\n+([\s\S]*)$/i);
     return m ? { subject: m[1].trim(), draft: m[2].trim(), ai: true } : { subject: fallback.subject, draft: cleaned, ai: true };

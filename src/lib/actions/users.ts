@@ -43,12 +43,13 @@ export async function listAllUsersAction() {
 }
 
 const createUserSchema = z.object({
-  email: z.string().trim().toLowerCase().email(),
+  email: z.string().trim().toLowerCase().email().optional().or(z.literal("").transform(() => undefined)),
+  phone: z.string().trim().max(30).optional(),
   firstName: z.string().trim().max(255).optional(),
   lastName: z.string().trim().max(255).optional(),
   password: z.string().min(6, "Password must be at least 6 characters"),
   roleId: z.guid({ message: "Pick a role for this person." }),
-});
+}).refine((v) => v.email || (v.phone && v.phone.replace(/\D/g, "").length >= 7), { message: "Enter an email or a phone number.", path: ["email"] });
 
 export async function createUserAction(input: z.infer<typeof createUserSchema>) {
   const { organizationId, userId } = await requirePermission("users.manage");
@@ -62,7 +63,7 @@ export async function createUserAction(input: z.infer<typeof createUserSchema>) 
   try {
     await PlanService.assertCanAddSeat(organizationId);
     const user = await UserService.create(organizationId, data);
-    await AuditService.log({ organizationId, userId, action: "user.create", entityType: "user", entityId: user.id, metadata: { email: data.email } });
+    await AuditService.log({ organizationId, userId, action: "user.create", entityType: "user", entityId: user.id, metadata: { email: data.email, phone: data.phone } });
     revalidatePath("/settings/users");
     revalidateTag("active-users");
     return ok(user);

@@ -4,10 +4,11 @@ import bcrypt from "bcryptjs";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { users } from "@/db/schema";
+import { findLoginUser } from "@/lib/auth/loginIdentifier";
 import { mobileSession } from "@/lib/mobileAuth";
 import { RateLimiter } from "@/lib/rate-limit";
 
-const schema = z.object({ email: z.string().email(), password: z.string().min(1) });
+const schema = z.object({ email: z.string().min(3), password: z.string().min(1) });
 
 // Native login: verify credentials (same bcrypt store as NextAuth) and return a bearer token.
 export async function POST(req: NextRequest) {
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid email or password format" }, { status: 422 });
   }
 
-  const [user] = await db.select().from(users).where(and(eq(users.email, parsed.data.email.trim().toLowerCase()), isNull(users.deletedAt))).limit(1);
+  const user = await findLoginUser(parsed.data.email);
   // Same generic error whether the email is unknown or the password is wrong — don't leak which.
   if (!user || !user.isActive || !user.organizationId) {
     return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
