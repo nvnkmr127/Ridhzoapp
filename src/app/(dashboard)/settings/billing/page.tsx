@@ -8,6 +8,7 @@ import { BillingService } from "@/domains/billing/service";
 import { BillingLifecycleService } from "@/domains/billing/lifecycleService";
 import { InvoiceService } from "@/domains/billing/invoiceService";
 import { PLAN_LIMITS } from "@/domains/billing/planService";
+import { trialExpired } from "@/domains/billing/planNames";
 import { isConfigured, yearlyAvailable } from "@/lib/billing/razorpay";
 import { BillingManager } from "@/components/settings/BillingManager";
 import { db } from "@/db";
@@ -28,7 +29,8 @@ export default async function BillingPage() {
     BillingService.subscriptionInfo(organizationId),
     InvoiceService.listForOrg(organizationId),
   ]);
-  const plan = billing?.plan ?? "free";
+  // An ended trial is Free even if the downgrade worker hasn't rewritten the row yet (see trialExpired).
+  const plan = billing && !trialExpired(billing) ? billing.plan ?? "free" : "free";
 
   return (
     <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6 max-w-5xl">

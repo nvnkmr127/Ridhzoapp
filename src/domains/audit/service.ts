@@ -4,6 +4,7 @@ import { and, desc, eq, lt, or } from "drizzle-orm";
 import { logError } from "@/lib/log";
 
 const DEFAULT_LIMIT = 100;
+const SYSTEM_USER = "00000000-0000-0000-0000-000000000000"; // not a real user row — FK would reject it
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class AuditService {
@@ -23,7 +24,7 @@ export class AuditService {
       // in list() below still has a chance to resolve it for older behavior.
       let actorName: string | null = null;
       let actorEmail: string | null = null;
-      if (input.userId) {
+      if (input.userId && input.userId !== SYSTEM_USER) {
         const [u] = await db
           .select({ firstName: users.firstName, lastName: users.lastName, email: users.email })
           .from(users)
@@ -40,7 +41,7 @@ export class AuditService {
       const textRef = input.entityId && !UUID.test(input.entityId) ? input.entityId : null;
       await db.insert(auditLogs).values({
         organizationId: input.organizationId,
-        userId: input.userId ?? null,
+        userId: input.userId && input.userId !== SYSTEM_USER ? input.userId : null,
         actorName,
         actorEmail,
         action: input.action,

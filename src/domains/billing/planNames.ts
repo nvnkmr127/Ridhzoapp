@@ -21,11 +21,28 @@ export function canonicalPlan(plan: string | null | undefined): PlanName {
 
 export const isPaidPlan = (plan: string | null | undefined) => canonicalPlan(plan) !== "free";
 
-// Actually paying (counts as revenue): a paid plan, active, not given free by an admin, not in a trial.
-export function isPayingOrg(
-  org: { plan: string | null; planStatus?: string | null; complimentary?: number | null; trialEndsAt?: Date | string | null },
-  now = Date.now(),
-): boolean {
+type PlanOrg = { plan: string | null; planStatus?: string | null; complimentary?: number | null; trialEndsAt?: Date | string | null };
+
+// Payment clears trialEndsAt, so a set one always means "on a trial". Once it has passed the org is
+// Free — immediately, not only after the hourly trial-downgrade worker rewrites the row (a late or
+// stopped worker used to leave expired trials on Starter and counted as paying).
+export const trialExpired = (org: Pick<PlanOrg, "trialEndsAt">, now = Date.now()) =>
+  !!org.trialEndsAt && new Date(org.trialEndsAt).getTime() <= now;
+
+export const effectivePlan = (org: PlanOrg, now = Date.now()): PlanName => (trialExpired(org, now) ? "free" : canonicalPlan(org.plan));
+
+// Actually paying (counts as revenue): a paid plan, active, not given free by an admin, not on a trial.
+export function isPayingOrg(org: PlanOrg): boolean {
   if (!isPaidPlan(org.plan) || org.planStatus !== "active" || org.complimentary === 1) return false;
-  return !(org.trialEndsAt && new Date(org.trialEndsAt).getTime() > now);
+  return !org.trialEndsAt;
+}
+
+// Admin plan pickers: which option shows as current. "<plan>" alone means "free for client" (a
+// complimentary grant) — only complimentary orgs may show it, or every trial looks like a freebie.
+export function adminPlanValue(org: PlanOrg, now = Date.now()): string {
+  const plan = effectivePlan(org, now);
+  if (plan === "free") return "free";
+  if (org.complimentary === 1) return plan;
+  if (org.trialEndsAt) return `${plan}_trial`;
+  return org.planStatus === "active" ? `${plan}_paid` : `${plan}_unpaid`;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { canonicalPlan } from "@/domains/billing/planNames";
+import { adminPlanValue } from "@/domains/billing/planNames";
 import * as React from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -111,7 +111,7 @@ export function TenantsTab({ initial = [] }: PlatformConsoleProps) {
       setOrgs((s) => s.map((o) => (o.id === org.id ? { ...o, plan: org.plan } : o)));
       toast({ variant: "destructive", title: "Couldn't change plan", description: res.message });
     } else {
-      setOrgs((s) => s.map((o) => (o.id === org.id ? { ...o, plan: cleanPlan, trialEndsAt: res.data.trialEndsAt } : o)));
+      setOrgs((s) => s.map((o) => (o.id === org.id ? { ...o, plan: cleanPlan, trialEndsAt: res.data.trialEndsAt, complimentary: res.data.complimentary ? 1 : 0 } : o)));
       toast({ title: isTrial ? `14-Day ${cleanPlan} trial activated` : `Plan set to ${cleanPlan}` });
     }
   }
@@ -368,16 +368,21 @@ export function TenantsTab({ initial = [] }: PlatformConsoleProps) {
                       <td className="px-4 py-3 text-right tabular-nums">{o.leadCount}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <Select value={canonicalPlan(o.plan)} onValueChange={(v) => changePlan(o, v)}>
-                            <SelectTrigger className="h-8 w-24 text-xs"><SelectValue /></SelectTrigger>
+                          <Select value={adminPlanValue(o)} onValueChange={(v) => changePlan(o, v)}>
+                            <SelectTrigger className="h-8 w-36 text-xs"><SelectValue /></SelectTrigger>
                             <SelectContent>
                               {PLANS.map((p) => (
                                 <SelectItem key={p} value={p} className="capitalize text-xs">
                                   {p === "free" ? "free" : `${p} (free for client)`}
                                 </SelectItem>
                               ))}
-                              <SelectItem value="starter_trial" className="text-xs text-amber-600 font-medium">Starter (14d)</SelectItem>
-                              <SelectItem value="unlimited_trial" className="text-xs text-amber-600 font-medium">Unlimited (14d)</SelectItem>
+                              <SelectItem value="starter_trial" className="text-xs text-amber-600 font-medium">Starter trial (14d)</SelectItem>
+                              <SelectItem value="unlimited_trial" className="text-xs text-amber-600 font-medium">Unlimited trial (14d)</SelectItem>
+                              {/* Display-only: the current state of a paying org. Not settable from here. */}
+                              {PLANS.filter((p) => p !== "free").flatMap((p) => [
+                                <SelectItem key={`${p}_paid`} value={`${p}_paid`} disabled className="capitalize text-xs">{p} (paying)</SelectItem>,
+                                <SelectItem key={`${p}_unpaid`} value={`${p}_unpaid`} disabled className="capitalize text-xs text-destructive">{p} (payment due)</SelectItem>,
+                              ])}
                             </SelectContent>
                           </Select>
                           {o.trialEndsAt && new Date(o.trialEndsAt).getTime() > Date.now() && (

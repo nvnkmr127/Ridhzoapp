@@ -1,3 +1,4 @@
+import { trialExpired } from "./planNames";
 import { db } from "@/db";
 import { PLAN_LIMITS } from "./planService";
 import { organizations, users, roles } from "@/db/schema";
@@ -72,7 +73,9 @@ export class BillingLifecycleService {
     }
 
     const plan = org.plan ?? "free";
-    if (plan === "free") {
+    // An ended trial is Free now, even before the hourly worker downgrades the row (planStatus is
+    // still "active" from signup, so it would otherwise fall through to "paid" below).
+    if (plan === "free" || trialExpired(org, now)) {
       return { status: "free", daysRemainingInGrace: 0 };
     }
 
@@ -488,7 +491,7 @@ export class BillingLifecycleService {
     for (const org of ended) {
       await AuditService.log({
         organizationId: org.id,
-        userId: "00000000-0000-0000-0000-000000000000",
+        userId: null, // system
         action: "billing.complimentary_ended",
         entityType: "organization",
         entityId: org.id,
@@ -560,7 +563,7 @@ export class BillingLifecycleService {
 
       await AuditService.log({
         organizationId: org.id,
-        userId: "00000000-0000-0000-0000-000000000000",
+        userId: null, // system
         action: "billing.trial_expired_downgrade",
         entityType: "organization",
         entityId: org.id,

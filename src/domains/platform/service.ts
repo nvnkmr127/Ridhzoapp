@@ -61,6 +61,7 @@ export interface OrgSummary {
   customSeats?: number | null;
   attribution?: import("./attributionService").TenantAttribution | null;
   trialEndsAt?: string | null;
+  complimentary?: number;
   createdAt: string;
 }
 
@@ -293,6 +294,7 @@ export class PlatformService {
       customSeats: overrides[o.id] ?? null,
       attribution: attributions[o.id] ?? null,
       trialEndsAt: o.trialEndsAt ? new Date(o.trialEndsAt).toISOString() : null,
+      complimentary: o.complimentary ?? 0,
       createdAt: o.createdAt ? new Date(o.createdAt).toISOString() : new Date().toISOString(),
     }));
   }

@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { users, leads, invitations, organizations, automations, sequences, leadSources } from "@/db/schema";
 import { and, asc, count, eq, gt, isNull, sql } from "drizzle-orm";
 import { PlatformConfigService } from "@/domains/platform/configService";
-import { canonicalPlan } from "./planNames";
+import { canonicalPlan, trialExpired } from "./planNames";
 
 // Per-plan ceilings. Infinity = unlimited. Enforcement lives here; charging (Stripe) is separate
 // and needs external keys — the plan column is set by that flow, which isn't wired yet.
@@ -21,7 +21,8 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
   unlimited: { seats: Infinity, leads: Infinity, automations: Infinity, sequences: Infinity, sources: Infinity, aiCredits: 2_000, aiAutoTag: true, branding: false, price: "₹449 / mo", yearlyPrice: "₹4,490 / yr", description: "Unlimited leads, seats & full access" },
 };
 
-// New workspaces start on a Starter trial; the trial-downgrade worker reverts them to Free after.
+// New workspaces start on a Starter trial. Limits treat it as Free the moment it ends (trialExpired);
+// the hourly trial-downgrade worker then rewrites the row.
 export const SIGNUP_TRIAL_DAYS = 14;
 export function signupTrial() {
   return { plan: "starter", trialEndsAt: new Date(Date.now() + SIGNUP_TRIAL_DAYS * 86_400_000) };
@@ -46,12 +47,12 @@ export class PlanService {
   static async plan(organizationId: string) {
     try {
       const res = await db
-        .select({ plan: organizations.plan, planStatus: organizations.planStatus })
+        .select({ plan: organizations.plan, planStatus: organizations.planStatus, trialEndsAt: organizations.trialEndsAt })
         .from(organizations)
         .where(eq(organizations.id, organizationId))
         .limit(1);
       const org = Array.isArray(res) ? res[0] : res;
-      if (!org) return "free";
+      if (!org || trialExpired(org)) return "free";
       if (org.planStatus && org.planStatus !== "active") {
         const { BillingLifecycleService } = await import("./lifecycleService");
         const lifecycle = await BillingLifecycleService.getLifecycle(organizationId);

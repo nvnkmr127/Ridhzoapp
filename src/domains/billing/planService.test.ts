@@ -30,6 +30,12 @@ describe("PlanService.assertCanAddSeat", () => {
     await expect(PlanService.assertCanAddSeat("org")).resolves.toBeUndefined();
   });
 
+  it("an ended trial gets free limits even before the downgrade worker runs", async () => {
+    const ended = new Date(Date.now() - 60_000);
+    queueResults([[{ plan: "starter", planStatus: "active", trialEndsAt: ended }], [{ n: 1 }], [{ n: 0 }]]); // free = 1 seat, full
+    await expect(PlanService.assertCanAddSeat("org")).rejects.toThrow(/1 seats/);
+  });
+
   it("never blocks an unlimited plan", async () => {
     queueResults([[{ plan: "unlimited", planStatus: "active" }]]); // Infinity seats — returns before counting
     await expect(PlanService.assertCanAddSeat("org")).resolves.toBeUndefined();

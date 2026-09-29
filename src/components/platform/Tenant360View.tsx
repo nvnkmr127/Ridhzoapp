@@ -36,6 +36,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { adminPlanValue } from "@/domains/billing/planNames";
 import { useToast } from "@/hooks/use-toast";
 import type { Tenant360Data } from "@/domains/platform/service";
 import {
@@ -559,11 +560,11 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
                 <Download className="h-3.5 w-3.5" /> {exportingDossier ? "Exporting..." : "Export"}
               </Button>
               <Select
-                value={PLANS.includes(org.plan as any) ? org.plan : "free"}
+                value={adminPlanValue(org as Parameters<typeof adminPlanValue>[0])}
                 onValueChange={(val) => {
-                  if (val === "pro_trial") {
+                  if (val === "starter_trial") {
                     handleChangePlan("starter", 14);
-                  } else if (val === "business_trial") {
+                  } else if (val === "unlimited_trial") {
                     handleChangePlan("unlimited", 14);
                   } else if (val === "starter" || val === "unlimited") {
                     // A paid plan without payment is a free (complimentary) grant — ask how long and why.
@@ -576,7 +577,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
                 }}
                 disabled={busyAction === "plan"}
               >
-                <SelectTrigger className="h-8 w-32 text-xs">
+                <SelectTrigger className="h-8 w-44 text-xs">
                   <SelectValue placeholder="Plan" />
                 </SelectTrigger>
                 <SelectContent>
@@ -585,12 +586,17 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
                       {p === "free" ? "Free tier" : `${p} — free for client`}
                     </SelectItem>
                   ))}
-                  <SelectItem value="pro_trial" className="text-xs text-amber-600 font-medium">
+                  <SelectItem value="starter_trial" className="text-xs text-amber-600 font-medium">
                     Starter (14d Trial)
                   </SelectItem>
-                  <SelectItem value="business_trial" className="text-xs text-amber-600 font-medium">
+                  <SelectItem value="unlimited_trial" className="text-xs text-amber-600 font-medium">
                     Unlimited (14d Trial)
                   </SelectItem>
+                  {/* Display-only: the current state of a paying org. Not settable from here. */}
+                  {PLANS.filter((p) => p !== "free").flatMap((p) => [
+                    <SelectItem key={`${p}_paid`} value={`${p}_paid`} disabled className="capitalize text-xs">{p} — paying</SelectItem>,
+                    <SelectItem key={`${p}_unpaid`} value={`${p}_unpaid`} disabled className="capitalize text-xs text-destructive">{p} — payment due</SelectItem>,
+                  ])}
                 </SelectContent>
               </Select>
               <Button

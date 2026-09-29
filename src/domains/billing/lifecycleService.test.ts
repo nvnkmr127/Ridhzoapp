@@ -34,6 +34,14 @@ describe("BillingLifecycleService.computeStatus", () => {
     expect(daysRemainingInGrace).toBe(0);
   });
 
+  it("an ended trial is 'free', not 'paid', before the worker downgrades it", () => {
+    const now = Date.now();
+    const live = BillingLifecycleService.computeStatus({ plan: "starter", planStatus: "active", trialEndsAt: new Date(now + 86_400_000) }, {});
+    const ended = BillingLifecycleService.computeStatus({ plan: "starter", planStatus: "active", trialEndsAt: new Date(now - 60_000) }, {});
+    expect(live.status).toBe("trial");
+    expect(ended.status).toBe("free");
+  });
+
   it("returns 'paid' for an active paid subscription", () => {
     const { status, daysRemainingInGrace } = BillingLifecycleService.computeStatus(
       { plan: "pro", planStatus: "active" },
