@@ -25,7 +25,8 @@ const enrichmentSchema = z.object({
     .string()
     .trim()
     .max(100)
-    .refine((v) => v === "" || /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(v), "Header names can't contain spaces or symbols like : or @"),
+    .refine((v) => v === "" || /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(v), "Header names can't contain spaces or symbols like : or @")
+    .refine((v) => !/^(content-type|content-length|host|transfer-encoding|connection)$/i.test(v), "That header is set by us and can't be overridden"),
   authValue: z.string().max(1024).optional(),
   enabled: z.boolean(),
 });
@@ -116,6 +117,19 @@ export async function updateCapiAction(input: z.input<typeof capiSchema>) {
   const parsed = capiSchema.safeParse(input);
   if (!parsed.success) return fail("VALIDATION", "Please fix the highlighted fields.", zodFieldErrors(parsed.error));
   const d = parsed.data;
+  // Prove the pixel + token work before saying "on" — otherwise every later event fails silently.
+  if (d.enabled || d.accessToken) {
+    const token = d.accessToken || (await TenantIntegrationsService.getSavedSecrets(organizationId)).capiAccessToken;
+    if (d.pixelId && token) {
+      const { verifyCapiCredentials } = await import("@/lib/integrations/metaCapi");
+      const check = await verifyCapiCredentials({ pixelId: d.pixelId, accessToken: token });
+      if (!check.ok) {
+        console.error(`[capi] credential check failed org=${organizationId} http=${check.status ?? "-"} code=${check.code ?? "-"} trace=${check.fbtraceId ?? "-"}: ${check.error}`);
+        const msg = `Meta rejected these credentials: ${check.error}`;
+        return fail("VALIDATION", msg, check.code === 190 || check.code === 102 ? { accessToken: msg } : { pixelId: msg });
+      }
+    }
+  }
   try {
     const view = await TenantIntegrationsService.upsertCapi(organizationId, {
       enabled: d.enabled,
@@ -141,13 +155,18 @@ export async function disconnectCapiAction() {
   }
 }
 
-const stageMapSchema = z.record(z.string().max(64), z.string().max(100));
+const stageMapSchema = z.record(z.string().max(64), z.string().trim().max(100).regex(/^[\w .-]*$/, "Event names can only use letters, numbers, spaces, _ . -"));
 
 /** Save the tenant's Conversion Leads status → Meta stage-event map. Empty = report no stages. */
 export async function updateCapiStageMapAction(map: Record<string, string>) {
   const { organizationId } = await requirePermission("settings.manage");
   const parsed = stageMapSchema.safeParse(map);
-  if (!parsed.success) return fail("VALIDATION", "Invalid stage mapping.");
+  if (!parsed.success) return fail("VALIDATION", parsed.error.issues[0]?.message || "Invalid stage mapping.");
+  // Only real statuses of this workspace (or a status category, used as a fallback) can be mapped.
+  const { CustomStatusSchemaService } = await import("@/domains/leads/customStatusSchemaService");
+  const valid = new Set(["won", "lost", ...(await CustomStatusSchemaService.getTenantStatusSchema(organizationId).catch(() => [])).map((x) => x.key.toLowerCase())]);
+  const unknown = Object.keys(parsed.data).filter((k) => !valid.has(k.trim().toLowerCase()));
+  if (unknown.length) return fail("VALIDATION", `Unknown status: ${unknown.join(", ")}.`);
   try {
     const view = await TenantIntegrationsService.upsertCapiStageMap(organizationId, parsed.data);
     revalidatePath(PAGE);
@@ -188,6 +207,59 @@ export async function rotateInboundTokenAction() {
   const { organizationId } = await requirePermission("settings.manage");
   try {
     const view = await TenantIntegrationsService.rotateInboundToken(organizationId);
+    revalidatePath(PAGE);
+    return ok(view);
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+/** Enrich existing leads (up to 500 per click) that were created before enrichment was turned on. */
+export async function backfillEnrichmentAction() {
+  const { organizationId } = await requirePermission("settings.manage");
+  const config = await TenantIntegrationsService.getEnrichmentConfig(organizationId);
+  if (!config) return fail("VALIDATION", "Turn on enrichment (URL and API key) first.");
+  try {
+    const { db } = await import("@/db");
+    const { leads } = await import("@/db/schema");
+    const { and, eq, isNull, isNotNull, sql, desc } = await import("drizzle-orm");
+    const rows = await db
+      .select({ id: leads.id })
+      .from(leads)
+      .where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt), isNotNull(leads.email), sql`${leads.email} <> ''`, sql`coalesce(${leads.customData}, '{}'::jsonb) -> '_enrichment' is null`))
+      .orderBy(desc(leads.createdAt))
+      .limit(500);
+    const { enrichmentQueue } = await import("@/lib/jobs/workers/enrichmentWorker");
+    await enrichmentQueue.addBulk(rows.map((r) => ({ name: `enrich-${r.id}`, data: { leadId: r.id }, opts: { jobId: `enrich-${r.id}` } })));
+    return ok({ queued: rows.length });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+/** Finish "Connect with Facebook": use the token stashed by the OAuth callback for the dataset the user picked. */
+export async function connectCapiDatasetAction(pixelId: string) {
+  const { organizationId, userId } = await requirePermission("settings.manage");
+  const id = z.string().trim().regex(/^\d+$/).safeParse(pixelId);
+  if (!id.success) return fail("VALIDATION", "Pick a dataset.");
+  const { getPendingCapi, clearPendingCapi } = await import("@/lib/leads/fbPendingStore");
+  const pending = await getPendingCapi(userId);
+  if (!pending) return fail("VALIDATION", "Your Facebook session expired. Click Connect with Facebook again.");
+  if (!pending.datasets.some((d) => d.pixelId === id.data)) return fail("VALIDATION", "That dataset isn't on your Facebook account.");
+
+  const { verifyCapiCredentials } = await import("@/lib/integrations/metaCapi");
+  const check = await verifyCapiCredentials({ pixelId: id.data, accessToken: pending.userToken });
+  if (!check.ok) {
+    console.error(`[capi] facebook-login credential check failed org=${organizationId} code=${check.code ?? "-"} trace=${check.fbtraceId ?? "-"}: ${check.error}`);
+    return fail("VALIDATION", `Meta rejected this dataset: ${check.error}`);
+  }
+  try {
+    const view = await TenantIntegrationsService.connectCapiViaFacebook(organizationId, {
+      pixelId: id.data,
+      accessToken: pending.userToken,
+      expiresAt: pending.expiresAt ? new Date(pending.expiresAt) : null,
+    });
+    await clearPendingCapi(userId);
     revalidatePath(PAGE);
     return ok(view);
   } catch (e) {

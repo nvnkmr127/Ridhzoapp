@@ -8,16 +8,19 @@ import { POST } from "@/app/api/webhooks/email/route";
 vi.mock("@/lib/rbac", () => ({
   requirePermission: vi.fn().mockResolvedValue({ organizationId: "org-1", userId: "user-1" }),
 }));
+vi.mock("@/lib/integrations/metaCapi", () => ({ verifyCapiCredentials: vi.fn().mockResolvedValue({ ok: true }) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/domains/organizations/tenantIntegrationsService", () => ({
   DEFAULT_AUTH_HEADER: "Authorization",
   TenantIntegrationsService: {
     upsertCapi: vi.fn().mockResolvedValue({}),
+    getSavedSecrets: vi.fn().mockResolvedValue({ capiAccessToken: "tok" }),
     upsertEnrichment: vi.fn().mockResolvedValue({}),
     resolveInboundToken: vi.fn().mockResolvedValue({ organizationId: "org-1" }),
   },
 }));
-vi.mock("@/domains/leads/emailInboundService", () => ({
+vi.mock("@/domains/leads/emailInboundService", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/domains/leads/emailInboundService")>()),
   EmailInboundService: { recordInbound: vi.fn().mockResolvedValue({ matched: false }) },
 }));
 vi.mock("@/domains/leads/inboundIntentService", () => ({ InboundIntentService: { classifyAndTag: vi.fn() } }));
@@ -28,6 +31,14 @@ describe("lead intelligence settings: blank fields clear", () => {
   it("a blank test event code is saved as null (events go live again)", async () => {
     await updateCapiAction({ pixelId: "123", testEventCode: "", enabled: true });
     expect(TenantIntegrationsService.upsertCapi).toHaveBeenCalledWith("org-1", expect.objectContaining({ testEventCode: null }));
+  });
+
+  it("refuses to enable when Meta rejects the credentials", async () => {
+    const { verifyCapiCredentials } = await import("@/lib/integrations/metaCapi");
+    vi.mocked(verifyCapiCredentials).mockResolvedValueOnce({ ok: false, code: 190, error: "Invalid OAuth access token" });
+    const res = await updateCapiAction({ pixelId: "123", testEventCode: "", enabled: true });
+    expect(res.ok).toBe(false);
+    expect(TenantIntegrationsService.upsertCapi).not.toHaveBeenCalled();
   });
 
   it("a blank provider URL is saved as null", async () => {

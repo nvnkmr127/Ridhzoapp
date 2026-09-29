@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { EmailInboundService } from "@/domains/leads/emailInboundService";
+import { EmailInboundService, isAutoReply, htmlToText } from "@/domains/leads/emailInboundService";
 import { InboundIntentService } from "@/domains/leads/inboundIntentService";
 import { TenantIntegrationsService } from "@/domains/organizations/tenantIntegrationsService";
 import { logError } from "@/lib/log";
+import { keepAlive } from "@/lib/keepAlive";
 
 // Inbound email webhook. Postmark, Mailgun, Resend and SendGrid can POST parsed inbound mail to a
 // URL — point yours here. Body format and field names vary between providers, so we accept JSON or
@@ -46,25 +47,38 @@ export async function POST(req: NextRequest) {
 
   const from = str("from", "sender", "fromEmail", "From");
   const subject = str("subject", "Subject");
-  const text = str("stripped-text", "text", "body-plain", "body", "plain", "TextBody");
+  let text = str("stripped-text", "text", "body-plain", "body", "plain", "TextBody");
+  if (!text) text = htmlToText(str("stripped-html", "html", "body-html", "HtmlBody", "Html")).trim(); // HTML-only mail
+  const messageId = str("MessageID", "Message-Id", "message-id", "message_id", "messageId");
 
   if (!from) return NextResponse.json({ ok: true, matched: false });
 
-  // Best-effort; always 200 so the provider doesn't retry-storm on a single bad row. Matching is
-  // scoped to the token's org so a reply can only land on that tenant's leads.
+  if (isAutoReply({ from, subject, autoSubmitted: str("Auto-Submitted", "auto-submitted", "X-Autoreply") })) {
+    return NextResponse.json({ ok: true, matched: false, ignored: "auto-reply" });
+  }
+
+  // Matching is scoped to the token's org so a reply can only land on that tenant's leads. A real
+  // failure returns 500 so the provider retries (recordInbound is idempotent on Message-ID/content);
+  // "no lead with that address" is a normal 200.
   try {
     const res = await EmailInboundService.recordInbound({
       from,
       subject,
       body: text,
+      messageId,
       organizationId: resolved.organizationId,
     });
-    if (res.matched && res.leadId) {
-      await InboundIntentService.classifyAndTag(res.leadId, `${subject}\n${text}`, resolved.organizationId);
+    // Classify after responding: an LLM call must not hold the provider's request open (timeouts
+    // make providers retry).
+    if (res.matched && res.leadId && !res.duplicate) {
+      keepAlive(
+        InboundIntentService.classifyAndTag(res.leadId, `${subject}\n${text}`, resolved.organizationId),
+        "inbound email intent",
+      );
     }
-    return NextResponse.json({ ok: true, matched: res.matched });
+    return NextResponse.json({ ok: true, matched: res.matched, ...(res.duplicate ? { duplicate: true } : {}) });
   } catch (e) {
     logError("webhooks.email", e, { organizationId: resolved.organizationId });
-    return NextResponse.json({ ok: true, matched: false });
+    return NextResponse.json({ ok: false, error: "temporary failure" }, { status: 500 });
   }
 }

@@ -48,8 +48,8 @@ export class InboundIntentService {
       if (organizationId) {
         await TagService.addToLead(leadId, `intent:${intent}`, organizationId).catch(() => {});
       }
-    } catch {
-      /* best-effort classification */
+    } catch (e) {
+      console.error("[inbound-intent] classification failed", leadId, e); // best-effort, but never invisible
     }
   }
 }

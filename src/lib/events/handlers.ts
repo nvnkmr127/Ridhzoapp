@@ -126,6 +126,16 @@ eventBus.on('lead.created', async (p) => {
   if (await DedupService.autoMergeOnCreate(p.leadId).catch(() => false)) return;
 
   dispatchTrigger('lead.created', p);
+  // Meta CAPI + enrichment run first and isolated: a failing activity note / webhook below must not
+  // cost the conversion event. (track never throws; it logs and records its own failures.)
+  if (p.source !== 'import') {
+    const { MetaCapiService } = await import("@/domains/leads/metaCapiService");
+    keepAlive(MetaCapiService.track(p.leadId, 'Lead'), "meta capi Lead");
+  }
+  // Enrich in the background (no-op when no provider is configured). jobId = leadId dedupes a
+  // double-fire, and the worker itself is a no-op if enrichment is off, so this is always safe.
+  // Bulk imports are skipped so a big CSV can't burn through a paid provider; use "Enrich existing leads".
+  if (p.source !== 'import') await enrichmentQueue.add(`enrich-${p.leadId}`, { leadId: p.leadId }, { jobId: `enrich-${p.leadId}` }).catch((e) => console.error("[enrichment] enqueue failed", p.leadId, e));
   // Say where it actually came from — ad/webhook arrivals carry a source, hand-entered ones a user.
   const [src] = p.sourceId
     ? await db.select({ name: leadSources.name }).from(leadSources).where(eq(leadSources.id, p.sourceId)).limit(1).catch(() => [])
@@ -137,12 +147,6 @@ eventBus.on('lead.created', async (p) => {
   // Isolated so a distribution failure can't skip CAPI/enrichment below.
   const { LeadDistributionService } = await import("@/domains/integrations/leadDistributionService");
   await LeadDistributionService.distribute(p.leadId).catch((e) => console.error("[distribution] failed", p.leadId, e));
-  // Meta CAPI: report the lead capture so ad campaigns can optimise (no-op unless configured).
-  const { MetaCapiService } = await import("@/domains/leads/metaCapiService");
-  if (p.source !== 'import') await MetaCapiService.track(p.leadId, 'Lead');
-  // Enrich in the background (no-op when no provider is configured). jobId = leadId dedupes a
-  // double-fire, and the worker itself is a no-op if enrichment is off, so this is always safe.
-  await enrichmentQueue.add(`enrich-${p.leadId}`, { leadId: p.leadId }, { jobId: `enrich-${p.leadId}` });
 });
 
 // A call was logged (by hand, after tap-to-call, or from the phone's call log). Automations read the
@@ -220,29 +224,26 @@ async function statusCategoryForLead(leadId: string, status: string) {
 
 eventBus.on('lead.status_changed', async (p) => {
   dispatchTrigger('lead.status_changed', p);
+  // Meta CAPI first and isolated: the resolved category and the conversion events must not depend on
+  // the activity note, scoring or webhook below succeeding.
+  const category = p.newStatus ? await statusCategoryForLead(p.leadId, p.newStatus).catch((e) => { console.error("[capi] status category lookup failed", p.leadId, e); return null; }) : null;
+  if (p.newStatus) {
+    const { MetaCapiService } = await import("@/domains/leads/metaCapiService");
+    // A won lead is the conversion worth optimising toward (hashed-PII Purchase event) …
+    if (category === 'won') keepAlive(MetaCapiService.track(p.leadId, 'Purchase'), "meta capi Purchase");
+    // … and Conversion Leads gets the CRM status by leadgen id (no-op for unmapped statuses,
+    // non-Meta leads and unconfigured tenants).
+    keepAlive(MetaCapiService.trackCrmStage(p.leadId, p.newStatus, category), "meta capi stage");
+  }
   await ActivityService.addActivity({ leadId: p.leadId, userId: p.userId, type: 'note', content: `Status changed from ${p.oldStatus} to ${p.newStatus}.` });
   const { ScoringService } = await import("@/domains/leads/scoringService");
   keepAlive(ScoringService.updateLeadScore(p.leadId), "lead score");
-  // Resolve by status CATEGORY so custom statuses ("Closed – paid", "Not interested") behave like
-  // won/lost — literal keys missed them, so their sequences kept messaging a decided lead.
-  const category = p.newStatus ? await statusCategoryForLead(p.leadId, p.newStatus) : null;
   // Stop any running drip once the lead is resolved — no more sequence messages after a decision.
   if (category === 'won' || category === 'lost' || category === 'unqualified') {
     const { SequenceService } = await import("@/domains/leads/sequenceService");
     await SequenceService.stopForLead(p.leadId, `lead marked ${p.newStatus}`).catch(() => {});
   }
   await fireLeadWebhook(p.leadId, 'lead.status_changed', { oldStatus: p.oldStatus, newStatus: p.newStatus });
-  const { MetaCapiService } = await import("@/domains/leads/metaCapiService");
-  // Meta CAPI: a won lead is the conversion worth optimising toward (hashed-PII event).
-  if (category === 'won') {
-    await MetaCapiService.track(p.leadId, 'Purchase');
-  }
-  // Conversion Leads postback: report the CRM status back to Meta by leadgen id, so ad delivery
-  // optimises toward leads that actually progress. The service maps status → stage via the tenant's
-  // config and no-ops for unmapped statuses, non-Meta leads, and unconfigured tenants.
-  if (p.newStatus) {
-    await MetaCapiService.trackCrmStage(p.leadId, p.newStatus);
-  }
 });
 
 eventBus.on('lead.stage_changed', (p) => dispatchTrigger('lead.stage_changed', p));

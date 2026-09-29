@@ -39,9 +39,16 @@ describe("buildEvent", () => {
   });
 
   it("includes value + currency only when a positive value is present", () => {
-    expect(buildEvent("Purchase", { id: "x" }).custom_data).toBeUndefined();
+    expect(buildEvent("Lead", { id: "x", value: 900 }).custom_data).toBeUndefined(); // estimate never rides on Lead
+    expect(buildEvent("Purchase", { id: "x" }).custom_data).toEqual({ value: 0, currency: "INR" }); // Purchase always has value+currency
     const withVal = buildEvent("Purchase", { id: "x", value: 500, currency: "eur" });
     expect(withVal.custom_data).toEqual({ value: 500, currency: "EUR" });
+  });
+
+  it("never hashes placeholder names", () => {
+    const ud = buildEvent("Lead", { id: "z", name: "Facebook Lead", email: "a@b.com" }).user_data as Record<string, unknown>;
+    expect(ud.fn).toBeUndefined();
+    expect(ud.ln).toBeUndefined();
   });
 
   it("omits missing PII fields rather than hashing empties", () => {

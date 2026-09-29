@@ -617,6 +617,20 @@
       "when": 1790672949538,
       "tag": "0087_lead_crn",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1790700000000,
+      "tag": "0088_capi_delivery_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1790700100000,
+      "tag": "0089_capi_token_expiry",
+      "breakpoints": true
     }
   ]
 }

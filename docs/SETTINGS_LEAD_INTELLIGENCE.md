@@ -166,7 +166,10 @@ In [`src/lib/integrations/metaCapi.ts`](file:///Users/naveenadicharla/Documents/
    - Phone: `ph` (digits only, country code retained).
    - First & Last Names: `fn` and `ln` (split and hashed).
    - Deduplication: `event_id: "${lead.id}:Lead"` allows Meta to deduplicate server events against client-side browser Pixel events.
-2. **`Purchase` Event:** Triggered on `lead.status_changed` when `newStatus === 'won'`. Includes `custom_data.value` (deal amount) and `custom_data.currency`.
+   - `external_id` (hashed lead id) is also sent. Placeholder names ("Facebook Lead", "Unknown") are never hashed. `Lead` is not sent for imports, auto-merged leads, soft-deleted leads, or Meta Lead Ads leads (Meta already counts those natively).
+   - Dedup: `event_id` dedupes only against Meta events inside Meta's ~48h window; there is no browser Pixel event to pair with.
+2. **`Purchase` Event:** Triggered on `lead.status_changed` when the new status is in the **won category** (custom won statuses included). Always includes `custom_data.value` (the lead's expected value, 0 if none) and `currency`.
+3. **Delivery & failures:** transient failures (network, timeout, 429, 5xx) are retried 3x (1s/4s/16s); everything is logged (`[capi]` lines with HTTP status, Meta code and `fbtrace_id`, never the token or PII) and the last outcome is shown on the settings page. Saving/enabling verifies the Pixel ID and token with Meta first. `META_CAPI_API_VERSION` overrides the default `v20.0`.
 
 ### 6.2 Meta Conversion Leads CRM Postback
 
@@ -183,8 +186,12 @@ For leads generated via **Meta Lead Ads** (`customData.facebook_lead_id` present
   }
   ```
 - **Custom Mapping UI:** Administrators pick a status from the tenant's status list and type the Meta event name, in [`LeadIntelligenceManager.tsx`](file:///Users/naveenadicharla/Documents/ridhzo/src/components/settings/LeadIntelligenceManager.tsx). Saving an empty mapping means no stage postbacks are sent.
-- **Dedup:** each stage event carries `event_id: "<leadgen id>:<event>"`.
+- **Dedup:** each stage event carries `event_id: "<leadgen id>:<event>"` (Meta dedupes for ~48h). A status with no map entry falls back to its category key (`won`/`lost`).
 - **Currency:** Purchase and stage values are sent in the organization's currency (`organizations.currency`).
+
+### 6.2b Connect with Facebook (embedded flow)
+
+Instead of pasting a Pixel ID and token, **Connect with Facebook** opens the same OAuth popup used for Lead Ads (redirect URI `/api/auth/facebook/callback`, state nonce prefixed `capi-`) with scopes `ads_management,business_management`. The callback exchanges the code for a ~60-day token, lists datasets via `/me/adaccounts?fields=name,adspixels{id,name}`, and stashes the token **server-side** (`fbPendingStore`, 10 min). The page shows a picker; `connectCapiDatasetAction` verifies the chosen dataset with Meta, then saves it (token encrypted, `capi_token_expires_at` set). Requires `FACEBOOK_APP_ID`/`FACEBOOK_APP_SECRET`/`NEXT_PUBLIC_FACEBOOK_APP_ID` and the app approved for `ads_management`. Because the token expires, the card warns 7 days ahead and shows **Reconnect**; a pasted system-user token never expires and clears the expiry.
 
 ### 6.3 Pre-Flight Verification ("Send Test Event")
 
@@ -192,8 +199,8 @@ Administrators can verify CAPI connectivity before activating ad traffic:
 1. Enter a **Test event code** (from Meta Events Manager $\rightarrow$ Test Events). It is **required** for a test, so the fake lead never lands in the live dataset.
 2. Click **Send test event**. The form's current values are used (a blank token falls back to the saved one) — no need to save first.
 3. [`sendTestCapiEventAction`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/actions/tenantIntegrations.ts) triggers [`MetaCapiService.sendTest`](file:///Users/naveenadicharla/Documents/ridhzo/src/domains/leads/metaCapiService.ts), posting a sample `Lead` event (`id: test-<timestamp>`, `email: test@example.com`).
-4. **Clear the test code and save when done.** While a code is saved, *all* events go to Test Events; the page shows a warning.
-4. Meta's Test Events dashboard immediately displays the parsed event parameters and match quality diagnostic.
+5. **Clear the test code and save when done.** While a code is saved, *all* events go to Test Events; the page shows a warning.
+6. Meta's Test Events dashboard immediately displays the parsed event parameters and match quality diagnostic.
 
 ---
 

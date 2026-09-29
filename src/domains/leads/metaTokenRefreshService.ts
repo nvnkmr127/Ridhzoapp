@@ -149,6 +149,24 @@ export class MetaTokenRefreshService {
       .map((p) => ({ pageId: String(p.id), name: String(p.name ?? p.id), pageAccessToken: String(p.access_token) }));
   }
 
+  /**
+   * Lists the datasets (Pixels) across every ad account the user can access, for the Meta
+   * Conversions API "Connect with Facebook" picker. Needs ads_management on the token.
+   */
+  static async listDatasets(userToken: string): Promise<{ pixelId: string; name: string; adAccount: string }[]> {
+    if (!isConfigured()) throw new Error("Facebook integration is not configured");
+    if (!userToken) throw new Error("Access token is required");
+    const url = `${GRAPH}/me/adaccounts?fields=name,adspixels.limit(50){id,name}&limit=100&access_token=${encodeURIComponent(userToken)}`;
+    const json = await graphGet(url);
+    const out = new Map<string, { pixelId: string; name: string; adAccount: string }>();
+    for (const acct of Array.isArray(json?.data) ? json.data : []) {
+      for (const px of Array.isArray(acct?.adspixels?.data) ? acct.adspixels.data : []) {
+        if (px?.id && !out.has(String(px.id))) out.set(String(px.id), { pixelId: String(px.id), name: String(px.name ?? px.id), adAccount: String(acct.name ?? acct.id ?? "") });
+      }
+    }
+    return [...out.values()];
+  }
+
   /** True when an error from a Graph call means the Page token is dead (revoked/expired/invalid),
    *  i.e. retrying won't help and the source needs a reconnect. */
   // Only errors a reconnect can fix: an invalid/expired token (190, 102) or a missing permission

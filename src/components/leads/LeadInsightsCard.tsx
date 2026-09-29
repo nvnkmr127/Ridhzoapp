@@ -30,7 +30,7 @@ export function LeadInsightsCard({ score, customData, leadInfo, variant = "card"
     | { source?: string; attributes?: Record<string, unknown> }
     | undefined;
   const attrs = enrichment?.attributes ?? {};
-  const attrEntries = Object.entries(attrs).filter(([k]) => k !== "company" && k !== "companyName");
+  const attrEntries = Object.entries(attrs).filter(([k, v]) => k !== "company" && k !== "companyName" && v != null && v !== "");
 
   if (displayScore === 0 && factors.length === 0 && attrEntries.length === 0) return null;
 
@@ -77,8 +77,8 @@ export function LeadInsightsCard({ score, customData, leadInfo, variant = "card"
           <dl className="space-y-1">
             {attrEntries.map(([k, v]) => (
               <div key={k} className="flex items-center justify-between gap-3 text-sm">
-                <dt className="text-muted-foreground capitalize">{k}</dt>
-                <dd className="font-medium text-right truncate max-w-[60%]">{String(v)}</dd>
+                <dt className="text-muted-foreground capitalize">{k.replace(/[_-]+/g, " ")}</dt>
+                <dd className="font-medium text-right truncate max-w-[60%]">{typeof v === "object" ? JSON.stringify(v) : String(v)}</dd>
               </div>
             ))}
           </dl>

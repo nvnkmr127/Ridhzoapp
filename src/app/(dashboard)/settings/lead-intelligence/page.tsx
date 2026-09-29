@@ -13,7 +13,7 @@ export default async function LeadIntelligencePage() {
   const { organizationId } = await requireOrg();
   const [settings, statuses] = await Promise.all([
     TenantIntegrationsService.getView(organizationId),
-    CustomStatusSchemaService.getTenantStatusSchema(organizationId).catch(() => []),
+    CustomStatusSchemaService.getTenantStatusSchema(organizationId).catch((e) => { console.error("[lead-intelligence] status list failed", e); return []; }),
   ]);
 
   return (

@@ -33,6 +33,13 @@ export const tenantIntegrationSettings = pgTable('tenant_integration_settings', 
   // Conversion Leads: CRM status → Meta lead-stage event name. Null = use the built-in default map.
   capiLeadStageMap: jsonb('capi_lead_stage_map').$type<Record<string, string>>(),
 
+  // Set when the token came from "Connect with Facebook" (a ~60-day user token); null = manual system-user token, no expiry.
+  capiTokenExpiresAt: timestamp('capi_token_expires_at'),
+  // Last live delivery outcome, so failures are visible in settings instead of silent.
+  capiLastStatus: varchar('capi_last_status', { length: 16 }), // 'ok' | 'error'
+  capiLastError: text('capi_last_error'),
+  capiLastAt: timestamp('capi_last_at'),
+
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

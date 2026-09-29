@@ -52,3 +52,47 @@ export async function takePendingPages(userId: string): Promise<PendingPages | n
   mem.delete(userId);
   return hit.expiresAtMs < Date.now() ? null : hit.data;
 }
+
+// Same idea for the Lead Intelligence "Connect with Facebook" flow: the user token is held server
+// side while the user picks a dataset (Pixel). Read non-destructively so a failed verify can retry.
+export type PendingCapi = { userToken: string; expiresAt: string | null; datasets: { pixelId: string; name: string; adAccount: string }[] };
+const capiKey = (userId: string) => `fb_pending_capi:${userId}`;
+const capiMem = new Map<string, { data: PendingCapi; expiresAtMs: number }>();
+
+export async function setPendingCapi(userId: string, data: PendingCapi): Promise<void> {
+  capiMem.set(userId, { data, expiresAtMs: Date.now() + TTL_SECONDS * 1000 });
+  if (redisConfigured()) {
+    const r = createRedis({ enableOfflineQueue: true });
+    try {
+      await r.set(capiKey(userId), JSON.stringify(data), "EX", TTL_SECONDS);
+    } catch (err) {
+      console.warn("[fbPendingStore] Redis set failed, kept in memory fallback:", err);
+    } finally {
+      try { r.disconnect(); } catch {}
+    }
+  }
+}
+
+export async function getPendingCapi(userId: string): Promise<PendingCapi | null> {
+  if (redisConfigured()) {
+    const r = createRedis({ enableOfflineQueue: true });
+    try {
+      const raw = await r.get(capiKey(userId));
+      if (raw) return JSON.parse(raw) as PendingCapi;
+    } catch (err) {
+      console.warn("[fbPendingStore] Redis get failed, falling back to memory:", err);
+    } finally {
+      try { r.disconnect(); } catch {}
+    }
+  }
+  const hit = capiMem.get(userId);
+  return hit && hit.expiresAtMs >= Date.now() ? hit.data : null;
+}
+
+export async function clearPendingCapi(userId: string): Promise<void> {
+  capiMem.delete(userId);
+  if (redisConfigured()) {
+    const r = createRedis({ enableOfflineQueue: true });
+    try { await r.del(capiKey(userId)); } catch {} finally { try { r.disconnect(); } catch {} }
+  }
+}

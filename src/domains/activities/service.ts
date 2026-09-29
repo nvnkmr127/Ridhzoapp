@@ -7,12 +7,13 @@ import { eq, and, desc, inArray, sql } from "drizzle-orm";
 export const LEAD_ACTIVITY_PAGE = 100;
 
 export class ActivityService {
-  static async addActivity(data: { leadId: string; userId?: string; type: string; content?: string }) {
+  static async addActivity(data: { leadId: string; userId?: string; type: string; content?: string; externalRef?: string }) {
     const [activity] = await db.insert(activities).values({
       leadId: data.leadId,
       userId: data.userId,
       type: data.type,
       content: data.content,
+      externalRef: data.externalRef,
     }).returning();
     return activity;
   }

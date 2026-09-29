@@ -139,7 +139,7 @@ export function SourcesManager({
 
     function handleOAuthMessage(event: MessageEvent) {
       if (event.origin !== window.location.origin) return;
-      if (event.data?.type !== "OAUTH_RESPONSE") return;
+      if (event.data?.type !== "OAUTH_RESPONSE" || event.data?.purpose === "capi") return;
 
       setConnectingId(null);
 

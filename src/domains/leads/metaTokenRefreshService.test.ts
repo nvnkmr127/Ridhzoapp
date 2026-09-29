@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { MetaTokenRefreshService } from "./metaTokenRefreshService";
 
 describe("MetaTokenRefreshService", () => {
@@ -102,5 +102,19 @@ describe("MetaTokenRefreshService", () => {
 
     const validAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days remaining
     expect(MetaTokenRefreshService.isTokenExpiringSoon(validAt, 7)).toBe(false);
+  });
+});
+
+describe("listDatasets", () => {
+  it("flattens pixels across ad accounts and dedupes", async () => {
+    process.env.FACEBOOK_APP_ID = "1"; process.env.FACEBOOK_APP_SECRET = "s";
+    const { MetaTokenRefreshService: S } = await import("./metaTokenRefreshService");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [
+      { id: "act_1", name: "A", adspixels: { data: [{ id: "10", name: "Px" }] } },
+      { id: "act_2", name: "B", adspixels: { data: [{ id: "10", name: "Px" }, { id: "11", name: "Py" }] } },
+      { id: "act_3", name: "C" },
+    ] }) }));
+    expect((await S.listDatasets("tok")).map((d) => d.pixelId)).toEqual(["10", "11"]);
+    vi.unstubAllGlobals();
   });
 });

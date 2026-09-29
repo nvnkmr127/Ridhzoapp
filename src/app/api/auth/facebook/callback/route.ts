@@ -22,14 +22,17 @@ export async function GET(req: NextRequest) {
 
   // Error exit: in popup mode, post the reason back to the opener and close; otherwise redirect to
   // the sources page with the error. (Success always goes through the pages_ready popup reply below.)
+  // "capi-" nonces come from Settings → Lead Intelligence (Meta Conversions API connect).
+  const forCapi = (stateNonce ?? "").startsWith("capi-");
   const respond = (params: Record<string, string>) => {
-    const url = new URL("/settings/sources", req.url);
+    const url = new URL(forCapi ? "/settings/lead-intelligence" : "/settings/sources", req.url);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
     if (!isPopup) return NextResponse.redirect(url);
 
     const payload = {
       type: "OAUTH_RESPONSE",
       provider: "facebook",
+      purpose: forCapi ? "capi" : "pages",
       status: "error",
       reason: params.error ?? "server_error",
       details: params.details,
@@ -74,6 +77,8 @@ export async function GET(req: NextRequest) {
 
     // 2. Short-lived → long-lived (60-day) user token.
     const longLivedResult = await MetaTokenRefreshService.exchangeShortLivedToken(shortLived.accessToken);
+
+    if (forCapi) return await finishCapi(req, longLivedResult, respond);
 
     // 3. List the Pages this user manages (each carries its own Page access token). We connect
     //    them all as lead sources — a solo user with one Page connects seamlessly; an agency with
@@ -127,4 +132,36 @@ export async function GET(req: NextRequest) {
     console.error("[META_OAUTH_CALLBACK_EXCEPTION]", err);
     return respond({ error: "server_error", details: err?.message || String(err) });
   }
+}
+
+// Conversions API connect: list the user's datasets and stash the token server-side; the opener only
+// gets pixel ids + names and later picks one (connectCapiDatasetAction).
+async function finishCapi(
+  req: NextRequest,
+  token: { accessToken: string; expiresAt: Date },
+  respond: (p: Record<string, string>) => NextResponse,
+) {
+  const session = await getServerSession(authOptions).catch(() => null);
+  let userId = session?.user?.id;
+  if (!userId) {
+    const { getToken } = await import("next-auth/jwt");
+    const t = await getToken({ req, secret: process.env.NEXTAUTH_SECRET }).catch(() => null);
+    userId = t?.id as string | undefined;
+  }
+  if (!userId) return respond({ error: "server_error", details: "User session expired or not found. Please log in and retry." });
+
+  const datasets = await MetaTokenRefreshService.listDatasets(token.accessToken);
+  if (datasets.length === 0) return respond({ error: "no_datasets" });
+
+  const { setPendingCapi } = await import("@/lib/leads/fbPendingStore");
+  await setPendingCapi(userId, { userToken: token.accessToken, expiresAt: token.expiresAt.toISOString(), datasets });
+
+  const json = JSON.stringify({ type: "OAUTH_RESPONSE", provider: "facebook", purpose: "capi", status: "datasets_ready", datasets, expiresAt: token.expiresAt.toISOString() }).replace(/</g, "\\u003c");
+  const html = `<!DOCTYPE html><html><head><title>Facebook</title></head><body style="font-family:system-ui;padding:24px;text-align:center">
+<p>Connected. Please pick your dataset in the main window.</p>
+<script>
+  if (window.opener) { window.opener.postMessage(${json}, window.location.origin); window.close(); }
+  else { window.location.href = "/settings/lead-intelligence"; }
+</script></body></html>`;
+  return new NextResponse(html, { headers: { "Content-Type": "text/html", "Set-Cookie": "fb_oauth_state=; Max-Age=0; Path=/; SameSite=Lax" } });
 }

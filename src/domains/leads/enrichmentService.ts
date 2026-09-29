@@ -41,34 +41,31 @@ const MAX_ATTRIBUTES_BYTES = 20_000;
 export async function callProvider(input: EnrichmentInput, config: EnrichmentConfig): Promise<ProviderResult> {
   if (!input.email && !input.company) return { ok: false, reason: "nothing to look up", retryable: false };
 
-  // The URL is tenant-supplied and fetched from our server: refuse private/metadata addresses.
+  // The URL is tenant-supplied and fetched from our server: connect only to a validated public
+  // address (pinned, so DNS rebinding can't swap in an internal one), never follow redirects, and
+  // cap the response as it streams.
+  let status: number;
+  let text: string;
+  let tooLarge: boolean;
   try {
-    const { assertPublicHttpUrl } = await import("@/lib/webhooks/ssrf");
-    await assertPublicHttpUrl(config.url);
-  } catch (e) {
-    return { ok: false, reason: e instanceof Error ? e.message : "Blocked URL", retryable: false };
-  }
-
-  let res: Response;
-  try {
-    res = await fetch(config.url, {
-      method: "POST",
+    const { pinnedPost } = await import("@/lib/webhooks/ssrf");
+    ({ status, text, tooLarge } = await pinnedPost(config.url, {
       headers: { "content-type": "application/json", [config.authHeader]: config.authValue },
       body: JSON.stringify({ email: input.email, company: input.company, name: input.name, phone: input.phone }),
-      signal: AbortSignal.timeout(config.timeoutMs),
-      redirect: "manual", // a public URL must not 302 us into the internal network
-    });
+      timeoutMs: config.timeoutMs,
+      maxBytes: MAX_ATTRIBUTES_BYTES,
+    }));
   } catch (e) {
+    const msg = e instanceof Error ? e.message : "";
+    if (/private or reserved|could not be resolved|Invalid|must be http/i.test(msg)) return { ok: false, reason: msg, retryable: false };
     const timedOut = e instanceof Error && e.name === "TimeoutError";
     return { ok: false, reason: timedOut ? "provider timed out" : "couldn't reach provider", retryable: true };
   }
 
-  if (res.status === 404) return { ok: false, reason: "no match", retryable: false };
-  if (res.status === 429 || res.status >= 500) return { ok: false, reason: `provider returned HTTP ${res.status}`, retryable: true };
-  if (!res.ok) return { ok: false, reason: `provider returned HTTP ${res.status}`, retryable: false };
-
-  const text = await res.text().catch(() => "");
-  if (text.length > MAX_ATTRIBUTES_BYTES) return { ok: false, reason: "provider response too large", retryable: false };
+  if (status === 404) return { ok: false, reason: "no match", retryable: false };
+  if (status === 429 || status >= 500) return { ok: false, reason: `provider returned HTTP ${status}`, retryable: true };
+  if (status < 200 || status >= 300) return { ok: false, reason: `provider returned HTTP ${status}`, retryable: false };
+  if (tooLarge) return { ok: false, reason: "provider response too large", retryable: false };
   let attributes: unknown;
   try {
     attributes = JSON.parse(text);
@@ -119,6 +116,8 @@ export class EnrichmentService {
     );
     if (!res.ok) {
       if (res.retryable) throw new Error(`Enrichment failed: ${res.reason}`);
+      // Not retryable (bad key, wrong URL, blocked host…): nobody sees a skip, so say why in the logs.
+      if (res.reason !== "no match" && res.reason !== "nothing to look up") console.warn(`[enrichment] skipped lead=${leadId} org=${lead.organizationId}: ${res.reason}`);
       return { status: "skipped", reason: res.reason };
     }
 

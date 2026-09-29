@@ -21,6 +21,11 @@ export interface TenantIntegrationsView {
   capiTestEventCode: string | null;
   capiLeadStageMap: Record<string, string>; // resolved (tenant override or default)
   capiLeadStageMapCustom: boolean; // false = the default map is in effect
+  capiTokenUnreadable: boolean; // a token is stored but can't be decrypted (key changed) — re-enter it
+  capiTokenExpiresAt: string | null; // set only for tokens from "Connect with Facebook"
+  capiLastStatus: "ok" | "error" | null;
+  capiLastError: string | null;
+  capiLastAt: string | null;
 }
 
 // Default Conversion Leads mapping: CRM status key → Meta lead-stage event name. Covers the
@@ -102,6 +107,11 @@ export class TenantIntegrationsService {
       capiTestEventCode: row?.capiTestEventCode ?? null,
       capiLeadStageMap: row?.capiLeadStageMap ?? DEFAULT_CAPI_STAGE_MAP,
       capiLeadStageMapCustom: row?.capiLeadStageMap != null,
+      capiTokenUnreadable: !!row?.capiAccessTokenEnc && decryptSecret(row.capiAccessTokenEnc) === null,
+      capiTokenExpiresAt: row?.capiTokenExpiresAt ? row.capiTokenExpiresAt.toISOString() : null,
+      capiLastStatus: (row?.capiLastStatus as "ok" | "error" | null) ?? null,
+      capiLastError: row?.capiLastError ?? null,
+      capiLastAt: row?.capiLastAt ? row.capiLastAt.toISOString() : null,
     };
   }
 
@@ -186,12 +196,25 @@ export class TenantIntegrationsService {
       capiPixelId: input.pixelId || null,
       capiAccessTokenEnc: tokenEnc,
       capiTestEventCode: input.testEventCode || null,
+      ...(input.accessToken ? { capiTokenExpiresAt: null } : {}), // a pasted token replaces a Facebook-login one
+      // New credentials → the previous delivery outcome no longer applies.
+      ...(input.accessToken || input.pixelId !== existing?.capiPixelId ? { capiLastStatus: null, capiLastError: null, capiLastAt: null } : {}),
+    });
+  }
+
+  /** Save a dataset + token obtained through the Facebook login popup. Keeps the on/off state. */
+  static async connectCapiViaFacebook(organizationId: string, input: { pixelId: string; accessToken: string; expiresAt: Date | null }): Promise<TenantIntegrationsView> {
+    return this.patch(organizationId, {
+      capiPixelId: input.pixelId,
+      capiAccessTokenEnc: encryptSecret(input.accessToken),
+      capiTokenExpiresAt: input.expiresAt,
+      capiLastStatus: null, capiLastError: null, capiLastAt: null,
     });
   }
 
   /** Turn CAPI off and forget the pixel + token + test code (the stage map is kept). */
   static async clearCapi(organizationId: string): Promise<TenantIntegrationsView> {
-    return this.patch(organizationId, { capiEnabled: 0, capiPixelId: null, capiAccessTokenEnc: null, capiTestEventCode: null });
+    return this.patch(organizationId, { capiEnabled: 0, capiPixelId: null, capiAccessTokenEnc: null, capiTestEventCode: null, capiTokenExpiresAt: null, capiLastStatus: null, capiLastError: null, capiLastAt: null });
   }
 
   /**
@@ -202,8 +225,23 @@ export class TenantIntegrationsService {
     const row = await this.getRaw(organizationId);
     if (!row || (requireEnabled && row.capiEnabled !== 1) || !row.capiPixelId || !row.capiAccessTokenEnc) return null;
     const accessToken = decryptSecret(row.capiAccessTokenEnc);
-    if (!accessToken) return null;
+    if (!accessToken) {
+      console.error("[capi] stored access token can't be decrypted (encryption key changed?) — re-enter it in Settings → Lead Intelligence", organizationId);
+      return null;
+    }
     return { pixelId: row.capiPixelId, accessToken, testEventCode: row.capiTestEventCode };
+  }
+
+  /** Record the outcome of a live delivery so the settings page can show it. Never throws. */
+  static async recordCapiDelivery(organizationId: string, ok: boolean, error?: string): Promise<void> {
+    try {
+      await db
+        .update(tenantIntegrationSettings)
+        .set({ capiLastStatus: ok ? "ok" : "error", capiLastError: ok ? null : (error ?? "Unknown error").slice(0, 500), capiLastAt: new Date() })
+        .where(eq(tenantIntegrationSettings.organizationId, organizationId));
+    } catch (e) {
+      console.error("[capi] could not record delivery status", e);
+    }
   }
 
   /** Stored secrets for a test run with unsaved form values (blank form secret = use saved). */

@@ -7,8 +7,10 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import type { ActionResult } from "@/lib/actions/result";
 import type { TenantIntegrationsView as View } from "@/domains/organizations/tenantIntegrationsService";
 import {
@@ -21,10 +23,23 @@ import {
   disconnectCapiAction,
   sendTestCapiEventAction,
   updateCapiStageMapAction,
+  backfillEnrichmentAction,
+  connectCapiDatasetAction,
 } from "@/lib/actions/tenantIntegrations";
 
 type Status = { key: string; label: string };
 type FieldErrors = Record<string, string>;
+
+type Tone = "ok" | "warn" | "bad" | "off";
+const TONES: Record<Tone, string> = {
+  ok: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
+  warn: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+  bad: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
+  off: "bg-muted text-muted-foreground",
+};
+function StatusBadge({ tone, children }: { tone: Tone; children: React.ReactNode }) {
+  return <span role="status" className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${TONES[tone]}`}>{children}</span>;
+}
 
 function FieldError({ msg }: { msg?: string }) {
   return msg ? <p className="mt-1 text-xs text-destructive">{msg}</p> : null;
@@ -32,6 +47,7 @@ function FieldError({ msg }: { msg?: string }) {
 
 export function LeadIntelligenceManager({ initial, webhookBase, statuses }: { initial: View; webhookBase: string; statuses: Status[] }) {
   const { toast } = useToast();
+  const [confirm, confirmDialog] = useConfirm();
   const [v, setV] = React.useState(initial);
 
   // Enrichment form
@@ -62,6 +78,12 @@ export function LeadIntelligenceManager({ initial, webhookBase, statuses }: { in
   );
   const [savingStageMap, setSavingStageMap] = React.useState(false);
 
+  // "Connect with Facebook": popup → pick a dataset. Tokens stay server-side; we only see id + name.
+  const [datasets, setDatasets] = React.useState<Array<{ pixelId: string; name: string; adAccount: string }> | null>(null);
+  const [connectingFb, setConnectingFb] = React.useState(false);
+  const fbAppId = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID;
+  const fbReady = !!fbAppId && fbAppId !== "mock_app_id";
+
   const webhookUrl = v.inboundEmailToken ? `${webhookBase}?token=${v.inboundEmailToken}` : null;
 
   const enrichDirty = apiUrl !== (v.enrichmentApiUrl ?? "") || authHeader !== (v.enrichmentAuthHeader ?? "") || authValue !== "";
@@ -86,6 +108,53 @@ export function LeadIntelligenceManager({ initial, webhookBase, statuses }: { in
       toast({ variant: "destructive", title: failTitle, description: "We couldn't reach the server. Please try again." });
       return null;
     }
+  }
+
+  // ─── Connect with Facebook (Meta CAPI) ─────────────────────────────────────
+  const FB_ERR: Record<string, string> = {
+    oauth_denied: "You cancelled or denied the Facebook permission request.",
+    csrf: "That login attempt couldn't be verified. Please try again.",
+    facebook_not_configured: "Facebook isn't configured on the server (FACEBOOK_APP_ID / FACEBOOK_APP_SECRET).",
+    no_datasets: "No datasets (Pixels) found on your ad accounts. Create one in Meta Events Manager, then try again.",
+  };
+  React.useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== "OAUTH_RESPONSE" || event.data?.purpose !== "capi") return;
+      setConnectingFb(false);
+      if (event.data.status === "error") {
+        toast({ variant: "destructive", title: "Facebook connection failed", description: (event.data.details as string) || FB_ERR[event.data.reason as string] || "The connection didn't complete. Please try again." });
+        return;
+      }
+      if (event.data.status === "datasets_ready") setDatasets(event.data.datasets ?? []);
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function connectFacebook() {
+    const nonce = `capi-${crypto.randomUUID?.() ?? String(Math.random()).slice(2)}${Date.now().toString(36)}`;
+    document.cookie = `fb_oauth_state=${nonce}; Max-Age=600; Path=/; SameSite=Lax`;
+    const redirectUri = encodeURIComponent(`${window.location.origin}/api/auth/facebook/callback`);
+    const scope = encodeURIComponent("ads_management,business_management");
+    const authUrl = `https://www.facebook.com/v20.0/dialog/oauth?client_id=${fbAppId}&redirect_uri=${redirectUri}&scope=${scope}&response_type=code&state=${encodeURIComponent(`popup_${nonce}`)}`;
+    const w = 600, h = 720;
+    const popup = window.open(authUrl, "fb_oauth_capi", `width=${w},height=${h},left=${window.screenX + Math.max(0, (window.outerWidth - w) / 2)},top=${window.screenY + Math.max(0, (window.outerHeight - h) / 2)}`);
+    if (!popup) toast({ variant: "destructive", title: "Popup blocked", description: "Allow pop-ups for this site, then try again." });
+    else setConnectingFb(true);
+  }
+
+  async function pickDataset(pixelId: string) {
+    setBusyCapi("save");
+    const data = await run(() => connectCapiDatasetAction(pixelId), "Couldn't connect that dataset", setCapiErrors);
+    setBusyCapi(null);
+    if (!data) return;
+    setDatasets(null);
+    setV(data);
+    setPixelId(data.capiPixelId ?? "");
+    setAccessToken("");
+    toast({ title: "Connected to Meta", description: data.capiEnabled ? "Events keep flowing with the new connection." : "Now send a test event, then turn Meta Conversions on." });
   }
 
   // ─── Enrichment ────────────────────────────────────────────────────────────
@@ -116,12 +185,19 @@ export function LeadIntelligenceManager({ initial, webhookBase, statuses }: { in
       title: "Provider connected",
       description: data.fields.length
         ? `It returned: ${data.fields.slice(0, 8).join(", ")}${data.fields.length > 8 ? "…" : ""}.`
-        : "It answered but had no data for that email.",
+        : "It answered but had no data for that email. If you expected data, double-check the URL — some providers also answer 404 for a wrong path.",
     });
   }
 
+  async function backfill() {
+    setBusyEnrich("test");
+    const data = await run(() => backfillEnrichmentAction(), "Couldn't start enrichment");
+    setBusyEnrich(null);
+    if (data) toast({ title: data.queued ? `Enriching ${data.queued} existing lead${data.queued === 1 ? "" : "s"}` : "Nothing to enrich", description: data.queued ? "Runs in the background; up to 500 per click." : "Every lead with an email is already enriched." });
+  }
+
   async function disconnectEnrichment() {
-    if (!confirm("Remove the enrichment provider and its API key? New leads won't be enriched.")) return;
+    if (!(await confirm({ title: "Remove enrichment provider?", description: "The provider and its API key are deleted. New leads won't be enriched.", confirmLabel: "Remove", destructive: true }))) return;
     setBusyEnrich("disconnect");
     const data = await run(() => disconnectEnrichmentAction(), "Couldn't remove provider");
     setBusyEnrich(null);
@@ -144,7 +220,7 @@ export function LeadIntelligenceManager({ initial, webhookBase, statuses }: { in
   }
 
   async function rotate() {
-    if (!confirm("Generate a new webhook URL? The current URL stops working immediately — update it in your email provider right after.")) return;
+    if (!(await confirm({ title: "Generate a new webhook URL?", description: "The current URL stops working immediately — update it in your email provider right after.", confirmLabel: "Generate" }))) return;
     setBusyInbound(true);
     const data = await run(() => rotateInboundTokenAction(), "Couldn't generate a new URL");
     setBusyInbound(false);
@@ -164,18 +240,25 @@ export function LeadIntelligenceManager({ initial, webhookBase, statuses }: { in
   }
 
   // ─── Meta CAPI ─────────────────────────────────────────────────────────────
-  async function saveCapi(enabled: boolean) {
+  // fromForm=false (the on/off switch) flips only the switch, using the SAVED values — half-typed
+  // edits in the inputs aren't persisted by a toggle click.
+  async function saveCapi(enabled: boolean, fromForm = false) {
     setBusyCapi("save");
     const data = await run(
-      () => updateCapiAction({ pixelId, accessToken: accessToken || undefined, testEventCode, enabled }),
+      () => updateCapiAction(fromForm
+        ? { pixelId, accessToken: accessToken || undefined, testEventCode, enabled }
+        : { pixelId: v.capiPixelId ?? "", testEventCode: v.capiTestEventCode ?? "", enabled }),
       "Couldn't save Meta Conversions",
       setCapiErrors,
     );
     setBusyCapi(null);
     if (!data) return;
     setV(data);
-    setAccessToken("");
-    toast({ title: enabled === v.capiEnabled ? "Meta Conversions settings saved" : enabled ? "Meta Conversions turned on" : "Meta Conversions turned off" });
+    if (fromForm) setAccessToken("");
+    toast({
+      title: enabled === v.capiEnabled ? "Meta Conversions settings saved" : enabled ? "Meta Conversions turned on" : "Meta Conversions turned off",
+      description: enabled && data.capiTestEventCode ? "Credentials verified with Meta. A test event code is saved, so events only appear in Test Events." : enabled ? "Credentials verified with Meta." : undefined,
+    });
   }
 
   async function testCapi() {
@@ -190,7 +273,7 @@ export function LeadIntelligenceManager({ initial, webhookBase, statuses }: { in
   }
 
   async function disconnectCapi() {
-    if (!confirm("Remove the Meta Pixel ID and access token? Conversions stop being sent to Meta.")) return;
+    if (!(await confirm({ title: "Disconnect Meta?", description: "The Pixel ID and access token are deleted and conversions stop being sent to Meta.", confirmLabel: "Disconnect", destructive: true }))) return;
     setBusyCapi("disconnect");
     const data = await run(() => disconnectCapiAction(), "Couldn't disconnect Meta");
     setBusyCapi(null);
@@ -225,16 +308,42 @@ export function LeadIntelligenceManager({ initial, webhookBase, statuses }: { in
 
   return (
     <div className="space-y-6">
+      {confirmDialog}
+      <Dialog open={!!datasets} onOpenChange={(o) => !o && setDatasets(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Choose your Meta dataset</DialogTitle>
+            <DialogDescription>Conversions will be sent to the dataset (Pixel) you pick.</DialogDescription>
+          </DialogHeader>
+          <ul className="max-h-72 space-y-2 overflow-y-auto">
+            {datasets?.map((d) => (
+              <li key={d.pixelId}>
+                <button
+                  type="button"
+                  onClick={() => pickDataset(d.pixelId)}
+                  disabled={busyCapi !== null}
+                  className="w-full rounded-lg border p-3 text-left text-sm hover:bg-muted disabled:opacity-60"
+                >
+                  <span className="block font-medium">{d.name}</span>
+                  <span className="block text-xs text-muted-foreground">ID {d.pixelId}{d.adAccount ? ` · ${d.adAccount}` : ""}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <FieldError msg={capiErrors.pixelId} />
+        </DialogContent>
+      </Dialog>
       {/* Enrichment */}
       <div className="rounded-2xl border p-5 space-y-4">
         <div className="flex items-center justify-between">
           <p className="text-sm font-medium flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-violet-500" /> Lead enrichment
+            {v.enrichmentEnabled ? <StatusBadge tone="ok">Active</StatusBadge> : v.enrichmentApiUrl || v.hasEnrichmentAuthValue ? <StatusBadge tone="off">Off</StatusBadge> : <StatusBadge tone="off">Not set up</StatusBadge>}
           </p>
           <Switch label="Lead enrichment" checked={v.enrichmentEnabled} onChange={saveEnrichment} disabled={busyEnrich !== null} />
         </div>
         <p className="text-xs text-muted-foreground">
-          When on, each new lead&apos;s email and company are sent to your data provider. What it finds
+          When on, each new lead&apos;s name, email, phone and company are sent to your data provider. What it finds
           (job title, company size, LinkedIn…) appears on the lead&apos;s score card, and fills the
           company field if it&apos;s empty — it never overwrites what your team entered.
         </p>
@@ -289,8 +398,13 @@ export function LeadIntelligenceManager({ initial, webhookBase, statuses }: { in
             <FieldError msg={enrichErrors.sampleEmail} />
           </div>
           <Button variant="outline" onClick={testEnrichment} disabled={busyEnrich !== null}>
-            {busyEnrich === "test" ? "Testing…" : "Test connection"}
+            {busyEnrich === "test" ? "Working…" : "Test connection"}
           </Button>
+          {v.enrichmentEnabled && (
+            <Button variant="outline" onClick={backfill} disabled={busyEnrich !== null} title="Enrich leads that were added before enrichment was on">
+              Enrich existing leads
+            </Button>
+          )}
         </div>
       </div>
 
@@ -299,6 +413,7 @@ export function LeadIntelligenceManager({ initial, webhookBase, statuses }: { in
         <div className="flex items-center justify-between">
           <p className="text-sm font-medium flex items-center gap-2">
             <Mail className="h-4 w-4 text-blue-500" /> Email replies → lead timeline
+            {v.inboundEmailEnabled ? <StatusBadge tone="ok">Active</StatusBadge> : <StatusBadge tone="off">Off</StatusBadge>}
           </p>
           <Switch label="Email replies to lead timeline" checked={v.inboundEmailEnabled} onChange={toggleInbound} disabled={busyInbound} />
         </div>
@@ -327,14 +442,54 @@ export function LeadIntelligenceManager({ initial, webhookBase, statuses }: { in
         <div className="flex items-center justify-between">
           <p className="text-sm font-medium flex items-center gap-2">
             <Target className="h-4 w-4 text-blue-600" /> Meta Conversions API
+            {v.capiTokenUnreadable || (v.capiEnabled && v.capiLastStatus === "error") ? (
+              <StatusBadge tone="bad">Needs attention</StatusBadge>
+            ) : v.capiEnabled && v.capiTestEventCode ? (
+              <StatusBadge tone="warn">Test mode</StatusBadge>
+            ) : v.capiEnabled ? (
+              <StatusBadge tone="ok">Active</StatusBadge>
+            ) : v.capiPixelId || v.hasCapiAccessToken ? (
+              <StatusBadge tone="off">Off</StatusBadge>
+            ) : (
+              <StatusBadge tone="off">Not set up</StatusBadge>
+            )}
           </p>
-          <Switch label="Meta Conversions API" checked={v.capiEnabled} onChange={saveCapi} disabled={busyCapi !== null} />
+          <Switch label="Meta Conversions API" checked={v.capiEnabled} onChange={(on) => saveCapi(on)} disabled={busyCapi !== null} />
         </div>
         <p className="text-xs text-muted-foreground">
           Tell Meta which leads you got and which ones you won, so your ads find more people like
           them: a <strong>Lead</strong> event when a lead is added and a <strong>Purchase</strong> event
           (with the deal value) when it&apos;s won. Contact details are hashed before sending.
         </p>
+        {(() => {
+          if (!v.capiTokenExpiresAt) return null;
+          const days = Math.ceil((new Date(v.capiTokenExpiresAt).getTime() - Date.now()) / 86_400_000);
+          if (days > 7) return null;
+          return (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>{days <= 0 ? <><strong>Your Facebook connection expired</strong> — no events are reaching Meta.</> : `Your Facebook connection expires in ${days} day${days === 1 ? "" : "s"}.`}</span>
+              {fbReady && <Button size="sm" variant="outline" className="ml-auto" onClick={connectFacebook} disabled={connectingFb}>Reconnect</Button>}
+            </div>
+          );
+        })()}
+        {v.capiTokenUnreadable && (
+          <div className="flex gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-xs text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span>The saved access token can&apos;t be read (the server&apos;s encryption key changed). <strong>No events are being sent</strong> — enter the token again and save.</span>
+          </div>
+        )}
+        {v.capiEnabled && v.capiLastStatus === "error" && (
+          <div className="flex gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-xs text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span>
+              The last event to Meta failed{v.capiLastAt ? ` (${new Date(v.capiLastAt).toLocaleString()})` : ""}: {v.capiLastError}
+            </span>
+          </div>
+        )}
+        {v.capiEnabled && v.capiLastStatus === "ok" && v.capiLastAt && (
+          <p className="text-xs text-muted-foreground">Last event delivered to Meta {new Date(v.capiLastAt).toLocaleString()}.</p>
+        )}
         {v.capiTestEventCode && (
           <div className="flex gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
             <AlertTriangle className="h-4 w-4 shrink-0" />
@@ -342,6 +497,17 @@ export function LeadIntelligenceManager({ initial, webhookBase, statuses }: { in
               A test event code is saved, so <strong>all events go to Meta&apos;s Test Events tab</strong> and
               don&apos;t help your ads. Clear the code and save when you&apos;re done testing.
             </span>
+          </div>
+        )}
+        {fbReady && (
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed p-3">
+            <div className="min-w-0 flex-1 text-xs text-muted-foreground">
+              <strong className="text-foreground">Quickest way:</strong> log in with Facebook and pick your dataset — no IDs or tokens to paste.
+              {v.capiTokenExpiresAt && <> Connected with Facebook (expires {new Date(v.capiTokenExpiresAt).toLocaleDateString()}).</>}
+            </div>
+            <Button variant="outline" onClick={connectFacebook} disabled={connectingFb || busyCapi !== null}>
+              {connectingFb ? "Waiting for Facebook…" : v.capiTokenExpiresAt ? "Reconnect Facebook" : "Connect with Facebook"}
+            </Button>
           </div>
         )}
         <div className="grid gap-4 sm:grid-cols-2">
@@ -369,7 +535,7 @@ export function LeadIntelligenceManager({ initial, webhookBase, statuses }: { in
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={() => saveCapi(v.capiEnabled)} disabled={busyCapi !== null || !capiDirty}>
+          <Button onClick={() => saveCapi(v.capiEnabled, true)} disabled={busyCapi !== null || !capiDirty}>
             {busyCapi === "save" ? "Saving…" : "Save"}
           </Button>
           <Button variant="outline" onClick={testCapi} disabled={busyCapi !== null || !testEventCode.trim()} className="gap-2" title={testEventCode.trim() ? undefined : "Enter a test event code first"}>

@@ -83,3 +83,50 @@ export async function resolvePublicHost(host: string): Promise<string> {
   }
   return records[0].address;
 }
+
+// POST JSON to a tenant-supplied https/http URL, connecting to the address we VALIDATED (not a second
+// DNS answer), so a rebinding host can't pass the check and then resolve to an internal IP. The body
+// is read with a hard size cap and no redirects are followed. Throws Error(name "TimeoutError") on timeout.
+export async function pinnedPost(
+  rawUrl: string,
+  opts: { headers: Record<string, string>; body: string; timeoutMs: number; maxBytes: number },
+): Promise<{ status: number; text: string; tooLarge: boolean }> {
+  const u = new URL(rawUrl);
+  const address = await resolvePublicHost(u.hostname);
+  const family = address.includes(":") ? 6 : 4;
+  const mod = u.protocol === "http:" ? await import("http") : await import("https");
+  return new Promise((resolve, reject) => {
+    const req = mod.request(
+      u,
+      {
+        method: "POST",
+        headers: { ...opts.headers, "content-length": Buffer.byteLength(opts.body) },
+        timeout: opts.timeoutMs,
+        // Always connect to the validated address (SNI/Host still use the hostname).
+        lookup: ((_h: string, o: { all?: boolean }, cb: (...a: unknown[]) => void) =>
+          o?.all ? cb(null, [{ address, family }]) : cb(null, address, family)) as never,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        let size = 0;
+        let tooLarge = false;
+        res.on("data", (c: Buffer) => {
+          size += c.length;
+          if (size > opts.maxBytes) {
+            tooLarge = true;
+            res.destroy();
+            resolve({ status: res.statusCode ?? 0, text: "", tooLarge });
+            return;
+          }
+          chunks.push(c);
+        });
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, text: Buffer.concat(chunks).toString("utf8"), tooLarge }));
+        res.on("error", (e) => (tooLarge ? undefined : reject(e)));
+      },
+    );
+    const timeout = () => reject(Object.assign(new Error("timed out"), { name: "TimeoutError" }));
+    req.on("timeout", () => { req.destroy(); timeout(); });
+    req.on("error", reject);
+    req.end(opts.body);
+  });
+}
