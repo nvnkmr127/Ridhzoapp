@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseLeadBrief, visiblePlan, briefFormatInstructions, type PlanInput } from "./leadPlan";
+import { parseLeadBrief, validatePlan, visiblePlan, briefFormatInstructions, type PlanInput } from "./leadPlan";
 
 const now = new Date("2026-09-26T10:00:00Z");
 
@@ -126,5 +126,13 @@ describe("parseLeadBrief — malformed model output", () => {
 
   it("still passes through a plain-text reply", () => {
     expect(parseLeadBrief("Wants a 3BHK.", input).recap).toBe("Wants a 3BHK.");
+  });
+});
+
+describe("validatePlan — placeholders", () => {
+  it("drops 'Not provided' style values", () => {
+    const input = { fields: [{ key: "location", label: "Location", type: "text", options: [] }], current: {}, coerce: (_k: string, v: unknown) => v, statuses: [], currentStatus: "new", now: new Date() };
+    const plan = validatePlan({ fields: [{ key: "location", value: "Not provided", evidence: "no location" }] }, input);
+    expect(plan.fields).toEqual([]);
   });
 });

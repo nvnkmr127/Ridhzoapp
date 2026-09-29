@@ -60,6 +60,8 @@ export interface PlanInput {
 }
 
 const MAX_FIELDS = 5;
+// "Not provided" is the model reporting a gap, not a value to save.
+const PLACEHOLDER = /^(not (provided|specified|mentioned|available|filled|known)|unknown|n\/?a|none|null|nil|-+|tbd|missing)\.?$/i;
 const MAX_FOLLOW_UP_DAYS = 60;
 
 const text = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
@@ -129,7 +131,7 @@ export function validatePlan(json: Record<string, unknown>, input: PlanInput): L
     const def = typeof key === "string" ? defs.get(key) : undefined;
     const quote = text(evidence, 200);
     // Must be a real field, backed by a quote, and not already chosen for this field.
-    if (!def || !quote || value == null || value === "" || fields.some((f) => f.key === def.key)) continue;
+    if (!def || !quote || value == null || value === "" || (typeof value === "string" && PLACEHOLDER.test(value.trim())) || fields.some((f) => f.key === def.key)) continue;
     const coerced = input.coerce(def.key, value);
     if (coerced === undefined || coerced === null || coerced === "") continue;
     if (same(coerced, input.current[def.key])) continue;
@@ -188,13 +190,13 @@ export function briefFormatInstructions(input: Pick<PlanInput, "fields" | "statu
   const statusList = input.statuses.map((s) => `${s.key} = "${s.label}"${s.key === input.currentStatus ? " (current)" : ""}`).join("\n");
   return `Return ONLY a JSON object, no prose, no code fences:
 {
-  "recap": "one or two short sentences: what the lead wants, where things stand now, the single most useful next step",
+  "recap": "at most two short sentences (under 45 words): what the lead wants, where things stand now, the single most useful next step",
   "fields": [{"key": "<field key>", "value": <value>, "evidence": "<short exact quote from the lead's messages, notes, calls or answers>"}],
   "status": {"key": "<status key>", "reason": "<why, citing what happened>"} or null,
   "next": {"kind": "call|whatsapp|email|meeting|follow_up|wait", "title": "<short action>", "reason": "<why now>", "message": "<ready-to-send text, only for whatsapp/email>", "followUpAt": "<ISO datetime with offset, when to do it>"} or null
 }
 Rules:
-- fields: only when the context clearly states the value and the field is empty or now different. Use the field's key, a value valid for its type (one of its options for select; an array of options for multiselect; true/false for checkbox; YYYY-MM-DD for date; a plain number for number). Never guess — no quote, no suggestion. Empty list if nothing.
+- fields: only when the context clearly states the value and the field is empty or now different. Use the field's key, a value valid for its type (one of its options for select; an array of options for multiselect; true/false for checkbox; YYYY-MM-DD for date; a plain number for number). Never guess — no quote, no suggestion. Never suggest a field that is already filled with the same information, and never a placeholder like "Not provided". Keep each evidence quote under 12 words. At most 3 fields; empty list if nothing.
 - status: only if what happened clearly means the lead is now in a different status from the list; otherwise null.
 - next: the one best step now, consistent with the current status, pending follow-ups, upcoming meetings and the status playbook. followUpAt must be in the future (today is ${input.now.toISOString().slice(0, 10)}, timezone ${timezone}).
 Custom fields you may fill (key = label [type: options]):
