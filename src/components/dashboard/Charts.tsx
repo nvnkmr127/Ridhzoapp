@@ -1,6 +1,6 @@
 "use client";
 
-import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, Area, AreaChart } from "recharts";
+import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, Area, AreaChart, Legend } from "recharts";
 
 // Monochrome chart palette — one light series per chart, dark grid + tooltip to match the surface.
 const INK = "#e0e0e0";
@@ -70,6 +70,27 @@ export function LeadsByOwnerChart({ data }: { data: any[] }) {
         <YAxis type="category" dataKey="name" stroke={AXIS} fontSize={12} axisLine={false} tickLine={false} width={100} />
         <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={TOOLTIP} />
         <Bar dataKey="count" fill={INK} radius={[0, 6, 6, 0]} maxBarSize={28} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+const WON = "#34d399";
+const shortDay = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+
+// New leads vs deals won per workspace-local day (AnalyticsService.getDailyTrend).
+export function LeadsTrendChart({ data }: { data: { day: string; leads: number; won: number }[] }) {
+  if (!data || data.every((d) => d.leads === 0 && d.won === 0)) return <div className={emptyCls}>No leads or wins in this period</div>;
+  return (
+    <ResponsiveContainer width="100%" height={300}>
+      <BarChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={GRID} />
+        <XAxis dataKey="day" tickFormatter={shortDay} stroke={AXIS} fontSize={12} tickLine={false} axisLine={false} minTickGap={24} />
+        <YAxis allowDecimals={false} stroke={AXIS} fontSize={12} tickLine={false} axisLine={false} />
+        <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={TOOLTIP} labelFormatter={(d) => shortDay(String(d))} />
+        <Legend wrapperStyle={{ fontSize: 12 }} />
+        <Bar dataKey="leads" name="New leads" fill={INK} radius={[4, 4, 0, 0]} maxBarSize={28} />
+        <Bar dataKey="won" name="Won" fill={WON} radius={[4, 4, 0, 0]} maxBarSize={28} />
       </BarChart>
     </ResponsiveContainer>
   );

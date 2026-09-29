@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { MetricsCards } from "@/components/dashboard/MetricsCards";
 import { LeadsByStageChart } from "@/components/dashboard/ChartsLazy";
 import { RecentActivityFeed } from "@/components/dashboard/RecentActivityFeed";
+import { MyDayCard } from "@/components/dashboard/DailySummaryCard";
 import { requireOrg } from "@/lib/rbac";
 import { AnalyticsService, AnalyticsFilters } from "@/lib/analytics/service";
 
@@ -24,6 +25,10 @@ export default async function SalesRepDashboardPage() {
       </div>
 
       <div className="space-y-6">
+        <Suspense fallback={<div className="h-40 bg-muted rounded-2xl animate-pulse" />}>
+          <MyDayCard organizationId={organizationId} userId={userId} />
+        </Suspense>
+
         <Suspense fallback={<div className="h-32 bg-muted rounded-2xl animate-pulse" />}>
           <MetricsCards filters={filters} />
         </Suspense>

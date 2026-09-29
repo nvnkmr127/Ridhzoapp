@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { AnalyticsService, summarizeLeadMetrics } from './service';
+import { AnalyticsService, summarizeLeadMetrics, dayKeysBetween } from './service';
 
 // Mock DB
 vi.mock('@/db', () => ({
@@ -147,5 +147,26 @@ describe('AnalyticsService Calculations', () => {
 
     expect(owners).toContainEqual({ name: 'John Doe', count: 2, percentage: 66.7 });
     expect(owners).toContainEqual({ name: 'Unassigned', count: 1, percentage: 33.3 });
+  });
+});
+
+describe('dashboard periods', () => {
+  it('lists every workspace-local day in the window, inclusive', () => {
+    // 20:00 UTC is already the next day in India.
+    expect(dayKeysBetween(new Date('2026-09-01T20:00:00Z'), new Date('2026-09-03T10:00:00Z'), 'Asia/Kolkata'))
+      .toEqual(['2026-09-02', '2026-09-03']);
+    expect(dayKeysBetween(new Date('2026-09-01T00:00:00Z'), new Date('2026-09-01T23:00:00Z'), 'UTC')).toEqual(['2026-09-01']);
+  });
+
+  it('the previous period is the same length, ending just before this one starts', async () => {
+    const f = { organizationId: 'o', timeZone: 'UTC', startDate: new Date('2026-09-11T00:00:00Z'), endDate: new Date('2026-09-21T00:00:00Z') };
+    const prev = await AnalyticsService.previousPeriod(f);
+    expect(prev!.endDate!.getTime()).toBe(f.startDate.getTime() - 1);
+    expect(prev!.endDate!.getTime() - prev!.startDate!.getTime()).toBe(f.endDate.getTime() - f.startDate.getTime());
+    expect(prev!.dateRange).toBeUndefined();
+  });
+
+  it('all-time has no previous period', async () => {
+    expect(await AnalyticsService.previousPeriod({ organizationId: 'o', timeZone: 'UTC', dateRange: 'all' })).toBeNull();
   });
 });

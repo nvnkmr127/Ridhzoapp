@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { activities, followUps, leads, meetings, organizations, roles, users } from "@/db/schema";
+import { activities, dailySummarySnapshots, followUps, leads, meetings, organizations, roles, users, type DailySummaryCounts } from "@/db/schema";
 import { and, count, eq, gte, isNull, lt, or, sql, sum } from "drizzle-orm";
 import { callCounts } from "@/domains/leads/callStats";
 import { formatCallDuration } from "@/domains/leads/contactLog";
@@ -7,6 +7,7 @@ import { appUrl, sendEmail } from "@/lib/mail/mailer";
 import { HabitService, recapLine, type Recap } from "@/domains/organizations/habitService";
 import { isWorkDay } from "@/lib/workHours";
 import { t, type Lang } from "@/lib/i18n";
+import { dayKey, startOfZonedDay } from "@/lib/tz";
 
 // Morning team summary for workspace admins: what needs attention today. Sent once per org-local
 // day between 8 and 11 AM, only when something is actionable, to admins who haven't opted out of email.
@@ -146,8 +147,11 @@ ${s.calls.length ? `<p style="margin-top:16px"><b>Calls in the last 24 hours</b>
 }
 
 export class DailySummaryService {
-  static async stats(organizationId: string, now = new Date()): Promise<DailySummaryStats> {
+  // `timeZone` bounds "today" to the org's local midnight. Without it, "today" is the next 16h — fine
+  // for the morning email, but a dashboard read at 6 PM would count tomorrow morning as today.
+  static async stats(organizationId: string, now = new Date(), timeZone?: string): Promise<DailySummaryStats> {
     const H = 60 * 60 * 1000;
+    const dayEnd = timeZone ? startOfZonedDay(now, timeZone, 1) : new Date(now.getTime() + 16 * H);
     const live = and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt));
     const meetingEnded = sql`${meetings.startAt} + ${meetings.durationMinutes} * interval '1 minute' < ${now.toISOString()}::timestamp`;
 
@@ -156,9 +160,8 @@ export class DailySummaryService {
         .where(and(live, eq(followUps.status, "pending"), lt(followUps.dueAt, now))),
       db.select({ n: count() }).from(meetings).innerJoin(leads, eq(meetings.leadId, leads.id))
         .where(and(live, eq(meetings.status, "scheduled"), meetingEnded, gte(meetings.startAt, new Date(now.getTime() - 14 * 24 * H)))),
-      // Sent in the morning, so the next 16h ≈ the rest of today.
       db.select({ n: count() }).from(meetings).innerJoin(leads, eq(meetings.leadId, leads.id))
-        .where(and(live, eq(meetings.status, "scheduled"), gte(meetings.startAt, now), lt(meetings.startAt, new Date(now.getTime() + 16 * H)))),
+        .where(and(live, eq(meetings.status, "scheduled"), gte(meetings.startAt, now), lt(meetings.startAt, dayEnd))),
       db.select({ n: count() }).from(leads).where(and(live, gte(leads.createdAt, new Date(now.getTime() - 24 * H)))),
       db.select({ n: count() }).from(leads)
         .where(and(live, isNull(leads.firstContactedAt), lt(leads.createdAt, new Date(now.getTime() - 24 * H)), gte(leads.createdAt, new Date(now.getTime() - 14 * 24 * H)))),
@@ -179,7 +182,7 @@ export class DailySummaryService {
               and f.due_at < ${now.toISOString()}::timestamp) as overdue,
           (select count(*)::int from ${followUps} f join ${leads} l on l.id = f.lead_id
             where f.user_id = u.id and f.status = 'pending' and l.deleted_at is null
-              and f.due_at >= ${now.toISOString()}::timestamp and f.due_at < ${new Date(now.getTime() + 16 * H).toISOString()}::timestamp) as due_today,
+              and f.due_at >= ${now.toISOString()}::timestamp and f.due_at < ${dayEnd.toISOString()}::timestamp) as due_today,
           (select count(*)::int from ${leads} l where l.owner_id = u.id and l.deleted_at is null
               and l.created_at >= ${new Date(now.getTime() - 24 * H).toISOString()}::timestamp) as new_leads
         from ${users} u where u.organization_id = ${organizationId} and u.is_active = true and u.deleted_at is null`),
@@ -229,6 +232,48 @@ export class DailySummaryService {
     };
   }
 
+  /**
+   * Save today's reading (latest wins) and return yesterday's, for the dashboard's "vs yesterday".
+   * Best-effort: null when there's no reading for yesterday or the table isn't there yet.
+   */
+  static async compareWithYesterday(organizationId: string, s: DailySummaryStats, now: Date, timeZone: string): Promise<DailySummaryCounts | null> {
+    const counts: DailySummaryCounts = {
+      overdueFollowUps: s.overdueFollowUps, meetingsNeedOutcome: s.meetingsNeedOutcome, uncontactedLeads: s.uncontactedLeads,
+      unassignedLeads: s.unassignedLeads, meetingsToday: s.meetingsToday, newLeads: s.newLeads,
+    };
+    try {
+      // ponytail: one small upsert per dashboard view; throttle if dashboard traffic ever makes it hot.
+      await db.insert(dailySummarySnapshots)
+        .values({ organizationId, day: dayKey(now, timeZone), counts })
+        .onConflictDoUpdate({ target: [dailySummarySnapshots.organizationId, dailySummarySnapshots.day], set: { counts, updatedAt: now } });
+      const [prev] = await db.select({ counts: dailySummarySnapshots.counts }).from(dailySummarySnapshots)
+        .where(and(eq(dailySummarySnapshots.organizationId, organizationId), eq(dailySummarySnapshots.day, dayKey(startOfZonedDay(now, timeZone, -1), timeZone))))
+        .limit(1);
+      return prev?.counts ?? null;
+    } catch (e) {
+      console.error("[daily-summary] snapshot failed", e);
+      return null;
+    }
+  }
+
+  /** One person's day, for their own dashboard: the same windows as the team numbers. */
+  static async personal(organizationId: string, userId: string, now: Date, timeZone: string) {
+    const H = 60 * 60 * 1000;
+    const dayEnd = startOfZonedDay(now, timeZone, 1);
+    const mine = and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt), eq(leads.ownerId, userId));
+    const myFollowUps = and(eq(followUps.userId, userId), eq(followUps.status, "pending"), isNull(leads.deletedAt), eq(leads.organizationId, organizationId));
+    const [[overdue], [dueToday], [meetingsToday], [fresh], [uncontacted]] = await Promise.all([
+      db.select({ n: count() }).from(followUps).innerJoin(leads, eq(followUps.leadId, leads.id)).where(and(myFollowUps, lt(followUps.dueAt, now))),
+      db.select({ n: count() }).from(followUps).innerJoin(leads, eq(followUps.leadId, leads.id)).where(and(myFollowUps, gte(followUps.dueAt, now), lt(followUps.dueAt, dayEnd))),
+      db.select({ n: count() }).from(meetings).innerJoin(leads, eq(meetings.leadId, leads.id))
+        .where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt), eq(meetings.assigneeId, userId), eq(meetings.status, "scheduled"), gte(meetings.startAt, now), lt(meetings.startAt, dayEnd))),
+      db.select({ n: count() }).from(leads).where(and(mine, gte(leads.createdAt, new Date(now.getTime() - 24 * H)))),
+      db.select({ n: count() }).from(leads)
+        .where(and(mine, isNull(leads.firstContactedAt), lt(leads.createdAt, new Date(now.getTime() - 24 * H)), gte(leads.createdAt, new Date(now.getTime() - 14 * 24 * H)))),
+    ]);
+    return { overdue: overdue.n, dueToday: dueToday.n, meetingsToday: meetingsToday.n, newLeads: fresh.n, uncontacted: uncontacted.n };
+  }
+
   private static async adminEmails(organizationId: string) {
     const rows = await db
       .select({ email: users.email, optOut: users.emailOptOut, roleName: roles.name, perms: roles.permissions })
@@ -250,6 +295,9 @@ export class DailySummaryService {
       .from(organizations)
       .where(and(eq(organizations.dailySummary, 1), isNull(organizations.suspendedAt)));
 
+    // "vs yesterday" only needs yesterday; keep a month for debugging.
+    await db.delete(dailySummarySnapshots).where(lt(dailySummarySnapshots.day, dayKey(new Date(now.getTime() - 35 * 86_400_000), "UTC"))).catch(() => {});
+
     let sent = 0;
     for (const org of orgs) {
       const today = isDueToSend(now, org.timezone, org.sentOn);
@@ -268,7 +316,7 @@ export class DailySummaryService {
         // No "your day" nudges on the business's day off (milestones above still go — they're one-off).
         if (!isWorkDay(now, org.timezone, org.workDays)) continue;
 
-        const stats = await this.stats(org.id, now);
+        const stats = await this.stats(org.id, now, org.timezone);
         if (!isActionable(stats)) continue;
         await this.nudgePeople(stats.people, today);
         const html = renderSummaryHtml(org.name, stats);

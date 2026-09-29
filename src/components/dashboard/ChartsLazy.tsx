@@ -20,3 +20,7 @@ export const LeadsByOwnerChart = dynamic(
   () => import("./Charts").then((m) => m.LeadsByOwnerChart),
   { ssr: false, loading: chartLoading },
 );
+export const LeadsTrendChart = dynamic(
+  () => import("./Charts").then((m) => m.LeadsTrendChart),
+  { ssr: false, loading: chartLoading },
+);

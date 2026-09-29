@@ -1,20 +1,22 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { MetricsCards } from "@/components/dashboard/MetricsCards";
-import { LeadsBySourceChart, LeadsByStageChart, LeadsByOwnerChart } from "@/components/dashboard/ChartsLazy";
-import { RecentActivityFeed } from "@/components/dashboard/RecentActivityFeed";
+import { LeadsBySourceChart, LeadsByStageChart, LeadsByOwnerChart, LeadsTrendChart } from "@/components/dashboard/ChartsLazy";
 import { PriorityActions } from "@/components/dashboard/PriorityActions";
 import { GettingStarted } from "@/components/dashboard/GettingStarted";
+import { DailySummaryCard } from "@/components/dashboard/DailySummaryCard";
 import { DashboardDateFilter } from "@/components/dashboard/DashboardDateFilter";
 import { requireOrg, hasPermission } from "@/lib/rbac";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { automations, leadSources, leads } from "@/db/schema";
-import { and, count, eq, isNull } from "drizzle-orm";
+import { automations, leadSources, leads, teams, users } from "@/db/schema";
+import { and, asc, count, eq, isNull } from "drizzle-orm";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { Users } from "lucide-react";
 import { AnalyticsService, AnalyticsFilters } from "@/lib/analytics/service";
+import { DEFAULT_DASHBOARD_RANGE } from "@/lib/analytics/ranges";
+import { periodChange, type Change } from "@/lib/analytics/change";
 import { SlaAnalyticsService } from "@/domains/leads/slaAnalyticsService";
 import { ContentSharingService } from "@/domains/leads/contentSharingService";
 import { Timer, Eye, PartyPopper } from "lucide-react";
@@ -28,6 +30,19 @@ async function getSetupProgress(organizationId: string, totalLeads: number) {
     db.select({ n: count() }).from(automations).where(and(eq(automations.organizationId, organizationId), eq(automations.isActive, true))),
   ]);
   return { source: sources.n > 0, lead: totalLeads > 0, automation: autos.n > 0 };
+}
+
+const RANGES = ["today", "yesterday", "7d", "30d", "this_month", "last_month", "all"] as const;
+type Range = (typeof RANGES)[number];
+const RANGE_LABEL: Record<Range, string> = {
+  today: "today", yesterday: "yesterday", "7d": "last 7 days", "30d": "last 30 days",
+  this_month: "this month", last_month: "last month", all: "all time",
+};
+
+function ChangeLine({ change, className = "" }: { change: Change | null; className?: string }) {
+  if (!change) return null;
+  const tone = change.good == null ? "text-muted-foreground" : change.good ? "text-emerald-600" : "text-destructive";
+  return <p className={`text-xs ${tone} ${className}`}>{change.text}</p>;
 }
 
 function formatMinutes(mins: number): string {
@@ -51,27 +66,36 @@ export default async function ExecutiveDashboardPage({
   if (!(await hasPermission("settings.manage"))) redirect("/my-dashboard");
   const params = await searchParams;
 
+  const range: Range = (RANGES as readonly string[]).includes(String(params.range)) ? (params.range as Range) : DEFAULT_DASHBOARD_RANGE as Range;
   const filters: AnalyticsFilters = {
     organizationId,
     ownerId: typeof params.ownerId === "string" ? params.ownerId : undefined,
     teamId: typeof params.teamId === "string" ? params.teamId : undefined,
-    dateRange: (typeof params.range === "string" ? params.range : "all") as any,
+    dateRange: range,
   };
+  // Every number on the page uses this window (and the one before it for "vs previous period").
+  const [period, prevFilters] = await Promise.all([AnalyticsService.bounds(filters), AnalyticsService.previousPeriod(filters)]);
+  const slaFor = (f: AnalyticsFilters) => AnalyticsService.leadWhere(f).then((where) => SlaAnalyticsService.getSlaMetrics(organizationId, 15, undefined, where));
 
-  const [leadsBySource, pipelineDistribution, leadsByOwner, recentActivity, sla, content, speed, org, firstLeads] = await Promise.all([
+  const [leadsBySource, pipelineDistribution, leadsByOwner, trend, sla, prevSla, content, speed, org, firstLeads, owners, teamList] = await Promise.all([
     AnalyticsService.getLeadsBySource(filters),
     AnalyticsService.getPipelineDistribution(filters),
     AnalyticsService.getLeadsByOwner(filters),
-    AnalyticsService.getRecentActivity(filters),
+    AnalyticsService.getDailyTrend(filters),
     // Same scope as the charts beside it (date range / owner / team), aggregated in SQL.
-    AnalyticsService.leadWhere(filters).then((where) => SlaAnalyticsService.getSlaMetrics(organizationId, 15, undefined, where)),
-    ContentSharingService.orgEngagementStats(organizationId),
+    slaFor(filters),
+    prevFilters ? slaFor(prevFilters) : null,
+    ContentSharingService.orgEngagementStats(organizationId, period),
     HabitService.speedBenchmark(organizationId),
     OrgService.getOrganization(organizationId),
     // "New workspace?" checks (empty state, setup guide under 5 leads) ignore the filters — a quiet
     // "Today" isn't an empty workspace. Counting stops at 5.
     db.select({ id: leads.id }).from(leads).where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt))).limit(5),
+    db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email }).from(users)
+      .where(and(eq(users.organizationId, organizationId), eq(users.isActive, true), isNull(users.deletedAt))).orderBy(asc(users.firstName)),
+    db.select({ id: teams.id, name: teams.name }).from(teams).where(eq(teams.organizationId, organizationId)).orderBy(asc(teams.name)),
   ]);
+  const ownerOptions = owners.map((u) => ({ id: u.id, name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email }));
   const workspaceLeads = firstLeads.length;
 
   // First two weeks (the trial): show what Ridhzo already did for them — proof before the trial ends.
@@ -80,8 +104,7 @@ export default async function ExecutiveDashboardPage({
   const inTrial = !!org?.trialEndsAt && new Date(org.trialEndsAt).getTime() > Date.now();
 
   const slaOnTrack = sla.complianceRatePercentage >= 80;
-  const isAdmin = await hasPermission("settings.manage");
-  const progress = isAdmin && workspaceLeads < 5 ? await getSetupProgress(organizationId, workspaceLeads) : null;
+  const progress = workspaceLeads < 5 ? await getSetupProgress(organizationId, workspaceLeads) : null;
 
   // Brand-new workspace: a wall of zeros and empty charts reads as broken. Show the setup steps (or,
   // for invited members, what to expect) until the first lead arrives.
@@ -112,12 +135,14 @@ export default async function ExecutiveDashboardPage({
 
   return (
     <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Executive Dashboard</h2>
-          <p className="text-sm text-muted-foreground">Real-time performance analytics for your lead management pipeline.</p>
+          <p className="text-sm text-muted-foreground">
+            Showing {range === "7d" || range === "30d" ? "the " : ""}{RANGE_LABEL[range]}{prevFilters ? ", compared with the period before" : ""}.
+          </p>
         </div>
-        <DashboardDateFilter />
+        <DashboardDateFilter owners={ownerOptions} teams={teamList} />
       </div>
 
       {/* Keep the setup guide up through the first few leads (it's dismissible once they're rolling). */}
@@ -141,6 +166,11 @@ export default async function ExecutiveDashboardPage({
       )}
 
       <div className="space-y-6">
+        {/* Always "today" — ignores the date filter above, like the morning email it mirrors. */}
+        <Suspense fallback={<div className="h-48 bg-muted rounded-2xl animate-pulse" />}>
+          <DailySummaryCard organizationId={organizationId} />
+        </Suspense>
+
         <div className="rounded-2xl border bg-card p-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-500/10">
@@ -152,6 +182,7 @@ export default async function ExecutiveDashboardPage({
               <p className="text-xs text-muted-foreground">
                 First-to-respond wins the deal — {sla.contactedLeads} of {sla.totalLeads} leads contacted.
               </p>
+              <ChangeLine change={sla.avgFirstContactMinutes > 0 && prevSla && prevSla.avgFirstContactMinutes > 0 ? periodChange(sla.avgFirstContactMinutes, prevSla.avgFirstContactMinutes, "pct", true) : null} />
               {speed.medianMinutes != null && (
                 <p className="mt-1 text-xs font-medium text-emerald-600">
                   ⚡ Typical reply in {shortMinutes(speed.medianMinutes)} (30 days)
@@ -162,7 +193,7 @@ export default async function ExecutiveDashboardPage({
           </div>
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
-              <Eye className="h-3.5 w-3.5" /> Content opened (7d)
+              <Eye className="h-3.5 w-3.5" /> Content opened ({RANGE_LABEL[range]})
             </p>
             <p className="text-3xl font-bold tracking-tight tabular-nums">{content.opensInWindow}</p>
             <p className="text-xs text-muted-foreground">
@@ -181,6 +212,7 @@ export default async function ExecutiveDashboardPage({
               {sla.complianceRatePercentage.toFixed(0)}%
             </p>
             <p className="text-xs text-muted-foreground">{sla.slaBreachedCount} leads breached the response target</p>
+            <ChangeLine change={prevSla && prevSla.totalLeads > 0 ? periodChange(sla.complianceRatePercentage, prevSla.complianceRatePercentage, "pts") : null} className="sm:text-right" />
           </div>
         </div>
 
@@ -189,8 +221,16 @@ export default async function ExecutiveDashboardPage({
         </Suspense>
 
         <Suspense fallback={<div className="h-32 bg-muted rounded-2xl animate-pulse" />}>
-          <MetricsCards filters={filters} hidePipelineValue />
+          <MetricsCards filters={filters} />
         </Suspense>
+
+        <div className="border rounded-2xl p-6 bg-card flex flex-col min-h-[350px]">
+          <h3 className="text-lg font-medium mb-1">Leads &amp; wins per day</h3>
+          <p className="text-xs text-muted-foreground mb-4">
+            New leads by day created, wins by day closed — {range === "all" ? "last 90 days" : RANGE_LABEL[range]}.
+          </p>
+          <LeadsTrendChart data={trend} />
+        </div>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
           <div className="col-span-4 border rounded-2xl p-6 bg-card flex flex-col min-h-[350px]">
@@ -207,17 +247,12 @@ export default async function ExecutiveDashboardPage({
         </div>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
-          <div className="col-span-4 border rounded-2xl p-6 bg-card flex flex-col min-h-[350px]">
+          <div className="col-span-full border rounded-2xl p-6 bg-card flex flex-col min-h-[350px]">
             <h3 className="text-lg font-medium mb-1">Lead Distribution by Owner</h3>
             <p className="text-xs text-muted-foreground mb-4">Lead count assigned per team member.</p>
             <LeadsByOwnerChart data={leadsByOwner} />
           </div>
 
-          <div className="col-span-3 border rounded-2xl p-6 bg-card flex flex-col min-h-[350px]">
-            <h3 className="text-lg font-medium mb-1">Recent Activity</h3>
-            <p className="text-xs text-muted-foreground mb-4">Live timeline of actions across all leads.</p>
-            <RecentActivityFeed activities={recentActivity} />
-          </div>
         </div>
       </div>
     </div>

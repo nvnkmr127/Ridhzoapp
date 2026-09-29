@@ -1,7 +1,7 @@
 import { randomBytes } from "crypto";
 import { db } from "@/db";
 import { sharedLinks, sharedLinkViews, leads, users, organizations } from "@/db/schema";
-import { and, asc, count, desc, eq, gt, gte, lt, isNull, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, lt, isNull, sql, lte } from "drizzle-orm";
 import { NotificationService } from "@/domains/notifications/service";
 import { ActivityService } from "@/domains/activities/service";
 import { keepAlive } from "@/lib/keepAlive";
@@ -127,18 +127,23 @@ export class ContentSharingService {
   }
 
   /** Org-level content engagement for the dashboard: opens in the window + currently-ignored count. */
+  // Opens within the window (the dashboard's date filter; no bounds = all time). "Ignored" is always
+  // current state: sent over a day ago and never opened.
   static async orgEngagementStats(
     organizationId: string,
-    windowMs = 7 * 24 * 60 * 60 * 1000,
+    window: { start?: Date; end?: Date } = { start: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
   ): Promise<{ opensInWindow: number; ignoredCount: number }> {
-    const since = new Date(Date.now() - windowMs);
     const ignoredBefore = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const [[opens], [ignored]] = await Promise.all([
       db
         .select({ n: count() })
         .from(sharedLinkViews)
         .innerJoin(sharedLinks, eq(sharedLinks.id, sharedLinkViews.sharedLinkId))
-        .where(and(eq(sharedLinks.organizationId, organizationId), gte(sharedLinkViews.viewedAt, since))),
+        .where(and(
+          eq(sharedLinks.organizationId, organizationId),
+          window.start ? gte(sharedLinkViews.viewedAt, window.start) : undefined,
+          window.end ? lte(sharedLinkViews.viewedAt, window.end) : undefined,
+        )),
       db
         .select({ n: count() })
         .from(sharedLinks)

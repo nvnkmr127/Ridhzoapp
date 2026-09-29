@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, timestamp, jsonb, numeric, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, timestamp, jsonb, numeric, index, primaryKey } from 'drizzle-orm/pg-core';
 import { organizations } from './organizations';
 
 // Small global key→JSON settings (maintenance mode, broadcast, coupons, …) read via PlatformConfigService.
@@ -66,4 +66,20 @@ export const supportTickets = pgTable('support_tickets', {
 }, (t) => ({
   orgIdx: index('support_tickets_org_idx').on(t.orgId),
   statusIdx: index('support_tickets_status_idx').on(t.status, t.createdAt),
+}));
+
+export type DailySummaryCounts = {
+  overdueFollowUps: number; meetingsNeedOutcome: number; uncontactedLeads: number;
+  unassignedLeads: number; meetingsToday: number; newLeads: number;
+};
+
+// The dashboard "Today" numbers, latest reading per org-local day, so the card can show "vs yesterday"
+// (overdue/unassigned counts can't be rebuilt for a past day from the live tables). Pruned after 35 days.
+export const dailySummarySnapshots = pgTable('daily_summary_snapshots', {
+  organizationId: uuid('organization_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
+  day: varchar('day', { length: 10 }).notNull(), // YYYY-MM-DD in the org's timezone
+  counts: jsonb('counts').$type<DailySummaryCounts>().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.organizationId, t.day] }),
 }));

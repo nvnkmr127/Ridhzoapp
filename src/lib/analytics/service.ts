@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { leads, followUps, leadSources, users, teams, activities } from "@/db/schema";
 import { eq, and, gte, lt, lte, desc, isNull, or, sql } from "drizzle-orm";
-import { startOfZonedDay, startOfZonedMonth } from "@/lib/tz";
+import { dayKey, startOfZonedDay, startOfZonedMonth } from "@/lib/tz";
 import { cache } from "react";
 
 export interface AnalyticsFilters {
@@ -51,14 +51,31 @@ export function summarizeLeadMetrics(
   };
 }
 
+/** Pure: every workspace-local calendar day from start to end, as YYYY-MM-DD. */
+export function dayKeysBetween(start: Date, end: Date, tz: string): string[] {
+  const days: string[] = [];
+  const last = dayKey(end, tz);
+  for (let i = 0; i < 400; i++) {
+    const k = dayKey(startOfZonedDay(start, tz, i), tz);
+    days.push(k);
+    if (k >= last) break;
+  }
+  return days;
+}
+
 export class AnalyticsService {
   // Per-request hand-off: the dashboard needs lead KPIs and the pipeline breakdown, which read the
   // same per-status counts. getLeadMetrics stores its rows here; getPipelineDistribution in the
   // same request reuses them instead of re-running the identical GROUP BY. cache() scopes the box
   // to one request, so nothing leaks across requests or callers.
+  // Keyed by the filters that produced it: the dashboard also reads the PREVIOUS period, and an
+  // unkeyed box let the pipeline chart pick up whichever period was computed last.
   private static readonly requestStatusRows = cache(
-    () => ({ rows: null as null | { status: string | null; n: number; value: number }[] }),
+    () => new Map<string, { status: string | null; n: number; value: number }[]>(),
   );
+  private static memoKey(f: AnalyticsFilters) {
+    return JSON.stringify([f.organizationId, f.ownerId, f.teamId, f.dateRange, f.startDate?.getTime(), f.endDate?.getTime(), f.timeZone]);
+  }
 
   // "Today", "this month" etc. are the WORKSPACE's calendar days — the server runs in UTC, which
   // put an Indian team's "today" 5½ hours off.
@@ -93,6 +110,68 @@ export class AnalyticsService {
     const { getOrgFormat } = await import("@/lib/format.server");
     const { timezone } = await getOrgFormat(filters.organizationId).catch(() => ({ timezone: "UTC" }));
     return { ...filters, timeZone: timezone };
+  }
+
+  /** The resolved window of a filter set (workspace timezone); both undefined for "all time". */
+  static async bounds(filters: AnalyticsFilters) {
+    return this.getDateRangeBounds(await this.withTz(filters));
+  }
+
+  /**
+   * The same-length window immediately before this one ("last 30 days" → the 30 days before that),
+   * for "vs previous period" deltas. Null for all-time, which has nothing before it.
+   */
+  static async previousPeriod(filters: AnalyticsFilters): Promise<AnalyticsFilters | null> {
+    const f = await this.withTz(filters);
+    const { start, end } = this.getDateRangeBounds(f);
+    if (!start || !end) return null;
+    const len = end.getTime() - start.getTime();
+    return { ...f, dateRange: undefined, startDate: new Date(start.getTime() - len - 1), endDate: new Date(start.getTime() - 1) };
+  }
+
+  /** Deals WON inside the window (by won date, not creation date) and their value. */
+  static async getWonSummary(filters: AnalyticsFilters): Promise<{ count: number; value: number }> {
+    filters = await this.withTz(filters);
+    const [row] = await db
+      .select({ n: sql<number>`count(*)::int`, value: sql<number>`coalesce(sum(${leads.expectedValue}), 0)::float` })
+      .from(leads)
+      .where(and(...this.wonConditions(filters)));
+    return { count: Number(row?.n ?? 0), value: Number(row?.value ?? 0) };
+  }
+
+  private static wonConditions(filters: AnalyticsFilters) {
+    const c = [isNull(leads.deletedAt), eq(leads.organizationId, filters.organizationId), sql`${leads.wonAt} is not null`];
+    if (filters.ownerId) c.push(eq(leads.ownerId, filters.ownerId));
+    if (filters.teamId) c.push(eq(leads.teamId, filters.teamId));
+    const { start, end } = this.getDateRangeBounds(filters);
+    if (start) c.push(gte(leads.wonAt, start));
+    if (end) c.push(lte(leads.wonAt, end));
+    return c;
+  }
+
+  /**
+   * New leads and deals won per workspace-local day across the window. All-time is capped to the
+   * last 90 days (a multi-year daily chart is unreadable). Missing days are filled with zeros.
+   */
+  static async getDailyTrend(filters: AnalyticsFilters): Promise<{ day: string; leads: number; won: number }[]> {
+    filters = await this.withTz(filters);
+    const tz = filters.timeZone || "UTC";
+    let { start, end } = this.getDateRangeBounds(filters);
+    end ??= new Date();
+    start ??= startOfZonedDay(end, tz, -89);
+    const f = { ...filters, dateRange: undefined, startDate: start, endDate: end };
+    // GROUP BY 1 (position): tz is a bind parameter, so the SELECT and GROUP BY copies of this
+    // expression get different $n and Postgres refuses to treat them as the same.
+    const localDay = (col: typeof leads.createdAt | typeof leads.wonAt) => sql<string>`to_char((${col} at time zone 'UTC') at time zone ${tz}, 'YYYY-MM-DD')`;
+    const [created, won] = await Promise.all([
+      db.select({ day: localDay(leads.createdAt), n: sql<number>`count(*)::int` }).from(leads)
+        .where(and(...this.buildLeadConditions(f))).groupBy(sql`1`),
+      db.select({ day: localDay(leads.wonAt), n: sql<number>`count(*)::int` }).from(leads)
+        .where(and(...this.wonConditions(f))).groupBy(sql`1`),
+    ]);
+    const byDay = (rows: { day: string; n: number }[]) => new Map(rows.map((r) => [r.day, Number(r.n)]));
+    const c = byDay(created), w = byDay(won);
+    return dayKeysBetween(start, end, tz).map((day) => ({ day, leads: c.get(day) ?? 0, won: w.get(day) ?? 0 }));
   }
 
   /** The lead scope every dashboard chart uses (org, not deleted, owner/team, date range in the workspace tz). */
@@ -153,7 +232,7 @@ export class AnalyticsService {
     const catMap = await CustomStatusSchemaService.getStatusCategoryMap(filters.organizationId);
     const resp = (respRows as unknown as { contacted: number; median: number | null; within5: number }[])[0];
     const statusRows = byStatus.map((r) => ({ status: r.status, n: Number(r.n), value: Number(r.value) }));
-    this.requestStatusRows().rows = statusRows; // the pipeline breakdown reuses these in this request
+    this.requestStatusRows().set(this.memoKey(filters), statusRows); // the pipeline breakdown reuses these in this request
     return summarizeLeadMetrics(
       statusRows,
       { contacted: Number(resp?.contacted ?? 0), median: resp?.median == null ? null : Number(resp.median), within5: Number(resp?.within5 ?? 0) },
@@ -259,10 +338,10 @@ export class AnalyticsService {
    * fetched in this request when they're available (same dashboard fetch), else queries.
    */
   static async getPipelineDistribution(filters: AnalyticsFilters) {
-    const memo = this.requestStatusRows().rows;
+    filters = await this.withTz(filters);
+    const memo = this.requestStatusRows().get(this.memoKey(filters));
     if (memo) return this.pipelineFromStatusRows(memo);
 
-    filters = await this.withTz(filters);
     const conditions = this.buildLeadConditions(filters);
     const rows = await db
       .select({ status: leads.status, count: sql<number>`count(*)::int` })

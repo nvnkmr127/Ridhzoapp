@@ -48,6 +48,7 @@ export const FIELD_OPTIONS = [
   { key: "createdAt", label: "Created Date", type: "date" },
   { key: "updatedAt", label: "Updated Date", type: "date" },
   { key: "nextFollowUpAt", label: "Follow-up Date", type: "date" },
+  { key: "firstContactedAt", label: "First Contacted", type: "date" },
   // Facebook/Meta ad attribution captured on ingested leads (stored in customData).
   { key: "customData.meta_campaign_name", label: "FB Campaign", type: "string" },
   { key: "customData.meta_adset_name", label: "FB Ad Set", type: "string" },

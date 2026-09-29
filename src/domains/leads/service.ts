@@ -420,6 +420,7 @@ export class LeadService {
       createdAt: leads.createdAt,
       updatedAt: leads.updatedAt,
       nextFollowUpAt: leads.nextFollowUpAt,
+      firstContactedAt: leads.firstContactedAt,
     };
 
     const col = colMap[rule.field];
