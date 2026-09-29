@@ -47,6 +47,9 @@ async function audit(
 const refIdSchema = z.string().trim().min(1).max(120);
 const userIdSchema = z.string().guid();
 const invalid = (what: string) => fail("VALIDATION", `Invalid ${what}.`);
+// "Why" for high-blast-radius actions (suspend, hard delete, write impersonation) — lands in the audit row.
+const reasonSchema = z.string().trim().min(3).max(500);
+const needReason = () => fail("VALIDATION", "Give a reason (3–500 characters) — it's saved to the audit log.");
 
 const planSchema = z.object({
   organizationId: orgIdSchema,
@@ -98,20 +101,28 @@ export async function setOrgPlanAction(input: z.infer<typeof planSchema>) {
   }
 }
 
-export async function setOrgSuspendedAction(organizationId: string, suspended: boolean) {
+async function suspendOne(session: Session, organizationId: string, suspended: boolean, reason: string | null) {
+  const row = await PlatformService.setSuspended(organizationId, suspended);
+  if (!row) return false;
+  await audit(session, suspended ? "platform.suspend" : "platform.reactivate", {
+    organizationId,
+    entityType: "organization",
+    entityId: organizationId,
+    metadata: { reason },
+  });
+  return true;
+}
+
+// Suspending needs a reason; reactivating doesn't.
+export async function setOrgSuspendedAction(organizationId: string, suspended: boolean, reason?: string) {
   const session = await requireSuperAdmin();
   if (!orgIdSchema.safeParse(organizationId).success) return fail("VALIDATION", "Invalid organization.");
+  const why = reasonSchema.safeParse(reason);
+  if (suspended && !why.success) return needReason();
   try {
-    const row = await PlatformService.setSuspended(organizationId, suspended);
-    if (!row) return fail("NOT_FOUND", "That organization no longer exists.");
-    await AuditService.log({
-      organizationId,
-      userId: session.user.id,
-      action: suspended ? "platform.suspend" : "platform.reactivate",
-      entityType: "organization",
-      entityId: organizationId,
-      metadata: { by: "super_admin" },
-    });
+    if (!(await suspendOne(session, organizationId, suspended, why.success ? why.data : null))) {
+      return fail("NOT_FOUND", "That organization no longer exists.");
+    }
     revalidatePath("/admin");
     return ok({ suspended });
   } catch (e) {
@@ -119,14 +130,39 @@ export async function setOrgSuspendedAction(organizationId: string, suspended: b
   }
 }
 
+// One round trip for the fleet table's bulk bar; reports exactly which orgs changed so the UI never
+// shows a failed org as suspended.
+// ponytail: loops setSuspended per org (each gets its own audit row); set-based UPDATE past ~500 orgs.
+export async function bulkSetOrgSuspendedAction(organizationIds: string[], suspended: boolean, reason?: string) {
+  const session = await requireSuperAdmin();
+  const ids = z.array(orgIdSchema).min(1).max(500).safeParse(organizationIds);
+  if (!ids.success) return fail("VALIDATION", "Select between 1 and 500 organizations.");
+  const why = reasonSchema.safeParse(reason);
+  if (suspended && !why.success) return needReason();
+  const succeeded: string[] = [];
+  const failed: string[] = [];
+  for (const id of new Set(ids.data)) {
+    try {
+      ((await suspendOne(session, id, suspended, why.success ? why.data : null)) ? succeeded : failed).push(id);
+    } catch {
+      failed.push(id);
+    }
+  }
+  revalidatePath("/admin");
+  return ok({ succeeded, failed });
+}
+
 // Start impersonating a tenant: a super-admin then operates inside that org via the normal UI.
-export async function impersonateOrgAction(organizationId: string, readOnly = false) {
+// Write mode can change tenant data, so it needs a reason and gets a shorter cap than read-only.
+export async function impersonateOrgAction(organizationId: string, readOnly = false, reason?: string) {
   const session = await requireSuperAdmin();
   if (!orgIdSchema.safeParse(organizationId).success) return fail("VALIDATION", "Invalid organization.");
+  const why = reasonSchema.safeParse(reason);
+  if (!readOnly && !why.success) return needReason();
   const org = await PlatformService.getOrg(organizationId);
   if (!org) return fail("NOT_FOUND", "That organization no longer exists.");
 
-  const maxAgeSeconds = 60 * 60 * 4; // 4h safety cap
+  const maxAgeSeconds = readOnly ? 4 * 3600 : 3600; // safety cap: 4h read-only, 1h with write access
   const store = await cookies();
   store.set(IMPERSONATE_COOKIE, organizationId, {
     httpOnly: true,
@@ -155,6 +191,7 @@ export async function impersonateOrgAction(organizationId: string, readOnly = fa
     metadata: {
       by: "super_admin",
       readOnly,
+      reason: why.success ? why.data : null,
       maxAgeSeconds,
       expiresAt: new Date(Date.now() + maxAgeSeconds * 1000).toISOString(),
     },
@@ -881,6 +918,7 @@ export async function addSupportTicketNoteAction(ticketId: string, noteBody: str
     const authorName = session.user.name || session.user.email || "SuperAdmin";
     const ticket = await SupportTicketService.addInternalNote(ticketId, authorName, text);
     if (!ticket) return fail("NOT_FOUND", "Ticket not found");
+    await audit(session, "platform.support_note", { organizationId: ticket.orgId, entityType: "support_ticket", entityId: ticketId });
     revalidatePath("/admin");
     return ok(ticket);
   } catch (e) {
@@ -936,11 +974,13 @@ export async function exportTenantDossierAction(organizationId: string) {
   }
 }
 
-export async function hardDeleteTenantAction(organizationId: string, confirmation: string) {
+export async function hardDeleteTenantAction(organizationId: string, confirmation: string, reason?: string) {
   const session = await requireSuperAdmin();
   if (!orgIdSchema.safeParse(organizationId).success) return fail("VALIDATION", "Invalid organization.");
+  const why = reasonSchema.safeParse(reason);
+  if (!why.success) return needReason();
   try {
-    const res = await PlatformService.hardDeleteTenant(organizationId, confirmation, session.user.id);
+    const res = await PlatformService.hardDeleteTenant(organizationId, confirmation, session.user.id, why.data);
     if (!res.success) {
       return fail("VALIDATION", res.message ?? "Hard delete rejected.");
     }

@@ -18,3 +18,4 @@ export * from './emailSettings';
 export * from './tenantIntegrations';
 export * from './meetings';
 export * from './idempotency';
+export * from './platform';

@@ -1,6 +1,6 @@
 # PRD — Super-Admin Platform Console (Full)
 
-**Status:** Documenting shipped surface + prioritized gaps · **Last updated:** 2026-09-20
+**Status:** Documenting shipped surface + prioritized gaps · **Last updated:** 2026-09-29
 **Owner:** Platform / Founder-ops · **Scope:** `/admin`, tenant impersonation, and all `requireSuperAdmin`-gated actions
 
 > This is a "reverse + forward" spec: it documents the platform-operator console that already exists (`src/app/(dashboard)/admin`, `src/components/platform/*`, `src/lib/actions/platform.ts`, `src/domains/platform/*`) and specs the remaining gaps found in review. Requirements already implemented are marked **[Shipped]**; gaps are **[Gap]**.
@@ -92,8 +92,8 @@ All P0s are **[Shipped]** and gated by `requireSuperAdmin`; listed here as the c
 ### Nice-to-Have (P1) — fast follows
 | # | Requirement | Rationale / acceptance |
 |---|-------------|------------------------|
-| P1-1 | **Confirm dialogs for suspend & bulk-suspend** *(Gap)* | Replace native `confirm()` in `PlatformConsole` with the same `AlertDialog` pattern hard-delete uses; consistent, styleable, testable. AC: destructive fleet actions use an in-app dialog naming the tenant(s) and count. |
-| P1-2 | **Hard-delete FK-coverage guard** *(Gap)* | Add a test/assertion that cross-checks every table with an FK to `organizations`/`leads` against the delete list, so a future schema addition can't silently make hard-delete roll back. AC: test fails if an org-referencing table is missing from the delete routine. |
+| P1-1 | **Confirm dialogs for suspend & bulk-suspend** **[Shipped 2026-09-29]** — every native `confirm()` in the console/Tenant 360 now uses `useConfirm` (`components/ui/confirm-dialog.tsx`); suspend, hard delete and write impersonation also require an audited reason. | Replace native `confirm()` in `PlatformConsole` with the same `AlertDialog` pattern hard-delete uses; consistent, styleable, testable. AC: destructive fleet actions use an in-app dialog naming the tenant(s) and count. |
+| P1-2 | **Hard-delete FK-coverage guard** **[Shipped]** (`hardDeleteCoverage.test.ts`) | Add a test/assertion that cross-checks every table with an FK to `organizations`/`leads` against the delete list, so a future schema addition can't silently make hard-delete roll back. AC: test fails if an org-referencing table is missing from the delete routine. |
 | P1-3 | **Reduced-motion + tab a11y polish** *(partly done)* | `motion-reduce:animate-none` on the threat badge; `aria-current` on active tabs **[Shipped]**. |
 | P1-4 | **Bulk operations beyond suspend** | Bulk plan-set / bulk credit-grant with partial-success reporting (suspend already loops sequentially — `ponytail:` note flags a batch endpoint when fleet > 100). |
 | P1-5 | **Maintenance mode scheduling + message preview** | Schedule a window and preview the tenant-facing screen before enabling. |
@@ -103,8 +103,8 @@ All P0s are **[Shipped]** and gated by `requireSuperAdmin`; listed here as the c
 |---|-------------|-----------------------|
 | P2-1 | **Granular platform roles** (support-only, billing-only, compliance-only, read-only auditor) | Today super-admin is all-or-nothing; the audit already records `by: super_admin`. Keep action authorization centralized (`requireSuperAdmin`) so it can later branch on a platform-role without touching call sites. |
 | P2-2 | **Session-revocation for pre-fix sessions / global "revoke all"** | Current revoke can't touch sessions issued before `authAt` existed; a token-version column would make revocation absolute. |
-| P2-3 | **Config in migrations, not runtime DDL** | `platform_configs` is created lazily via `CREATE TABLE IF NOT EXISTS`; move to a drizzle migration so the schema is declarative and DDL grants aren't needed at runtime. |
-| P2-4 | **Batch fleet endpoints** | For 100+ orgs, replace sequential loops with set-based operations. |
+| P2-3 | **Config in migrations, not runtime DDL** **[Shipped 2026-09-29]** — `drizzle/0085_platform_tables.sql`; invoices and tickets also moved out of JSON config into `tax_invoices` / `support_tickets`. | `platform_configs` is created lazily via `CREATE TABLE IF NOT EXISTS`; move to a drizzle migration so the schema is declarative and DDL grants aren't needed at runtime. |
+| P2-4 | **Batch fleet endpoints** *(partial: `bulkSetOrgSuspendedAction` returns per-org results; still loops server-side)* | For 100+ orgs, replace sequential loops with set-based operations. |
 | P2-5 | **Operator activity replay / immutable audit export** | Signed, exportable audit trail for the platform events themselves. |
 
 ---

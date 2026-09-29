@@ -4,6 +4,7 @@ import { and, desc, eq, lt, or } from "drizzle-orm";
 import { logError } from "@/lib/log";
 
 const DEFAULT_LIMIT = 100;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class AuditService {
   // Best-effort: an audit write must never break the action it records.
@@ -34,6 +35,9 @@ export class AuditService {
         }
       }
 
+      // entity_id is a uuid column; text refs (inv_…, tkt_…, coupon codes) would fail the insert and
+      // drop the whole row, so they go in metadata.entityRef instead.
+      const textRef = input.entityId && !UUID.test(input.entityId) ? input.entityId : null;
       await db.insert(auditLogs).values({
         organizationId: input.organizationId,
         userId: input.userId ?? null,
@@ -41,8 +45,8 @@ export class AuditService {
         actorEmail,
         action: input.action,
         entityType: input.entityType ?? null,
-        entityId: input.entityId ?? null,
-        metadata: input.metadata ?? {},
+        entityId: textRef ? null : (input.entityId ?? null),
+        metadata: textRef ? { ...input.metadata, entityRef: textRef } : (input.metadata ?? {}),
       });
     } catch (e) {
       // Routed through the same structured logger every other server-side failure uses (ref id +

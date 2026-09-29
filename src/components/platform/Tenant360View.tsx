@@ -33,6 +33,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import type { Tenant360Data } from "@/domains/platform/service";
 import {
@@ -59,6 +62,7 @@ const PLANS = ["free", "starter", "unlimited"] as const;
 export function Tenant360View({ initialData }: Tenant360ViewProps) {
   const router = useRouter();
   const { toast } = useToast();
+  const [confirm, confirmDialog] = useConfirm();
 
   const [data, setData] = React.useState<Tenant360Data>(initialData);
   const [busyAction, setBusyAction] = React.useState<string | null>(null);
@@ -77,6 +81,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
   const [exportingDossier, setExportingDossier] = React.useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = React.useState(false);
   const [confirmSlug, setConfirmSlug] = React.useState("");
+  const [deleteReason, setDeleteReason] = React.useState("");
   const [deletingTenant, setDeletingTenant] = React.useState(false);
 
   // Meta Ingestion Diagnostics & Replay
@@ -160,9 +165,20 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
 
   // Quick Actions Handlers
   const handleImpersonate = async (readOnly = false, redirectPath = "/leads") => {
+    let reason: string | undefined;
+    if (!readOnly) {
+      const ok = await confirm({
+        title: `Open ${org.name} with write access?`,
+        description: "Anything you change is saved to their workspace. Access ends after 1 hour.",
+        confirmLabel: "Open tenant",
+        reason: true,
+      });
+      if (!ok) return;
+      reason = ok.reason;
+    }
     setBusyAction("impersonate");
     try {
-      const res = await impersonateOrgAction(org.id, readOnly);
+      const res = await impersonateOrgAction(org.id, readOnly, reason);
       if (res.ok) {
         toast({
           title: "Session Started",
@@ -294,12 +310,21 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
 
   const handleToggleSuspend = async () => {
     const nextSuspended = !isSuspended;
-    if (nextSuspended && !confirm(`Suspend ${org.name}? Its users will immediately be blocked from signing in.`)) {
-      return;
+    let reason: string | undefined;
+    if (nextSuspended) {
+      const ok = await confirm({
+        title: `Suspend ${org.name}?`,
+        description: "Its users are blocked from signing in within a minute.",
+        confirmLabel: "Suspend",
+        destructive: true,
+        reason: true,
+      });
+      if (!ok) return;
+      reason = ok.reason;
     }
     setBusyAction("suspend");
     try {
-      const res = await setOrgSuspendedAction(org.id, nextSuspended);
+      const res = await setOrgSuspendedAction(org.id, nextSuspended, reason);
       if (res.ok) {
         toast({
           title: nextSuspended ? "Organization Suspended" : "Organization Reactivated",
@@ -354,7 +379,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
   };
 
   const handleRevokeSessions = async () => {
-    if (!confirm(`Revoke all active sessions for ${org.name}? Every member will be signed out.`)) return;
+    if (!(await confirm({ title: `Sign out everyone in ${org.name}?`, description: "All active sessions end now; members must sign in again.", confirmLabel: "Revoke sessions", destructive: true }))) return;
     setBusyAction("revoke-sessions");
     try {
       const res = await revokeOrgSessionsAction(org.id);
@@ -395,7 +420,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
     if (confirmSlug.trim().toLowerCase() !== org.slug.toLowerCase() && confirmSlug.trim().toLowerCase() !== org.name.toLowerCase()) return;
     setDeletingTenant(true);
     try {
-      const res = await hardDeleteTenantAction(org.id, confirmSlug.trim());
+      const res = await hardDeleteTenantAction(org.id, confirmSlug.trim(), deleteReason.trim());
       if (!res.ok) {
         toast({ title: "Deletion Failed", description: res.message, variant: "destructive" });
         return;
@@ -429,6 +454,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
 
   return (
     <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6 max-w-7xl mx-auto">
+      {confirmDialog}
       {/* Back Navigation Bar */}
       <div className="flex items-center justify-between gap-4">
         <Link
@@ -1848,6 +1874,18 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
                 className="h-8 text-xs font-mono border-destructive/40 focus-visible:ring-destructive"
               />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="t360-delete-reason" className="text-xs">Reason (saved to the audit log)</Label>
+              <Textarea
+                id="t360-delete-reason"
+                rows={2}
+                maxLength={500}
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                placeholder="e.g. Account closure requested by owner, ticket #123"
+                className="text-xs"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setDeleteModalOpen(false)}>
@@ -1857,7 +1895,7 @@ export function Tenant360View({ initialData }: Tenant360ViewProps) {
               variant="destructive"
               size="sm"
               onClick={handleHardDeleteTenant}
-              disabled={deletingTenant || (confirmSlug.trim().toLowerCase() !== org.slug.toLowerCase() && confirmSlug.trim().toLowerCase() !== org.name.toLowerCase())}
+              disabled={deletingTenant || deleteReason.trim().length < 3 || (confirmSlug.trim().toLowerCase() !== org.slug.toLowerCase() && confirmSlug.trim().toLowerCase() !== org.name.toLowerCase())}
               className="gap-1.5"
             >
               <Trash2 className="h-3.5 w-3.5" />

@@ -54,7 +54,7 @@ describe("AuditService.log", () => {
       userId: "user-1",
       action: "api_key.create",
       entityType: "api_key",
-      entityId: "key-1",
+      entityId: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
       metadata: { name: "CI key", scope: "read_only" },
     });
 
@@ -65,17 +65,23 @@ describe("AuditService.log", () => {
       actorEmail: "priya@example.com",
       action: "api_key.create",
       entityType: "api_key",
-      entityId: "key-1",
+      entityId: "7c9e6679-7425-40de-944b-e07fc1f90ae7",
       metadata: { name: "CI key", scope: "read_only" },
     });
   });
 
   it("stores userId (and the actor snapshot) as null for system/background actions so the UI renders 'System'", async () => {
-    await AuditService.log({ organizationId: "org-a", action: "lead.sla_escalated", entityType: "lead", entityId: "lead-1" });
+    await AuditService.log({ organizationId: "org-a", action: "lead.sla_escalated", entityType: "lead" });
 
     expect(insertValues).toHaveBeenCalledWith(
       expect.objectContaining({ userId: null, actorName: null, actorEmail: null, entityType: "lead", metadata: {} }),
     );
+  });
+
+  // entity_id is a uuid column: a text ref (inv_…, tkt_…) used to fail the insert and lose the row.
+  it("moves a non-uuid entity id into metadata.entityRef", async () => {
+    await AuditService.log({ organizationId: "org-a", action: "billing.invoice_voided", entityType: "invoice", entityId: "inv_1_ab", metadata: { n: 1 } });
+    expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({ entityId: null, metadata: { n: 1, entityRef: "inv_1_ab" } }));
   });
 
   // Best-effort by design: the business operation must survive an audit outage.

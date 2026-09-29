@@ -793,8 +793,8 @@ export class PlatformService {
     ] = await Promise.all([
       import("./revops").then((m) => m.RevOpsService.listTenantHealth(500)).catch(() => []),
       import("@/domains/billing/lifecycleService").then((m) => m.BillingLifecycleService.getTenantBillingStatus(organizationId)).catch(() => null),
-      import("@/domains/billing/invoiceService").then((m) => m.InvoiceService.listInvoices(500)).catch(() => []),
-      import("./supportService").then((m) => m.SupportTicketService.listTickets("all")).catch(() => []),
+      import("@/domains/billing/invoiceService").then((m) => m.InvoiceService.listForOrg(organizationId)).catch(() => []),
+      import("./supportService").then((m) => m.SupportTicketService.listForOrg(organizationId)).catch(() => []),
       db
         .select({
           id: users.id,
@@ -918,8 +918,8 @@ export class PlatformService {
     ]);
 
     const health = tenantHealthList.find((h) => h.id === organizationId) ?? null;
-    const invoices = allInvoices.filter((inv) => inv.orgId === organizationId);
-    const tickets = allTickets.filter((t) => t.orgId === organizationId);
+    const invoices = allInvoices;
+    const tickets = allTickets;
     const anomalies = allAnomalies.filter((a) => a.organizationId === organizationId);
 
     const byStatus: Record<string, number> = {};
@@ -1098,7 +1098,7 @@ export class PlatformService {
         .where(eq(leads.organizationId, organizationId))
         .limit(DOSSIER_ROW_CAP + 1),
       import("@/domains/billing/invoiceService").then((m) => m.InvoiceService.listForOrg(organizationId)),
-      import("./supportService").then((m) => m.SupportTicketService.listTickets("all")).then((all) => all.filter((t) => t.orgId === organizationId)),
+      import("./supportService").then((m) => m.SupportTicketService.listForOrg(organizationId)),
       db
         .select({
           id: apiKeys.id,
@@ -1143,7 +1143,8 @@ export class PlatformService {
   static async hardDeleteTenant(
     organizationId: string,
     confirmation: string,
-    superAdminId?: string
+    superAdminId?: string,
+    reason?: string,
   ): Promise<{ success: boolean; message?: string }> {
     const [org] = await db
       .select({ id: organizations.id, name: organizations.name, slug: organizations.slug })
@@ -1295,6 +1296,7 @@ export class PlatformService {
         metadata: {
           orgName: org.name,
           slug: org.slug,
+          reason: reason ?? null,
           standard: "DPDP 2023 / GDPR Right to Erasure",
         },
       });

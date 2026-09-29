@@ -33,30 +33,9 @@ export function shouldShowBroadcast(
   return true;
 }
 
+// Table is created by migration 0085 (drizzle/0085_platform_tables.sql), not at runtime.
 export class PlatformConfigService {
-  private static tableEnsured = false;
-
-  private static async ensureTable(): Promise<void> {
-    if (this.tableEnsured) return;
-    if (typeof db.execute !== "function") return; // graceful exit for vitest mocks
-    try {
-      await db.execute(sql`
-        CREATE TABLE IF NOT EXISTS platform_configs (
-          key VARCHAR(100) PRIMARY KEY,
-          value JSONB NOT NULL,
-          updated_at TIMESTAMP DEFAULT NOW() NOT NULL
-        );
-      `);
-      this.tableEnsured = true;
-    } catch (err) {
-      // DB offline or missing DDL grant. Log it — otherwise get() silently returns defaults and
-      // set() silently no-ops, hiding a real misconfiguration (e.g. broadcasts never persisting).
-      console.error("[PlatformConfigService] ensureTable failed — config reads/writes will be no-ops", err);
-    }
-  }
-
   static async get<T>(key: string, defaultValue: T): Promise<T> {
-    await this.ensureTable();
     try {
       const rows = (await db.execute(
         sql`SELECT value FROM platform_configs WHERE key = ${key} LIMIT 1`
@@ -65,7 +44,9 @@ export class PlatformConfigService {
         return rows[0].value as T;
       }
       return defaultValue;
-    } catch {
+    } catch (err) {
+      // Log it — a missing table (migration 0085 not applied) would otherwise look like "all defaults".
+      if (typeof db.execute === "function") console.error("[PlatformConfigService] get failed", key, err);
       return defaultValue;
     }
   }
@@ -73,7 +54,6 @@ export class PlatformConfigService {
   // Throws on failure: a caller that reports "saved" must not be lying. (Reads above stay lenient
   // because they have safe defaults; a failed write has none.)
   static async set<T>(key: string, value: T): Promise<void> {
-    await this.ensureTable();
     if (typeof db.execute !== "function") return; // vitest mocks without a db
     try {
       await db.execute(sql`
@@ -96,7 +76,6 @@ export class PlatformConfigService {
   // error, and writing that back would replace the whole collection; and two concurrent get/set pairs
   // lose one update. Throws on any failure. Returns what was written.
   static async update<T>(key: string, defaultValue: T, fn: (current: T) => T | Promise<T>): Promise<T> {
-    await this.ensureTable();
     const next = await db.transaction(async (tx) => {
       await tx.execute(sql`
         INSERT INTO platform_configs (key, value, updated_at)

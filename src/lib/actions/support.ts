@@ -18,8 +18,7 @@ function forTenant(t: SupportTicket): Omit<SupportTicket, "internalNotes" | "ass
 
 export async function listMySupportTicketsAction() {
   const { organizationId } = await requireOrg();
-  const all = await SupportTicketService.listTickets("all");
-  return all.filter((t) => t.orgId === organizationId).map(forTenant);
+  return (await SupportTicketService.listForOrg(organizationId)).map(forTenant);
 }
 
 const createSchema = z.object({

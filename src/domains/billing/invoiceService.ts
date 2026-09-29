@@ -1,7 +1,6 @@
 import { db } from "@/db";
-import { organizations } from "@/db/schema";
-import { eq } from "drizzle-orm";
-import { PlatformConfigService } from "@/domains/platform/configService";
+import { organizations, taxInvoices } from "@/db/schema";
+import { desc, eq, like, sql } from "drizzle-orm";
 import { AuditService } from "@/domains/audit/service";
 import { UserFacingError } from "@/lib/actions/result";
 import { sendEmail, appUrl } from "@/lib/mail/mailer";
@@ -16,9 +15,9 @@ export interface TaxInvoice {
   amount: number; // taxable value, INR (2dp)
   taxRate: number; // 18
   taxAmount: number; // cgst + sgst + igst
-  cgst?: number;
-  sgst?: number;
-  igst?: number;
+  cgst?: number | null;
+  sgst?: number | null;
+  igst?: number | null;
   placeOfSupply?: string | null; // 2-digit GST state code, when known
   totalAmount: number;
   sacCode: string; // 998313 (SaaS)
@@ -33,7 +32,6 @@ export interface TaxInvoice {
   periodEnd: string;
 }
 
-const INVOICE_CONFIG_KEY = "tax_invoices";
 const GST_RATE = 18;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -44,8 +42,8 @@ export function financialYear(d: Date): string {
 }
 
 // Next number in a series for the FY. Invoice numbers must be unique and consecutive per series per FY
-// (GST Rule 46); runs inside the config row lock, so two concurrent issues can't share a number.
-export function nextNumber(list: TaxInvoice[], series: "INV" | "CN", fy: string): string {
+// (GST Rule 46); runs under the numbering lock, so two concurrent issues can't share a number.
+export function nextNumber(list: Pick<TaxInvoice, "invoiceNumber">[], series: "INV" | "CN", fy: string): string {
   const prefix = `${series}/${fy}/`;
   const max = list.reduce((m, i) => (i.invoiceNumber.startsWith(prefix) ? Math.max(m, Number(i.invoiceNumber.slice(prefix.length)) || 0) : m), 0);
   return `${prefix}${String(max + 1).padStart(4, "0")}`;
@@ -80,26 +78,56 @@ async function emailInvoice(to: string, inv: TaxInvoice) {
   });
 }
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type InvoiceRow = typeof taxInvoices.$inferSelect;
+
+const toInvoice = (r: InvoiceRow): TaxInvoice => ({
+  ...r,
+  status: r.status as TaxInvoice["status"],
+  type: r.type as TaxInvoice["type"],
+  issuedAt: r.issuedAt.toISOString(),
+  paidAt: r.paidAt?.toISOString() ?? null,
+  periodStart: r.periodStart.toISOString(),
+  periodEnd: r.periodEnd.toISOString(),
+});
+
+const toRow = (i: TaxInvoice) => ({
+  ...i,
+  issuedAt: new Date(i.issuedAt),
+  paidAt: i.paidAt ? new Date(i.paidAt) : null,
+  periodStart: new Date(i.periodStart),
+  periodEnd: new Date(i.periodEnd),
+});
+
+// Serializes every invoice/credit-note write for the rest of the transaction: numbering stays gap-free
+// and a webhook retry sees the invoice its twin just wrote. (invoice_number is also UNIQUE as a backstop.)
+const lockInvoices = (tx: Tx) => tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('tax_invoice_numbering'))`);
+
+// ponytail: reads every number in the FY's series; a SQL max() when a series runs into the tens of thousands.
+async function allocateNumber(tx: Tx, series: "INV" | "CN", now: Date): Promise<string> {
+  const fy = financialYear(now);
+  const rows = await tx.select({ invoiceNumber: taxInvoices.invoiceNumber }).from(taxInvoices).where(like(taxInvoices.invoiceNumber, `${series}/${fy}/%`));
+  return nextNumber(rows, series, fy);
+}
+
 export class InvoiceService {
   static async listInvoices(limit = 100): Promise<TaxInvoice[]> {
-    const list = await PlatformConfigService.get<TaxInvoice[]>(INVOICE_CONFIG_KEY, []);
-    return list.slice(0, limit);
+    const rows = await db.select().from(taxInvoices).orderBy(desc(taxInvoices.issuedAt)).limit(limit);
+    return rows.map(toInvoice);
   }
 
   static async listForOrg(orgId: string): Promise<TaxInvoice[]> {
-    const list = await PlatformConfigService.get<TaxInvoice[]>(INVOICE_CONFIG_KEY, []);
-    return list.filter((i) => i.orgId === orgId);
+    const rows = await db.select().from(taxInvoices).where(eq(taxInvoices.orgId, orgId)).orderBy(desc(taxInvoices.issuedAt));
+    return rows.map(toInvoice);
   }
 
   static async getInvoice(id: string): Promise<TaxInvoice | null> {
-    const list = await PlatformConfigService.get<TaxInvoice[]>(INVOICE_CONFIG_KEY, []);
-    return list.find((inv) => inv.id === id) ?? null;
+    const [row] = await db.select().from(taxInvoices).where(eq(taxInvoices.id, id)).limit(1);
+    return row ? toInvoice(row) : null;
   }
 
   // Issue a tax invoice. `amount` is the taxable value; pass `total` instead when the figure already
   // includes GST (a Razorpay charge). `paymentId` makes a repeat call for the same payment a no-op.
-  // ponytail: invoices live in one JSON config row (locked on write); move to a table with a DB
-  // sequence if volume grows into the thousands per year.
   static async generateInvoice(
     params: { orgId: string; plan: string; amount?: number; total?: number; status?: "paid" | "issued"; gstin?: string | null; paymentId?: string | null },
     actorId?: string | null,
@@ -120,20 +148,15 @@ export class InvoiceService {
     const now = new Date();
     const status = params.status ?? "paid";
 
-    let invoice: TaxInvoice | null = null;
-    let isNew = false;
-    await PlatformConfigService.update<TaxInvoice[]>(INVOICE_CONFIG_KEY, [], (list) => {
+    const { inv, isNew } = await db.transaction(async (tx) => {
+      await lockInvoices(tx);
       if (params.paymentId) {
-        const existing = list.find((i) => i.paymentId === params.paymentId);
-        if (existing) {
-          invoice = existing;
-          return list;
-        }
+        const [existing] = await tx.select().from(taxInvoices).where(eq(taxInvoices.paymentId, params.paymentId)).limit(1);
+        if (existing) return { inv: toInvoice(existing), isNew: false };
       }
-      isNew = true;
-      invoice = {
+      const invoice: TaxInvoice = {
         id: `inv_${now.getTime()}_${Math.random().toString(36).slice(2, 7)}`,
-        invoiceNumber: nextNumber(list, "INV", financialYear(now)),
+        invoiceNumber: await allocateNumber(tx, "INV", now),
         orgId: params.orgId,
         orgName: org.name,
         buyerName: org.billingName ?? null,
@@ -152,9 +175,9 @@ export class InvoiceService {
         periodStart: now.toISOString(),
         periodEnd: new Date(now.getTime() + 30 * 86_400_000).toISOString(),
       };
-      return [invoice, ...list];
+      await tx.insert(taxInvoices).values(toRow(invoice));
+      return { inv: invoice, isNew: true };
     });
-    const inv = invoice as unknown as TaxInvoice;
 
     await AuditService.log({
       organizationId: params.orgId,
@@ -173,21 +196,20 @@ export class InvoiceService {
 
   // One credit note per invoice, only for a live invoice (not void, not already credited).
   static async issueCreditNote(invoiceId: string, reason?: string, actorId?: string | null): Promise<TaxInvoice | null> {
-    let creditNote: TaxInvoice | null = null;
-    let original: TaxInvoice | null = null;
-    await PlatformConfigService.update<TaxInvoice[]>(INVOICE_CONFIG_KEY, [], (list) => {
-      const inv = list.find((i) => i.id === invoiceId);
-      if (!inv) return list;
+    const result = await db.transaction(async (tx) => {
+      await lockInvoices(tx);
+      const [row] = await tx.select().from(taxInvoices).where(eq(taxInvoices.id, invoiceId)).limit(1);
+      if (!row) return null;
+      const inv = toInvoice(row);
       if (inv.type === "credit_note") throw new UserFacingError("A credit note can't be credited again.");
       if (inv.status === "void") throw new UserFacingError("This invoice is void — there's nothing to credit.");
-      if (inv.status === "refunded" || list.some((i) => i.originalInvoiceId === inv.id)) {
-        throw new UserFacingError("A credit note was already issued for this invoice.");
-      }
+      const [credited] = await tx.select({ id: taxInvoices.id }).from(taxInvoices).where(eq(taxInvoices.originalInvoiceId, inv.id)).limit(1);
+      if (inv.status === "refunded" || credited) throw new UserFacingError("A credit note was already issued for this invoice.");
       const now = new Date();
-      creditNote = {
+      const creditNote: TaxInvoice = {
         ...inv,
         id: `cn_${now.getTime()}_${Math.random().toString(36).slice(2, 7)}`,
-        invoiceNumber: nextNumber(list, "CN", financialYear(now)),
+        invoiceNumber: await allocateNumber(tx, "CN", now),
         amount: -inv.amount,
         taxAmount: -inv.taxAmount,
         cgst: -(inv.cgst ?? 0),
@@ -201,13 +223,12 @@ export class InvoiceService {
         issuedAt: now.toISOString(),
         paidAt: now.toISOString(),
       };
-      inv.status = "refunded";
-      original = inv;
-      return [creditNote, ...list];
+      await tx.insert(taxInvoices).values(toRow(creditNote));
+      await tx.update(taxInvoices).set({ status: "refunded" }).where(eq(taxInvoices.id, inv.id));
+      return { cn: creditNote, orig: { ...inv, status: "refunded" as const } };
     });
-    if (!creditNote || !original) return null;
-    const cn = creditNote as TaxInvoice;
-    const orig = original as TaxInvoice;
+    if (!result) return null;
+    const { cn, orig } = result;
 
     await AuditService.log({
       organizationId: orig.orgId,
@@ -222,20 +243,17 @@ export class InvoiceService {
 
   // Voiding is for an invoice issued in error; a paid/credited one needs a credit note instead.
   static async voidInvoice(id: string, actorId?: string | null): Promise<TaxInvoice | null> {
-    let found: TaxInvoice | null = null;
-    await PlatformConfigService.update<TaxInvoice[]>(INVOICE_CONFIG_KEY, [], (list) => {
-      const inv = list.find((i) => i.id === id);
-      if (!inv) return list;
-      if (inv.type === "credit_note") throw new UserFacingError("Credit notes can't be voided.");
-      if (inv.status === "void") throw new UserFacingError("This invoice is already void.");
-      if (inv.status === "refunded") throw new UserFacingError("This invoice has a credit note — it can't also be voided.");
-      if (inv.status === "paid") throw new UserFacingError("A paid invoice can't be voided — issue a credit note instead.");
-      inv.status = "void";
-      found = inv;
-      return list;
+    const inv = await db.transaction(async (tx) => {
+      const [row] = await tx.select().from(taxInvoices).where(eq(taxInvoices.id, id)).for("update").limit(1);
+      if (!row) return null;
+      if (row.type === "credit_note") throw new UserFacingError("Credit notes can't be voided.");
+      if (row.status === "void") throw new UserFacingError("This invoice is already void.");
+      if (row.status === "refunded") throw new UserFacingError("This invoice has a credit note — it can't also be voided.");
+      if (row.status === "paid") throw new UserFacingError("A paid invoice can't be voided — issue a credit note instead.");
+      await tx.update(taxInvoices).set({ status: "void" }).where(eq(taxInvoices.id, id));
+      return toInvoice({ ...row, status: "void" });
     });
-    if (!found) return null;
-    const inv = found as TaxInvoice;
+    if (!inv) return null;
 
     await AuditService.log({
       organizationId: inv.orgId,

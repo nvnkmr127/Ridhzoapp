@@ -39,14 +39,18 @@ vi.mock("@/domains/billing/invoiceService", () => ({
   },
 }));
 
-vi.mock("./supportService", () => ({
-  SupportTicketService: {
-    listTickets: vi.fn().mockResolvedValue([
-      { id: "ticket_1", orgId: "org_1", subject: "Webhook issue", status: "resolved" },
-      { id: "ticket_2", orgId: "org_other", subject: "General question", status: "open" },
-    ]),
-  },
-}));
+vi.mock("./supportService", () => {
+  const rows: any[] = [
+    { id: "ticket_1", orgId: "org_1", subject: "Webhook issue", status: "resolved" },
+    { id: "ticket_2", orgId: "org_other", subject: "General question", status: "open" },
+  ];
+  return {
+    SupportTicketService: {
+      listTickets: vi.fn().mockResolvedValue(rows),
+      listForOrg: vi.fn(async (orgId: string) => rows.filter((r) => r.orgId === orgId)),
+    },
+  };
+});
 
 vi.mock("@/domains/audit/service", () => ({
   AuditService: {

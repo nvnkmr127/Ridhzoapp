@@ -1,23 +1,9 @@
 import { db } from "@/db";
-import { organizations, users } from "@/db/schema";
-import { eq } from "drizzle-orm";
-import { PlatformConfigService } from "./configService";
+import { organizations, users, supportTickets, type TicketMessage, type InternalNote } from "@/db/schema";
+import { count, desc, eq } from "drizzle-orm";
 import { NotificationService } from "@/domains/notifications/service";
 
-export interface TicketMessage {
-  id: string;
-  sender: "tenant" | "superadmin";
-  senderName: string;
-  body: string;
-  createdAt: string;
-}
-
-export interface InternalNote {
-  id: string;
-  authorName: string;
-  body: string;
-  createdAt: string;
-}
+export type { TicketMessage, InternalNote };
 
 export interface SupportTicket {
   id: string;
@@ -37,7 +23,17 @@ export interface SupportTicket {
   updatedAt: string;
 }
 
-const SUPPORT_CONFIG_KEY = "support_tickets";
+type TicketRow = typeof supportTickets.$inferSelect;
+
+const toTicket = (r: TicketRow): SupportTicket => ({
+  ...r,
+  category: r.category as SupportTicket["category"],
+  priority: r.priority as SupportTicket["priority"],
+  status: r.status as SupportTicket["status"],
+  slaDeadline: r.slaDeadline.toISOString(),
+  createdAt: r.createdAt.toISOString(),
+  updatedAt: r.updatedAt.toISOString(),
+});
 
 const SLA_HOURS: Record<string, number> = {
   urgent: 2,
@@ -47,15 +43,26 @@ const SLA_HOURS: Record<string, number> = {
 };
 
 export class SupportTicketService {
+  // ponytail: unpaginated; add a limit/cursor when the desk holds thousands of tickets.
   static async listTickets(statusFilter = "all"): Promise<SupportTicket[]> {
-    const list = await PlatformConfigService.get<SupportTicket[]>(SUPPORT_CONFIG_KEY, []);
-    if (statusFilter === "all") return list;
-    return list.filter((t) => t.status === statusFilter);
+    const q = db.select().from(supportTickets).orderBy(desc(supportTickets.createdAt));
+    const rows = statusFilter === "all" ? await q : await q.where(eq(supportTickets.status, statusFilter));
+    return rows.map(toTicket);
+  }
+
+  static async countOpen(): Promise<number> {
+    const [row] = await db.select({ n: count() }).from(supportTickets).where(eq(supportTickets.status, "open"));
+    return Number(row?.n ?? 0);
+  }
+
+  static async listForOrg(orgId: string): Promise<SupportTicket[]> {
+    const rows = await db.select().from(supportTickets).where(eq(supportTickets.orgId, orgId)).orderBy(desc(supportTickets.createdAt));
+    return rows.map(toTicket);
   }
 
   static async getTicket(id: string): Promise<SupportTicket | null> {
-    const list = await this.listTickets("all");
-    return list.find((t) => t.id === id) ?? null;
+    const [row] = await db.select().from(supportTickets).where(eq(supportTickets.id, id)).limit(1);
+    return row ? toTicket(row) : null;
   }
 
   static async createTicket(input: {
@@ -101,24 +108,31 @@ export class SupportTicketService {
       updatedAt: now.toISOString(),
     };
 
-    await PlatformConfigService.update<SupportTicket[]>(SUPPORT_CONFIG_KEY, [], (list) => [ticket, ...list]);
+    await db.insert(supportTickets).values({
+      ...ticket,
+      slaDeadline: new Date(ticket.slaDeadline),
+      createdAt: now,
+      updatedAt: now,
+    });
     return ticket;
   }
 
-  // Change one ticket under the config row lock (no lost updates, no whole-list overwrite on a read
-  // error). Returns the updated ticket, or null if it doesn't exist.
+  // Change one ticket under a row lock (two replies at once both land). Returns the updated ticket,
+  // or null if it doesn't exist.
   private static async mutate(ticketId: string, fn: (t: SupportTicket) => void): Promise<SupportTicket | null> {
-    let found: SupportTicket | null = null;
-    await PlatformConfigService.update<SupportTicket[]>(SUPPORT_CONFIG_KEY, [], (list) => {
-      const t = list.find((x) => x.id === ticketId);
-      if (t) {
-        fn(t);
-        t.updatedAt = new Date().toISOString();
-        found = t;
-      }
-      return list;
+    return db.transaction(async (tx) => {
+      const [row] = await tx.select().from(supportTickets).where(eq(supportTickets.id, ticketId)).for("update").limit(1);
+      if (!row) return null;
+      const t = toTicket(row);
+      fn(t);
+      const now = new Date();
+      t.updatedAt = now.toISOString();
+      await tx
+        .update(supportTickets)
+        .set({ status: t.status, assignedTo: t.assignedTo ?? null, messages: t.messages, internalNotes: t.internalNotes ?? [], updatedAt: now })
+        .where(eq(supportTickets.id, ticketId));
+      return t;
     });
-    return found;
   }
 
   static async assignTicket(ticketId: string, assignedTo: string | null): Promise<SupportTicket | null> {

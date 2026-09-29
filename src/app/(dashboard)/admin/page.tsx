@@ -13,9 +13,8 @@ import { AnomalyDetectionService } from "@/domains/platform/anomalyDetectionServ
 import { MetaCapiService } from "@/domains/platform/capiService";
 import { PlatformAttributionService } from "@/domains/platform/attributionService";
 import { PlatformConsole } from "@/components/platform/PlatformConsole";
+import { TABS, tabNeeds, type Tab } from "@/components/platform/console/tabData";
 
-const TABS = ["tenants", "revops", "support", "announcements", "compliance", "users", "escalations", "dlq", "system"] as const;
-type Tab = (typeof TABS)[number];
 
 // Platform operator console — every organization on the instance. Super-admin only.
 // Loads only what the open tab shows (plus the header's headline numbers); switching tabs updates
@@ -24,36 +23,38 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   if (!(await isSuperAdmin())) redirect("/leads");
   const requested = (await searchParams).tab;
   const tab: Tab = (TABS as readonly string[]).includes(requested ?? "") ? (requested as Tab) : "tenants";
-  const on = (...tabs: Tab[]) => tabs.includes(tab);
+  // What each tab loads lives in TAB_PROPS (console/tabData.ts) — add a prop there, not a tab list here.
+  const needs = (prop: Parameters<typeof tabNeeds>[1]) => tabNeeds(tab, prop);
   const when = <T,>(cond: boolean, load: () => Promise<T>) => (cond ? load() : Promise.resolve(undefined));
 
   const [
     metrics, summary, orgs, users, escalations, dlq, broadcast, revops, tenantHealth, maintenance, opsAlert,
-    fleetBilling, invoices, coupons, tickets, apiKeys, digestConfig, anomalies, capiConfig, capiLogs, campaignStats, platformActivity,
+    fleetBilling, invoices, coupons, tickets, openTicketCount, apiKeys, digestConfig, anomalies, activeThreatCount, capiConfig, capiLogs, campaignStats, platformActivity,
   ] = await Promise.all([
     PlatformService.getPlatformMetrics(),
     RevOpsService.getSummary(),
-    // Org list also feeds pickers in RevOps (invoice dialog) and Compliance (offboarding).
-    when(on("tenants", "revops", "compliance", "announcements", "system"), () => PlatformService.listOrganizations()),
-    when(on("users", "compliance", "revops", "system"), () => PlatformService.searchUsers("", 50)),
-    when(on("escalations"), () => PlatformService.getEscalatedLeads(15)),
-    when(on("dlq"), () => PlatformService.getFailedDeliveries(15)),
-    when(on("announcements"), () => PlatformService.getBroadcast()),
-    when(on("revops"), () => RevOpsService.getMetrics()),
-    when(on("revops"), () => RevOpsService.listTenantHealth(30)),
+    when(needs("initial"), () => PlatformService.listOrganizations()),
+    when(needs("initialUsers"), () => PlatformService.searchUsers("", 50)),
+    when(needs("escalations"), () => PlatformService.getEscalatedLeads(15)),
+    when(needs("dlq"), () => PlatformService.getFailedDeliveries(15)),
+    when(needs("initialBroadcast"), () => PlatformService.getBroadcast()),
+    when(needs("revops"), () => RevOpsService.getMetrics()),
+    when(needs("tenantHealth"), () => RevOpsService.listTenantHealth(30)),
     PlatformConfigService.get("maintenance_mode", { enabled: false, message: "" }), // tab badge
-    when(on("system"), () => OpsAlertService.getConfig()),
-    when(on("revops"), () => BillingLifecycleService.listFleetBillingStatus()),
-    when(on("revops", "compliance"), () => InvoiceService.listInvoices(50)),
-    when(on("revops"), () => CouponService.list()),
-    SupportTicketService.listTickets("all"), // open-ticket badge; one row read
-    when(on("system"), () => PlatformService.listFleetApiKeys(50)),
-    when(on("system"), () => ExecutiveDigestService.getConfig()),
-    when(on("system"), () => AnomalyDetectionService.getCachedAnomalies()),
-    when(on("revops"), async () => MetaCapiService.publicConfig(await MetaCapiService.getConfig())),
-    when(on("revops"), () => MetaCapiService.listLogs(25)),
-    when(on("revops"), () => PlatformAttributionService.getCampaignAnalytics()),
-    when(on("system"), () => PlatformService.getPlatformActivity(50)),
+    OpsAlertService.getConfig(), // tab badge
+    when(needs("initialBilling"), () => BillingLifecycleService.listFleetBillingStatus()),
+    when(needs("initialInvoices"), () => InvoiceService.listInvoices(50)),
+    when(needs("initialCoupons"), () => CouponService.list()),
+    when(needs("initialTickets"), () => SupportTicketService.listTickets("all")),
+    SupportTicketService.countOpen().catch(() => 0), // tab badge
+    when(needs("initialApiKeys"), () => PlatformService.listFleetApiKeys(50)),
+    when(needs("initialDigestConfig"), () => ExecutiveDigestService.getConfig()),
+    when(needs("initialAnomalies"), () => AnomalyDetectionService.getCachedAnomalies()),
+    AnomalyDetectionService.countActiveCached().catch(() => 0), // tab badge
+    when(needs("initialCapiConfig"), async () => MetaCapiService.publicConfig(await MetaCapiService.getConfig())),
+    when(needs("initialCapiLogs"), () => MetaCapiService.listLogs(25)),
+    when(needs("initialCampaigns"), () => PlatformAttributionService.getCampaignAnalytics()),
+    when(needs("initialActivity"), () => PlatformService.getPlatformActivity(50)),
   ]);
 
   return (
@@ -82,9 +83,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         initialInvoices={invoices}
         initialCoupons={coupons}
         initialTickets={tickets}
+        openTicketCount={openTicketCount}
         initialApiKeys={apiKeys}
         initialDigestConfig={digestConfig}
         initialAnomalies={anomalies}
+        activeThreatCount={activeThreatCount}
         initialCapiConfig={capiConfig}
         initialCapiLogs={capiLogs}
         initialCampaigns={campaignStats}

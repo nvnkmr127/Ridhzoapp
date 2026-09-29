@@ -57,6 +57,12 @@ export class AnomalyDetectionService {
     return anomalies;
   }
 
+  // Header badge: reads the cache only — never triggers the full fleet scan getCachedAnomalies() falls back to.
+  static async countActiveCached(): Promise<number> {
+    const cached = await PlatformConfigService.get<SecurityAnomaly[] | null>(CACHED_ANOMALIES_KEY, null);
+    return Array.isArray(cached) ? cached.filter((a) => a.status === "active").length : 0;
+  }
+
   static async getCachedAnomalies(): Promise<SecurityAnomaly[]> {
     const cached = await PlatformConfigService.get<SecurityAnomaly[] | null>(
       CACHED_ANOMALIES_KEY,

@@ -53,60 +53,68 @@ vi.mock("@/domains/billing/lifecycleService", () => ({
   },
 }));
 
-vi.mock("@/domains/billing/invoiceService", () => ({
-  InvoiceService: {
-    listInvoices: vi.fn().mockResolvedValue([
-      {
-        id: "inv_1",
-        invoiceNumber: "INV-2026-0001",
-        orgId: "org_1",
-        orgName: "Sharma Textiles",
-        plan: "pro",
-        amount: 249,
-        taxRate: 18,
-        taxAmount: 45,
-        totalAmount: 294,
-        status: "paid",
-        issuedAt: "2026-08-18T00:00:00.000Z",
-      },
-      {
-        id: "inv_2",
-        invoiceNumber: "INV-2026-0002",
-        orgId: "org_2",
-        orgName: "Other Corp",
-        plan: "business",
-        amount: 449,
-        taxRate: 18,
-        taxAmount: 81,
-        totalAmount: 530,
-        status: "paid",
-        issuedAt: "2026-08-19T00:00:00.000Z",
-      },
-    ]),
-  },
-}));
+vi.mock("@/domains/billing/invoiceService", () => {
+  const rows: any[] = [
+    {
+      id: "inv_1",
+      invoiceNumber: "INV-2026-0001",
+      orgId: "org_1",
+      orgName: "Sharma Textiles",
+      plan: "pro",
+      amount: 249,
+      taxRate: 18,
+      taxAmount: 45,
+      totalAmount: 294,
+      status: "paid",
+      issuedAt: "2026-08-18T00:00:00.000Z",
+    },
+    {
+      id: "inv_2",
+      invoiceNumber: "INV-2026-0002",
+      orgId: "org_2",
+      orgName: "Other Corp",
+      plan: "business",
+      amount: 449,
+      taxRate: 18,
+      taxAmount: 81,
+      totalAmount: 530,
+      status: "paid",
+      issuedAt: "2026-08-19T00:00:00.000Z",
+    },
+  ];
+  return {
+    InvoiceService: {
+      listInvoices: vi.fn().mockResolvedValue(rows),
+      listForOrg: vi.fn(async (orgId: string) => rows.filter((r) => r.orgId === orgId)),
+    },
+  };
+});
 
-vi.mock("./supportService", () => ({
-  SupportTicketService: {
-    listTickets: vi.fn().mockResolvedValue([
-      {
-        id: "ticket_1",
-        orgId: "org_1",
-        orgName: "Sharma Textiles",
-        userId: "user_1",
-        userEmail: "owner@sharma.com",
-        subject: "Card charge failed",
-        category: "billing",
-        priority: "urgent",
-        status: "open",
-        slaDeadline: "2026-09-20T18:00:00.000Z",
-        messages: [],
-        createdAt: "2026-09-18T00:00:00.000Z",
-        updatedAt: "2026-09-18T00:00:00.000Z",
-      },
-    ]),
-  },
-}));
+vi.mock("./supportService", () => {
+  const rows: any[] = [
+    {
+      id: "ticket_1",
+      orgId: "org_1",
+      orgName: "Sharma Textiles",
+      userId: "user_1",
+      userEmail: "owner@sharma.com",
+      subject: "Card charge failed",
+      category: "billing",
+      priority: "urgent",
+      status: "open",
+      slaDeadline: "2026-09-20T18:00:00.000Z",
+      messages: [],
+      createdAt: "2026-09-18T00:00:00.000Z",
+      updatedAt: "2026-09-18T00:00:00.000Z",
+    },
+  ];
+  return {
+    SupportTicketService: {
+      listTickets: vi.fn().mockResolvedValue(rows),
+      listForOrg: vi.fn(async (orgId: string) => rows.filter((r) => r.orgId === orgId)),
+    },
+  };
+});
 
 vi.mock("./anomalyDetectionService", () => ({
   AnomalyDetectionService: {
