@@ -66,6 +66,8 @@ export async function GET(req: NextRequest) {
   const rows = await db
     .select({
       id: leads.id,
+      crn: leads.crn,
+      displayId: leads.displayId,
       name: leads.name,
       email: leads.email,
       phone: leads.phone,

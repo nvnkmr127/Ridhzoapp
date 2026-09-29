@@ -86,6 +86,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         id: a.id, 
         type: a.type, 
         content: a.content, 
+        seq: a.seq, // timeline number: shown as <lead CRN>-T<seq>
         createdAt: a.createdAt,
         occurredAt: a.occurredAt,
         userId: a.userId,

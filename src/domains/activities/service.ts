@@ -89,6 +89,7 @@ export class ActivityService {
       return {
         id: r.id,
         leadId: r.leadId,
+        seq: r.seq,
         userId: r.userId,
         userName,
         type: r.type,

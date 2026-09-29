@@ -17,7 +17,9 @@ import { OrgService } from "@/domains/organizations/service";
 import { CustomFieldService } from "@/domains/customFields/service";
 import { WhatsAppService } from "@/lib/messaging/whatsapp/service";
 import { formAnswers } from "@/lib/leads/formAnswers";
+import { CONFIGURABLE_LEAD_FIELDS, getLeadFieldValue, resolveLeadFieldConfig } from "@/lib/leads/fieldConfig";
 import { normalizePhone } from "@/lib/leads/normalize";
+import { preCallBrief } from "@/lib/leads/preCallBrief";
 import { orgDialCode } from "@/lib/leads/orgDialCode";
 import type { LeadService } from "@/domains/leads/service";
 
@@ -195,7 +197,27 @@ export async function buildLeadProfile(lead: Lead, ctx: { userId: string | null;
     ...callStats,
   });
 
+  // "Brief me" (same as the web lead page): required fields still empty, the AI's next step or the NBA.
+  const fieldConfig = resolveLeadFieldConfig(org?.leadFieldConfig);
+  const missing = [
+    ...CONFIGURABLE_LEAD_FIELDS.filter((f) => fieldConfig[f.key] === "mandatory" && !getLeadFieldValue(lead as unknown as Record<string, unknown>, f.key)).map((f) => f.label),
+    ...defs.filter((d) => d.required && (isAdmin || !d.adminOnly) && (cd[d.key] == null || cd[d.key] === "")).map((d) => d.label),
+  ];
+  const recap = (cd._aiRecap as { plan?: { next?: { id: string; title: string; reason: string } }; dismissed?: string[] } | undefined) ?? null;
+  const aiNext = recap?.plan?.next && !recap.dismissed?.includes(recap.plan.next.id) ? recap.plan.next : null;
+  const upcoming = meetings.filter((m) => m.status === "scheduled" && new Date(m.startAt).getTime() >= Date.now()).at(-1);
+  const brief = preCallBrief({
+    activities,
+    messages: waMessages,
+    missing,
+    next: aiNext ? { title: aiNext.title, reason: aiNext.reason } : { title: nba.label, reason: nba.reason },
+    upcomingMeeting: upcoming ? `${modeLabel(upcoming.mode)} · ${new Date(upcoming.startAt).toLocaleString("en-IN", { timeZone: org?.timezone || "UTC", dateStyle: "medium", timeStyle: "short" })}` : null,
+    now: new Date(),
+  });
+
   return {
+    brief,
+    missing,
     // Dialable number for Call/WhatsApp: older leads saved without a country code get the workspace's.
     dialPhone: normalizePhone(lead.phone, dialCode) ?? lead.phone ?? null,
     displayId: lead.displayId ?? null,
