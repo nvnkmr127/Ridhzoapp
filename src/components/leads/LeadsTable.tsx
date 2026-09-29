@@ -437,6 +437,7 @@ export function LeadsTable({
                   aria-label="Select all leads on page"
                 />
               </TableHead>
+              <SortHead field="crn">CRN</SortHead>
               <SortHead field="name">Name</SortHead>
               <TableHead>Contact</TableHead>
               <SortHead field="status">Status</SortHead>
@@ -470,12 +471,12 @@ export function LeadsTable({
                     aria-label={`Select ${lead.name}`}
                   />
                 </TableCell>
+                <TableCell className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">{lead.crn ?? "—"}</TableCell>
                 <TableCell className="max-w-[16rem]">
                   <div className="flex items-baseline gap-2">
                     <Link href={`/leads/${lead.id}`} className="truncate font-medium text-foreground hover:underline">
                       {lead.name}
                     </Link>
-                    {lead.crn ? <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{lead.crn}</span> : lead.displayId != null ? <span className="shrink-0 text-xs tabular-nums text-muted-foreground">#{lead.displayId}</span> : null}
                   </div>
                   {lead.company ? <div className="truncate text-xs text-muted-foreground">{lead.company}</div> : null}
                 </TableCell>

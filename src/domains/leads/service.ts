@@ -563,6 +563,7 @@ export class LeadService {
     let sortCol: any = leads.createdAt;
     if (options.sortField === "updatedAt") sortCol = leads.updatedAt;
     else if (options.sortField === "owner") sortCol = sql`(SELECT lower(coalesce(nullif(trim(concat_ws(' ', u.first_name, u.last_name)), ''), u.email)) FROM users u WHERE u.id = "leads"."owner_id")`;
+    else if (options.sortField === "crn") sortCol = leads.crn;
     else if (options.sortField === "name") sortCol = leads.name;
     else if (options.sortField === "status") sortCol = leads.status;
     else if (options.sortField === "ownerId") sortCol = leads.ownerId;
