@@ -45,6 +45,15 @@
         "cd /Users/naveenadicharla/Documents/ridhzo-website && npx next start -p 3100"
       ],
       "port": 3100
+    },
+    {
+      "name": "ridhzo-admin",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "env DATABASE_URL=postgresql://postgres@localhost:55432/ridhzo_test REDIS_URL= RESEND_API_KEY= AI_GATEWAY_API_KEY= FIREBASE_PRIVATE_KEY= RAZORPAY_KEY_SECRET= R2_SECRET_ACCESS_KEY= SENTRY_DSN= NEXT_PUBLIC_SENTRY_DSN= NEXTAUTH_URL=http://localhost:3005 NEXT_PUBLIC_APP_URL=http://localhost:3005 npx next dev -p 3005"
+      ],
+      "port": 3005
     }
   ]
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { AnalyticsService, summarizeLeadMetrics, dayKeysBetween } from './service';
+import { AnalyticsService, summarizeLeadMetrics, dayKeysBetween, countsByLocalDay } from './service';
 
 // Mock DB
 vi.mock('@/db', () => ({
@@ -168,5 +168,19 @@ describe('dashboard periods', () => {
 
   it('all-time has no previous period', async () => {
     expect(await AnalyticsService.previousPeriod({ organizationId: 'o', timeZone: 'UTC', dateRange: 'all' })).toBeNull();
+  });
+});
+
+describe('trend day bucketing', () => {
+  const slotOf = (iso: string) => Math.floor(new Date(iso).getTime() / 1000 / 900);
+  it('puts 15-minute UTC slots on the right local day, even for legacy zone names Postgres may reject', () => {
+    // Midnight in India = 18:30 UTC. "Asia/Calcutta" is the old alias prod Postgres didn't know.
+    const rows = [
+      { slot: slotOf('2026-09-28T18:15:00Z'), n: 2 }, // 23:45 IST on the 28th
+      { slot: slotOf('2026-09-28T18:30:00Z'), n: 3 }, // 00:00 IST on the 29th
+      { slot: slotOf('2026-09-29T10:00:00Z'), n: 1 },
+    ];
+    const m = countsByLocalDay(rows, 900, 'Asia/Calcutta');
+    expect(Object.fromEntries(m)).toEqual({ '2026-09-28': 2, '2026-09-29': 4 });
   });
 });

@@ -51,6 +51,16 @@ export function summarizeLeadMetrics(
   };
 }
 
+/** Pure: sum per-UTC-slot counts (slot = floor(epoch / slotSecs)) into workspace-local YYYY-MM-DD days. */
+export function countsByLocalDay(rows: { slot: number; n: number }[], slotSecs: number, tz: string): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const r of rows) {
+    const day = dayKey(new Date(Number(r.slot) * slotSecs * 1000), tz);
+    m.set(day, (m.get(day) ?? 0) + Number(r.n));
+  }
+  return m;
+}
+
 /** Pure: every workspace-local calendar day from start to end, as YYYY-MM-DD. */
 export function dayKeysBetween(start: Date, end: Date, tz: string): string[] {
   const days: string[] = [];
@@ -160,17 +170,19 @@ export class AnalyticsService {
     end ??= new Date();
     start ??= startOfZonedDay(end, tz, -89);
     const f = { ...filters, dateRange: undefined, startDate: start, endDate: end };
-    // GROUP BY 1 (position): tz is a bind parameter, so the SELECT and GROUP BY copies of this
-    // expression get different $n and Postgres refuses to treat them as the same.
-    const localDay = (col: typeof leads.createdAt | typeof leads.wonAt) => sql<string>`to_char((${col} at time zone 'UTC') at time zone ${tz}, 'YYYY-MM-DD')`;
+    // Postgres never sees the workspace timezone: its zone list differs from JS's and by server
+    // (prod rejected "Asia/Calcutta", which Intl accepts). It counts per UTC 15-minute slot; JS puts
+    // each slot on its local day. Every real UTC offset is a multiple of 15 min, so a slot never
+    // straddles local midnight. At most 96 slots/day, and only non-empty ones come back.
+    const SLOT = 900;
+    const slot = (col: typeof leads.createdAt | typeof leads.wonAt) => sql<number>`floor(extract(epoch from ${col}) / ${sql.raw(String(SLOT))})::bigint`;
     const [created, won] = await Promise.all([
-      db.select({ day: localDay(leads.createdAt), n: sql<number>`count(*)::int` }).from(leads)
+      db.select({ slot: slot(leads.createdAt), n: sql<number>`count(*)::int` }).from(leads)
         .where(and(...this.buildLeadConditions(f))).groupBy(sql`1`),
-      db.select({ day: localDay(leads.wonAt), n: sql<number>`count(*)::int` }).from(leads)
+      db.select({ slot: slot(leads.wonAt), n: sql<number>`count(*)::int` }).from(leads)
         .where(and(...this.wonConditions(f))).groupBy(sql`1`),
     ]);
-    const byDay = (rows: { day: string; n: number }[]) => new Map(rows.map((r) => [r.day, Number(r.n)]));
-    const c = byDay(created), w = byDay(won);
+    const c = countsByLocalDay(created, SLOT, tz), w = countsByLocalDay(won, SLOT, tz);
     return dayKeysBetween(start, end, tz).map((day) => ({ day, leads: c.get(day) ?? 0, won: w.get(day) ?? 0 }));
   }
 
