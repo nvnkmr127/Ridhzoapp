@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import { db } from "@/db";
 import { UserFacingError } from "@/lib/actions/result";
 import { handOverFollowUps } from "@/domains/follow-ups/state";
