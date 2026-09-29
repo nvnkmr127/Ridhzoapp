@@ -8,7 +8,7 @@ import { leadAiContext } from "@/lib/ai/leadContext";
 import { loadAiBusiness } from "@/domains/organizations/aiBusiness";
 import { PlanService } from "@/domains/billing/planService";
 import { CustomFieldService } from "@/domains/customFields/service";
-import { briefFormatInstructions, parseLeadBrief, visiblePlan, type LeadPlan, type PlanInput } from "@/lib/ai/leadPlan";
+import { BROKEN_RECAP, briefFormatInstructions, parseLeadBrief, visiblePlan, type LeadPlan, type PlanInput } from "@/lib/ai/leadPlan";
 import type { LeadService } from "@/domains/leads/service";
 
 // AI reply drafts and lead recaps. Shared by the web server actions and the mobile API; callers check
@@ -176,6 +176,11 @@ export async function recapForLead(lead: Lead, organizationId: string, refresh =
     return { summary: `Status is ${extras.statusLabel ?? lead.status}. Review recent activity and follow up.`, ai: false };
   }
   const { recap: summary, plan } = parseLeadBrief(raw, planInput);
+  if (summary === BROKEN_RECAP) {
+    // Cut off or malformed: saving this would pin the error message as the recap until the lead changes.
+    await PlanService.refundAiCredit(organizationId);
+    return { summary: `Status is ${extras.statusLabel ?? lead.status}. Review recent activity and follow up.`, ai: false };
+  }
 
   const at = new Date().toISOString();
   // Keep what the rep already applied/dismissed, so the same suggestion doesn't come back.

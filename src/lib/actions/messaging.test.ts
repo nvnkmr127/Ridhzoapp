@@ -171,6 +171,14 @@ describe("calls read from the phone's call log", () => {
     expect(waInsert).not.toHaveBeenCalled();
   });
 
+  it("keeps the rep's note (as a real note too) on an incoming call the sync already logged", async () => {
+    selectResults = [[{ id: "synced", content: "Missed call from lead" }]];
+    const res = await recordLeadContact({ leadId: LEAD, userId: "u1", channel: "call", direction: "incoming", outcome: "no_answer", note: "wants 3BHK", durationSec: 0, startedAt: at, externalRef: "c7" });
+    expect(res.logged).toBe(false);
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ content: "Missed call from lead\nNote: wants 3BHK" }));
+    expect(addActivity).toHaveBeenCalledWith(expect.objectContaining({ type: "note", content: "wants 3BHK" }));
+  });
+
   it("doesn't pile up callbacks when the lead calls again before the rep calls back", async () => {
     selectResults = [[], [{ timezone: "Asia/Kolkata" }], [{ id: "open-callback" }]];
     await recordLeadContact({ leadId: LEAD, userId: "u1", channel: "call", direction: "incoming", durationSec: 0, externalRef: "c4" });

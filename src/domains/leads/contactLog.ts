@@ -70,6 +70,18 @@ async function mergeIntoManualLog(input: { leadId: string; userId: string; start
   return true;
 }
 
+// The rep's note from the "How did it go?" popup is also a real note on the lead (Notes tab, pre-call
+// brief). Skipped when the same note is already there, so a retry or the sync-then-popup race can't double it.
+async function saveCallNote(leadId: string, userId: string, note: string | undefined) {
+  if (!note) return;
+  const [dup] = await db
+    .select({ id: activities.id })
+    .from(activities)
+    .where(and(eq(activities.leadId, leadId), eq(activities.type, "note"), eq(activities.content, note)))
+    .limit(1);
+  if (!dup) await ActivityService.addActivity({ leadId, userId, type: "note", content: note });
+}
+
 // Without this, personal-mode contact left no trace: no timeline entry and no last_contacted_at, so
 // response-time/SLA metrics, the Next Best Action and cold-lead detection treated the lead as untouched.
 // Calls read from the phone's call log also carry durationSec/startedAt/direction and an externalRef
@@ -105,7 +117,7 @@ export async function recordLeadContact(input: {
   }
   if (note) content += `\nNote: ${note}`;
 
-  if (channel === "call" && !incoming && externalRef && startedAt && durationSec != null) {
+  if (channel === "call" && externalRef && startedAt && durationSec != null) {
     // Already have this exact call. Usually the background sync got it first — it runs as the rep
     // comes back from the dialer, while the "How did it go?" sheet is still open. The rep's outcome
     // and note are what they said about the call: put them on that entry rather than dropping them.
@@ -118,10 +130,12 @@ export async function recordLeadContact(input: {
       if ((input.outcome || note) && known.content !== content) {
         await db.update(activities).set({ content, updatedAt: new Date() }).where(eq(activities.id, known.id));
       }
+      await saveCallNote(leadId, userId, note);
       return { logged: false };
     }
     // A hand-logged entry for it → fill in the duration and call id.
-    if (await mergeIntoManualLog({ leadId, userId, startedAt, durationSec, externalRef })) {
+    if (!incoming && (await mergeIntoManualLog({ leadId, userId, startedAt, durationSec, externalRef }))) {
+      await saveCallNote(leadId, userId, note);
       return { logged: false };
     }
   }
@@ -140,6 +154,7 @@ export async function recordLeadContact(input: {
     .onConflictDoNothing()
     .returning({ id: activities.id });
   if (!inserted.length) return { logged: false };
+  await saveCallNote(leadId, userId, note);
 
   const completedFollowUpIds: string[] = [];
 

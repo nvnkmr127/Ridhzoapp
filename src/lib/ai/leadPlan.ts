@@ -105,6 +105,9 @@ export function parseLeadBrief(raw: string, input: PlanInput): { recap: string; 
   return { recap, plan: validatePlan(json, input) };
 }
 
+/** What a reply we couldn't read turns into. Callers must not save it as the lead's recap. */
+export const BROKEN_RECAP = "Couldn't read the AI's summary this time — tap Refresh to try again.";
+
 // A reply that looks like JSON but doesn't parse (cut off at the token limit, trailing commas…) must not
 // land on the profile as `{"recap": "...` — pull the recap string out if it's there, else say so.
 function recapFromBrokenJson(raw: string): string {
@@ -118,7 +121,7 @@ function recapFromBrokenJson(raw: string): string {
       /* fall through */
     }
   }
-  return "Couldn't read the AI's summary this time — tap Refresh to try again.";
+  return BROKEN_RECAP;
 }
 
 export function validatePlan(json: Record<string, unknown>, input: PlanInput): LeadPlan {
