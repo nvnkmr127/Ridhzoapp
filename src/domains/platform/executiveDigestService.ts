@@ -215,7 +215,7 @@ export class ExecutiveDigestService {
     let successCount = 0;
     for (const to of recipients) {
       try {
-        await sendEmail({ to, subject, html });
+        await sendEmail({ from: "notifications", to, subject, html });
         successCount++;
       } catch (err) {
         console.error(`[ExecutiveDigest] Failed to send digest to ${to}:`, err);
@@ -253,7 +253,7 @@ export class ExecutiveDigestService {
     const html = this.renderDigestHtml(data);
     const subject = `[TEST] Ridhzo Platform Executive Digest Preview`;
 
-    await sendEmail({ to: targetEmail.trim(), subject, html });
+    await sendEmail({ from: "notifications", to: targetEmail.trim(), subject, html });
     return true;
   }
 }

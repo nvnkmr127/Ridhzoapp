@@ -451,7 +451,7 @@ export class SequenceService {
         const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
         const safeUrl = attachmentUrl && /^https?:\/\//i.test(attachmentUrl) ? attachmentUrl : null;
         const attachHtml = safeUrl ? `<p>📎 <a href="${esc(safeUrl)}">${esc(label)}</a></p>` : "";
-        await sendEmail({ to: lead.email, subject: "Following up", html: `<p>${esc(rendered).replace(/\n/g, "<br/>")}</p>${attachHtml}` }, lead.organizationId ?? undefined);
+        await sendEmail({ from: "hello", to: lead.email, subject: "Following up", html: `<p>${esc(rendered).replace(/\n/g, "<br/>")}</p>${attachHtml}` }, lead.organizationId ?? undefined);
         await ActivityService.addActivity({ leadId, type: "email", content: `[sequence email] ${rendered.slice(0, 120)}` });
       } else {
         if (!lead.phone) return { sent: false, permanent: true, reason: "no phone number" };

@@ -150,7 +150,7 @@ export async function requestPasswordResetAction(input: { email: string }) {
     const safeName = (user.firstName ?? "").replace(/[&<>"']/g, "");
     const greeting = safeName ? `Hi ${safeName},` : "Hello,";
 
-    await sendEmail({
+    await sendEmail({ from: "noreply",
       to: email,
       subject: "Reset your Ridhzo password",
       html: `

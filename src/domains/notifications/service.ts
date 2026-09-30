@@ -81,7 +81,7 @@ export class NotificationService {
       if ((user.emailOptOut ?? []).includes(data.type)) return; // user muted email for this type
       const { sendEmail, appUrl } = await import("@/lib/mail/mailer");
       const link = appUrl(data.leadId ? `/leads/${data.leadId}` : "/");
-      await sendEmail({
+      await sendEmail({ from: "notifications",
         to: user.email,
         subject: data.title,
         // Title/body carry lead data from public forms and webhooks — escape before it becomes HTML.

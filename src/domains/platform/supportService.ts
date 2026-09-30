@@ -42,7 +42,7 @@ const label = (c: string) => c.replace("_", " ");
 // Best-effort email to the ticket owner (platform mailer, never the tenant's SMTP). Never blocks the caller.
 async function emailOwner(t: SupportTicket, subject: string, lead: string, body?: string) {
   try {
-    await sendEmail({
+    await sendEmail({ from: "hello",
       to: t.userEmail,
       subject,
       html: `<p>${esc(lead)}</p>${body ? `<blockquote style="border-left:3px solid #ccc;margin:0;padding-left:12px;white-space:pre-wrap">${esc(body)}</blockquote>` : ""}<p><a href="${appUrl("/settings/support")}">Open your support requests</a></p>`,

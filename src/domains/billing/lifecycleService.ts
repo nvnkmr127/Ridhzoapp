@@ -305,7 +305,7 @@ export class BillingLifecycleService {
 
       for (const admin of admins) {
         if (!admin.email) continue;
-        await sendEmail({
+        await sendEmail({ from: "billing",
           to: admin.email,
           subject: expiryFormatted ? `[Action Required] Payment failed for ${esc(orgName)} — Grace period active` : `[Action Required] Payment overdue for ${esc(orgName)}`,
           html: `
@@ -541,7 +541,7 @@ export class BillingLifecycleService {
           .where(and(eq(users.organizationId, org.id), eq(users.isActive, true)))
           .limit(1);
         if (owner?.email) {
-          await sendEmail({
+          await sendEmail({ from: "billing",
             to: owner.email,
             subject: `Your free Ridhzo plan for ${org.name} has ended`,
             html: `<div style="font-family:sans-serif;font-size:14px;line-height:1.5">
@@ -619,7 +619,7 @@ export class BillingLifecycleService {
           .limit(1);
 
         if (owner?.email) {
-          await sendEmail({
+          await sendEmail({ from: "billing",
             to: owner.email,
             subject: `Your Ridhzo trial for ${org.name} has ended — your leads are safe`,
             html: `

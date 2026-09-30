@@ -178,7 +178,7 @@ export class LeadDistributionService {
     try {
       if (recipient.channel === "email") {
         const { sendEmail } = await import("@/lib/mail/mailer");
-        await sendEmail({ to: recipient.value, subject: ctx.subject, html: ctx.html }, lead.organizationId);
+        await sendEmail({ from: "notifications", to: recipient.value, subject: ctx.subject, html: ctx.html }, lead.organizationId);
         return { status: "sent" };
       }
       if (recipient.channel === "in_app") {

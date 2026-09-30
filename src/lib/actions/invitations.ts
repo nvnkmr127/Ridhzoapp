@@ -39,7 +39,7 @@ export async function inviteUserAction(input: z.infer<typeof inviteSchema>) {
     // so the admin can copy the join link when delivery didn't go through.
     let emailed = true;
     try {
-      await sendEmail({
+      await sendEmail({ from: "noreply",
         to: data.email,
         subject: `You've been invited to ${org?.name || "your workspace"}`, // plain text: no escaping
         html: `<p>You've been invited to join <strong>${orgName}</strong>.</p><p><a href="${link}">Accept your invitation</a> (expires in 7 days).</p>`,

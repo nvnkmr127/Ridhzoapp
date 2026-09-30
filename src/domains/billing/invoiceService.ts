@@ -68,7 +68,7 @@ const inr = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", c
 // Sent from the platform address (not the tenant's own SMTP) — this is our invoice to them.
 async function emailInvoice(to: string, inv: TaxInvoice) {
   const link = appUrl(`/invoice/${inv.id}`);
-  await sendEmail({
+  await sendEmail({ from: "billing",
     to,
     subject: `Ridhzo tax invoice ${inv.invoiceNumber} — ${inr(inv.totalAmount)}`,
     html: `<p>Hi,</p>

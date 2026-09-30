@@ -2,9 +2,22 @@
 // to the console so invite/notification flows work end-to-end in dev.
 import { Resend } from "resend";
 
-type Mail = { to: string; subject: string; html: string };
+// `from` picks the platform sender: hello (support), notifications (alerts), billing (invoices/receipts),
+// noreply (password resets, invites). Default = MAIL_FROM.
+export type Sender = "hello" | "notifications" | "billing" | "noreply";
+type Mail = { to: string; subject: string; html: string; from?: Sender };
 
 const FROM = process.env.MAIL_FROM || "Ridhzo <onboarding@resend.dev>";
+// Set MAIL_DOMAIN to the domain verified in Resend (e.g. send.ridhzo.com) to use these senders;
+// unset = MAIL_FROM. Replies go to the same name at the root domain (MAIL_REPLY_DOMAIN, default ridhzo.com).
+const NAMES: Record<Sender, string> = { hello: "Ridhzo", notifications: "Ridhzo Notifications", billing: "Ridhzo Billing", noreply: "Ridhzo" };
+const LOCAL: Record<Sender, string> = { hello: "hello", notifications: "notifications", billing: "billing", noreply: "no-reply" };
+function senderFor(k?: Sender) {
+  const domain = process.env.MAIL_DOMAIN;
+  if (!k || !domain) return { from: FROM };
+  const reply = k === "noreply" ? undefined : `${LOCAL[k]}@${process.env.MAIL_REPLY_DOMAIN || "ridhzo.com"}`;
+  return { from: `${NAMES[k]} <${LOCAL[k]}@${domain}>`, replyTo: reply };
+}
 
 // Lazily construct one client (reads the key at first use, then caches null-or-client).
 let client: Resend | null | undefined;
@@ -33,7 +46,7 @@ export async function sendEmail(mail: Mail, organizationId?: string): Promise<vo
     console.log(`[mail:dev] to=${mail.to} subject="${mail.subject}"\n${mail.html}`);
     return;
   }
-  const { error } = await r.emails.send({ from: FROM, to: mail.to, subject: mail.subject, html: mail.html });
+  const { error } = await r.emails.send({ ...senderFor(mail.from), to: mail.to, subject: mail.subject, html: mail.html });
   if (error) {
     throw new Error(`Email send failed: ${error.name ? `${error.name}: ` : ""}${error.message}`);
   }

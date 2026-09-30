@@ -294,7 +294,7 @@ export class ComplianceService {
 
         const daysLeft = Math.max(ComplianceService.RETENTION_DAYS - daysSuspended, Math.ceil(WARNING_NOTICE_MS / 86_400_000));
         if (owner?.email) {
-          await sendEmail({
+          await sendEmail({ from: "hello",
             to: owner.email,
             subject: `[Compliance Notice] Data retention expiry for ${org.name}`,
             html: `
