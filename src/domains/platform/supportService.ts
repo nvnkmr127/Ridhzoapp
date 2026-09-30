@@ -2,7 +2,7 @@ import { db } from "@/db";
 import { organizations, users, supportTickets, type TicketMessage, type InternalNote } from "@/db/schema";
 import { and, count, desc, eq, isNull, lt, ne } from "drizzle-orm";
 import { sendEmail, appUrl } from "@/lib/mail/mailer";
-import { mh, mp, mbtn, mfine, mquote } from "@/lib/mail/layout";
+import { mh, mp, mbtn, mfine, mquote, mtag } from "@/lib/mail/layout";
 import { NotificationService } from "@/domains/notifications/service";
 
 export type { TicketMessage, InternalNote };
@@ -47,7 +47,7 @@ async function emailOwner(t: SupportTicket, subject: string, lead: string, body?
       to: t.userEmail,
       subject,
       preheader: esc(lead),
-      html: mh("Support update") + mp(esc(lead)) + (body ? mquote(esc(body)) : "") + mbtn("Open your support requests", appUrl("/settings/support")) + mfine("Just reply to this email to reach our team."),
+      html: mtag("Support") + mh("We've replied.") + mp(esc(lead)) + (body ? mquote(esc(body)) : "") + mbtn("Open your support requests", appUrl("/settings/support")) + mfine("Just reply to this email to reach our team."),
     });
   } catch (err) {
     console.warn("[supportService] failed to email ticket owner", err);

@@ -9,7 +9,7 @@ import { and, eq, gt, isNull } from "drizzle-orm";
 import { OrgService } from "@/domains/organizations/service";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
 import { sendEmail, appUrl } from "@/lib/mail/mailer";
-import { mh, mp, mbtn, mfine, mtag, mtable } from "@/lib/mail/layout";
+import { mh, mp, mbtn, mfine, mtag, mkey, mcount, msteps } from "@/lib/mail/layout";
 import { requireOrg } from "@/lib/rbac";
 import { RateLimiter } from "@/lib/rate-limit";
 import { headers } from "next/headers";
@@ -98,16 +98,16 @@ export async function signupAction(input: z.infer<typeof signupSchema>) {
         subject: `Welcome to Ridhzo, ${name || "there"} — your workspace is ready`,
         preheader: "Three quick steps to get your first leads moving",
         html:
-          mtag("Welcome", "ok") +
-          mh(`Your workspace “${org}” is ready`) +
-          mp(`${name ? `Hi ${name}, w` : "W"}elcome to Ridhzo — leads move faster here. Three steps to get going:`) +
-          mtable(["Step", "What to do"], [
-            ["<strong>1. Add leads</strong>", "Import a CSV, connect a lead source or add one by hand."],
-            ["<strong>2. Invite your team</strong>", "Add teammates so leads get assigned and followed up."],
-            ["<strong>3. Set follow-ups</strong>", "Never lose a lead — every lead gets a next step and a reminder."],
+          mtag("Welcome") +
+          mh(`Hello, ${name || "there"}.<br>${org} is live.`) +
+          mp("Leads move faster here. Three moves and you're running:") +
+          msteps([
+            ["Add your leads", "Import a CSV, connect a lead source, or add one by hand."],
+            ["Bring your team", "Invite teammates so every lead has an owner."],
+            ["Never miss a follow-up", "Give every lead a next step and a reminder."],
           ]) +
-          mbtn("Open your workspace", appUrl("/")) +
-          mfine("Need a hand? Just reply to this email and a real person will help."),
+          mbtn("Enter your workspace", appUrl("/")) +
+          mfine("Stuck? Reply to this email — a real person answers."),
       });
     } catch (err) {
       console.warn("[signupAction] welcome email failed", err);
@@ -181,12 +181,14 @@ export async function requestPasswordResetAction(input: { email: string }) {
       subject: "Reset your Ridhzo password",
       preheader: "Use this link within 1 hour to choose a new password",
       html:
-        mh("Reset your password") +
+        mtag("Security") +
+        mh("Reset your password.") +
         mp(greeting) +
-        mp("We received a request to reset the password for your Ridhzo account. Choose a new one with the button below.") +
-        mbtn("Reset password", resetLink) +
-        mfine(`This link is valid for 1 hour and works once. If the button doesn't work, paste this into your browser:<br><a href="${resetLink}" style="color:#6b7280;word-break:break-all;">${resetLink}</a>`) +
-        mfine("Didn't ask for this? You can safely ignore this email — your password won't change."),
+        mp("Someone — hopefully you — asked to reset the password on your Ridhzo account. Use the button below to choose a new one. It works once, and only for the next hour.") +
+        mcount([["60", "minutes left"]]) +
+        mbtn("Choose a new password", resetLink) +
+        mkey("Button not working? Paste this link", resetLink) +
+        mfine("Didn't ask for this? Ignore this email — your password stays exactly as it is."),
     });
 
     return ok({ sent: true });

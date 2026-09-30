@@ -5,9 +5,9 @@ import { db } from "@/db";
 import { organizations, users, roles } from "@/db/schema";
 import { and, eq, gt, isNotNull, isNull, lte } from "drizzle-orm";
 import { sendEmail, appUrl } from "@/lib/mail/mailer";
-import { mh, mp, mbtn, mfine, mtag, mfacts, mcallout } from "@/lib/mail/layout";
+import { mh, mp, mbtn, mfine, mtag, mfacts, mcallout, mcard, mstamp, mcount, mbar, mhero } from "@/lib/mail/layout";
 import { escapeHtml as esc } from "@/lib/utils";
-import { PlanService, limitsFor } from "./planService";
+import { PlanService } from "./planService";
 import { PLAN_LABELS, canonicalPlan, trialExpired } from "./planNames";
 import { BillingLifecycleService } from "./lifecycleService";
 
@@ -40,7 +40,9 @@ async function mailAdmins(orgId: string, build: (firstName: string) => { subject
 async function once(orgId: string, key: string, send: () => Promise<void>) {
   const lc = await BillingLifecycleService.getLifecycle(orgId);
   if (lc.emailsSent?.[key]) return false;
-  await BillingLifecycleService.setLifecycle(orgId, { ...lc, emailsSent: { ...lc.emailsSent, [key]: new Date().toISOString() } });
+  const cutoff = Date.now() - 120 * DAY; // prune old guards so the map doesn't grow forever
+  const kept = Object.fromEntries(Object.entries(lc.emailsSent ?? {}).filter(([, at]) => new Date(at).getTime() > cutoff));
+  await BillingLifecycleService.setLifecycle(orgId, { ...lc, emailsSent: { ...kept, [key]: new Date().toISOString() } });
   await send();
   return true;
 }
@@ -53,18 +55,18 @@ async function clearKey(orgId: string, key: string) {
 }
 
 export class BillingEmails {
-  // Paid subscription became active (or the plan changed). Keyed by plan + period so renewals stay quiet.
+  // Paid subscription became active (first charge, or a plan change). Once per plan until it ends, so renewals stay quiet.
   static async subscriptionStarted(orgId: string, plan: string, periodEnd?: Date | null) {
     const label = PLAN_LABELS[canonicalPlan(plan)];
-    await once(orgId, `sub-start:${canonicalPlan(plan)}:${periodEnd?.toISOString().slice(0, 7) ?? "na"}`, () =>
+    await once(orgId, `sub-start:${canonicalPlan(plan)}`, () =>
       mailAdmins(orgId, (name) => ({
         subject: `Your Ridhzo ${label} subscription is active`,
         preheader: `Thanks for subscribing — ${label} is now live on your workspace`,
         html:
-          mtag("Subscription active", "ok") +
-          mh(`You're on ${label}`) +
-          mp(`Hi ${name}, thanks for subscribing. Your <strong>${label}</strong> plan is active and all its features are unlocked.`) +
-          mfacts([["Plan", label], ...(periodEnd ? ([["Current period ends", fmtDate(periodEnd)]] as [string, string][]) : [])]) +
+          mtag("Membership") +
+          mh("You're in.") +
+          mp(`Hi ${name}, thanks for subscribing — everything in your plan is now unlocked.`) +
+          mcard("Ridhzo · active", label, periodEnd ? `Current period ends ${fmtDate(periodEnd)}` : "Active now") +
           mbtn("Open billing", appUrl("/settings/billing")) +
           mfine("Your GST tax invoice is emailed separately after each payment."),
       })),
@@ -74,15 +76,18 @@ export class BillingEmails {
   // Current subscription ended (cancelled or completed) — the workspace is back on Free.
   static async subscriptionEnded(orgId: string, oldPlan: string) {
     const label = PLAN_LABELS[canonicalPlan(oldPlan)];
-    await once(orgId, `sub-end:${Date.now().toString().slice(0, 8)}`, () =>
+    const lc = await BillingLifecycleService.getLifecycle(orgId);
+    const rest = Object.fromEntries(Object.entries(lc.emailsSent ?? {}).filter(([k]) => !k.startsWith("sub-start:")));
+    await BillingLifecycleService.setLifecycle(orgId, { ...lc, emailsSent: rest }); // a later resubscribe should get a new "active" email
+    await once(orgId, `sub-end:${new Date().toISOString().slice(0, 10)}`, () =>
       mailAdmins(orgId, (name) => ({
         subject: `Your Ridhzo ${label} subscription has ended`,
         preheader: "Your leads are safe — resubscribe any time",
         html:
-          mtag("Subscription ended", "warn") +
-          mh("Your subscription has ended") +
-          mp(`Hi ${name}, your <strong>${label}</strong> subscription has ended and the workspace is now on <strong>Free</strong>.`) +
-          mcallout("Your leads and follow-ups are safe. Anything above the Free limits is paused, not deleted.") +
+          mstamp("Ended") +
+          mh("Your subscription has ended.") +
+          mp(`Hi ${name}, your ${label} subscription is over and the workspace now runs on Free.`) +
+          mcallout("Your leads and follow-ups are safe. Anything above the Free limits is paused — not deleted — and comes back when you resubscribe.", "ok") +
           mbtn("Resubscribe", appUrl("/settings/billing")),
       })),
     );
@@ -112,12 +117,14 @@ export class BillingEmails {
           subject: ending ? `Your ${label} plan ends in ${days} day${days === 1 ? "" : "s"}` : `Your ${label} plan renews in ${days} day${days === 1 ? "" : "s"}`,
           preheader: ending ? "Keep your plan to avoid losing paid features" : "No action needed — just a heads-up",
           html: ending
-            ? mtag("Plan ending soon", "warn") + mh(`Your ${label} plan ends on ${fmtDate(o.end!)}`) +
-              mp(`Hi ${name}, you've cancelled, so <strong>${esc(o.name)}</strong> moves to Free after this date. Your leads are safe, but paid features (AI replies, extra automations and sources) will pause.`) +
+            ? mtag("Ending soon") + mh(`Your ${label} plan ends<br>on ${fmtDate(o.end!)}.`) +
+              mcount([[String(days), days === 1 ? "day left" : "days left"]]) +
+              mp(`Hi ${name}, you've cancelled, so <strong>${esc(o.name)}</strong> moves to Free after this date. Your leads are safe; paid features (AI replies, extra automations and sources) will pause.`) +
               mbtn("Keep my plan", appUrl("/settings/billing"))
-            : mtag("Upcoming renewal") + mh(`Your ${label} plan renews on ${fmtDate(o.end!)}`) +
-              mp(`Hi ${name}, a heads-up that <strong>${esc(o.name)}</strong> renews automatically on this date using your saved payment method. No action is needed.`) +
-              mbtn("Manage billing", appUrl("/settings/billing")) + mfine("Want to change or cancel? Do it from the billing page before the renewal date."),
+            : mtag("Renewal") + mh(`Your ${label} plan renews<br>on ${fmtDate(o.end!)}.`) +
+              mcount([[String(days), days === 1 ? "day to go" : "days to go"]]) +
+              mp(`Hi ${name}, just a heads-up: <strong>${esc(o.name)}</strong> renews automatically on this date using your saved payment method. Nothing to do.`) +
+              mbtn("Manage billing", appUrl("/settings/billing"), true) + mfine("Want to change or cancel? Do it from the billing page before the renewal date."),
         })),
       );
       if (ok) sent++;
@@ -133,7 +140,7 @@ export class BillingEmails {
       .from(organizations)
       .where(isNull(organizations.suspendedAt));
     const period = now.toISOString().slice(0, 7);
-    const meters: [string, string, "current" | "used"][] = [["aiCredits", "AI credits", "current"], ["leads", "leads", "current"], ["seats", "team seats", "current"]];
+    const meters: [string, string][] = [["aiCredits", "AI credits"], ["leads", "leads"], ["seats", "team seats"]];
     let sent = 0;
     for (const o of orgs) {
       try {
@@ -146,24 +153,25 @@ export class BillingEmails {
           const scope = key === "aiCredits" ? period : "all"; // credits reset monthly; leads/seats are standing
           for (const t of [80, 100]) {
             const k = `usage:${key}:${t}:${scope}`;
-            if (pct >= t) {
+            if (pct >= t && (t === 100 || pct < 100)) { // at 100% skip the 80% mail — one email, the urgent one
               const ok = await once(o.id, k, () =>
                 mailAdmins(o.id, (name) => ({
                   subject: t === 100 ? `You've reached your ${label} limit on ${o.name}` : `You've used ${Math.floor(pct)}% of your ${label} on ${o.name}`,
                   preheader: t === 100 ? "Upgrade to keep going" : `${m.current} of ${m.max} used`,
                   html:
-                    mtag(t === 100 ? "Limit reached" : "Usage warning", t === 100 ? "danger" : "warn") +
-                    mh(t === 100 ? `You've reached your ${label} limit` : `You've used ${Math.floor(pct)}% of your ${label}`) +
-                    mp(`Hi ${name}, <strong>${esc(o.name)}</strong> is on the <strong>${PLAN_LABELS[canonicalPlan(plan)]}</strong> plan.`) +
-                    mfacts([[label.replace(/^./, (c) => c.toUpperCase()), `${m.current} / ${m.max}`], ["Plan", PLAN_LABELS[canonicalPlan(plan)]]]) +
+                    mtag(t === 100 ? "Limit reached" : "Usage") +
+                    mh(t === 100 ? `You've hit your<br>${label} limit.` : `${Math.floor(pct)}% of your ${label}<br>used.`) +
+                    (t === 100 ? mhero("100%", `${label} used`) : mbar(pct, label, `${m.current} / ${m.max}`)) +
+                    mp(`Hi ${name}, <strong>${esc(o.name)}</strong> is on the ${PLAN_LABELS[canonicalPlan(plan)]} plan.`) +
+                    mfacts([[label, `${m.current} / ${m.max}`], ["Plan", PLAN_LABELS[canonicalPlan(plan)]]]) +
                     mcallout(t === 100
-                      ? key === "aiCredits" ? "AI features are paused until your credits reset next month, or until you upgrade." : `You can't add more ${label} until you upgrade or free some up.`
-                      : "Upgrade before you hit the limit so nothing is interrupted.", t === 100 ? "danger" : "warn") +
+                      ? key === "aiCredits" ? "AI features are paused until your credits reset next month — or you upgrade." : `You can't add more ${label} until you upgrade or free some up.`
+                      : "Upgrade before you hit the limit so nothing gets interrupted.", t === 100 ? "danger" : "info") +
                     mbtn(canonicalPlan(plan) === "unlimited" ? "View usage" : "Upgrade plan", appUrl("/settings/billing")),
                 })),
               );
               if (ok) sent++;
-            } else if (scope === "all") {
+            } else if (scope === "all" && pct < t) {
               await clearKey(o.id, k); // dropped back under — allow a future warning
             }
           }

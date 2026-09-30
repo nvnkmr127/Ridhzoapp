@@ -5,7 +5,7 @@ import { AuditService } from "@/domains/audit/service";
 import { OpsAlertService } from "./opsAlertService";
 import { PlatformConfigService } from "./configService";
 import { sendEmail, appUrl } from "@/lib/mail/mailer";
-import { mh, mp, mbtn, mcallout } from "@/lib/mail/layout";
+import { mh, mp, mbtn, mstamp, mhero, mfacts } from "@/lib/mail/layout";
 
 export interface SubjectMatch {
   id: string;
@@ -300,11 +300,12 @@ export class ComplianceService {
             subject: `[Compliance Notice] Data retention expiry for ${org.name}`,
             preheader: `${org.name} data will be anonymized in ${daysLeft} days`,
             html:
-              mh("Data retention expiry notice") +
-              mp(`Hello ${esc(owner.firstName || "there")},`) +
-              mp(`Your organization <strong>${esc(org.name)}</strong> (${esc(org.slug)}) has been suspended for ${daysSuspended} days.`) +
-              mcallout(`Under our data retention policy, all customer records and personal data will be permanently anonymized in <strong>${daysLeft} days</strong>.`, "danger") +
-              mp("To reactivate your account or export your data before then, contact support now.") +
+              mstamp("Notice") +
+              mh("Data retention notice.") +
+              mp(`Hello ${esc(owner.firstName || "there")}, your workspace has been suspended, and our retention policy is about to apply.`) +
+              mhero(String(daysLeft), "days until anonymization") +
+              mfacts([["Workspace", esc(org.name)], ["Suspended for", `${daysSuspended} days`], ["Records anonymized in", `${daysLeft} days`]]) +
+              mp("After that date, customer records and personal data are permanently anonymized and cannot be recovered. To reactivate or export your data first, contact support now.") +
               mbtn("Contact support", "mailto:hello@ridhzo.com"),
           });
         }

@@ -6,7 +6,7 @@ import { OrgService } from "@/domains/organizations/service";
 import { AuditService } from "@/domains/audit/service";
 import { escapeHtml } from "@/lib/utils";
 import { sendEmail, appUrl } from "@/lib/mail/mailer";
-import { mh, mp, mbtn, mfine } from "@/lib/mail/layout";
+import { mh, mp, mbtn, mfine, mticket, mkey } from "@/lib/mail/layout";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
@@ -45,10 +45,12 @@ export async function inviteUserAction(input: z.infer<typeof inviteSchema>) {
         subject: `You've been invited to ${org?.name || "your workspace"}`, // plain text: no escaping
         preheader: `Join ${org?.name || "your workspace"} on Ridhzo`,
         html:
-          mh(`You're invited to join ${orgName}`) +
-          mp(`You've been invited to collaborate on <strong>${orgName}</strong> in Ridhzo — capture, assign and follow up on leads together with your team.`) +
+          mh("You're on the list.") +
+          mp("A teammate invited you to work on leads together in Ridhzo.") +
+          mticket("Workspace invitation", orgName, "Admit one · valid for 7 days") +
           mbtn("Accept invitation", link) +
-          mfine(`This invitation expires in 7 days. If the button doesn't work, paste this into your browser:<br><a href="${link}" style="color:#6b7280;word-break:break-all;">${link}</a>`),
+          mkey("Or paste this link", link) +
+          mfine("Weren't expecting this? You can ignore it — nothing happens until you accept."),
       }, organizationId);
     } catch (mailErr) {
       emailed = false;

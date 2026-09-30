@@ -18,6 +18,14 @@ export async function processTrialDowngradeJob() {
   } catch (err) {
     console.error("[TRIAL_DOWNGRADE_WORKER] Executive digest failed:", err);
   }
+  // Renewal reminders + usage-limit warnings ride the same tick (guarded, so hourly runs don't repeat).
+  try {
+    const { BillingEmails } = await import("@/domains/billing/billingEmails");
+    const [r, u] = await Promise.all([BillingEmails.sendRenewalReminders(), BillingEmails.sendUsageAlerts()]);
+    if (r + u > 0) console.log(`[TRIAL_DOWNGRADE_WORKER] Sent ${r} renewal reminders, ${u} usage alerts`);
+  } catch (err) {
+    console.error("[TRIAL_DOWNGRADE_WORKER] Billing reminders failed:", err);
+  }
   return result;
 }
 

@@ -6,7 +6,7 @@ import { eq, desc, and, isNotNull, lte, ne, sql } from "drizzle-orm";
 import { PlatformConfigService } from "@/domains/platform/configService";
 import { NotificationService } from "@/domains/notifications/service";
 import { sendEmail, appUrl } from "@/lib/mail/mailer";
-import { mh, mp, mbtn, mfine, mcallout } from "@/lib/mail/layout";
+import { mh, mp, mbtn, mfine, mcallout, mtag, mfacts, mcompare } from "@/lib/mail/layout";
 import { AuditService } from "@/domains/audit/service";
 import { escapeHtml as esc } from "@/lib/utils";
 
@@ -313,13 +313,14 @@ export class BillingLifecycleService {
           subject: expiryFormatted ? `[Action Required] Payment failed for ${esc(orgName)} — Grace period active` : `[Action Required] Payment overdue for ${esc(orgName)}`,
           preheader: expiryFormatted ? `Update your payment method before ${expiryFormatted} to avoid disruption` : "Update your payment method to restore paused features",
           html:
-            mh("Subscription payment failed") +
-            mp("Hello,") +
-            mp(`We couldn't process the recurring payment for your <strong>${esc(plan)}</strong> plan on <strong>${esc(orgName)}</strong>.`) +
-            mcallout(`<strong>Reason:</strong> ${esc(reason)}<br>${status}`, "warn") +
-            mp("To avoid disruption to your automations, WhatsApp integrations and team seats, please update your payment method.") +
+            mtag("Action required") +
+            mh("Your payment didn't go through.") +
+            mp("Hello, we couldn't collect the recurring payment for your workspace. Nothing is lost — but it needs a quick fix.") +
+            mcallout(`<strong>Reason</strong> — ${esc(reason)}`, "danger") +
+            mfacts([["Workspace", esc(orgName)], ["Plan", esc(plan)], [expiryFormatted ? "Fully active until" : "Status", expiryFormatted ?? "Some features paused"]]) +
+            mp("Update your payment method to keep automations, WhatsApp integrations and team seats running.") +
             mbtn("Update payment method", billingUrl) +
-            mfine("Already resolved? No further action is needed. Your data is always safely preserved."),
+            mfine("Already fixed it? Nothing more to do. Your data is always safely preserved."),
         });
         sent++;
       }
@@ -540,10 +541,14 @@ export class BillingLifecycleService {
             subject: `Your free Ridhzo plan for ${org.name} has ended`,
             preheader: "Your leads and follow-ups are safe — pick a plan to keep everything running",
             html:
-              mh("Your free plan has ended") +
-              mp(`Hello ${owner.firstName || "there"},`) +
-              mp(`The free plan you were given for <strong>${org.name}</strong> has ended, so the workspace is now on Free. Your leads and follow-ups are safe.`) +
-              mp(`To keep AI replies, automations and all your lead sources, choose a plan — from ${PLAN_LIMITS.starter.price.replace(" / mo", "")} a month.`) +
+              mtag("Plan update") +
+              mh("Your free plan has ended.") +
+              mp(`Hello ${owner.firstName || "there"}, the complimentary plan for <strong>${org.name}</strong> has finished, so the workspace now runs on Free. Your leads and follow-ups are safe.`) +
+              mcompare(
+                { title: "Before", items: ["Complimentary plan", "AI replies", "All lead sources", "Full automations"] },
+                { title: "Now", items: ["Free plan", "Leads &amp; follow-ups kept", "Extras paused, not deleted"] },
+              ) +
+              mp(`Want everything back? Plans start at ${PLAN_LIMITS.starter.price.replace(" / mo", "")} a month.`) +
               mbtn("Choose a plan", appUrl("/settings/billing")),
           });
         }
@@ -621,11 +626,14 @@ export class BillingLifecycleService {
             subject: `Your Ridhzo trial for ${org.name} has ended — your leads are safe`,
             preheader: "Your leads and follow-ups are safe — upgrade to keep everything running",
             html:
-              mh("Your free trial has ended") +
-              mp(`Hello ${owner.firstName || "there"},`) +
-              mp(`Your <strong>${org.plan}</strong> trial on <strong>${org.name}</strong> is over, so the workspace is now on the <strong>Free</strong> plan. All your leads and follow-ups are safe.`) +
-              mcallout(`On Free you get ${PLAN_LIMITS.free.aiCredits} AI credits a month, ${PLAN_LIMITS.free.automations} automations, ${PLAN_LIMITS.free.sequences} sequence and ${PLAN_LIMITS.free.sources} lead source. Anything above that is paused, not deleted.`) +
-              mp(`Keep everything running for ${PLAN_LIMITS.starter.price.replace(" / mo", "")} a month.`) +
+              mtag("Trial complete") +
+              mh("Your trial has ended.<br>Your leads haven't.") +
+              mp(`Hello ${owner.firstName || "there"}, the <strong>${org.plan}</strong> trial on <strong>${org.name}</strong> is over. The workspace is now on Free, and everything you captured is safe.`) +
+              mcompare(
+                { title: `${org.plan} trial`, items: ["Full feature access", "Higher limits"] },
+                { title: "Free plan", items: [`${PLAN_LIMITS.free.aiCredits} AI credits / month`, `${PLAN_LIMITS.free.automations} automations`, `${PLAN_LIMITS.free.sequences} sequence`, `${PLAN_LIMITS.free.sources} lead source`] },
+              ) +
+              mp(`Anything above the Free limits is paused, not deleted. Keep it all running from ${PLAN_LIMITS.starter.price.replace(" / mo", "")} a month.`) +
               mbtn("Upgrade to Starter", appUrl("/settings/billing")),
           });
         }

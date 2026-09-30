@@ -4,7 +4,7 @@ import { and, count, eq, gte, isNull, lt, or, sql, sum } from "drizzle-orm";
 import { callCounts } from "@/domains/leads/callStats";
 import { formatCallDuration } from "@/domains/leads/contactLog";
 import { appUrl, sendEmail } from "@/lib/mail/mailer";
-import { mh, mp, mbtn, mfine, mtag, mtable } from "@/lib/mail/layout";
+import { mh, mp, mbtn, mfine, mtag, mtable, mhero, mcount } from "@/lib/mail/layout";
 import { HabitService, recapLine, type Recap } from "@/domains/organizations/habitService";
 import { isWorkDay } from "@/lib/workHours";
 import { t, type Lang } from "@/lib/i18n";
@@ -142,7 +142,8 @@ export function renderSummaryHtml(orgName: string, s: DailySummaryStats) {
   const list = (items: string) => `<ul style="margin:0 0 16px;padding-left:20px;">${items}</ul>`;
   return (
     mtag("Daily summary") +
-    mh(`Good morning — here's today at ${esc(orgName)}`) +
+    mh(`Good morning, ${esc(orgName)}.`) +
+    (s.overdueFollowUps > 0 ? mhero(String(s.overdueFollowUps), s.overdueFollowUps === 1 ? "overdue follow-up" : "overdue follow-ups") : mp("Nothing overdue — a clean start.")) +
     mtable(["What needs attention", "Count"], rows) +
     (reps ? `<p style="margin:0 0 8px;font-weight:700;">By team member</p>${list(reps)}` : "") +
     (s.calls.length ? `<p style="margin:0 0 8px;font-weight:700;">Calls in the last 24 hours</p>${list(s.calls.map((r) => `<li>${esc(r.name)}: ${callsLine(r)}</li>`).join(""))}` : "") +
@@ -340,7 +341,7 @@ export class DailySummaryService {
     const { NotificationService } = await import("@/domains/notifications/service");
     const { title, body } = milestoneCopy(milestone, await HabitService.recap(organizationId, since));
     await NotificationService.notifyOrgAdmins(organizationId, { type: milestone, title, body });
-    const html = mtag(milestone === "week_one" ? "Your first week" : "Trial ending soon", milestone === "week_one" ? "ok" : "warn") + mh(esc(title)) + mp(esc(body)) +
+    const html = mtag(milestone === "week_one" ? "Week one" : "Trial ending") + mh(esc(title)) + (milestone === "week_one" ? "" : mcount([["1", "day left"]])) + mp(esc(body)) +
       mbtn(milestone === "week_one" ? "Open your dashboard" : "Keep Starter", appUrl(milestone === "week_one" ? "/" : "/settings/billing"));
     for (const to of await this.adminEmails(organizationId)) await sendEmail({ from: "notifications", to, subject: title, html }, organizationId);
   }

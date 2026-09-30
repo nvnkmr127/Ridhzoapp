@@ -4,7 +4,7 @@ import { desc, eq, like, sql } from "drizzle-orm";
 import { AuditService } from "@/domains/audit/service";
 import { UserFacingError } from "@/lib/actions/result";
 import { sendEmail, appUrl } from "@/lib/mail/mailer";
-import { mh, mp, mbtn, mfine, mfacts } from "@/lib/mail/layout";
+import { mh, mp, mbtn, mfine, mfacts, mstamp, mhero } from "@/lib/mail/layout";
 
 export interface TaxInvoice {
   id: string;
@@ -74,11 +74,13 @@ async function emailInvoice(to: string, inv: TaxInvoice) {
     subject: `Ridhzo tax invoice ${inv.invoiceNumber} — ${inr(inv.totalAmount)}`,
     preheader: `Payment received — invoice ${inv.invoiceNumber} for ${inr(inv.totalAmount)}`,
     html:
-      mh("Payment received — thank you") +
-      mp("Your GST tax invoice is ready to view and download.") +
-      mfacts([["Invoice number", inv.invoiceNumber], ["Amount (incl. GST)", inr(inv.totalAmount)]]) +
-      mbtn("View invoice", link) +
-      mfine("You're getting this because this address is set for invoices on the Plan &amp; billing page. Change it there any time."),
+      mstamp("Paid") +
+      mh("Payment received.") +
+      mp("Thank you — your GST tax invoice is ready. Keep it for your records.") +
+      mhero(inr(inv.totalAmount), "Total paid · incl. GST", false) +
+      mfacts([["Invoice no.", inv.invoiceNumber], ["Issued", new Date(inv.issuedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })], ["Amount", inr(inv.totalAmount)]]) +
+      mbtn("Download invoice", link) +
+      mfine("Sent because this address is set for invoices on the Plan &amp; billing page. Change it there any time."),
   });
 }
 

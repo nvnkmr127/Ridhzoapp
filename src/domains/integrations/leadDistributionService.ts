@@ -4,7 +4,7 @@ import type { DistributionRecipient, DistributionConditionGroup } from "@/db/sch
 import { and, eq, desc, sql } from "drizzle-orm";
 import { evaluateConditionGroup } from "@/lib/leads/conditions";
 import { escapeHtml } from "@/lib/utils";
-import { mh, mbtn, mfine, mtag, mfacts } from "@/lib/mail/layout";
+import { mbtn, mfine, mping, mfacts } from "@/lib/mail/layout";
 
 type LeadForDistribution = {
   id: string;
@@ -24,7 +24,7 @@ function leadEmail(lead: LeadForDistribution, link: string) {
   const rows = ([["Name", lead.name], ["Email", lead.email], ["Phone", lead.phone], ["Company", lead.company], ["Status", lead.status]] as [string, string | null][])
     .filter(([, v]) => v)
     .map(([k, v]) => [k, escapeHtml(v!)] as [string, string]);
-  return mtag("New lead", "ok") + mh(`New lead: ${escapeHtml(lead.name || "Unnamed")}`) + mfacts(rows) + mbtn("Open lead in Ridhzo", escapeHtml(link)) + mfine("The sooner you reach out, the better the chance of winning this lead.");
+  return mping("+", "New lead", escapeHtml(lead.name || "Unnamed")) + mfacts(rows) + mbtn("Open lead in Ridhzo", escapeHtml(link)) + mfine("The sooner you reach out, the better the chance of winning this lead.");
 }
 
 // Accept both the current group shape and legacy flat arrays, so old rows still evaluate.

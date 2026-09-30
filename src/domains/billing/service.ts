@@ -327,6 +327,19 @@ export class BillingService {
         return; // unhandled event type — nothing changed, nothing to log
     }
 
+    // Customer-facing emails (best-effort, one-shot guarded inside). "authenticated" is only the
+    // mandate — no payment yet — so it stays quiet.
+    try {
+      const { BillingEmails } = await import("./billingEmails");
+      if (event === "subscription.activated" || event === "subscription.charged" || event === "subscription.resumed") {
+        await BillingEmails.subscriptionStarted(org.id, newPlan ?? "starter", periodEnd);
+      } else if (event === "subscription.cancelled" || event === "subscription.completed") {
+        await BillingEmails.subscriptionEnded(org.id, oldPlan ?? "starter");
+      }
+    } catch (e) {
+      console.warn("[billing] subscription email failed", e);
+    }
+
     await AuditService.log({
       organizationId: org.id,
       action: "billing.plan_changed",

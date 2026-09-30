@@ -81,12 +81,12 @@ export class ExecutiveDigestService {
     });
 
     const badge = (h: string) =>
-      `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;${h === "critical" ? "background:#fee2e2;color:#991b1b;" : "background:#fef3c7;color:#92400e;"}">${escapeHtml(h)}</span>`;
+      `<span style="display:inline-block;padding:2px 8px;font-size:10px;letter-spacing:1px;font-weight:700;text-transform:uppercase;${h === "critical" ? "background:#0a0a0a;color:#ffffff;" : "border:1px solid #0a0a0a;color:#0a0a0a;"}">${escapeHtml(h)}</span>`;
     const appBase = process.env.NEXT_PUBLIC_APP_URL || "https://app.ridhzo.com";
 
     return (
       mtag(`Executive briefing · ${escapeHtml(data.frequency)}`) +
-      mh("Ridhzo platform overview") +
+      mh("The platform,<br>at a glance.") +
       mp(`Generated on ${dateFormatted}.`) +
       mkpis([
         { label: "Annual run rate (ARR)", value: `₹${data.revops.arr.toLocaleString()}`, sub: `MRR ₹${data.revops.mrr.toLocaleString()} · ARPU ₹${data.revops.arpu}` },
@@ -95,9 +95,9 @@ export class ExecutiveDigestService {
         { label: "Ops & support", value: data.metrics.dbHealthy ? "Healthy" : "Degraded", sub: `${data.openTicketsCount} open tickets · ${data.metrics.failedDeliveries} DLQ failures` },
       ]) +
       (data.atRiskTenants.length > 0
-        ? `<p style="margin:8px 0;font-weight:700;color:#991b1b;">⚠️ Retention &amp; churn watchlist (${data.atRiskTenants.length})</p>` +
+        ? `<p style="margin:8px 0;font-weight:700;">Retention &amp; churn watchlist (${data.atRiskTenants.length})</p>` +
           mtable(["Tenant", "Plan", "Inactive", "Status"], data.atRiskTenants.map((t) => [`<strong>${escapeHtml(t.name)}</strong>`, escapeHtml(t.plan).toUpperCase(), `${t.daysInactive} days`, badge(t.health)]))
-        : mcallout("✓ Zero critical churn risks detected across the active tenant fleet.", "ok")) +
+        : mcallout("Zero critical churn risks detected across the active tenant fleet.", "ok")) +
       mbtn("Open SuperAdmin console", `${appBase}/admin`)
     );
   }
