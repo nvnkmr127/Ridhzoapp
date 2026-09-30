@@ -33,7 +33,7 @@ Connect the official WhatsApp Business API (via Ridhzo's WhatsApp integration pa
 - **Custom Reply-To:** Configure a dedicated reply-to address so customer responses route directly to your central inbox or support team.
 - **Email Verification & Error Tracking:** Live connection test before saving, clear diagnostic error messages if credentials expire, and AES-256-GCM encryption.
 - Used for one-off emails, sequences, meeting confirmations, new-lead alerts and notifications. A built-in fallback sender keeps system emails flowing.
-- Replies can be logged back on the lead timeline (Lead Intelligence settings).
+- Replies can be logged back on the lead timeline (Lead Intelligence settings) with intelligent inbound deduplication and automatic filtering for out-of-office (OOO) and bounce messages.
 
 ## Content sharing with open tracking
 - Share a brochure, price list, property page, video or any link with a lead via a **tracked link**.
@@ -43,7 +43,7 @@ Connect the official WhatsApp Business API (via Ridhzo's WhatsApp integration pa
 **Use case:** An interior designer shares a portfolio link on WhatsApp; the moment the lead opens it, the designer gets a notification and calls while interest is hot.
 
 ## AI help for messages
-- **Draft reply**: AI writes the next WhatsApp/email based on the conversation and the lead's form answers. Choose tone (friendly, professional, short) and language (auto-matches the lead, or Hindi, Hinglish, Tamil, Telugu, etc.). It never invents prices or offers.
+- **Draft reply**: AI writes the next WhatsApp/email based on the conversation, form answers, and your company's **AI Business Profile**. It automatically adapts tone (friendly, professional, short, assertive) and language (auto-matches the lead, or Hindi, Hinglish, Tamil, Telugu, etc.). It never invents prices or offers.
 - See [AI Features](14_AI_FEATURES.md).
 
 ## Real use cases

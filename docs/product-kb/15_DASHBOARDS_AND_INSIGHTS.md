@@ -14,16 +14,18 @@ Each rep's personal command centre for the day.
 | Overdue | My missed follow-ups |
 | Follow-up completion rate | How consistently I complete follow-ups |
 | **Calls & Answer Rate** | Total calls made today, total talk time, and personal call answer rate % |
+| **Daily Summary Snapshot** | Daily snapshot comparing today's volume vs previous days (leads worked, calls placed, follow-ups cleared) |
 
 Plus: today's follow-ups and meetings, recent leads with lead scores, and quick actions.
 
-**Use case:** A rep opens Ridhzo at 9:30 AM, sees 6 follow-ups due, their call answer rate at 65%, and clears priority callbacks first.
+**Use case:** A rep opens Ridhzo at 9:30 AM, reviews their daily summary card, sees 6 follow-ups due, their call answer rate at 65%, and clears priority callbacks first.
 
 ## 2. Executive Dashboard (for owners & managers)
-The business at a glance, filterable by date range, team and source.
+The business at a glance, filterable by date range, team and source. Features **Daily Summary Snapshot Cards** providing high-level operational visibility for team leads.
 
 | Metric | Why it matters |
 |---|---|
+| **Daily Summary Performance Cards** | Instant snapshot of daily inbound leads, calls completed, deal wins, and overdue escalations |
 | **Average speed to first response** | Faster response = more sales |
 | **Leads contacted within 5 minutes (%)** | The gold standard of speed-to-lead |
 | **Median response time** | Fair benchmark, ignores outliers |
@@ -42,7 +44,7 @@ The business at a glance, filterable by date range, team and source.
 | **Today's priorities** | High-priority leads needing action now |
 
 ## 3. Insights (deep analytics)
-For leaders who want to optimise the whole sales engine.
+For leaders who want to optimise the whole sales engine. Multi-timezone engine buckets dates and peak hours accurately across Indian and international operations.
 
 | Insight | What it answers |
 |---|---|

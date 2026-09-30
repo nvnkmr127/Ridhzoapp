@@ -133,12 +133,13 @@ When one or more checkboxes are checked, an interactive bulk operations toolbar 
 ## 3. Leads Management Features
 
 ### Intake & Acquisition
-* **Atomic Sequential Display IDs:** Every lead receives an immutable, human-friendly number (`#1042`) per organization via atomic PostgreSQL triggers.
+* **Customer Reference Numbers (CRN) & Sequential Display IDs:** Every lead receives an immutable, human-friendly number (`#1042`), unique sequential Customer Reference Number (`CRN-xxxx`), and dedicated CRN table column with sorting and instant lookup.
 * **Automated Lead Ingestion:** Continuous background refresh detects new webhook entries without page reloads.
-* **Multi-Format Contact Normalization:** Phone numbers with country codes, spaces, or dashes are indexed and searchable.
+* **Multi-Format Contact Normalization:** Phone numbers with country codes, spaces, or dashes are indexed (`pg_trgm`) and searchable instantly.
 
 ### Segmentation & Querying
-* **Full-Text Multi-Field Search:** Searches name, email, company, and phone simultaneously.
+* **Full-Text Multi-Field Search:** Searches CRN, displayId, name, email, company, and phone simultaneously.
+* **Automated Budget Extraction & Filtering:** Unstructured budgets in form responses or notes are parsed into clean numeric amounts for range filtering.
 * **Meta / Facebook Ad Attribution Filtering:** Filter leads directly by campaign name, ad set name, and form ID.
 * **Saved View Persistence:** Save frequently used filter combinations for individual or organization-wide use.
 * **One-Tap Smart Segments:** Instant access to Hot Leads, At-Risk deals, Unassigned leads, and Stale records.

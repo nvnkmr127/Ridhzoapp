@@ -13,27 +13,75 @@ Every file describes features that exist in the product today. Anything not yet 
 | # | File | What it covers |
 |---|------|----------------|
 | 01 | [Product Overview](01_PRODUCT_OVERVIEW.md) | What Ridhzo is, who it's for, the core promise, differentiators, call tracking, mobile-first design |
-| 02 | [Pricing & Plans](02_PRICING_AND_PLANS.md) | Free / Starter / Unlimited, limits, trial, yearly, INR default & dynamic currency, AI credits |
-| 03 | [Getting Started & Ease of Use](03_GETTING_STARTED_EASE_OF_USE.md) | Signup to first lead in minutes, native mobile app, mobile OTP, call sync, support tickets |
-| 04 | [Lead Capture & Sources](04_LEAD_CAPTURE_SOURCES.md) | Facebook/Instagram, Google Ads, web forms, website webhook, API, CSV, manual, missed calls, Android call sync |
-| 05 | [Leads Management](05_LEADS_MANAGEMENT.md) | Fast leads table with lead scores, configurable lead fields, search, filters, saved views, bulk actions, tags, duplicates, recycle bin & purge |
-| 06 | [Lead Profile](06_LEAD_PROFILE.md) | Streamlined header (owner, stage, tags), live Next Best Action, 1-click AI suggestions, call metrics & audio, activity timeline |
+| 02 | [Pricing & Plans](02_PRICING_AND_PLANS.md) | Free / Starter / Unlimited, limits, trial, yearly, INR default & dynamic currency, AI credits, platform management |
+| 03 | [Getting Started & Ease of Use](03_GETTING_STARTED_EASE_OF_USE.md) | Signup to first lead in minutes, phone & OTP login, multi-channel team invites, profile gap alerts, call sync |
+| 04 | [Lead Capture & Sources](04_LEAD_CAPTURE_SOURCES.md) | Facebook/Instagram, multi-tenant page sharing, Google Ads, web forms, website webhook, API, CSV, Android call sync, inbound email deduplication |
+| 05 | [Leads Management](05_LEADS_MANAGEMENT.md) | Fast leads table with CRN tracking, lead scores, configurable lead fields, search, filters, saved views, bulk actions, tags, duplicates, recycle bin & purge |
+| 06 | [Lead Profile](06_LEAD_PROFILE.md) | Streamlined header with CRN, pre-call brief generator, live Next Best Action, 1-click AI suggestions & chip popover, call metrics & rep notes, activity timeline |
 | 07 | [Pipeline & Statuses](07_PIPELINE_AND_STATUSES.md) | Kanban board, custom statuses with AI context & stage playbooks, win/loss |
 | 08 | [Assignment & New-Lead Alerts](08_ASSIGNMENT_AND_ALERTS.md) | Round-robin, capacity, teams, high-priority mobile push channels, smart missed-call deduplication |
-| 09 | [Messaging: WhatsApp, Email, Content Sharing](09_MESSAGING.md) | One-tap WhatsApp, Business API (Watxio/Meta Cloud API), custom reply-to email, templates, campaigns, tracked links |
+| 09 | [Messaging: WhatsApp, Email, Content Sharing](09_MESSAGING.md) | One-tap WhatsApp, Business API (Watxio/Meta Cloud API), custom reply-to email, auto-reply filters, templates, campaigns, tracked links |
 | 10 | [Follow-ups & Reminders](10_FOLLOW_UPS.md) | Follow-up domain, call auto-completion, callback pile-up prevention, calendar, overdue escalation |
 | 11 | [Meetings & Booking Page](11_MEETINGS_AND_BOOKING.md) | Site visits, online meetings, check-in, public booking link, Google Calendar |
 | 12 | [Automations](12_AUTOMATIONS.md) | WHEN → IF → THEN workflows, call.logged trigger, serverless resilience |
 | 13 | [Sequences (Drip Campaigns)](13_SEQUENCES.md) | Multi-step WhatsApp/email follow-up, AI-drafted, flexible tokens |
-| 14 | [AI Features](14_AI_FEATURES.md) | Unified lead-context engine, live Next Best Action, 1-click field fills & status change, status playbooks, AI Assistant |
-| 15 | [Dashboards & Insights](15_DASHBOARDS_AND_INSIGHTS.md) | My Dashboard, Executive Dashboard, Insights, call metrics & answer rates, org currency formatting |
+| 14 | [AI Features](14_AI_FEATURES.md) | Unified lead-context engine, AI business profile context, pre-call brief, live Next Best Action, 1-click field fills & status change, status playbooks, credit refund safeguard, AI Assistant |
+| 15 | [Dashboards & Insights](15_DASHBOARDS_AND_INSIGHTS.md) | My Dashboard, Executive Dashboard, daily summary cards & snapshots, Insights, call metrics & answer rates, org currency formatting |
 | 16 | [Notifications, Mobile & Offline](16_NOTIFICATIONS_MOBILE_OFFLINE.md) | Native Android app, mobile OTP, device call sync, caller ID directory, incremental offline sync with conflict detection |
-| 17 | [Team, Roles & Security](17_TEAM_ROLES_SECURITY.md) | Users, invites with soft-delete accounting, least-privilege roles, audit log, support tickets, mobile token revocation |
-| 18 | [Integrations, API & Webhooks](18_INTEGRATIONS_API_WEBHOOKS.md) | REST API, mobile endpoints & Idempotency-Key, Android call sync API, CAPI test ping, webhooks |
+| 17 | [Team, Roles & Security](17_TEAM_ROLES_SECURITY.md) | Users, invites (email/WhatsApp/link), profile gaps banner, phone login, least-privilege roles, audit log, support tickets, super-admin platform console |
+| 18 | [Integrations, API & Webhooks](18_INTEGRATIONS_API_WEBHOOKS.md) | REST API with CRN & sequence tracking, mobile endpoints & Idempotency-Key, Meta CAPI delivery status & token expiry, Android call sync API, webhooks |
 | 19 | [Industry Use Cases](19_INDUSTRY_USE_CASES.md) | Real-world playbooks by industry including call tracking and AI guidance |
-| 20 | [FAQ](20_FAQ.md) | Common questions from buyers and users including Android call sync, offline sync, and AI features |
+| 20 | [FAQ](20_FAQ.md) | Common questions from buyers and users including Android call sync, offline sync, CRN, pre-call briefs, and AI features |
 | 21 | [Website Copy Kit](21_WEBSITE_COPY_KIT.md) | Headlines, taglines, feature blurbs, CTAs, SEO keywords |
-| 22 | [Mobile App](22_MOBILE_APP.md) | Native Android app, call tracking, Caller ID directory, offline sync, 1-click AI suggestions |
+| 22 | [Mobile App](22_MOBILE_APP.md) | Native Android app, phone login, call tracking, Caller ID directory, offline sync, pre-call brief, 1-click AI suggestions |
+
+## Rules for any AI using this knowledge base
+
+1. **Product name:** "Ridhzo" (app name "Ridhzo CRM"). Never call it anything else.
+2. **Do not invent features, integrations or prices.** If it is not in these files, say "I'm not sure — please contact the Ridhzo team."
+3. **Prices:** Free ₹0, Starter ₹249/month, Unlimited ₹449/month. Yearly = 10× monthly (2 months free). GST extra. Default currency is Indian Rupees (INR / ₹) with dynamic organization currency configuration.
+4. **Tone:** simple, friendly, practical. Our buyers are business owners and sales teams, often on their phone. Avoid jargon.
+5. **Items marked (Coming soon)** must never be described as available.
+6. Ridhzo is **lead-focused and mobile-first**: it is built to capture, respond to, auto-track calls, and convert leads fast — not a heavy enterprise CRM.
+
+---
+
+# Ridhzo Product Knowledge Base
+
+This folder is the single source of truth about **Ridhzo CRM**, written for:
+
+- **AI training / AI assistants** (chatbots, sales bots, support bots, content generators)
+- **Website building** (landing pages, feature pages, pricing page, FAQ)
+- **Product explanation** (sales demos, onboarding, investor/partner decks)
+
+Every file describes features that exist in the product today. Anything not yet live is clearly marked **(Coming soon)**. Prices are in Indian Rupees (₹) and exclude 18% GST.
+
+## Files
+
+| # | File | What it covers |
+|---|------|----------------|
+| 01 | [Product Overview](01_PRODUCT_OVERVIEW.md) | What Ridhzo is, who it's for, the core promise, differentiators, call tracking, mobile-first design |
+| 02 | [Pricing & Plans](02_PRICING_AND_PLANS.md) | Free / Starter / Unlimited, limits, trial, yearly, INR default & dynamic currency, AI credits, platform management |
+| 03 | [Getting Started & Ease of Use](03_GETTING_STARTED_EASE_OF_USE.md) | Signup to first lead in minutes, phone & OTP login, multi-channel team invites, profile gap alerts, call sync |
+| 04 | [Lead Capture & Sources](04_LEAD_CAPTURE_SOURCES.md) | Facebook/Instagram, multi-tenant page sharing, Google Ads, web forms, website webhook, API, CSV, Android call sync, inbound email deduplication |
+| 05 | [Leads Management](05_LEADS_MANAGEMENT.md) | Fast leads table with CRN tracking, lead scores, configurable lead fields, search, filters, saved views, bulk actions, tags, duplicates, recycle bin & purge |
+| 06 | [Lead Profile](06_LEAD_PROFILE.md) | Streamlined header with CRN, pre-call brief generator, live Next Best Action, 1-click AI suggestions & chip popover, call metrics & rep notes, activity timeline |
+| 07 | [Pipeline & Statuses](07_PIPELINE_AND_STATUSES.md) | Kanban board, custom statuses with AI context & stage playbooks, win/loss |
+| 08 | [Assignment & New-Lead Alerts](08_ASSIGNMENT_AND_ALERTS.md) | Round-robin, capacity, teams, high-priority mobile push channels, smart missed-call deduplication |
+| 09 | [Messaging: WhatsApp, Email, Content Sharing](09_MESSAGING.md) | One-tap WhatsApp, Business API (Watxio/Meta Cloud API), custom reply-to email, auto-reply filters, templates, campaigns, tracked links |
+| 10 | [Follow-ups & Reminders](10_FOLLOW_UPS.md) | Follow-up domain, call auto-completion, callback pile-up prevention, calendar, overdue escalation |
+| 11 | [Meetings & Booking Page](11_MEETINGS_AND_BOOKING.md) | Site visits, online meetings, check-in, public booking link, Google Calendar |
+| 12 | [Automations](12_AUTOMATIONS.md) | WHEN → IF → THEN workflows, call.logged trigger, serverless resilience |
+| 13 | [Sequences (Drip Campaigns)](13_SEQUENCES.md) | Multi-step WhatsApp/email follow-up, AI-drafted, flexible tokens |
+| 14 | [AI Features](14_AI_FEATURES.md) | Unified lead-context engine, AI business profile context, pre-call brief, live Next Best Action, 1-click field fills & status change, status playbooks, credit refund safeguard, AI Assistant |
+| 15 | [Dashboards & Insights](15_DASHBOARDS_AND_INSIGHTS.md) | My Dashboard, Executive Dashboard, daily summary cards & snapshots, Insights, call metrics & answer rates, org currency formatting |
+| 16 | [Notifications, Mobile & Offline](16_NOTIFICATIONS_MOBILE_OFFLINE.md) | Native Android app, mobile OTP, device call sync, caller ID directory, incremental offline sync with conflict detection |
+| 17 | [Team, Roles & Security](17_TEAM_ROLES_SECURITY.md) | Users, invites (email/WhatsApp/link), profile gaps banner, phone login, least-privilege roles, audit log, support tickets, super-admin platform console |
+| 18 | [Integrations, API & Webhooks](18_INTEGRATIONS_API_WEBHOOKS.md) | REST API with CRN & sequence tracking, mobile endpoints & Idempotency-Key, Meta CAPI delivery status & token expiry, Android call sync API, webhooks |
+| 19 | [Industry Use Cases](19_INDUSTRY_USE_CASES.md) | Real-world playbooks by industry including call tracking and AI guidance |
+| 20 | [FAQ](20_FAQ.md) | Common questions from buyers and users including Android call sync, offline sync, CRN, pre-call briefs, and AI features |
+| 21 | [Website Copy Kit](21_WEBSITE_COPY_KIT.md) | Headlines, taglines, feature blurbs, CTAs, SEO keywords |
+| 22 | [Mobile App](22_MOBILE_APP.md) | Native Android app, phone login, call tracking, Caller ID directory, offline sync, pre-call brief, 1-click AI suggestions |
 
 ## Rules for any AI using this knowledge base
 
@@ -98,7 +146,7 @@ Built first for India (₹ INR default pricing, multi-currency settings, Razorpa
 2. **Automatic Android call sync.** Calls made, received, and missed on reps' phones are tracked automatically with duration and timestamps — no rep forgets to log calls.
 3. **WhatsApp-native.** One-tap personal WhatsApp for free, or official WhatsApp Business API for automation, templates, campaigns and sequences.
 4. **Speed-to-lead built-in.** Auto-assignment + high-priority mobile push channels + one-tap reply.
-5. **Real AI intelligence with 1-click apply.** Unified lead-context engine powers live Next Best Action, 1-click field filling, stage transitions, and stage-specific playbooks.
+5. **Real AI intelligence with 1-click apply.** Unified lead-context engine powers AI business profiles, pre-call briefs, live Next Best Action, 1-click field filling, stage transitions, and stage-specific playbooks.
 6. **Field-sales ready.** Meetings, site visits, GPS check-in, public booking page, and conflict-safe offline sync.
 7. **Priced for small businesses.** ₹249/month for Starter; unlimited users and leads for ₹449/month.
 8. **Multi-language app.** English, Hindi, Telugu.
@@ -106,9 +154,9 @@ Built first for India (₹ INR default pricing, multi-currency settings, Razorpa
 ## Product map (main screens)
 | Area | Screen | Purpose |
 |---|---|---|
-| Home | Executive Dashboard | Business overview for owners/managers |
-| Home | My Dashboard | Personal daily workload for each rep |
-| CRM | Leads | High-speed table with lead scores, configurable fields, filters, bulk actions |
+| Home | Executive Dashboard | Business overview for owners/managers with daily summary cards |
+| Home | My Dashboard | Personal daily workload for each rep with daily summaries |
+| CRM | Leads | High-speed table with CRN tracking, lead scores, configurable fields, filters, bulk actions |
 | CRM | Pipeline (Kanban) | Drag leads through stages with stage playbooks |
 | CRM | Hot Leads | Leads most likely to convert right now |
 | CRM | Going Cold | Leads with no contact for 14+ days |
@@ -120,7 +168,8 @@ Built first for India (₹ INR default pricing, multi-currency settings, Razorpa
 | Productivity | Sequences | Automatic multi-step follow-ups |
 | Productivity | AI Assistant | Chat-based CRM helper |
 | Analytics | Insights | Deep analytics, call metrics, and forecasts |
-| Settings | 15+ settings areas | Sources, lead fields config, users, roles, templates, email, billing, API, webhooks, alerts, meetings, integrations, support tickets, audit log |
+| Settings | 16+ settings areas | Sources, lead fields config, users, roles, templates, email, billing, API, webhooks, alerts, meetings, integrations, support tickets, audit log |
+| Platform | Super-Admin Console | Multi-tenant platform management, subscription overrides, and system health (`/admin`) |
 
 ## Technology & reliability (plain language)
 - Native Android app (APK / Expo) and modern web app; works in any modern browser.
@@ -165,20 +214,21 @@ Ridhzo has three simple plans. All standard prices are in Indian Rupees (INR / �
 - Deactivated and soft-deleted team members are excluded, so you never pay for past employees.
 
 ## What is an AI credit?
-One AI credit = one AI generation via `consumeAiCredit`: drafting a reply, summarizing a lead, generating a sequence, 1-click field suggestion, or one AI Assistant turn. Credits reset on the 1st of each month. If an AI call fails, the credit is refunded automatically and you get a standard fallback instead.
+One AI credit = one AI generation via `consumeAiCredit`: drafting a reply, summarizing a lead, generating a sequence, 1-click field suggestion, pre-call brief generation, or one AI Assistant turn. Credits reset on the 1st of each month. If an AI call fails, crashes, or returns an unparseable response, the credit is refunded automatically and a graceful fallback is provided.
 
 ## What happens at a limit?
 - You get a clear message ("Your plan allows 300 leads. Upgrade to add more.") and an **Upgrade** button.
 - Nothing already in your account is deleted. Deleted leads in the Recycle Bin do not count towards active lead quotas.
 - If you downgrade and have more automations/sequences than the new plan allows, the **oldest ones keep running** and the rest are paused until you upgrade again.
 
-## Payments & billing
+## Payments, billing & platform administration
 - Pay securely with **Razorpay** (UPI, cards, net banking).
 - Monthly or yearly subscriptions; switch plans any time.
 - **Coupons / discount codes** supported at checkout.
 - **Cancel any time** — you keep your paid plan until the end of the paid period, then move to Free.
 - If a payment fails, you get a **grace period** with reminders before the account is downgraded.
-- **Agency / complimentary plans:** Ridhzo can grant a paid plan free of charge (e.g., to an agency's client) for a set period; after that the customer can choose to subscribe.
+- **Printable Tax Invoices:** View, print, and download full GST-compliant invoices with GSTIN and tax breakdowns directly from Settings → Billing.
+- **Agency / complimentary plans & Super-Admin Console (`/admin`):** Platform super-admins can grant complimentary subscriptions, extend trials, toggle feature gates, and manage multi-tenant billing from the centralized administrative console.
 
 ## Value comparison (for sales conversations)
 - A single converted lead usually pays for a full year of Ridhzo.
@@ -214,20 +264,21 @@ Ridhzo is designed so a busy business owner can go from signup to receiving thei
 
 ## Setup in 5 steps
 
-### 1. Sign up (1 minute)
-Sign up with email & password or **Google**. Mobile phone number + OTP login is also supported (via SMS/Watxio). Your workspace starts on a **14-day Starter trial**.
+### 1. Sign up & Sign in (1 minute)
+Sign up with email & password, **Google**, or **Mobile Phone Number + Password / OTP** (with international country code picker). Your workspace starts on a **14-day Starter trial**.
 
 ### 2. Connect a lead source (2–3 minutes)
 Go to **Settings → Lead Sources** and pick one:
-- **Facebook / Instagram Lead Ads** — click Connect, log in to Facebook, choose your Page. Done. New leads arrive in seconds. You can also **Sync Past Leads**.
+- **Facebook / Instagram Lead Ads** — click Connect, log in to Facebook, choose your Page (supports multi-tenant page sharing). Done. New leads arrive in seconds. You can also **Sync Past Leads**.
 - **Google Lead Form Ads** — copy the webhook URL + key into your Google Ads lead form.
 - **Hosted web form** — build a form in the visual editor, share the link or paste the embed code into your website.
 - **Android Call Sync** — install the Android app and grant call-log permissions so phone calls automatically sync with leads.
 - **Website webhook / API** — for developers or tools like Zapier/Make/Pabbly.
-- **CSV import** — upload your existing leads from Excel/Google Sheets.
+- **CSV import** — upload your existing leads from Excel/Google Sheets with secure preview mapping.
 
-### 3. Invite your team (1 minute)
-**Settings → Users** → invite by email. Choose a role (Admin, Member, or a custom role).
+### 3. Invite your team & complete profiles (1 minute)
+- **Settings → Users** → invite teammates via **Email**, direct **WhatsApp share**, or copyable **Invite Link**. Choose a role (Admin, Member, or a custom role).
+- **Profile Gaps Banner:** A guided banner alerts reps if critical contact fields (phone number, WhatsApp number, operational timezone) are missing, ensuring outbound dialing and WhatsApp templates work flawlessly.
 
 ### 4. Turn on auto-assignment & alerts (1 minute)
 - Enable round-robin so each new lead goes to the next available rep.
@@ -242,14 +293,14 @@ That's it. Every new lead now lands in Ridhzo, gets assigned, alerts the owner, 
 
 ## A typical day in Ridhzo (sales rep)
 1. Phone buzzes: *"New lead: Priya Sharma — 2BHK enquiry (Facebook)"*.
-2. Tap the notification → lead profile opens → tap **WhatsApp** → template pre-filled with Priya's name → send. (Under 30 seconds.)
-3. Or tap **Call** → make the call from your Android phone → Ridhzo automatically logs the call, duration, and answered status, and auto-completes any pending follow-up.
+2. Tap the notification → lead profile opens → review the **Pre-Call Brief** or tap **WhatsApp** → template pre-filled with Priya's name → send. (Under 30 seconds.)
+3. Or tap **Call** → make the call from your Android phone → Ridhzo automatically logs the call, duration, and answered status, and auto-completes any pending follow-up. Reps can also log distinct call outcome notes.
 4. Review **AI Suggestions** on the lead profile: 1-click update status to *Qualified* and 1-click fill budget field from the call notes.
-5. Open **My Dashboard** each morning: today's follow-ups, overdue tasks, new leads, meetings, and call answer rates.
+5. Open **My Dashboard** each morning: today's follow-ups, overdue tasks, new leads, meetings, call answer rates, and daily summary snapshots.
 6. Before leaving for a site visit, open the meeting → **Check in** with GPS on arrival → record outcome after.
 
 ## A typical week (owner/manager)
-- **Executive Dashboard:** leads this week, conversion rate, revenue by source, call answer rates, pipeline.
+- **Executive Dashboard:** leads this week, daily summary performance cards, conversion rate, revenue by source, call answer rates, pipeline.
 - **Going Cold:** one click "Escalate all to High" to push neglected leads back into priority.
 - **Insights:** which source gives the best win rate, which rep is closing, pipeline health grade.
 - **Audit log:** who changed or deleted what.
@@ -257,8 +308,11 @@ That's it. Every new lead now lands in Ridhzo, gets assigned, alerts the owner, 
 ## Ease-of-use features
 | Feature | Why it makes life easier |
 |---|---|
+| **Customer Reference Number (CRN)** | Every lead has an unambiguous identifier (e.g. `CRN-xxxx`) for fast search and verbal confirmation on calls |
+| **Pre-Call Brief** | 1-click dossier right before dialing: summarizes lead history, requirements, budget, objections, and talking points |
+| **Lead Insights Chip & Popover** | Quick-glance pill badge displaying lead intent, budget, sentiment, and AI score with a hover/click popover |
 | **Quick Add** (global "+" button) | Add a lead from any screen in seconds, even offline with automatic conflict detection |
-| **Command palette / global search** (Ctrl/⌘ + K) | Find any lead by name, phone (trigram search in any format), or email instantly |
+| **Command palette / global search** (Ctrl/⌘ + K) | Find any lead by CRN, name, phone (trigram search in any format), or email instantly |
 | **One-tap actions** | Call, WhatsApp, SMS, email with one tap from the lead card |
 | **Caller ID on Android** | Incoming lead calls display caller identity directly using pre-cached lead keys |
 | **Automatic Call Logging** | Android device sync logs talk duration, answer status, and timestamps without manual input |
@@ -267,7 +321,7 @@ That's it. Every new lead now lands in Ridhzo, gets assigned, alerts the owner, 
 | **Saved views** | Save your favourite filters ("My hot leads from Facebook") |
 | **Bulk actions** | Assign, tag, change status, message or export hundreds of leads at once |
 | **Templates with auto-fill** | {{first_name}}, {{phone}}, custom fields filled automatically |
-| **AI drafts** | Get a ready-to-send reply in the lead's language |
+| **AI drafts** | Get a ready-to-send reply in the lead's language with adaptive tone |
 | **Automation templates** | Start from proven workflows instead of a blank screen |
 | **Offline mode** | Leads added/edited without internet are saved and synced safely with version conflict protection |
 | **Native mobile app & PWA** | Native Android APK or home-screen app with high-priority notification channels |
@@ -291,13 +345,15 @@ Managed at **Settings → Lead Sources**. Each source shows live stats (leads re
 ### 1. Facebook & Instagram Lead Ads
 - **Connect in one click** with Facebook login; choose your Page(s).
 - New leads arrive **within seconds** of form submission (real-time webhook).
+- **Multi-Tenant Page Sharing:** A single Facebook Page can be connected across multiple shared organization accounts. Incoming leads are automatically copied and dispatched to all connected workspaces — ideal for marketing agencies managing franchise or regional dealer accounts.
 - **Choose which forms** to import (form-level filter).
 - **Sync Past Leads** — backfill leads you received before connecting.
 - Automatic field mapping: name, email, phone, plus every custom form question saved on the lead ("What they told you in the form").
-- **Automatic token refresh** and outage recovery — if Facebook access expires, Ridhzo warns you and can replay missed leads once reconnected.
+- **Proactive Token Expiry & Health Tracking:** Continuous monitoring of Facebook Page access tokens with clear in-app expiry warnings before integrations break, plus automatic outage recovery.
+- **Meta Conversions API (CAPI) Delivery Status:** Track real-time delivery status (sent, pending, failed) and diagnostic errors directly within Settings → Lead Intelligence.
 - Supports Meta data-deletion and deauthorization requirements.
 
-**Use case:** A real-estate developer runs 6 lead ads across 2 Pages. All leads land in Ridhzo, tagged with their form/campaign, and are round-robined to 4 sales reps who get a push notification instantly.
+**Use case:** An agency manages 4 franchise branches running ads on one central Facebook page. Leads automatically replicate to all branch workspaces with instant local rep alerts.
 
 ### 2. Google Lead Form Ads
 - Paste Ridhzo's webhook URL and key into your Google Ads lead form extension.
@@ -326,9 +382,9 @@ Managed at **Settings → Lead Sources**. Each source shows live stats (leads re
 
 ### 6. CSV / Excel Import
 - Upload a CSV, **map columns** to Ridhzo fields (including custom fields), **preview/simulate** the import to see what will be created or skipped, then commit.
-- Duplicate handling during import.
+- Enhanced validation safeguards, automated budget extraction, and duplicate detection during import ensure bad records don't corrupt your database.
 
-**Use case:** An insurance advisor moves 2,000 old contacts from Excel into Ridhzo in five minutes.
+**Use case:** An insurance advisor moves 2,000 old contacts from Excel into Ridhzo in five minutes without corrupting existing records.
 
 ### 7. Manual Entry & Quick Add
 - Global **Quick Add** button from any screen: name, phone (with country code), email, optional company, owner, custom fields.
@@ -343,7 +399,9 @@ Managed at **Settings → Lead Sources**. Each source shows live stats (leads re
 - **Telephony Webhook Integration:** Connect virtual telephony numbers (Exotel, Knowlarity, Twilio, etc.) to Ridhzo's missed-call webhook. Missed calls automatically trigger instant WhatsApp replies so no inbound enquiry goes cold.
 
 ### 9. Inbound Email → Lead Timeline
-- Email replies from leads can be logged automatically on their timeline, and can trigger automations (set in **Settings → Lead Intelligence**).
+- Email replies from leads are logged automatically on their timeline and can trigger automations (configured in **Settings → Lead Intelligence**).
+- **Auto-Reply & OOO Filtering:** Inbound webhook intelligently filters out auto-replies, out-of-office (OOO) messages, and bounce notifications.
+- **Deduplication:** Prevents duplicate timeline activities if an inbound email is retried or delivered across multiple aliases.
 
 ### Coming soon
 - **LinkedIn Lead Gen Forms** (Coming soon)
@@ -380,14 +438,16 @@ The **Leads** hub is where your team finds, sorts and works every lead. It is bu
 
 ## Key capabilities
 
-### Lead list
-- **Faster-to-scan table:** Streamlined layout showing lead name, contact icons, source, stage, owner, **lead score badge directly in table**, next follow-up, and tags.
-- **Server-side search with trigram indexing (`pg_trgm`):** Ultra-fast phone matching across any format (`9876543210`, `+91 98765 43210`, `98765 43210`), plus instant search by name, email, or company.
-- **Sort:** By newest, last updated, name, status, owner, next follow-up, or score.
+### Lead list & CRN Tracking
+- **Dedicated Customer Reference Number (CRN):** Every lead is assigned a permanent, human-readable Customer Reference Number (`crn`, e.g. `CRN-xxxx`) and `displayId`. The table features a dedicated **CRN column** for fast identification.
+- **Faster-to-scan table:** Streamlined layout showing lead CRN, name, contact icons, source, stage, owner, **lead score badge directly in table**, next follow-up, and tags.
+- **Server-side search with trigram indexing (`pg_trgm`):** Ultra-fast phone matching across any format (`9876543210`, `+91 98765 43210`), plus instant search by CRN, displayId, name, email, or company.
+- **Sort:** By newest, last updated, CRN, name, status, owner, next follow-up, or score.
 - **High-performance pagination:** Cursor-based and offset pagination ensuring instant page transitions even with tens of thousands of leads.
 
-### Advanced filters
-- Filter by **status, owner, team, source, tags, dates, score and any custom field**.
+### Advanced filters & Budget Parsing
+- Filter by **status, owner, team, source, tags, dates, score, parsed budget, and any custom field**.
+- Automated budget parsing intelligently extracts stated numbers and currency units into structured amounts for precise numeric range filtering.
 - Operators: equals, not equals, contains, does not contain, is empty, is not empty, before, after, between, greater than, less than.
 - Combine conditions with **AND / OR**.
 - Active filters shown as chips — remove one or clear all.
@@ -482,16 +542,18 @@ Every lead has one dedicated page that holds **everything** about them — conta
 ## What's on the lead profile
 | Section | What you see / do |
 |---|---|
-| **Organised Header** | Name, phone, email, priority, lead score badge, and source. Below it, **Owner, Stage, and Tags are organised in one clean labelled row** for instant recognition. |
+| **Organised Header with CRN** | Customer Reference Number (`crn`, e.g. `CRN-xxxx`), `displayId`, name, phone, email, priority, lead score badge, and source. Below it, **Owner, Stage, and Tags are organised in one clean labelled row** for instant recognition. |
+| **Lead Insights Chip & Popover** | Compact status chip highlighting lead intent, budget, sentiment, and AI score. Hovering or clicking reveals a detailed contextual popover. |
+| **Pre-Call Brief Generator** | 1-click dossier button right before dialing: synthesizes lead requirements, budget, timeline, past objections, and talking points into an instant cheat-sheet. |
 | **One-tap actions** | Call, WhatsApp, SMS, Email — pre-filled with your templates. On Android, calls are auto-logged. |
-| **Status & owner controls** | Change status or reassign in one tap (full history is recorded). |
+| **Status & owner controls** | Change status or reassign in one tap (full history with sequence numbers is recorded). |
 | **Live Next Best Action (NBA)** | Real-time live recommendation of the immediate next move (e.g. "Send site visit brochure", "Call to confirm budget", "Close deal") updating automatically without full-page polling. |
 | **1-Click AI Suggestions** | Smart suggestions panel powered by full lead context: **1-click fill missing fields**, **1-click change status**, and **next action apply**. |
 | **Status Playbooks** | Stage-specific guidance showing key qualification questions, recommended talk tracks, and milestone checklists for the lead's current stage. |
-| **Call Metrics & History** | Total calls, call answer rate %, total duration, timestamps, and audio playback/transcripts. Answered calls automatically complete matching scheduled follow-ups. |
+| **Call Metrics & Rep Call Notes** | Total calls, call answer rate %, total duration, timestamps, and audio playback/transcripts. Reps can log explicit call outcome notes as distinct activities. Answered calls automatically complete matching scheduled follow-ups. |
 | **"What they told you in the form"** | All original answers from the ad or web form. |
 | **Configurable & custom fields** | Your business-specific fields, editable inline. Company field is optional. |
-| **Activity timeline** | Chronological feed of every note, device call log, WhatsApp chat, email, status change, assignment, meeting, and system event. |
+| **Activity timeline** | Chronological feed with explicit sequence numbering (`seq`) of every note, device call log, rep note, WhatsApp chat, email, status change, assignment, meeting, Meta CAPI delivery status, and system event. |
 | **WhatsApp conversation** | Threaded chat view with delivery/read status (Business API mode). |
 | **Follow-ups** | Upcoming and past reminders; auto-completes on answered calls or contact logs. |
 | **Meetings** | Scheduled meetings/site visits, GPS check-in, and recorded outcomes. |
@@ -511,7 +573,7 @@ The Ridhzo mobile app provides full parity with the web Lead Profile:
 - Direct click-to-call with automatic background call sync.
 
 ## Real use cases
-- **Call prep:** Before calling, a rep glances at the header (score 85, Stage: Site Visit Done), checks the live Next Best Action ("Confirm booking token"), and reviews the stage playbook.
+- **Call prep with Pre-Call Brief:** Before calling, a rep clicks "Pre-Call Brief", glances at the synthesized summary (score 85, Stage: Site Visit Done, budget ₹75L, previous concern about possession date), and starts the call with tailored talking points.
 - **Automatic call logging:** Rep taps Call → speaks for 6 minutes → hangs up → call log, talk duration, and auto-completion of the pending "Call lead" follow-up are already recorded.
 - **AI 1-click update:** Rep opens AI Suggestions → AI notes that the customer mentioned a budget of ₹75 Lakhs on the call → rep taps "Apply" to save the budget field instantly.
 - **Handover:** A rep goes on leave; the new owner reads the timeline, call history, and AI summary, continuing the conversation seamlessly.
@@ -646,7 +708,7 @@ Connect the official WhatsApp Business API (via Ridhzo's WhatsApp integration pa
 - **Custom Reply-To:** Configure a dedicated reply-to address so customer responses route directly to your central inbox or support team.
 - **Email Verification & Error Tracking:** Live connection test before saving, clear diagnostic error messages if credentials expire, and AES-256-GCM encryption.
 - Used for one-off emails, sequences, meeting confirmations, new-lead alerts and notifications. A built-in fallback sender keeps system emails flowing.
-- Replies can be logged back on the lead timeline (Lead Intelligence settings).
+- Replies can be logged back on the lead timeline (Lead Intelligence settings) with intelligent inbound deduplication and automatic filtering for out-of-office (OOO) and bounce messages.
 
 ## Content sharing with open tracking
 - Share a brochure, price list, property page, video or any link with a lead via a **tracked link**.
@@ -656,7 +718,7 @@ Connect the official WhatsApp Business API (via Ridhzo's WhatsApp integration pa
 **Use case:** An interior designer shares a portfolio link on WhatsApp; the moment the lead opens it, the designer gets a notification and calls while interest is hot.
 
 ## AI help for messages
-- **Draft reply**: AI writes the next WhatsApp/email based on the conversation and the lead's form answers. Choose tone (friendly, professional, short) and language (auto-matches the lead, or Hindi, Hinglish, Tamil, Telugu, etc.). It never invents prices or offers.
+- **Draft reply**: AI writes the next WhatsApp/email based on the conversation, form answers, and your company's **AI Business Profile**. It automatically adapts tone (friendly, professional, short, assertive) and language (auto-matches the lead, or Hindi, Hinglish, Tamil, Telugu, etc.). It never invents prices or offers.
 - See [AI Features](14_AI_FEATURES.md).
 
 ## Real use cases
@@ -858,29 +920,37 @@ Free: 1 sequence · Starter: 10 · Unlimited: unlimited.
 
 Ridhzo uses AI to eliminate the repetitive friction that slows sales teams down: reading conversation history, typing manual notes, updating CRM fields, and crafting messages. **AI never sends a message to a customer without human approval — reps always retain full control.**
 
-## Unified Lead-Context Engine
+## Unified Lead-Context Engine & Business Profile
 All Ridhzo AI features are powered by a single, comprehensive lead-context engine (`leadContext`). Before suggesting or drafting anything, the engine reads:
+- **AI Business Profile Context:** Your organization's business description, products/services, target audience, pricing points, and brand tone guidelines.
 - Custom statuses, status stage progression, and complete status history.
-- Every custom field key and current value.
+- Every custom field key and current value (ignoring placeholder values like "N/A" or "TBD").
 - Original form submissions and questionnaire answers.
 - The complete activity timeline: calls, notes, audio transcripts, emails, and WhatsApp chats.
 
-## 1. 1-Click AI Suggestions on the Lead Profile
+## 1. 1-Click AI Suggestions & Insights Popover
 Instead of forcing reps to manually type updates after every call or conversation, Ridhzo provides actionable suggestions with a single **"Apply"** button:
+- **Lead Insights Chip & Popover:** A compact header badge displaying lead intent, budget, sentiment, and AI score, opening a contextual popover for immediate deal comprehension.
 - **1-Click Field Auto-fill:** Scans recent calls and conversation notes to detect missing data (e.g. Budget: ₹60 Lakhs, Preferred Location: Hitech City, Timeline: Immediate) and pre-populates fields for 1-click saving.
 - **1-Click Status Transitions:** Recommends advancing the lead to the next logical stage (e.g. *New → Contacted* or *Contacted → Qualified*) once conversation milestones are reached.
 - **Next Step Recommendations:** Suggests the immediate operational follow-up (e.g., "Schedule site visit for Saturday", "Send brochure via WhatsApp") with 1-click scheduling.
 
-## 2. Live Next Best Action (NBA)
+## 2. Pre-Call Brief Generator
+Before dialing any lead, reps can click **Pre-Call Brief** on the lead profile:
+- Synthesizes the lead's timeline, stated budget, requirements, and prior objections into an executive briefing card.
+- Recommends tailored opening lines and key talking tracks based on the lead's current status and your business profile.
+- Saves reps from scrolling through dozens of past activities and notes before placing a call.
+
+## 3. Live Next Best Action (NBA)
 A real-time recommendation banner on the lead profile that streams the optimal next move for each lead without requiring full-page reloads. Reps know at a glance whether to call, send a specific template, or escalate.
 
-## 3. Status Playbooks
+## 4. Status Playbooks
 Dynamic stage-specific guidance for sales reps:
 - Provides essential qualification questions to ask during the current status stage.
 - Common objection-handling scripts tailored to that phase of the conversation.
 - Clear milestone exit criteria required to move the deal forward.
 
-## 4. AI Assistant (Copilot)
+## 5. AI Assistant (Copilot)
 A conversational assistant available from any screen (floating button) and on its own page (**Assistant**). It understands the exact lead you are viewing.
 
 Ask in plain language, for example:
@@ -894,34 +964,34 @@ Ask in plain language, for example:
 What it can do:
 | Capability | Notes |
 |---|---|
-| Search leads | By name, phone, email, company, or recent |
+| Search leads | By CRN, displayId, name, phone, email, company, or recent |
 | Read full lead details & timeline | Powered by unified lead context |
 | Change status | Reversible |
 | Add tags | Reversible |
 | Set follow-up reminders | |
 | Assign / reassign leads | |
-| Schedule meetings | Online (incl. Google Meet link), site visit, store visit, in person — confirmation is queued as a draft |
+| Schedule meetings | Online (incl. Google Meet link), site visit, store visit, in person — confirmation is queued as a draft with local timezone formatting |
 | Draft messages | Queued for **your approval** — never auto-sent |
 
 Conversations are saved so you can continue later. The assistant only ever sees your own workspace's data.
 
-## 5. AI Reply Drafts
+## 6. AI Reply Drafts & Auto-Tone Selection
 On any lead, click **Draft with AI** to write the next WhatsApp or email:
 - Deeply contextual: uses the lead's form answers, custom fields, and prior call notes.
-- **Tone:** friendly, professional or short.
+- **Auto-Tone Selection:** Automatically detects conversation momentum and recommends an optimal tone (friendly, consultative, urgent, professional, or short).
 - **Language:** auto-matches the lead, or choose any language (Hindi, Hinglish, Telugu, Tamil, etc.).
 - Ends with a clear call-to-action; never invents prices, offers or dates.
 
-## 6. AI Lead Summary
+## 7. AI Lead Summary
 One click produces a concise executive brief: who the lead is, their requirements, conversation history, and current status. Ideal before dialing a call or during lead handovers.
 
-## 7. AI Sequence Generator
+## 8. AI Sequence Generator
 Describe a goal; AI drafts a complete multi-step WhatsApp/email follow-up sequence with timing. See [Sequences](13_SEQUENCES.md).
 
-## 8. Mobile App AI Parity
+## 9. Mobile App AI Parity
 The Ridhzo mobile app connects directly to the AI suggestions endpoint (`/api/mobile/leads/[id]/ai-suggestions`), letting reps in the field review AI recommendations, apply field updates, and transition statuses with one tap on their smartphone.
 
-## 9. AI Auto-tagging (paid plans)
+## 10. AI Auto-tagging (paid plans)
 Incoming replies are automatically classified by intent (interested, price query, not interested, callback request) so teams can prioritize immediate revenue opportunities.
 
 ## Smart intelligence — included free
@@ -938,7 +1008,7 @@ Powered by high-throughput modern LLMs with fast inference.
 | Starter | 300 |
 | Unlimited | 2,000 |
 
-1 credit = 1 generation via `consumeAiCredit` (draft, summary, assistant turn, sequence, or 1-click field extraction). Credits reset monthly. If an AI call fails or is unavailable, a standard template is provided and the credit is automatically refunded.
+1 credit = 1 generation via `consumeAiCredit` (draft, summary, pre-call brief, assistant turn, sequence, or 1-click field extraction). Credits reset monthly. If an AI call fails, encounters a network timeout, or generates an invalid response, the credit is refunded automatically and a graceful fallback is provided.
 
 ## Why it matters
 - Eliminates manual typing and note-taking after customer interactions.
@@ -964,16 +1034,18 @@ Each rep's personal command centre for the day.
 | Overdue | My missed follow-ups |
 | Follow-up completion rate | How consistently I complete follow-ups |
 | **Calls & Answer Rate** | Total calls made today, total talk time, and personal call answer rate % |
+| **Daily Summary Snapshot** | Daily snapshot comparing today's volume vs previous days (leads worked, calls placed, follow-ups cleared) |
 
 Plus: today's follow-ups and meetings, recent leads with lead scores, and quick actions.
 
-**Use case:** A rep opens Ridhzo at 9:30 AM, sees 6 follow-ups due, their call answer rate at 65%, and clears priority callbacks first.
+**Use case:** A rep opens Ridhzo at 9:30 AM, reviews their daily summary card, sees 6 follow-ups due, their call answer rate at 65%, and clears priority callbacks first.
 
 ## 2. Executive Dashboard (for owners & managers)
-The business at a glance, filterable by date range, team and source.
+The business at a glance, filterable by date range, team and source. Features **Daily Summary Snapshot Cards** providing high-level operational visibility for team leads.
 
 | Metric | Why it matters |
 |---|---|
+| **Daily Summary Performance Cards** | Instant snapshot of daily inbound leads, calls completed, deal wins, and overdue escalations |
 | **Average speed to first response** | Faster response = more sales |
 | **Leads contacted within 5 minutes (%)** | The gold standard of speed-to-lead |
 | **Median response time** | Fair benchmark, ignores outliers |
@@ -992,7 +1064,7 @@ The business at a glance, filterable by date range, team and source.
 | **Today's priorities** | High-priority leads needing action now |
 
 ## 3. Insights (deep analytics)
-For leaders who want to optimise the whole sales engine.
+For leaders who want to optimise the whole sales engine. Multi-timezone engine buckets dates and peak hours accurately across Indian and international operations.
 
 | Insight | What it answers |
 |---|---|
@@ -1081,7 +1153,8 @@ Set your workspace timezone, working days, and working hours — reminders, book
 # Team Management, Roles & Security
 
 ## Users & invitations (Settings → Users)
-- **Invite teammates by email**; they set their password or sign in with Google or Mobile OTP.
+- **Multi-Method Team Invitations:** Invite teammates by **Email**, direct **WhatsApp share**, or copyable **direct invite link**.
+- **Guided Profile Gaps Banner:** A prominent contextual banner alerts team members when required profile fields (such as phone number, WhatsApp contact, or operational timezone) are incomplete.
 - Activate/deactivate users at any time (deactivated users stop receiving leads; their data stays).
 - **Seat calculation:** Seats are counted strictly for active members and pending invitations. Soft-deleted and deactivated team members are excluded, ensuring you never pay for past staff.
 - **Teams** — group users (by city, product, language) for team-based lead rotation and reporting.
@@ -1124,17 +1197,23 @@ Role assignment strictly verifies caller permissions on the server to prevent pr
 
 Admins cannot accidentally lock themselves out (self-protection rules), and permission checks are enforced on the server — not just hidden buttons.
 
+## Super-Admin Platform Console (`/admin`)
+Authorized platform super-administrators have access to a dedicated platform console for multi-tenant governance:
+- **Tenant Management:** Search, view, and inspect all registered workspaces, owner profiles, and usage metrics.
+- **Plan & Trial Overrides:** Provision complimentary plans, adjust seat and lead volume quotas, and extend free trials on demand.
+- **System Telemetry & Support:** Review platform-wide error rates, background worker statuses, and handle user support escalations centrally.
+
 ## In-App Support Ticket Management (Settings → Support)
 - Built-in support ticketing allows workspace members to raise, track, and manage help tickets directly within Ridhzo.
 - Tickets are processed in real time by the Ridhzo technical team from the central platform console, ensuring fast response times without leaving the CRM.
 
 ## Audit log (Settings → Audit)
-A permanent record of important actions: who changed settings, roles, users, deleted/merged leads, created API keys, and more — with time and user. Exportable per lead as a full history.
+A permanent record of important actions: who changed settings, roles, users, deleted/merged leads, created API keys, and more — with time and user. Exportable per lead as a full history. System-generated background operations are cleanly tracked.
 
 ## Login & Session Security
 - Email & password (securely hashed)
 - **Sign in with Google**
-- **Mobile Phone number + OTP** (via SMS/Watxio)
+- **Sign in with Mobile Phone Number:** Sign in directly using mobile phone number (with international dial code) + password or SMS/Watxio OTP.
 - **Mobile Token Revocation:** Mobile sessions can be revoked on-demand (`/api/mobile/auth/token-revoke`), immediately invalidating device JWTs.
 - **Session Caching & Token Pruning:** User sessions are securely cached; stale mobile push tokens are pruned automatically to maintain tight device security.
 
@@ -1160,35 +1239,36 @@ A permanent record of important actions: who changed settings, roles, users, del
 ## Built-in integrations
 | Integration | What it does |
 |---|---|
-| **Facebook & Instagram Lead Ads** | Real-time lead import, form filtering, past-lead sync, auto token refresh |
+| **Facebook & Instagram Lead Ads** | Real-time lead import, multi-tenant page sharing, form filtering, past-lead sync, proactive token expiry tracking |
 | **Google Lead Form Ads** | Real-time lead import via webhook |
 | **Android Call Sync & Caller ID** | Native call log sync (`/api/mobile/calls/sync`), Caller ID directory (`/api/mobile/caller-id`), and phone key prefiltering |
 | **WhatsApp Business API** | Connect via Watxio or Meta Cloud API with organization tenant ID isolation |
 | **Personal WhatsApp** | One-tap wa.me messaging, no setup |
 | **Google Calendar** | Meetings and booking-page appointments sync to your calendar; Google Meet links |
-| **Email (SMTP)** | Gmail, Google Workspace, Zoho, Outlook, SES; custom reply-to and connection testing |
-| **Meta Conversions API (CAPI)** | Send lead-quality events back to Meta with an interactive **Test Ping** button in Settings |
+| **Email (SMTP & Inbound)** | Gmail, Google Workspace, Zoho, Outlook, SES; custom reply-to, inbound auto-reply/OOO filtering, and deduplication |
+| **Meta Conversions API (CAPI)** | Send lead-quality events back to Meta with live delivery status tracking (sent/pending/failed) and an interactive **Test Ping** button |
 | **Lead enrichment** | Fill in missing lead details automatically from your data provider |
 | **Telephony (missed calls)** | Any provider (Exotel, Knowlarity, Twilio…) → auto-WhatsApp on missed call |
-| **Razorpay** | Subscription payments with automated GST tax invoices |
+| **Razorpay** | Subscription payments with automated GST tax invoices and printable PDF receipts |
 | **Zapier / Make / Pabbly / any tool** | Via inbound webhook, REST API and outbound webhooks |
 
-Lead-intelligence integrations (enrichment, inbound email logging, Meta CAPI) are configured in **Settings → Lead Intelligence**.
+Lead-intelligence integrations (enrichment, inbound email logging, Meta CAPI delivery & token monitoring) are configured in **Settings → Lead Intelligence**.
 
 ## REST API (Settings → API)
 - Create **API keys** with **Full** or **Read-only** scope; keys are shown once and stored hashed.
 - Usage tracking and rate limiting per key.
 - Endpoints (v1) include:
-  - `POST /api/v1/leads` — create a lead · `GET /api/v1/leads` — list/search leads (trigram phone matching) · `GET/PATCH/DELETE /api/v1/leads/{id}`
+  - `POST /api/v1/leads` — create a lead · `GET /api/v1/leads` — list/search leads (returns `crn`, `displayId`, trigram phone matching) · `GET/PATCH/DELETE /api/v1/leads/{id}`
+  - Activity timeline and status histories include explicit sequence numbers (`seq`) for reliable client ordering.
   - `POST /api/leads/purge` — permanent lead purge (admin permission required)
   - Follow-ups, meetings, statuses, templates, custom fields, users, notifications, dashboard summary
 - **Use cases:** push leads from your own website backend or app; sync leads into an ERP; build a custom report.
 
 ## Mobile API & Offline Sync Endpoints
 Dedicated endpoints power the native mobile application:
-- **Authentication & Security:** `/api/mobile/auth/send-otp`, `/api/mobile/auth/verify-otp`, `/api/mobile/auth/token-revoke`.
+- **Authentication & Security:** Phone + password login, `/api/mobile/auth/send-otp`, `/api/mobile/auth/verify-otp`, `/api/mobile/auth/token-revoke`.
 - **Incremental Lead Sync:** `/api/mobile/leads/sync` supporting `sync_at` timestamp filtering and offline conflict detection.
-- **Mobile AI Suggestions:** `/api/mobile/leads/[id]/ai-suggestions` for 1-click field updates and stage transitions from mobile.
+- **Mobile AI Suggestions & Pre-Call Briefs:** `/api/mobile/leads/[id]/ai-suggestions` for 1-click field updates, stage transitions, and pre-call preparation from mobile.
 - **Android Call Sync:** `/api/mobile/calls/sync` and `/api/mobile/calls/phone-keys`.
 - **Idempotency-Key Header:** Mobile mutation requests (notes, contact logs, replies) support `Idempotency-Key` headers to prevent duplicate executions during network dropouts.
 
@@ -1351,17 +1431,26 @@ Ridhzo pre-downloads active lead phone keys to the sales rep's phone. When an ac
 **Which languages?**
 The app is available in English, Hindi and Telugu. AI can write messages to your customers in almost any language.
 
+**Can I sign in with my mobile number?**
+Yes. You can sign in using your mobile phone number (with country code) and password or OTP, as well as with Google or Email.
+
 ## Pricing
 **Is there a free plan?** Yes — Free forever: 1 user, 300 leads, 1 source, 2 automations, 1 sequence, 15 AI credits/month.
 **How much are paid plans?** Starter ₹249/month (3 users, 5,000 leads), Unlimited ₹449/month (unlimited users & leads). Yearly plans get 2 months free. GST extra.
 **Are soft-deleted users counted as seats?** No. Seats are only counted for active team members and pending invites.
 **Is there a trial?** Every new account gets a 14-day Starter trial, no card required.
 **Can I cancel?** Any time. You keep your plan until the period ends, then move to Free without losing data.
-**How do I pay?** UPI, cards or net banking via Razorpay. GST invoices provided.
+**How do I pay?** UPI, cards or net banking via Razorpay. GST invoices provided with 1-click PDF download/print.
 **Do you have coupons or agency pricing?** Coupon codes are supported at checkout. Agencies can contact the Ridhzo team about complimentary plans for their clients.
 
 ## Leads & sources
+**What is a Customer Reference Number (CRN)?**
+Every lead is assigned a unique, sequential Customer Reference Number (`CRN-xxxx`) and `displayId` so reps and customers can refer to specific deals unambiguously on calls or in messages.
+**What is the Pre-Call Brief?**
+A 1-click dossier button on the lead profile that summarizes lead requirements, budget, timeline, past objections, and suggested opening talking points right before dialing.
 **How fast do Facebook leads arrive?** Within seconds of the form being submitted.
+**Can multiple organizations connect to the same Facebook Page?**
+Yes. Ridhzo supports multi-tenant Facebook Page sharing, copying incoming leads to all connected accounts automatically.
 **Can I import my old leads?** Yes — CSV import with column mapping and a preview before importing. You can also sync past Facebook leads.
 **Will I get duplicates?** Ridhzo detects duplicates by phone/email and can merge them automatically.
 **I don't have a website. Can I still capture leads?** Yes — use Ridhzo's hosted form link or QR code.
@@ -1373,26 +1462,33 @@ The app is available in English, Hindi and Telugu. AI can write messages to your
 **Do I need the WhatsApp Business API?** No. Personal mode works with your own WhatsApp for free (one tap opens the chat with your message ready). The Business API is optional for automated sends, campaigns and sequences.
 **Can Ridhzo send WhatsApp automatically?** Yes, in Business API mode (via Watxio or Meta Cloud API) — welcome messages, sequences, campaigns, missed-call replies and alerts.
 **Can I send bulk messages?** Yes — up to 500 leads per campaign.
-**Can I send emails from my own address?** Yes — connect your SMTP (Gmail, Zoho, Outlook, etc.) with custom reply-to support.
+**Can I send emails from my own address?** Yes — connect your SMTP (Gmail, Zoho, Outlook, etc.) with custom reply-to support. Inbound replies filter out automated bounce/OOO messages automatically.
 
 ## Team & security
+**How do team invites work?**
+Admins can invite teammates via Email, direct WhatsApp share, or copyable invite link. The guided Profile Gaps banner alerts new users to complete their phone, WhatsApp, and timezone details.
 **Can I control what my team sees and does?** Yes — built-in Admin/Member roles and custom roles with granular permissions, enforcing least-privilege defaults.
 **How are leads assigned?** Round-robin, team rotation, capacity-based, per-source, automation rules, or manually/in bulk.
 **Is my data safe?** Each workspace is fully isolated, secrets are encrypted, deletions go to a 30-day recycle bin, and every important action is recorded in the audit log.
 **Can I permanently delete leads?** Yes — authorized admins can permanently purge leads via the purge endpoint for GDPR compliance.
+**What is the Super-Admin Platform Console?** A centralized administrative portal (`/admin`) for platform operators to manage multi-tenant accounts, subscription overrides, system health, and customer assistance.
 **How do I get technical support?** You can raise, track, and manage support tickets directly in **Settings → Support**, handled directly by the Ridhzo team.
 
 ## AI
 **Will AI message my customers without me knowing?** Never. AI drafts; a human approves and sends.
-**What are 1-click AI suggestions and live NBA?** On the lead profile, AI reads full lead context (status history, notes, custom fields) to recommend 1-click field auto-fills, 1-click status advances, stage playbooks, and real-time next best actions.
+**What is AI Business Profile Context?**
+You can define your company's core pitch, offerings, target audience, and brand tone guidelines so AI suggestions, pre-call briefs, and reply drafts match your brand perfectly.
+**What are 1-click AI suggestions, NBA and Insights Popovers?** On the lead profile, AI reads full lead context (status history, notes, custom fields) to recommend 1-click field auto-fills, 1-click status advances, stage playbooks, real-time next best actions, and compact contextual popovers.
 **What are AI credits?** One credit = one AI generation via `consumeAiCredit`. Free 15, Starter 300, Unlimited 2,000 per month; reset monthly.
+**What happens if an AI response fails or is invalid?**
+If an AI generation fails or encounters network errors, the credit is refunded automatically and a graceful fallback is provided.
 **What can the AI Assistant do?** Search leads, show details, change status, add tags, set reminders, assign leads, schedule meetings and draft messages for approval.
 
 ## Integrations
-**Does Ridhzo have an API?** Yes — REST API with full or read-only keys, plus outbound webhooks for lead events.
+**Does Ridhzo have an API?** Yes — REST API returning CRN and activity sequence tracking with full or read-only keys, plus outbound webhooks for lead events.
 **Does it work with Zapier/Make/Pabbly?** Yes, through inbound webhooks, the API and outbound webhooks.
 **Does it sync with Google Calendar?** Yes — meetings and booking-page appointments.
-**Can Ridhzo improve my Facebook ad results?** Yes — Meta Conversions API (CAPI) sends lead-quality signals back to Meta with a built-in test ping tool in Settings.
+**Can Ridhzo improve my Facebook ad results?** Yes — Meta Conversions API (CAPI) sends lead-quality signals back to Meta with live delivery status tracking (sent/pending/failed) and a built-in test ping tool in Settings.
 
 ---
 
@@ -1507,7 +1603,7 @@ Available as:
 ## 1. Getting Started & Sign-in
 
 ### Fast login options
-- **Mobile Number + OTP:** One-tap login via SMS/Watxio OTP verification (`/api/mobile/auth/send-otp` & `/api/mobile/auth/verify-otp`).
+- **Mobile Number + Password or OTP:** Direct sign-in using mobile phone number (with country code selector) + password or SMS/Watxio OTP verification (`/api/mobile/auth/send-otp` & `/api/mobile/auth/verify-otp`).
 - **Google Sign-In:** One-click OAuth sign-in.
 - **Email & Password:** Standard secure sign-in.
 
@@ -1533,6 +1629,7 @@ Sales reps make dozens of calls every day. In traditional CRMs, reps forget to l
    - Call direction: Outgoing, Incoming, or Missed.
    - Exact talk duration in seconds.
    - Precise call start and end timestamps.
+   - Distinct rep call notes and outcome dispositions saved as timeline activities.
    - Lead matching and audio recording logs (if enabled).
 3. **Smart Follow-up Auto-Completion:**
    - **Answered calls:** When an outgoing or incoming call is answered and completed, Ridhzo marks matching pending follow-ups for that lead as **Completed** automatically.
@@ -1553,21 +1650,23 @@ Sales reps often receive calls from leads whose numbers are not saved in their p
 
 ---
 
-## 4. Mobile Lead Profile & 1-Click AI Actions
+## 4. Mobile Lead Profile, Pre-Call Brief & 1-Click AI Actions
 
 The mobile app provides complete parity with the web Lead Profile:
 
 ### Streamlined layout
-- **Organised Header:** Lead name, phone, email, priority badge, and lead score. Below it, **Owner, Stage, and Tags** are displayed in one clear row.
+- **Organised Header with CRN:** Lead CRN (`CRN-xxxx`), displayId, name, phone, email, priority badge, and lead score. Below it, **Owner, Stage, and Tags** are displayed in one clear row.
+- **Pre-Call Brief:** 1-click dossier right before dialing: reviews lead requirements, budget, objections, and suggested conversation openers on your phone.
 - **One-Tap Actions:** Dedicated quick-action buttons:
   - **WhatsApp:** Opens WhatsApp or WhatsApp Web with pre-filled personalised template.
   - **Call:** Dials through native phone dialer with background call sync.
   - **SMS & Email:** Pre-filled draft messages.
-- **Activity Timeline:** Complete chronological feed of notes, calls, WhatsApp messages, emails, status changes, and meetings.
+- **Activity Timeline:** Complete chronological feed with sequence tracking (`seq`) of notes, calls, rep call notes, WhatsApp messages, emails, status changes, and meetings.
 - **Custom Fields:** View and edit all organization custom fields inline. Company field is optional.
 
 ### 1-Click AI Suggestions (`/api/mobile/leads/[id]/ai-suggestions`)
 Powered by Ridhzo's unified lead-context engine:
+- **Lead Insights Chip:** Instant intent, budget, sentiment, and score pill.
 - **1-Click Field Auto-fill:** Suggests extracting data from recent calls or notes (e.g. Budget: ₹75L, Preferred Location: Gachibowli) with a single "Apply" tap.
 - **1-Click Status Transitions:** Recommends moving the lead to the next status stage based on conversation milestones.
 - **Live Next Best Action (NBA):** Real-time streamed recommendation guiding the rep on the immediate next move.

@@ -43,13 +43,13 @@ Ridhzo's Lead Profile was engineered around an active execution philosophy:
 
 ### How a Sales Rep Uses It During a Live Call
 1. **Pre-Call Briefing (60 Seconds Before):** 
-   The rep clicks into `/leads/[id]`. They glance at the **Next Best Action** card and click **AI Recap** to generate an instant 2-sentence summary of previous interactions.
+   The rep clicks into `/leads/[id]`. They click **Pre-Call Brief** for an instant modal synthesizing customer requirements, stated budget, prior objections, and suggested conversation openers.
 2. **Reviewing Buying Signals:** 
-   The rep notices an orange **Buying Signal Banner**: *"Sarah opened 'Q3 Enterprise Proposal' 2× recently."* The rep now knows the buyer is actively reviewing pricing.
+   The rep glances at the **Lead Insights Chip** popover and notices an orange **Buying Signal Banner**: *"Sarah opened 'Q3 Enterprise Proposal' 2× recently."* The rep now knows the buyer is actively reviewing pricing.
 3. **During the Call:** 
-   The rep references the **Lead Source & Attribution Card** (confirming the lead came from the "Executive Webinar" ad set) and updates the **Custom Attributes** (e.g., setting budget to $25,000).
+   The rep references the **Lead Source & Attribution Card** (confirming the lead came from the "Executive Webinar" ad set) and updates the **Custom Attributes** (e.g., setting budget to ₹25 Lakhs).
 4. **Post-Call Wrap-up (Immediate):** 
-   The rep switches the status from `New` to `Active`, enters an internal summary in the **Notes Tab**, schedules a follow-up for Thursday at 10:00 AM using the **Follow-up Control**, and shares a trackable product brochure link via **Share Content**.
+   The rep switches the status from `New` to `Active`, logs call outcome notes, schedules a follow-up for Thursday at 10:00 AM using the **Follow-up Control**, and shares a trackable product brochure link via **Share Content**.
 
 ---
 
@@ -112,9 +112,10 @@ Based on the live implementation in `src/app/(dashboard)/leads/[id]/page.tsx`:
 * **Lost / Disqualification Banner:** Rendered if the status is `lost` or `unqualified`, displaying the recorded `lostReason` (e.g., *"Lost — reason: Competitor pricing"*).
 
 ### 2. Header & Quick-Action Toolbar (`LeadHeaderQuickActions`)
-* **Identity Block:** Back navigation to `/leads`, circular initials avatar, Lead Name, dynamic custom-colored Status Badge, sequential `Lead #[displayId]`, and localized creation timestamp.
+* **Identity Block:** Back navigation to `/leads`, circular initials avatar, Lead Name, dynamic custom-colored Status Badge, Customer Reference Number (`CRN-xxxx`), sequential `Lead #[displayId]`, and localized creation timestamp.
 * **Quick Actions Toolbar:**
-  * **Click-to-Call (`tel:`):** Launches device dialer or VoIP client.
+  * **Pre-Call Brief:** Opens 1-click synthesized briefing modal with lead context, budget, objections, and talking points before dialing.
+  * **Click-to-Call (`tel:`):** Launches device dialer or VoIP client with automatic call logging and rep notes.
   * **Instant WhatsApp:** Opens WhatsApp web/desktop app pre-populated with lead number.
   * **Direct Email:** Jumps directly to email composition tab.
   * **Quick Follow-up Scheduler:** Popover with one-click presets: *Later Today (+3h)*, *Tomorrow Morning (09:00 AM)*, *In 2 Days*, *Next Week*, or *Custom Date Picker*.

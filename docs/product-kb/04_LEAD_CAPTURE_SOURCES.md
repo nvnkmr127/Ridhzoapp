@@ -10,13 +10,15 @@ Managed at **Settings → Lead Sources**. Each source shows live stats (leads re
 ### 1. Facebook & Instagram Lead Ads
 - **Connect in one click** with Facebook login; choose your Page(s).
 - New leads arrive **within seconds** of form submission (real-time webhook).
+- **Multi-Tenant Page Sharing:** A single Facebook Page can be connected across multiple shared organization accounts. Incoming leads are automatically copied and dispatched to all connected workspaces — ideal for marketing agencies managing franchise or regional dealer accounts.
 - **Choose which forms** to import (form-level filter).
 - **Sync Past Leads** — backfill leads you received before connecting.
 - Automatic field mapping: name, email, phone, plus every custom form question saved on the lead ("What they told you in the form").
-- **Automatic token refresh** and outage recovery — if Facebook access expires, Ridhzo warns you and can replay missed leads once reconnected.
+- **Proactive Token Expiry & Health Tracking:** Continuous monitoring of Facebook Page access tokens with clear in-app expiry warnings before integrations break, plus automatic outage recovery.
+- **Meta Conversions API (CAPI) Delivery Status:** Track real-time delivery status (sent, pending, failed) and diagnostic errors directly within Settings → Lead Intelligence.
 - Supports Meta data-deletion and deauthorization requirements.
 
-**Use case:** A real-estate developer runs 6 lead ads across 2 Pages. All leads land in Ridhzo, tagged with their form/campaign, and are round-robined to 4 sales reps who get a push notification instantly.
+**Use case:** An agency manages 4 franchise branches running ads on one central Facebook page. Leads automatically replicate to all branch workspaces with instant local rep alerts.
 
 ### 2. Google Lead Form Ads
 - Paste Ridhzo's webhook URL and key into your Google Ads lead form extension.
@@ -45,9 +47,9 @@ Managed at **Settings → Lead Sources**. Each source shows live stats (leads re
 
 ### 6. CSV / Excel Import
 - Upload a CSV, **map columns** to Ridhzo fields (including custom fields), **preview/simulate** the import to see what will be created or skipped, then commit.
-- Duplicate handling during import.
+- Enhanced validation safeguards, automated budget extraction, and duplicate detection during import ensure bad records don't corrupt your database.
 
-**Use case:** An insurance advisor moves 2,000 old contacts from Excel into Ridhzo in five minutes.
+**Use case:** An insurance advisor moves 2,000 old contacts from Excel into Ridhzo in five minutes without corrupting existing records.
 
 ### 7. Manual Entry & Quick Add
 - Global **Quick Add** button from any screen: name, phone (with country code), email, optional company, owner, custom fields.
@@ -62,7 +64,9 @@ Managed at **Settings → Lead Sources**. Each source shows live stats (leads re
 - **Telephony Webhook Integration:** Connect virtual telephony numbers (Exotel, Knowlarity, Twilio, etc.) to Ridhzo's missed-call webhook. Missed calls automatically trigger instant WhatsApp replies so no inbound enquiry goes cold.
 
 ### 9. Inbound Email → Lead Timeline
-- Email replies from leads can be logged automatically on their timeline, and can trigger automations (set in **Settings → Lead Intelligence**).
+- Email replies from leads are logged automatically on their timeline and can trigger automations (configured in **Settings → Lead Intelligence**).
+- **Auto-Reply & OOO Filtering:** Inbound webhook intelligently filters out auto-replies, out-of-office (OOO) messages, and bounce notifications.
+- **Deduplication:** Prevents duplicate timeline activities if an inbound email is retried or delivered across multiple aliases.
 
 ### Coming soon
 - **LinkedIn Lead Gen Forms** (Coming soon)

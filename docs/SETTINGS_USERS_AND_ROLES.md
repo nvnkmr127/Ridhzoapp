@@ -10,10 +10,12 @@ In high-velocity multi-rep sales environments, granular permission controls prot
 
 1. **Granular RBAC Security**: Replaces crude "all-or-nothing" access with a 13-permission capability matrix. Sales managers can restrict lead deletion, purge rights, API key access, or audit visibility to specific roles.
 2. **Zero-Trust Self-Protection**: Admins cannot accidentally lock themselves out—system-level protections block self-deactivation, self-deletion, and self-role demotion.
-3. **Frictionless Onboarding (Email & Direct)**: Supports both tokenized email invitations (where new reps securely set their own passwords) and direct administrator provisioning for immediate call center onboarding.
-4. **Resilient Invitation Fallback**: If corporate SMTP delivery is unconfigured or blocked by email filters, Ridhzo generates a secure one-click join link for administrators to share manually via Slack or WhatsApp.
-5. **Team-Based Sales Segmentation**: Groups sales reps into functional squads (e.g., *Inbound SDRs*, *Enterprise AEs*, *Commercial Team*) to feed automated round-robin distribution rules.
-6. **Soft-Delete Orphan Prevention**: Departing employees are soft-deleted (`deleted_at`), preserving all historical customer notes, activity logs, closed deals, and audit trails.
+3. **Frictionless Onboarding (Email, WhatsApp & Direct Links)**: Supports tokenized email invitations, direct WhatsApp invitation sharing, manual copyable invite links, and direct administrator provisioning for immediate call center onboarding.
+4. **Guided Profile Completion (`ProfileGapsBanner`)**: A persistent contextual banner alerts team members when essential contact data (phone number, WhatsApp contact, operational timezone) is missing, ensuring automated call logs and outbound WhatsApp templates work seamlessly.
+5. **Phone Number Sign-In & Management**: Users can log in using their mobile phone number (with international country code picker) and password or OTP, alongside email and Google sign-in.
+6. **Resilient Invitation Fallback**: If corporate SMTP delivery is unconfigured or blocked by email filters, Ridhzo generates a secure one-click join link for administrators to share manually via Slack or WhatsApp.
+7. **Team-Based Sales Segmentation**: Groups sales reps into functional squads (e.g., *Inbound SDRs*, *Enterprise AEs*, *Commercial Team*) to feed automated round-robin distribution rules.
+8. **Soft-Delete Orphan Prevention**: Departing employees are soft-deleted (`deleted_at`), preserving all historical customer notes, activity logs, closed deals, and audit trails.
 
 ---
 

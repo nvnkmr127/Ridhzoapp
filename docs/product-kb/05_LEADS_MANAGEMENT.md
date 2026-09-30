@@ -5,14 +5,16 @@ The **Leads** hub is where your team finds, sorts and works every lead. It is bu
 
 ## Key capabilities
 
-### Lead list
-- **Faster-to-scan table:** Streamlined layout showing lead name, contact icons, source, stage, owner, **lead score badge directly in table**, next follow-up, and tags.
-- **Server-side search with trigram indexing (`pg_trgm`):** Ultra-fast phone matching across any format (`9876543210`, `+91 98765 43210`, `98765 43210`), plus instant search by name, email, or company.
-- **Sort:** By newest, last updated, name, status, owner, next follow-up, or score.
+### Lead list & CRN Tracking
+- **Dedicated Customer Reference Number (CRN):** Every lead is assigned a permanent, human-readable Customer Reference Number (`crn`, e.g. `CRN-xxxx`) and `displayId`. The table features a dedicated **CRN column** for fast identification.
+- **Faster-to-scan table:** Streamlined layout showing lead CRN, name, contact icons, source, stage, owner, **lead score badge directly in table**, next follow-up, and tags.
+- **Server-side search with trigram indexing (`pg_trgm`):** Ultra-fast phone matching across any format (`9876543210`, `+91 98765 43210`), plus instant search by CRN, displayId, name, email, or company.
+- **Sort:** By newest, last updated, CRN, name, status, owner, next follow-up, or score.
 - **High-performance pagination:** Cursor-based and offset pagination ensuring instant page transitions even with tens of thousands of leads.
 
-### Advanced filters
-- Filter by **status, owner, team, source, tags, dates, score and any custom field**.
+### Advanced filters & Budget Parsing
+- Filter by **status, owner, team, source, tags, dates, score, parsed budget, and any custom field**.
+- Automated budget parsing intelligently extracts stated numbers and currency units into structured amounts for precise numeric range filtering.
 - Operators: equals, not equals, contains, does not contain, is empty, is not empty, before, after, between, greater than, less than.
 - Combine conditions with **AND / OR**.
 - Active filters shown as chips — remove one or clear all.

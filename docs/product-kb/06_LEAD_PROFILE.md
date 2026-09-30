@@ -6,16 +6,18 @@ Every lead has one dedicated page that holds **everything** about them — conta
 ## What's on the lead profile
 | Section | What you see / do |
 |---|---|
-| **Organised Header** | Name, phone, email, priority, lead score badge, and source. Below it, **Owner, Stage, and Tags are organised in one clean labelled row** for instant recognition. |
+| **Organised Header with CRN** | Customer Reference Number (`crn`, e.g. `CRN-xxxx`), `displayId`, name, phone, email, priority, lead score badge, and source. Below it, **Owner, Stage, and Tags are organised in one clean labelled row** for instant recognition. |
+| **Lead Insights Chip & Popover** | Compact status chip highlighting lead intent, budget, sentiment, and AI score. Hovering or clicking reveals a detailed contextual popover. |
+| **Pre-Call Brief Generator** | 1-click dossier button right before dialing: synthesizes lead requirements, budget, timeline, past objections, and talking points into an instant cheat-sheet. |
 | **One-tap actions** | Call, WhatsApp, SMS, Email — pre-filled with your templates. On Android, calls are auto-logged. |
-| **Status & owner controls** | Change status or reassign in one tap (full history is recorded). |
+| **Status & owner controls** | Change status or reassign in one tap (full history with sequence numbers is recorded). |
 | **Live Next Best Action (NBA)** | Real-time live recommendation of the immediate next move (e.g. "Send site visit brochure", "Call to confirm budget", "Close deal") updating automatically without full-page polling. |
 | **1-Click AI Suggestions** | Smart suggestions panel powered by full lead context: **1-click fill missing fields**, **1-click change status**, and **next action apply**. |
 | **Status Playbooks** | Stage-specific guidance showing key qualification questions, recommended talk tracks, and milestone checklists for the lead's current stage. |
-| **Call Metrics & History** | Total calls, call answer rate %, total duration, timestamps, and audio playback/transcripts. Answered calls automatically complete matching scheduled follow-ups. |
+| **Call Metrics & Rep Call Notes** | Total calls, call answer rate %, total duration, timestamps, and audio playback/transcripts. Reps can log explicit call outcome notes as distinct activities. Answered calls automatically complete matching scheduled follow-ups. |
 | **"What they told you in the form"** | All original answers from the ad or web form. |
 | **Configurable & custom fields** | Your business-specific fields, editable inline. Company field is optional. |
-| **Activity timeline** | Chronological feed of every note, device call log, WhatsApp chat, email, status change, assignment, meeting, and system event. |
+| **Activity timeline** | Chronological feed with explicit sequence numbering (`seq`) of every note, device call log, rep note, WhatsApp chat, email, status change, assignment, meeting, Meta CAPI delivery status, and system event. |
 | **WhatsApp conversation** | Threaded chat view with delivery/read status (Business API mode). |
 | **Follow-ups** | Upcoming and past reminders; auto-completes on answered calls or contact logs. |
 | **Meetings** | Scheduled meetings/site visits, GPS check-in, and recorded outcomes. |
@@ -35,7 +37,7 @@ The Ridhzo mobile app provides full parity with the web Lead Profile:
 - Direct click-to-call with automatic background call sync.
 
 ## Real use cases
-- **Call prep:** Before calling, a rep glances at the header (score 85, Stage: Site Visit Done), checks the live Next Best Action ("Confirm booking token"), and reviews the stage playbook.
+- **Call prep with Pre-Call Brief:** Before calling, a rep clicks "Pre-Call Brief", glances at the synthesized summary (score 85, Stage: Site Visit Done, budget ₹75L, previous concern about possession date), and starts the call with tailored talking points.
 - **Automatic call logging:** Rep taps Call → speaks for 6 minutes → hangs up → call log, talk duration, and auto-completion of the pending "Call lead" follow-up are already recorded.
 - **AI 1-click update:** Rep opens AI Suggestions → AI notes that the customer mentioned a budget of ₹75 Lakhs on the call → rep taps "Apply" to save the budget field instantly.
 - **Handover:** A rep goes on leave; the new owner reads the timeline, call history, and AI summary, continuing the conversation seamlessly.

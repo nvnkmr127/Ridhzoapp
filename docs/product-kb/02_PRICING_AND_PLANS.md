@@ -30,20 +30,21 @@ Ridhzo has three simple plans. All standard prices are in Indian Rupees (INR / �
 - Deactivated and soft-deleted team members are excluded, so you never pay for past employees.
 
 ## What is an AI credit?
-One AI credit = one AI generation via `consumeAiCredit`: drafting a reply, summarizing a lead, generating a sequence, 1-click field suggestion, or one AI Assistant turn. Credits reset on the 1st of each month. If an AI call fails, the credit is refunded automatically and you get a standard fallback instead.
+One AI credit = one AI generation via `consumeAiCredit`: drafting a reply, summarizing a lead, generating a sequence, 1-click field suggestion, pre-call brief generation, or one AI Assistant turn. Credits reset on the 1st of each month. If an AI call fails, crashes, or returns an unparseable response, the credit is refunded automatically and a graceful fallback is provided.
 
 ## What happens at a limit?
 - You get a clear message ("Your plan allows 300 leads. Upgrade to add more.") and an **Upgrade** button.
 - Nothing already in your account is deleted. Deleted leads in the Recycle Bin do not count towards active lead quotas.
 - If you downgrade and have more automations/sequences than the new plan allows, the **oldest ones keep running** and the rest are paused until you upgrade again.
 
-## Payments & billing
+## Payments, billing & platform administration
 - Pay securely with **Razorpay** (UPI, cards, net banking).
 - Monthly or yearly subscriptions; switch plans any time.
 - **Coupons / discount codes** supported at checkout.
 - **Cancel any time** — you keep your paid plan until the end of the paid period, then move to Free.
 - If a payment fails, you get a **grace period** with reminders before the account is downgraded.
-- **Agency / complimentary plans:** Ridhzo can grant a paid plan free of charge (e.g., to an agency's client) for a set period; after that the customer can choose to subscribe.
+- **Printable Tax Invoices:** View, print, and download full GST-compliant invoices with GSTIN and tax breakdowns directly from Settings → Billing.
+- **Agency / complimentary plans & Super-Admin Console (`/admin`):** Platform super-admins can grant complimentary subscriptions, extend trials, toggle feature gates, and manage multi-tenant billing from the centralized administrative console.
 
 ## Value comparison (for sales conversations)
 - A single converted lead usually pays for a full year of Ridhzo.

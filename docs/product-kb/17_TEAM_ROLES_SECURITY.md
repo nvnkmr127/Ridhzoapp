@@ -1,7 +1,8 @@
 # Team Management, Roles & Security
 
 ## Users & invitations (Settings → Users)
-- **Invite teammates by email**; they set their password or sign in with Google or Mobile OTP.
+- **Multi-Method Team Invitations:** Invite teammates by **Email**, direct **WhatsApp share**, or copyable **direct invite link**.
+- **Guided Profile Gaps Banner:** A prominent contextual banner alerts team members when required profile fields (such as phone number, WhatsApp contact, or operational timezone) are incomplete.
 - Activate/deactivate users at any time (deactivated users stop receiving leads; their data stays).
 - **Seat calculation:** Seats are counted strictly for active members and pending invitations. Soft-deleted and deactivated team members are excluded, ensuring you never pay for past staff.
 - **Teams** — group users (by city, product, language) for team-based lead rotation and reporting.
@@ -44,17 +45,23 @@ Role assignment strictly verifies caller permissions on the server to prevent pr
 
 Admins cannot accidentally lock themselves out (self-protection rules), and permission checks are enforced on the server — not just hidden buttons.
 
+## Super-Admin Platform Console (`/admin`)
+Authorized platform super-administrators have access to a dedicated platform console for multi-tenant governance:
+- **Tenant Management:** Search, view, and inspect all registered workspaces, owner profiles, and usage metrics.
+- **Plan & Trial Overrides:** Provision complimentary plans, adjust seat and lead volume quotas, and extend free trials on demand.
+- **System Telemetry & Support:** Review platform-wide error rates, background worker statuses, and handle user support escalations centrally.
+
 ## In-App Support Ticket Management (Settings → Support)
 - Built-in support ticketing allows workspace members to raise, track, and manage help tickets directly within Ridhzo.
 - Tickets are processed in real time by the Ridhzo technical team from the central platform console, ensuring fast response times without leaving the CRM.
 
 ## Audit log (Settings → Audit)
-A permanent record of important actions: who changed settings, roles, users, deleted/merged leads, created API keys, and more — with time and user. Exportable per lead as a full history.
+A permanent record of important actions: who changed settings, roles, users, deleted/merged leads, created API keys, and more — with time and user. Exportable per lead as a full history. System-generated background operations are cleanly tracked.
 
 ## Login & Session Security
 - Email & password (securely hashed)
 - **Sign in with Google**
-- **Mobile Phone number + OTP** (via SMS/Watxio)
+- **Sign in with Mobile Phone Number:** Sign in directly using mobile phone number (with international dial code) + password or SMS/Watxio OTP.
 - **Mobile Token Revocation:** Mobile sessions can be revoked on-demand (`/api/mobile/auth/token-revoke`), immediately invalidating device JWTs.
 - **Session Caching & Token Pruning:** User sessions are securely cached; stale mobile push tokens are pruned automatically to maintain tight device security.
 

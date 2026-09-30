@@ -50,7 +50,7 @@ Built first for India (₹ INR default pricing, multi-currency settings, Razorpa
 2. **Automatic Android call sync.** Calls made, received, and missed on reps' phones are tracked automatically with duration and timestamps — no rep forgets to log calls.
 3. **WhatsApp-native.** One-tap personal WhatsApp for free, or official WhatsApp Business API for automation, templates, campaigns and sequences.
 4. **Speed-to-lead built-in.** Auto-assignment + high-priority mobile push channels + one-tap reply.
-5. **Real AI intelligence with 1-click apply.** Unified lead-context engine powers live Next Best Action, 1-click field filling, stage transitions, and stage-specific playbooks.
+5. **Real AI intelligence with 1-click apply.** Unified lead-context engine powers AI business profiles, pre-call briefs, live Next Best Action, 1-click field filling, stage transitions, and stage-specific playbooks.
 6. **Field-sales ready.** Meetings, site visits, GPS check-in, public booking page, and conflict-safe offline sync.
 7. **Priced for small businesses.** ₹249/month for Starter; unlimited users and leads for ₹449/month.
 8. **Multi-language app.** English, Hindi, Telugu.
@@ -58,9 +58,9 @@ Built first for India (₹ INR default pricing, multi-currency settings, Razorpa
 ## Product map (main screens)
 | Area | Screen | Purpose |
 |---|---|---|
-| Home | Executive Dashboard | Business overview for owners/managers |
-| Home | My Dashboard | Personal daily workload for each rep |
-| CRM | Leads | High-speed table with lead scores, configurable fields, filters, bulk actions |
+| Home | Executive Dashboard | Business overview for owners/managers with daily summary cards |
+| Home | My Dashboard | Personal daily workload for each rep with daily summaries |
+| CRM | Leads | High-speed table with CRN tracking, lead scores, configurable fields, filters, bulk actions |
 | CRM | Pipeline (Kanban) | Drag leads through stages with stage playbooks |
 | CRM | Hot Leads | Leads most likely to convert right now |
 | CRM | Going Cold | Leads with no contact for 14+ days |
@@ -72,7 +72,8 @@ Built first for India (₹ INR default pricing, multi-currency settings, Razorpa
 | Productivity | Sequences | Automatic multi-step follow-ups |
 | Productivity | AI Assistant | Chat-based CRM helper |
 | Analytics | Insights | Deep analytics, call metrics, and forecasts |
-| Settings | 15+ settings areas | Sources, lead fields config, users, roles, templates, email, billing, API, webhooks, alerts, meetings, integrations, support tickets, audit log |
+| Settings | 16+ settings areas | Sources, lead fields config, users, roles, templates, email, billing, API, webhooks, alerts, meetings, integrations, support tickets, audit log |
+| Platform | Super-Admin Console | Multi-tenant platform management, subscription overrides, and system health (`/admin`) |
 
 ## Technology & reliability (plain language)
 - Native Android app (APK / Expo) and modern web app; works in any modern browser.

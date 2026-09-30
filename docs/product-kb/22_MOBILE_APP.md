@@ -12,7 +12,7 @@ Available as:
 ## 1. Getting Started & Sign-in
 
 ### Fast login options
-- **Mobile Number + OTP:** One-tap login via SMS/Watxio OTP verification (`/api/mobile/auth/send-otp` & `/api/mobile/auth/verify-otp`).
+- **Mobile Number + Password or OTP:** Direct sign-in using mobile phone number (with country code selector) + password or SMS/Watxio OTP verification (`/api/mobile/auth/send-otp` & `/api/mobile/auth/verify-otp`).
 - **Google Sign-In:** One-click OAuth sign-in.
 - **Email & Password:** Standard secure sign-in.
 
@@ -38,6 +38,7 @@ Sales reps make dozens of calls every day. In traditional CRMs, reps forget to l
    - Call direction: Outgoing, Incoming, or Missed.
    - Exact talk duration in seconds.
    - Precise call start and end timestamps.
+   - Distinct rep call notes and outcome dispositions saved as timeline activities.
    - Lead matching and audio recording logs (if enabled).
 3. **Smart Follow-up Auto-Completion:**
    - **Answered calls:** When an outgoing or incoming call is answered and completed, Ridhzo marks matching pending follow-ups for that lead as **Completed** automatically.
@@ -58,21 +59,23 @@ Sales reps often receive calls from leads whose numbers are not saved in their p
 
 ---
 
-## 4. Mobile Lead Profile & 1-Click AI Actions
+## 4. Mobile Lead Profile, Pre-Call Brief & 1-Click AI Actions
 
 The mobile app provides complete parity with the web Lead Profile:
 
 ### Streamlined layout
-- **Organised Header:** Lead name, phone, email, priority badge, and lead score. Below it, **Owner, Stage, and Tags** are displayed in one clear row.
+- **Organised Header with CRN:** Lead CRN (`CRN-xxxx`), displayId, name, phone, email, priority badge, and lead score. Below it, **Owner, Stage, and Tags** are displayed in one clear row.
+- **Pre-Call Brief:** 1-click dossier right before dialing: reviews lead requirements, budget, objections, and suggested conversation openers on your phone.
 - **One-Tap Actions:** Dedicated quick-action buttons:
   - **WhatsApp:** Opens WhatsApp or WhatsApp Web with pre-filled personalised template.
   - **Call:** Dials through native phone dialer with background call sync.
   - **SMS & Email:** Pre-filled draft messages.
-- **Activity Timeline:** Complete chronological feed of notes, calls, WhatsApp messages, emails, status changes, and meetings.
+- **Activity Timeline:** Complete chronological feed with sequence tracking (`seq`) of notes, calls, rep call notes, WhatsApp messages, emails, status changes, and meetings.
 - **Custom Fields:** View and edit all organization custom fields inline. Company field is optional.
 
 ### 1-Click AI Suggestions (`/api/mobile/leads/[id]/ai-suggestions`)
 Powered by Ridhzo's unified lead-context engine:
+- **Lead Insights Chip:** Instant intent, budget, sentiment, and score pill.
 - **1-Click Field Auto-fill:** Suggests extracting data from recent calls or notes (e.g. Budget: ₹75L, Preferred Location: Gachibowli) with a single "Apply" tap.
 - **1-Click Status Transitions:** Recommends moving the lead to the next status stage based on conversation milestones.
 - **Live Next Best Action (NBA):** Real-time streamed recommendation guiding the rep on the immediate next move.
