@@ -14,6 +14,7 @@
 | **Lead enrichment** | Fill in missing lead details automatically from your data provider |
 | **Telephony (missed calls)** | Any provider (Exotel, Knowlarity, Twilio…) → auto-WhatsApp on missed call |
 | **Razorpay** | Subscription payments with automated GST tax invoices and printable PDF receipts |
+| **Zoho Cliq** | Real-time system and SLA breach notifications routed to channels via webhook or OAuth |
 | **Zapier / Make / Pabbly / any tool** | Via inbound webhook, REST API and outbound webhooks |
 
 Lead-intelligence integrations (enrichment, inbound email logging, Meta CAPI delivery & token monitoring) are configured in **Settings → Lead Intelligence**.
@@ -24,6 +25,7 @@ Lead-intelligence integrations (enrichment, inbound email logging, Meta CAPI del
 - Endpoints (v1) include:
   - `POST /api/v1/leads` — create a lead · `GET /api/v1/leads` — list/search leads (returns `crn`, `displayId`, trigram phone matching) · `GET/PATCH/DELETE /api/v1/leads/{id}`
   - Activity timeline and status histories include explicit sequence numbers (`seq`) for reliable client ordering.
+  - `GET /api/unsubscribe` — cryptographic one-click email unsubscribe handling
   - `POST /api/leads/purge` — permanent lead purge (admin permission required)
   - Follow-ups, meetings, statuses, templates, custom fields, users, notifications, dashboard summary
 - **Use cases:** push leads from your own website backend or app; sync leads into an ERP; build a custom report.

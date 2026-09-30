@@ -51,9 +51,11 @@ Authorized platform super-administrators have access to a dedicated platform con
 - **Plan & Trial Overrides:** Provision complimentary plans, adjust seat and lead volume quotas, and extend free trials on demand.
 - **System Telemetry & Support:** Review platform-wide error rates, background worker statuses, and handle user support escalations centrally.
 
-## In-App Support Ticket Management (Settings → Support)
-- Built-in support ticketing allows workspace members to raise, track, and manage help tickets directly within Ridhzo.
-- Tickets are processed in real time by the Ridhzo technical team from the central platform console, ensuring fast response times without leaving the CRM.
+## In-App Support Center & SLA Protection (Settings → Support)
+- **Built-in Support Ticketing:** Allows workspace members to raise, track, and manage help tickets directly within Ridhzo without leaving the CRM.
+- **Integration Requests & In-App Error Reporting:** Reps and admins can submit direct feature/integration requests, and report application errors with full diagnostic traces directly from error boundaries.
+- **Automated Support SLA Breach Worker:** A background worker monitors ticket SLAs (e.g. 4-hour initial response, 24-hour resolution), proactively flagging at-risk tickets and preventing customer service bottlenecks.
+- **Zoho Cliq Operational Alerts:** System anomalies, SLA breach warnings, and executive digests can be streamed directly into internal Zoho Cliq channels via webhook or OAuth integration.
 
 ## Audit log (Settings → Audit)
 A permanent record of important actions: who changed settings, roles, users, deleted/merged leads, created API keys, and more — with time and user. Exportable per lead as a full history. System-generated background operations are cleanly tracked.

@@ -54,6 +54,8 @@ Yes. Ridhzo supports multi-tenant Facebook Page sharing, copying incoming leads 
 **Can Ridhzo send WhatsApp automatically?** Yes, in Business API mode (via Watxio or Meta Cloud API) — welcome messages, sequences, campaigns, missed-call replies and alerts.
 **Can I send bulk messages?** Yes — up to 500 leads per campaign.
 **Can I send emails from my own address?** Yes — connect your SMTP (Gmail, Zoho, Outlook, etc.) with custom reply-to support. Inbound replies filter out automated bounce/OOO messages automatically.
+**Are emails sent to leads branded with Ridhzo?**
+No. Outbound emails sent to leads use an unbranded, clean 1-to-1 personal email format so they look like genuine personal correspondence from your sales rep, and include compliant one-click unsubscribe links.
 
 ## Team & security
 **How do team invites work?**
@@ -63,7 +65,7 @@ Admins can invite teammates via Email, direct WhatsApp share, or copyable invite
 **Is my data safe?** Each workspace is fully isolated, secrets are encrypted, deletions go to a 30-day recycle bin, and every important action is recorded in the audit log.
 **Can I permanently delete leads?** Yes — authorized admins can permanently purge leads via the purge endpoint for GDPR compliance.
 **What is the Super-Admin Platform Console?** A centralized administrative portal (`/admin`) for platform operators to manage multi-tenant accounts, subscription overrides, system health, and customer assistance.
-**How do I get technical support?** You can raise, track, and manage support tickets directly in **Settings → Support**, handled directly by the Ridhzo team.
+**How do support tickets and SLAs work?** You can raise, track, and manage support tickets and integration requests directly in **Settings → Support**. An automated background worker monitors ticket response SLAs and alerts the team via Zoho Cliq before breaches occur.
 
 ## AI
 **Will AI message my customers without me knowing?** Never. AI drafts; a human approves and sends.

@@ -37,13 +37,14 @@ One AI credit = one AI generation via `consumeAiCredit`: drafting a reply, summa
 - Nothing already in your account is deleted. Deleted leads in the Recycle Bin do not count towards active lead quotas.
 - If you downgrade and have more automations/sequences than the new plan allows, the **oldest ones keep running** and the rest are paused until you upgrade again.
 
-## Payments, billing & platform administration
+## Payments, billing & lifecycle automation
 - Pay securely with **Razorpay** (UPI, cards, net banking).
 - Monthly or yearly subscriptions; switch plans any time.
 - **Coupons / discount codes** supported at checkout.
 - **Cancel any time** — you keep your paid plan until the end of the paid period, then move to Free.
-- If a payment fails, you get a **grace period** with reminders before the account is downgraded.
-- **Printable Tax Invoices:** View, print, and download full GST-compliant invoices with GSTIN and tax breakdowns directly from Settings → Billing.
+- If a payment fails, you get an automated **grace period** with reminder emails before the account is downgraded.
+- **Automated Billing Lifecycle Emails:** Timely automated notifications for trial expiration (3 days prior), upcoming renewal reminders, payment receipts, and grace period alerts.
+- **Instant PDF Tax Invoices:** Direct server-side PDF invoice generation (`pdf-lib`) containing GSTIN, CGST/SGST/IGST breakdown, HSN/SAC codes, and organization address, instantly downloadable and printable from Settings → Billing.
 - **Agency / complimentary plans & Super-Admin Console (`/admin`):** Platform super-admins can grant complimentary subscriptions, extend trials, toggle feature gates, and manage multi-tenant billing from the centralized administrative console.
 
 ## Value comparison (for sales conversations)

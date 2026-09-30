@@ -221,13 +221,14 @@ One AI credit = one AI generation via `consumeAiCredit`: drafting a reply, summa
 - Nothing already in your account is deleted. Deleted leads in the Recycle Bin do not count towards active lead quotas.
 - If you downgrade and have more automations/sequences than the new plan allows, the **oldest ones keep running** and the rest are paused until you upgrade again.
 
-## Payments, billing & platform administration
+## Payments, billing & lifecycle automation
 - Pay securely with **Razorpay** (UPI, cards, net banking).
 - Monthly or yearly subscriptions; switch plans any time.
 - **Coupons / discount codes** supported at checkout.
 - **Cancel any time** — you keep your paid plan until the end of the paid period, then move to Free.
-- If a payment fails, you get a **grace period** with reminders before the account is downgraded.
-- **Printable Tax Invoices:** View, print, and download full GST-compliant invoices with GSTIN and tax breakdowns directly from Settings → Billing.
+- If a payment fails, you get an automated **grace period** with reminder emails before the account is downgraded.
+- **Automated Billing Lifecycle Emails:** Timely automated notifications for trial expiration (3 days prior), upcoming renewal reminders, payment receipts, and grace period alerts.
+- **Instant PDF Tax Invoices:** Direct server-side PDF invoice generation (`pdf-lib`) containing GSTIN, CGST/SGST/IGST breakdown, HSN/SAC codes, and organization address, instantly downloadable and printable from Settings → Billing.
 - **Agency / complimentary plans & Super-Admin Console (`/admin`):** Platform super-admins can grant complimentary subscriptions, extend trials, toggle feature gates, and manage multi-tenant billing from the centralized administrative console.
 
 ## Value comparison (for sales conversations)
@@ -708,6 +709,9 @@ Connect the official WhatsApp Business API (via Ridhzo's WhatsApp integration pa
 - **Custom Reply-To:** Configure a dedicated reply-to address so customer responses route directly to your central inbox or support team.
 - **Email Verification & Error Tracking:** Live connection test before saving, clear diagnostic error messages if credentials expire, and AES-256-GCM encryption.
 - Used for one-off emails, sequences, meeting confirmations, new-lead alerts and notifications. A built-in fallback sender keeps system emails flowing.
+- **Unbranded 1-to-1 Lead Outreach:** Outbound emails sent to leads use a clean, natural personal email layout without platform branding or promotional footers, ensuring customer emails appear as genuine personal correspondence from the sales rep.
+- **Cryptographic 1-Click Unsubscribe:** Includes compliance-ready unsubscribe links (`/api/unsubscribe`) with signed tokens for easy opt-out handling.
+- **Branded Platform Notifications:** Internal system emails (billing receipts, security codes, team alerts) feature a responsive branded layout with full dark mode support.
 - Replies can be logged back on the lead timeline (Lead Intelligence settings) with intelligent inbound deduplication and automatic filtering for out-of-office (OOO) and bounce messages.
 
 ## Content sharing with open tracking
@@ -1203,9 +1207,11 @@ Authorized platform super-administrators have access to a dedicated platform con
 - **Plan & Trial Overrides:** Provision complimentary plans, adjust seat and lead volume quotas, and extend free trials on demand.
 - **System Telemetry & Support:** Review platform-wide error rates, background worker statuses, and handle user support escalations centrally.
 
-## In-App Support Ticket Management (Settings → Support)
-- Built-in support ticketing allows workspace members to raise, track, and manage help tickets directly within Ridhzo.
-- Tickets are processed in real time by the Ridhzo technical team from the central platform console, ensuring fast response times without leaving the CRM.
+## In-App Support Center & SLA Protection (Settings → Support)
+- **Built-in Support Ticketing:** Allows workspace members to raise, track, and manage help tickets directly within Ridhzo without leaving the CRM.
+- **Integration Requests & In-App Error Reporting:** Reps and admins can submit direct feature/integration requests, and report application errors with full diagnostic traces directly from error boundaries.
+- **Automated Support SLA Breach Worker:** A background worker monitors ticket SLAs (e.g. 4-hour initial response, 24-hour resolution), proactively flagging at-risk tickets and preventing customer service bottlenecks.
+- **Zoho Cliq Operational Alerts:** System anomalies, SLA breach warnings, and executive digests can be streamed directly into internal Zoho Cliq channels via webhook or OAuth integration.
 
 ## Audit log (Settings → Audit)
 A permanent record of important actions: who changed settings, roles, users, deleted/merged leads, created API keys, and more — with time and user. Exportable per lead as a full history. System-generated background operations are cleanly tracked.
@@ -1250,6 +1256,7 @@ A permanent record of important actions: who changed settings, roles, users, del
 | **Lead enrichment** | Fill in missing lead details automatically from your data provider |
 | **Telephony (missed calls)** | Any provider (Exotel, Knowlarity, Twilio…) → auto-WhatsApp on missed call |
 | **Razorpay** | Subscription payments with automated GST tax invoices and printable PDF receipts |
+| **Zoho Cliq** | Real-time system and SLA breach notifications routed to channels via webhook or OAuth |
 | **Zapier / Make / Pabbly / any tool** | Via inbound webhook, REST API and outbound webhooks |
 
 Lead-intelligence integrations (enrichment, inbound email logging, Meta CAPI delivery & token monitoring) are configured in **Settings → Lead Intelligence**.
@@ -1260,6 +1267,7 @@ Lead-intelligence integrations (enrichment, inbound email logging, Meta CAPI del
 - Endpoints (v1) include:
   - `POST /api/v1/leads` — create a lead · `GET /api/v1/leads` — list/search leads (returns `crn`, `displayId`, trigram phone matching) · `GET/PATCH/DELETE /api/v1/leads/{id}`
   - Activity timeline and status histories include explicit sequence numbers (`seq`) for reliable client ordering.
+  - `GET /api/unsubscribe` — cryptographic one-click email unsubscribe handling
   - `POST /api/leads/purge` — permanent lead purge (admin permission required)
   - Follow-ups, meetings, statuses, templates, custom fields, users, notifications, dashboard summary
 - **Use cases:** push leads from your own website backend or app; sync leads into an ERP; build a custom report.
@@ -1463,6 +1471,8 @@ Yes. Ridhzo supports multi-tenant Facebook Page sharing, copying incoming leads 
 **Can Ridhzo send WhatsApp automatically?** Yes, in Business API mode (via Watxio or Meta Cloud API) — welcome messages, sequences, campaigns, missed-call replies and alerts.
 **Can I send bulk messages?** Yes — up to 500 leads per campaign.
 **Can I send emails from my own address?** Yes — connect your SMTP (Gmail, Zoho, Outlook, etc.) with custom reply-to support. Inbound replies filter out automated bounce/OOO messages automatically.
+**Are emails sent to leads branded with Ridhzo?**
+No. Outbound emails sent to leads use an unbranded, clean 1-to-1 personal email format so they look like genuine personal correspondence from your sales rep, and include compliant one-click unsubscribe links.
 
 ## Team & security
 **How do team invites work?**
@@ -1472,7 +1482,7 @@ Admins can invite teammates via Email, direct WhatsApp share, or copyable invite
 **Is my data safe?** Each workspace is fully isolated, secrets are encrypted, deletions go to a 30-day recycle bin, and every important action is recorded in the audit log.
 **Can I permanently delete leads?** Yes — authorized admins can permanently purge leads via the purge endpoint for GDPR compliance.
 **What is the Super-Admin Platform Console?** A centralized administrative portal (`/admin`) for platform operators to manage multi-tenant accounts, subscription overrides, system health, and customer assistance.
-**How do I get technical support?** You can raise, track, and manage support tickets directly in **Settings → Support**, handled directly by the Ridhzo team.
+**How do support tickets and SLAs work?** You can raise, track, and manage support tickets and integration requests directly in **Settings → Support**. An automated background worker monitors ticket response SLAs and alerts the team via Zoho Cliq before breaches occur.
 
 ## AI
 **Will AI message my customers without me knowing?** Never. AI drafts; a human approves and sends.
