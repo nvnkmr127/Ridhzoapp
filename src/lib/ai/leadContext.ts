@@ -1,5 +1,5 @@
 import "server-only";
-import { createHash } from "node:crypto";
+import { createHash } from "crypto";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { followUps, leadPipelineStages, leadStatusHistory, users, whatsappMessages } from "@/db/schema";

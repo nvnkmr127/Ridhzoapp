@@ -5,7 +5,7 @@ import { MobilePushService } from "@/lib/push/mobile";
 import { RateLimiter } from "@/lib/rate-limit";
 import { createRedis } from "@/lib/jobs/redis";
 import { verifyMobileToken } from "@/lib/mobileAuth";
-import { createHash } from "node:crypto";
+import { createHash } from "crypto";
 import { withTimeout } from "@/lib/sessionCache";
 
 const redis = createRedis();

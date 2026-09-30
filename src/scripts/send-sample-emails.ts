@@ -1,6 +1,6 @@
 // Sends one sample of each platform email design to an address (or, with HTML_OUT=dir, writes them as
 // .html files to eyeball in a browser). Usage: npm run mail:samples -- you@example.com
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync } from "fs";
 import { sendEmail, appUrl, type Sender } from "@/lib/mail/mailer";
 import { brandedHtml, mh, mp, mbtn, mfine, mtag, mcallout, mfacts, mquote, mtable, mhero, mbar, mcount, msteps, mticket, mcard, mkey, mstamp, mcompare, mping } from "@/lib/mail/layout";
 import { invoicePdf } from "@/domains/billing/invoicePdf";

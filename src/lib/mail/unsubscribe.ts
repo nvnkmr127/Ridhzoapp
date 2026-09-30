@@ -1,7 +1,7 @@
 // One-click email opt-out. A link carries (email, category, HMAC) so it can't be forged or used to
 // unsubscribe someone else; applying it appends `category` to users.email_opt_out, which every
 // email sender already honours (notification types, "daily_summary", "billing_reminders", "newsletter").
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 
 const LABELS: Record<string, string> = {
   new_lead: "new-lead alerts",
