@@ -14,7 +14,19 @@ export interface NoteItem {
   leadId?: string;
   content: string | null;
   createdAt: Date | string;
+  /** When the note is about (older notes are backdated); falls back to createdAt. */
+  occurredAt?: Date | string | null;
 }
+
+const when = (n: NoteItem) => new Date(n.occurredAt ?? n.createdAt).getTime();
+const byDate = (a: NoteItem, b: NoteItem) => when(b) - when(a); // newest first, by the date the note is about
+
+// datetime-local value for "now" in the user's own timezone — the picker's max (no future dates).
+const localNow = () => {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+};
 
 interface LeadNotesTabProps {
   leadId: string;
@@ -23,7 +35,8 @@ interface LeadNotesTabProps {
 
 export function LeadNotesTab({ leadId, initialNotes }: LeadNotesTabProps) {
   const router = useRouter();
-  const [notes, setNotes] = useState<NoteItem[]>(initialNotes);
+  const [notes, setNotes] = useState<NoteItem[]>([...initialNotes].sort(byDate));
+  const [noteDate, setNoteDate] = useState(""); // optional datetime-local; empty = now
   const [newContent, setNewContent] = useState("");
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -39,14 +52,15 @@ export function LeadNotesTab({ leadId, initialNotes }: LeadNotesTabProps) {
 
     setAdding(true);
     try {
-      const res = await addNoteAction({ leadId, content: trimmed });
+      const res = await addNoteAction({ leadId, content: trimmed, ...(noteDate ? { occurredAt: new Date(noteDate).toISOString() } : {}) });
       if (!res.ok) {
         toast({ variant: "destructive", title: "Unable to add note", description: res.message });
         return;
       }
 
-      setNotes((prev) => [res.data as NoteItem, ...prev]);
+      setNotes((prev) => [res.data as NoteItem, ...prev].sort(byDate));
       setNewContent("");
+      setNoteDate("");
       router.refresh();
       toast({
         title: "Note Added",
@@ -136,10 +150,23 @@ export function LeadNotesTab({ leadId, initialNotes }: LeadNotesTabProps) {
           rows={3}
           className="resize-none"
         />
-        <div className="flex justify-between items-center">
-          <span className="text-xs text-muted-foreground">
-            {newContent.length > 0 ? `${newContent.length} characters` : ""}
-          </span>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span>Note date <span className="opacity-70">(optional — for older notes)</span></span>
+            <input
+              type="datetime-local"
+              value={noteDate}
+              max={localNow()}
+              onChange={(e) => setNoteDate(e.target.value)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+              aria-label="Note date and time"
+            />
+            {noteDate && (
+              <button type="button" onClick={() => setNoteDate("")} className="underline underline-offset-2 hover:text-foreground">
+                Use now
+              </button>
+            )}
+          </label>
           <Button type="submit" size="sm" disabled={adding || !newContent.trim()} className="gap-1.5 text-xs">
             <Plus className="h-3.5 w-3.5" />
             {adding ? "Saving..." : "Add Note"}
@@ -203,7 +230,12 @@ export function LeadNotesTab({ leadId, initialNotes }: LeadNotesTabProps) {
                   <>
                     <p className="text-foreground whitespace-pre-wrap">{note.content}</p>
                     <div className="flex items-center justify-between pt-1 border-t border-border/50 text-xs text-muted-foreground">
-                      <LocalTime iso={note.createdAt} mode="datetime" />
+                      <span className="flex items-center gap-2">
+                        <LocalTime iso={note.occurredAt ?? note.createdAt} mode="datetime" />
+                        {note.occurredAt && Math.abs(new Date(note.occurredAt).getTime() - new Date(note.createdAt).getTime()) > 10 * 60_000 && (
+                          <span className="opacity-70">· added <LocalTime iso={note.createdAt} mode="datetime" /></span>
+                        )}
+                      </span>
                       <div className="flex items-center gap-1">
                         <Button
                           variant="ghost"

@@ -7,13 +7,15 @@ import { eq, and, desc, inArray, sql } from "drizzle-orm";
 export const LEAD_ACTIVITY_PAGE = 100;
 
 export class ActivityService {
-  static async addActivity(data: { leadId: string; userId?: string; type: string; content?: string; externalRef?: string }) {
+  // occurredAt: when it actually happened (a note about last week's call); defaults to now.
+  static async addActivity(data: { leadId: string; userId?: string; type: string; content?: string; externalRef?: string; occurredAt?: Date }) {
     const [activity] = await db.insert(activities).values({
       leadId: data.leadId,
       userId: data.userId,
       type: data.type,
       content: data.content,
       externalRef: data.externalRef,
+      ...(data.occurredAt ? { occurredAt: data.occurredAt } : {}),
     }).returning();
     return activity;
   }

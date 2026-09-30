@@ -14,6 +14,7 @@ type Activity = {
   content: string | null;
   userName?: string | null;
   createdAt: Date | string;
+  occurredAt?: Date | string | null;
 };
 
 // Human labels for stored activity types (they used to render raw, e.g. "SLA_ESCALATION").
@@ -142,7 +143,7 @@ export function ActivityTimeline({ activities: initial, leadId, crn, hasMore: in
                   {crn && a.seq != null && <span className="text-[10px] tabular-nums text-muted-foreground/70">{crn}-T{a.seq}</span>}
                 </div>
                 <span className="text-xs text-muted-foreground">
-                  <LocalTime iso={a.createdAt} mode="datetime" />
+                  <LocalTime iso={a.type === "note" && a.occurredAt ? a.occurredAt : a.createdAt} mode="datetime" />
                 </span>
               </div>
               {a.content && <p className="mt-1 whitespace-pre-wrap break-words text-sm text-foreground/90">{a.content}</p>}

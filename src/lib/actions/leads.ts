@@ -426,7 +426,11 @@ export async function bulkChangeLeadStatusAction(input: z.infer<typeof bulkChang
 const addNoteSchema = z.object({
   leadId: uuidSchema,
   content: z.string().trim().min(1, "Note cannot be empty").max(10000, "Note cannot exceed 10,000 characters"),
+  // Optional: the date the note is about (for adding older notes). Past only; omitted = now.
+  occurredAt: z.string().datetime({ offset: true }).optional(),
 });
+
+const TEN_YEARS_MS = 10 * 365 * 24 * 60 * 60 * 1000;
 
 export async function addNoteAction(input: z.infer<typeof addNoteSchema>) {
   const { userId, organizationId } = await requirePermission("leads.edit");
@@ -440,11 +444,20 @@ export async function addNoteAction(input: z.infer<typeof addNoteSchema>) {
     // The note attaches to a lead — make sure it's one this org owns.
     await assertLeadAccess(parsed.data.leadId, { userId, organizationId });
 
+    let occurredAt: Date | undefined;
+    if (parsed.data.occurredAt) {
+      occurredAt = new Date(parsed.data.occurredAt);
+      const now = Date.now();
+      if (occurredAt.getTime() > now + 5 * 60_000) return fail("VALIDATION", "A note can't be dated in the future.", { occurredAt: "Pick a date that has already happened." });
+      if (occurredAt.getTime() < now - TEN_YEARS_MS) return fail("VALIDATION", "That date is too far back.", { occurredAt: "Pick a date within the last 10 years." });
+    }
+
     const activity = await ActivityService.addActivity({
       leadId: parsed.data.leadId,
       userId,
       type: 'note',
       content: parsed.data.content,
+      occurredAt,
     });
 
     revalidatePath(`/leads/${parsed.data.leadId}`);
