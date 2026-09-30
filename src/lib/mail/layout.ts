@@ -30,7 +30,7 @@ const DARK_CSS = `@media (prefers-color-scheme: dark){
 [style*="double #0a0a0a"]{border-color:#f2f2f2 !important;}
 }`;
 
-export function brandedHtml(body: string, base: string, preheader = ""): string {
+export function brandedHtml(body: string, base: string, preheader = "", unsubUrl = ""): string {
   const hidden = preheader
     ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#ececec;">${preheader}${"&nbsp;&zwnj;".repeat(40)}</div>`
     : "";
@@ -46,7 +46,7 @@ export function brandedHtml(body: string, base: string, preheader = ""): string 
 <tr><td style="padding:36px 32px 32px;font-size:15px;line-height:1.65;color:#0a0a0a;font-family:${SANS};">${body}</td></tr>
 <tr><td style="padding:0 32px 28px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px dashed #0a0a0a;"><tr><td style="padding-top:18px;font-family:${MONO};font-size:11px;line-height:1.7;color:#6b6b6b;">
 <span style="color:#0a0a0a;font-weight:700;">RIDHZO</span> — lead management that moves at your speed.<br>
-<a href="mailto:hello@ridhzo.com" style="color:#0a0a0a;">hello@ridhzo.com</a> &nbsp;/&nbsp; <a href="https://ridhzo.com" style="color:#0a0a0a;">ridhzo.com</a>
+<a href="mailto:hello@ridhzo.com" style="color:#0a0a0a;">hello@ridhzo.com</a> &nbsp;/&nbsp; <a href="https://ridhzo.com" style="color:#0a0a0a;">ridhzo.com</a>${unsubUrl ? `<br>Don't want emails like this? <a href="${unsubUrl}" style="color:#0a0a0a;">Unsubscribe</a>` : ""}
 </td></tr></table></td></tr>
 </table></td></tr></table></body></html>`;
 }

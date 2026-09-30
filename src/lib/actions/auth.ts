@@ -9,7 +9,8 @@ import { and, eq, gt, isNull } from "drizzle-orm";
 import { OrgService } from "@/domains/organizations/service";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
 import { sendEmail, appUrl } from "@/lib/mail/mailer";
-import { mh, mp, mbtn, mfine, mtag, mkey, mcount, msteps } from "@/lib/mail/layout";
+import { keepAlive } from "@/lib/keepAlive";
+import { mh, mp, mbtn, mfine, mkey, mcount, mtag } from "@/lib/mail/layout";
 import { requireOrg } from "@/lib/rbac";
 import { RateLimiter } from "@/lib/rate-limit";
 import { headers } from "next/headers";
@@ -88,29 +89,11 @@ export async function signupAction(input: z.infer<typeof signupSchema>) {
       }
     }
 
-    // Welcome email — best-effort, never blocks signup.
-    try {
-      const name = (data.firstName ?? "").replace(/[&<>"']/g, "").trim();
-      const org = orgName.replace(/[&<>"']/g, "");
-      await sendEmail({
-        from: "hello",
-        to: data.email,
-        subject: `Welcome to Ridhzo, ${name || "there"} — your workspace is ready`,
-        preheader: "Three quick steps to get your first leads moving",
-        html:
-          mtag("Welcome") +
-          mh(`Hello, ${name || "there"}.<br>${org} is live.`) +
-          mp("Leads move faster here. Three moves and you're running:") +
-          msteps([
-            ["Add your leads", "Import a CSV, connect a lead source, or add one by hand."],
-            ["Bring your team", "Invite teammates so every lead has an owner."],
-            ["Never miss a follow-up", "Give every lead a next step and a reminder."],
-          ]) +
-          mbtn("Enter your workspace", appUrl("/")) +
-          mfine("Stuck? Reply to this email — a real person answers."),
-      });
-    } catch (err) {
-      console.warn("[signupAction] welcome email failed", err);
+    // Welcome email + newsletter-audience sync — best-effort, never block signup.
+    {
+      const [{ sendWelcomeEmail }, { upsertContact }] = await Promise.all([import("@/lib/mail/welcome"), import("@/lib/mail/contacts")]);
+      await sendWelcomeEmail({ email: data.email, firstName: data.firstName, orgName });
+      keepAlive(upsertContact({ email: data.email, firstName: data.firstName, org: orgName, plan: "starter", planStatus: "active" }), "resend contact");
     }
 
     return ok({ created: true });

@@ -327,7 +327,7 @@ export class DailySummaryService {
         await this.nudgePeople(stats.people, today);
         const html = renderSummaryHtml(org.name, stats);
         for (const to of await this.adminEmails(org.id)) {
-          await sendEmail({ from: "notifications", to, subject: summarySubject(org.name, stats), html }, org.id);
+          await sendEmail({ from: "notifications", unsubscribe: "daily_summary", to, subject: summarySubject(org.name, stats), html }, org.id);
           sent++;
         }
       } catch (e) {
@@ -343,7 +343,7 @@ export class DailySummaryService {
     await NotificationService.notifyOrgAdmins(organizationId, { type: milestone, title, body });
     const html = mtag(milestone === "week_one" ? "Week one" : "Trial ending") + mh(esc(title)) + (milestone === "week_one" ? "" : mcount([["1", "day left"]])) + mp(esc(body)) +
       mbtn(milestone === "week_one" ? "Open your dashboard" : "Keep Starter", appUrl(milestone === "week_one" ? "/" : "/settings/billing"));
-    for (const to of await this.adminEmails(organizationId)) await sendEmail({ from: "notifications", to, subject: title, html }, organizationId);
+    for (const to of await this.adminEmails(organizationId)) await sendEmail({ from: "notifications", unsubscribe: "daily_summary", to, subject: title, html }, organizationId);
   }
 
   // "Your day" push to each person with something to do, plus WhatsApp to their own phone when a

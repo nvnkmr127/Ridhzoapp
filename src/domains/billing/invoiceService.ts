@@ -69,17 +69,25 @@ const inr = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", c
 // Sent from the platform address (not the tenant's own SMTP) — this is our invoice to them.
 async function emailInvoice(to: string, inv: TaxInvoice) {
   const link = appUrl(`/invoice/${inv.id}`);
-  await sendEmail({ from: "billing",
+  // The PDF is a convenience: if it can't be built the email still goes out with the link.
+  let attachments: { filename: string; content: Buffer }[] | undefined;
+  try {
+    const { invoicePdf } = await import("./invoicePdf");
+    attachments = [{ filename: `${inv.invoiceNumber.replace(/[^A-Za-z0-9-]+/g, "-")}.pdf`, content: Buffer.from(await invoicePdf(inv)) }];
+  } catch (e) {
+    console.warn("[invoice] PDF attach skipped", e);
+  }
+  await sendEmail({ from: "billing", attachments,
     to,
     subject: `Ridhzo tax invoice ${inv.invoiceNumber} — ${inr(inv.totalAmount)}`,
     preheader: `Payment received — invoice ${inv.invoiceNumber} for ${inr(inv.totalAmount)}`,
     html:
       mstamp("Paid") +
       mh("Payment received.") +
-      mp("Thank you — your GST tax invoice is ready. Keep it for your records.") +
+      mp(`Thank you — your GST tax invoice is attached${attachments ? " as a PDF" : ""}. Keep it for your records.`) +
       mhero(inr(inv.totalAmount), "Total paid · incl. GST", false) +
       mfacts([["Invoice no.", inv.invoiceNumber], ["Issued", new Date(inv.issuedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })], ["Amount", inr(inv.totalAmount)]]) +
-      mbtn("Download invoice", link) +
+      mbtn("View invoice online", link) +
       mfine("Sent because this address is set for invoices on the Plan &amp; billing page. Change it there any time."),
   });
 }

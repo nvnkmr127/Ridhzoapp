@@ -2,11 +2,14 @@
 // to the console so invite/notification flows work end-to-end in dev.
 import { Resend } from "resend";
 import { brandedHtml } from "./layout";
+import { unsubscribeToken } from "./unsubscribe";
 
 // `from` picks the platform sender: hello (support), notifications (alerts), billing (invoices/receipts),
 // noreply (password resets, invites). Default = MAIL_FROM.
 export type Sender = "hello" | "notifications" | "billing" | "noreply";
-type Mail = { to: string; subject: string; html: string; from?: Sender; preheader?: string };
+// `unsubscribe` = opt-out category (see unsubscribe.ts): adds a footer link + List-Unsubscribe headers.
+// `attachments` = files sent with the mail (Resend transport only).
+type Mail = { to: string; subject: string; html: string; from?: Sender; preheader?: string; unsubscribe?: string; attachments?: { filename: string; content: Buffer }[] };
 
 const FROM = process.env.MAIL_FROM || "Ridhzo <onboarding@resend.dev>";
 // Set MAIL_DOMAIN to the domain verified in Resend (e.g. send.ridhzo.com) to use these senders;
@@ -35,7 +38,8 @@ function resend(): Resend | null {
 // The settings service is imported lazily so nodemailer never enters client/edge bundles.
 export async function sendEmail(mail: Mail, organizationId?: string): Promise<void> {
   // Platform mail (has a `from` kind) gets the Ridhzo shell; tenant-to-lead mail stays unbranded.
-  if (mail.from) mail = { ...mail, html: brandedHtml(mail.html, appUrl("").replace(/\/$/, ""), mail.preheader) };
+  const unsubUrl = mail.unsubscribe ? appUrl(`/api/unsubscribe?e=${encodeURIComponent(mail.to)}&c=${mail.unsubscribe}&t=${unsubscribeToken(mail.to, mail.unsubscribe)}`) : "";
+  if (mail.from) mail = { ...mail, html: brandedHtml(mail.html, appUrl("").replace(/\/$/, ""), mail.preheader, unsubUrl) };
   if (organizationId) {
     const { EmailSettingsService } = await import("@/domains/organizations/emailSettingsService");
     if (await EmailSettingsService.sendForOrg(organizationId, mail)) return;
@@ -50,7 +54,9 @@ export async function sendEmail(mail: Mail, organizationId?: string): Promise<vo
     return;
   }
   const text = mail.html.replace(/<(style|head)[\s\S]*?<\/\1>/gi, "").replace(/<br\s*\/?>|<\/(p|h1|tr|div|blockquote)>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&nbsp;|&zwnj;/g, "").replace(/\n{3,}/g, "\n\n").trim();
-  const { error } = await r.emails.send({ ...senderFor(mail.from), to: mail.to, subject: mail.subject, html: mail.html, text });
+  const { error } = await r.emails.send({ ...senderFor(mail.from), to: mail.to, subject: mail.subject, html: mail.html, text,
+    ...(unsubUrl ? { headers: { "List-Unsubscribe": `<${unsubUrl}>, <mailto:hello@ridhzo.com?subject=unsubscribe>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } } : {}),
+    ...(mail.attachments?.length ? { attachments: mail.attachments } : {}) });
   if (error) {
     throw new Error(`Email send failed: ${error.name ? `${error.name}: ` : ""}${error.message}`);
   }

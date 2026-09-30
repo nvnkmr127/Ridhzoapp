@@ -15,21 +15,24 @@ const DAY = 86_400_000;
 const REMIND_DAYS = 3;
 const fmtDate = (d: Date) => d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
-async function adminEmails(orgId: string): Promise<{ email: string; firstName: string | null }[]> {
+async function adminEmails(orgId: string, optOutKey?: string): Promise<{ email: string; firstName: string | null }[]> {
   const rows = await db
-    .select({ email: users.email, firstName: users.firstName, roleName: roles.name, perms: roles.permissions })
+    .select({ email: users.email, firstName: users.firstName, roleName: roles.name, perms: roles.permissions, optOut: users.emailOptOut })
     .from(users)
     .leftJoin(roles, eq(users.roleId, roles.id))
     .where(and(eq(users.organizationId, orgId), eq(users.isActive, true), isNull(users.deletedAt)));
   return rows
     .filter((u) => (u.roleName ?? "").toLowerCase() === "admin" || (u.perms ?? []).includes("*"))
-    .filter((u) => !u.email.endsWith("@phone.ridhzo.com")); // placeholder address, undeliverable
+    .filter((u) => !u.email.endsWith("@phone.ridhzo.com")) // placeholder address, undeliverable
+    .filter((u) => !optOutKey || !(u.optOut ?? []).includes(optOutKey));
 }
 
-async function mailAdmins(orgId: string, build: (firstName: string) => { subject: string; preheader: string; html: string }) {
-  for (const a of await adminEmails(orgId)) {
+// `optOut` = category for reminder-type mail: skips admins who muted it and adds an unsubscribe link.
+// Subscription started/ended pass none — those are account records, not optional.
+async function mailAdmins(orgId: string, build: (firstName: string) => { subject: string; preheader: string; html: string }, optOut?: string) {
+  for (const a of await adminEmails(orgId, optOut)) {
     try {
-      await sendEmail({ from: "billing", to: a.email, ...build(esc(a.firstName || "there")) });
+      await sendEmail({ from: "billing", to: a.email, ...(optOut ? { unsubscribe: optOut } : {}), ...build(esc(a.firstName || "there")) });
     } catch (e) {
       console.warn("[billingEmails] send failed", e);
     }
@@ -125,7 +128,38 @@ export class BillingEmails {
               mcount([[String(days), days === 1 ? "day to go" : "days to go"]]) +
               mp(`Hi ${name}, just a heads-up: <strong>${esc(o.name)}</strong> renews automatically on this date using your saved payment method. Nothing to do.`) +
               mbtn("Manage billing", appUrl("/settings/billing"), true) + mfine("Want to change or cancel? Do it from the billing page before the renewal date."),
-        })),
+        }), "billing_reminders"),
+      );
+      if (ok) sent++;
+    }
+    return sent;
+  }
+
+  // Scan: trials ending in 1–3 days get one heads-up (the daily "ends tomorrow" recap covers the last day).
+  static async sendTrialReminders(now = new Date()): Promise<number> {
+    const rows = await db
+      .select({ id: organizations.id, name: organizations.name, plan: organizations.plan, end: organizations.trialEndsAt })
+      .from(organizations)
+      .where(and(
+        isNull(organizations.suspendedAt),
+        eq(organizations.complimentary, 0),
+        gt(organizations.trialEndsAt, new Date(now.getTime() + DAY)),
+        lte(organizations.trialEndsAt, new Date(now.getTime() + REMIND_DAYS * DAY)),
+      ));
+    let sent = 0;
+    for (const o of rows) {
+      if (!o.end) continue;
+      const days = Math.max(2, Math.ceil((o.end.getTime() - now.getTime()) / DAY));
+      const ok = await once(o.id, `trial:${o.end.toISOString().slice(0, 10)}`, () =>
+        mailAdmins(o.id, (name) => ({
+          subject: `Your Ridhzo trial ends in ${days} days`,
+          preheader: "Keep everything running — or your workspace moves to Free",
+          html:
+            mtag("Trial") + mh(`Your trial ends<br>on ${fmtDate(o.end!)}.`) +
+            mcount([[String(days), "days left"]]) +
+            mp(`Hi ${name}, the ${PLAN_LABELS[canonicalPlan(o.plan)]} trial on <strong>${esc(o.name)}</strong> is nearly over. Subscribe now to keep AI replies, automations and every lead source — otherwise the workspace drops to Free. Your leads are safe either way.`) +
+            mbtn("Choose a plan", appUrl("/settings/billing")),
+        }), "billing_reminders"),
       );
       if (ok) sent++;
     }
@@ -168,7 +202,7 @@ export class BillingEmails {
                       ? key === "aiCredits" ? "AI features are paused until your credits reset next month — or you upgrade." : `You can't add more ${label} until you upgrade or free some up.`
                       : "Upgrade before you hit the limit so nothing gets interrupted.", t === 100 ? "danger" : "info") +
                     mbtn(canonicalPlan(plan) === "unlimited" ? "View usage" : "Upgrade plan", appUrl("/settings/billing")),
-                })),
+                }), "billing_reminders"),
               );
               if (ok) sent++;
             } else if (scope === "all" && pct < t) {

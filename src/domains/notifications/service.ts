@@ -99,7 +99,7 @@ export class NotificationService {
       const generic = !!data.leadId;
       const heading = generic ? t(user.language, look.tag) : data.title;
       const detail = generic ? "Open Ridhzo to see the lead's details and next steps." : data.body;
-      await sendEmail({ from: "notifications",
+      await sendEmail({ from: "notifications", unsubscribe: data.type,
         to: user.email,
         subject: heading,
         // Non-lead titles/bodies can still carry public-form/webhook text — escape before it becomes HTML.

@@ -1,5 +1,6 @@
 "use server";
 
+import { keepAlive } from "@/lib/keepAlive";
 import { requirePermission, roleAssignmentError } from "@/lib/rbac";
 import { InvitationService } from "@/domains/invitations/service";
 import { OrgService } from "@/domains/organizations/service";
@@ -103,6 +104,7 @@ export async function acceptInvitationAction(input: z.infer<typeof acceptSchema>
       metadata: { email: user.email, roleId: user.roleId },
     });
     revalidateTag("active-users"); // the new teammate shows up in owner/assignee pickers right away
+    keepAlive(import("@/lib/mail/contacts").then((m) => m.syncOrgContacts(user.organizationId)), "resend contacts"); // newsletter audience
     return ok({ accepted: true });
   } catch (e) {
     // Invalid/expired/already-used token surfaces here.

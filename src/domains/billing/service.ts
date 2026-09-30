@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { keepAlive } from "@/lib/keepAlive";
 import { organizations } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { PLAN_LIMITS } from "./planService";
@@ -338,6 +339,9 @@ export class BillingService {
       }
     } catch (e) {
       console.warn("[billing] subscription email failed", e);
+    }
+    if (newPlan !== oldPlan || newStatus !== oldStatus) {
+      keepAlive(import("@/lib/mail/contacts").then((m) => m.syncOrgContacts(org.id)), "resend contacts"); // refresh segment properties
     }
 
     await AuditService.log({

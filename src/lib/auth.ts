@@ -20,6 +20,7 @@ declare module "next-auth" {
   }
 }
 
+import { keepAlive } from "@/lib/keepAlive";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
@@ -315,6 +316,12 @@ export const authOptions: NextAuthOptions = {
               .returning();
 
             existingUser = created;
+            // New Google workspace: welcome + audience sync, off the sign-in path (never blocks login).
+            keepAlive((async () => {
+              const [{ sendWelcomeEmail }, { upsertContact }] = await Promise.all([import("@/lib/mail/welcome"), import("@/lib/mail/contacts")]);
+              await sendWelcomeEmail({ email, firstName, orgName });
+              await upsertContact({ email, firstName, lastName, org: orgName, plan: "starter", planStatus: "active" });
+            })(), "google welcome");
           }
 
           if (!existingUser.isActive) return "/login?error=ACCOUNT_DISABLED";
