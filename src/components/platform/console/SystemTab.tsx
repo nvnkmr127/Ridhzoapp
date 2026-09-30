@@ -26,6 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
   saveOpsAlertConfigAction,
+  connectCliqAction,
   testOpsAlertAction,
   revokeUserSessionsAction,
   revokeOrgSessionsAction,
@@ -184,6 +185,18 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
 
 
   // Debounced user search
+
+  const [grantCode, setGrantCode] = React.useState("");
+  const [connectingCliq, setConnectingCliq] = React.useState(false);
+  async function handleConnectCliq() {
+    setConnectingCliq(true);
+    const res = await connectCliqAction({ url: opsAlert.url, cliqClientId: opsAlert.cliqClientId ?? "", cliqClientSecret: opsAlert.cliqClientSecret, grantCode });
+    setConnectingCliq(false);
+    if (!res.ok) return toast({ variant: "destructive", title: "Couldn't connect to Zoho", description: res.message });
+    setOpsAlert((prev) => ({ ...prev, ...res.data, cliqClientSecret: "", cliqRefreshToken: "" }));
+    setGrantCode("");
+    toast({ title: "Zoho Cliq connected", description: "Now press Test Webhook Ping." });
+  }
 
   async function handleSaveOpsAlert() {
     setOpsAlertSaving(true);
@@ -430,6 +443,16 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
               <label className="text-xs font-medium text-foreground">Refresh Token</label>
               <Input type="password" placeholder={opsAlert.hasCliqOAuth ? "•••• saved (blank keeps it)" : ""} value={opsAlert.cliqRefreshToken ?? ""} onChange={(e) => setOpsAlert((prev) => ({ ...prev, cliqRefreshToken: e.target.value }))} className="mt-1 h-9 text-xs font-mono" autoComplete="off" />
             </div>
+          </div>
+
+          <div className="flex items-end gap-2">
+            <div className="flex-1">
+              <label className="text-xs font-medium text-foreground">Grant code (one-time — Zoho API Console → Self Client → Generate Code)</label>
+              <Input value={grantCode} onChange={(e) => setGrantCode(e.target.value)} className="mt-1 h-9 text-xs font-mono" autoComplete="off" />
+            </div>
+            <Button type="button" variant="outline" size="sm" className="h-9 text-xs" disabled={connectingCliq || !grantCode.trim() || !opsAlert.url} onClick={handleConnectCliq}>
+              {connectingCliq ? "Connecting..." : "Connect with code"}
+            </Button>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-xs">

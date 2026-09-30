@@ -45,6 +45,21 @@ export function cliqAccountsHost(url: string): string | null {
 
 let tokenCache: { key: string; token: string; exp: number } | null = null;
 
+async function zohoToken(accountsHost: string, params: Record<string, string>): Promise<any> {
+  const res = await fetch(`https://${accountsHost}/oauth/v2/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams(params),
+    signal: AbortSignal.timeout(6000),
+  });
+  const json: any = await res.json().catch(() => ({}));
+  if (json.error || !res.ok) {
+    const hint = json.error === "invalid_code" ? " — the code or token is wrong, expired or already used; generate a new grant code and use Connect with code" : "";
+    throw new Error(`Zoho token request failed: ${json.error ?? res.status}${hint}`);
+  }
+  return json;
+}
+
 async function cliqAccessToken(cfg: OpsWebhookConfig, accountsHost: string): Promise<string> {
   const secret = readSecret(cfg.cliqClientSecretEnc);
   const refresh = readSecret(cfg.cliqRefreshTokenEnc);
@@ -52,17 +67,8 @@ async function cliqAccessToken(cfg: OpsWebhookConfig, accountsHost: string): Pro
   const key = `${accountsHost}:${cfg.cliqClientId}:${refresh}`;
   if (tokenCache && tokenCache.key === key && tokenCache.exp > Date.now() + 60_000) return tokenCache.token;
 
-  const res = await fetch(`https://${accountsHost}/oauth/v2/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "refresh_token", client_id: cfg.cliqClientId, client_secret: secret, refresh_token: refresh }),
-    signal: AbortSignal.timeout(4000),
-  });
-  const json: any = await res.json().catch(() => ({}));
-  if (!json.access_token) {
-    const hint = json.error === "invalid_code" ? " — the Refresh Token must be the refresh_token from the code exchange (not the grant code), created on this data center" : "";
-    throw new Error(`Zoho token refresh failed: ${json.error ?? res.status}${hint}`);
-  }
+  const json = await zohoToken(accountsHost, { grant_type: "refresh_token", client_id: cfg.cliqClientId, client_secret: secret, refresh_token: refresh });
+  if (!json.access_token) throw new Error("Zoho returned no access token.");
   tokenCache = { key, token: json.access_token, exp: Date.now() + (Number(json.expires_in) || 3600) * 1000 };
   return json.access_token;
 }
@@ -88,6 +94,26 @@ export class OpsAlertService {
       cliqRefreshTokenEnc: cliqRefreshToken ? encryptSecret(cliqRefreshToken) : prev.cliqRefreshTokenEnc,
       updatedAt: new Date().toISOString(),
     });
+  }
+
+  // One-time: trade a Self Client grant code for a refresh token and store it (encrypted) with the
+  // client credentials. clientSecret blank → keep the stored one.
+  static async connectCliq(input: { url: string; clientId: string; clientSecret?: string; grantCode: string }): Promise<void> {
+    const accountsHost = cliqAccountsHost(input.url);
+    if (!accountsHost) throw new Error("Enter your Zoho Cliq API URL first (https://cliq.zoho.<region>/…).");
+    const prev = await this.getConfig();
+    const clientSecret = input.clientSecret || readSecret(prev.cliqClientSecretEnc);
+    if (!input.clientId || !clientSecret) throw new Error("Enter the Zoho Client ID and Client Secret.");
+    const json = await zohoToken(accountsHost, {
+      grant_type: "authorization_code",
+      client_id: input.clientId,
+      client_secret: clientSecret,
+      code: input.grantCode,
+    });
+    if (!json.refresh_token) throw new Error("Zoho returned no refresh token — generate a fresh grant code and try again.");
+    const { cliqClientSecretEnc: _s, cliqRefreshTokenEnc: _r, updatedAt: _u, ...rest } = prev;
+    await this.saveConfig({ ...rest, url: input.url, cliqClientId: input.clientId, cliqClientSecret: clientSecret, cliqRefreshToken: json.refresh_token });
+    tokenCache = null;
   }
 
   // POST {text} to the configured URL. Cliq API URLs (no zapikey) get an OAuth bearer; anything else

@@ -488,6 +488,35 @@ export async function saveOpsAlertConfigAction(input: z.input<typeof opsAlertSch
   }
 }
 
+const cliqConnectSchema = z.object({
+  url: z.string().trim().max(2000),
+  cliqClientId: z.string().trim().min(1, "Enter the Zoho Client ID.").max(200),
+  cliqClientSecret: z.string().trim().max(500).optional(),
+  grantCode: z.string().trim().min(10, "Paste the grant code from Zoho Self Client.").max(500),
+});
+
+// One-time exchange of a Self Client grant code for a stored refresh token (no curl needed).
+export async function connectCliqAction(input: z.input<typeof cliqConnectSchema>) {
+  const session = await requireSuperAdmin();
+  const parsed = cliqConnectSchema.safeParse(input);
+  if (!parsed.success) return fail("VALIDATION", parsed.error.issues[0]?.message ?? "Check the fields.");
+  try {
+    const { OpsAlertService } = await import("@/domains/platform/opsAlertService");
+    await OpsAlertService.connectCliq({ url: parsed.data.url, clientId: parsed.data.cliqClientId, clientSecret: parsed.data.cliqClientSecret, grantCode: parsed.data.grantCode });
+    await AuditService.log({
+      organizationId: session.user.organizationId ?? PLATFORM_ORG_ID,
+      userId: session.user.id,
+      action: "platform.connect_cliq",
+      entityType: "system",
+      metadata: { by: "super_admin" },
+    });
+    revalidatePath("/admin");
+    return ok(await OpsAlertService.getView());
+  } catch (e) {
+    return fail("VALIDATION", e instanceof Error ? e.message : "Could not connect to Zoho.");
+  }
+}
+
 export async function testOpsAlertAction() {
   await requireSuperAdmin();
   try {
