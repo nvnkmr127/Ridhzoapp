@@ -23,10 +23,11 @@ import {
   Send,
   Inbox,
   Target,
+  ExternalLink,
 } from "lucide-react";
 import type { MetaCapiConfig, CapiEventLog } from "@/domains/platform/capiService";
 type PublicCapiConfig = Omit<MetaCapiConfig, "accessToken"> & { accessToken: string; hasAccessToken: boolean };
-import { saveCapiConfigAction } from "@/lib/actions/platform";
+import { saveCapiConfigAction, sendCapiTestEventAction, listCapiLogsAction } from "@/lib/actions/platform";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -78,10 +79,42 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
   const { toast } = useToast();
   const [orgs] = React.useState<OrgSummary[]>(initial ?? []);
   const [busy, setBusy] = React.useState<string | null>(null);
+  const SECTIONS = [
+    { key: "overview", label: "Overview" },
+    { key: "billing", label: "Billing & invoices" },
+    { key: "health", label: "Tenant activity" },
+    { key: "growth", label: "Growth & ads" },
+  ] as const;
+  const [section, setSection] = React.useState<(typeof SECTIONS)[number]["key"]>("overview");
+  const show = (k: string) => section === k;
+  const [fleetLimit, setFleetLimit] = React.useState(100);
+  const [healthLimit, setHealthLimit] = React.useState(100);
   const [capiConfig, setCapiConfig] = React.useState<PublicCapiConfig>(
     initialCapiConfig ?? { pixelId: "", accessToken: "", testEventCode: "", enabled: false, hasAccessToken: false }
   );
-  const [capiLogs] = React.useState<CapiEventLog[]>(initialCapiLogs ?? []);
+  const [capiLogs, setCapiLogs] = React.useState<CapiEventLog[]>(initialCapiLogs ?? []);
+  // What is actually saved (the toggle above edits a draft until "Save Settings").
+  const [capiLive, setCapiLive] = React.useState(
+    !!(initialCapiConfig?.enabled && initialCapiConfig?.pixelId && initialCapiConfig?.hasAccessToken)
+  );
+  const [testingCapi, setTestingCapi] = React.useState(false);
+
+  const refreshCapiLogs = async () => {
+    const res = await listCapiLogsAction(25);
+    if (res.ok) setCapiLogs(res.data);
+    else toast({ title: "Couldn't refresh events", description: res.message, variant: "destructive" });
+  };
+
+  const handleCapiTest = async () => {
+    setTestingCapi(true);
+    try {
+      const res = await sendCapiTestEventAction();
+      toast(res.ok ? { title: "Test event sent", description: res.data.message } : { title: "Test event failed", description: res.message, variant: "destructive" });
+      await refreshCapiLogs();
+    } finally {
+      setTestingCapi(false);
+    }
+  };
   const [campaignStats] = React.useState(initialCampaigns);
   const [savingCapi, setSavingCapi] = React.useState(false);
 
@@ -90,8 +123,10 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
     try {
       const res = await saveCapiConfigAction(capiConfig);
       if (res.ok) {
-        toast({ title: "Meta Conversions Settings Saved", description: res.data.enabled ? "Active." : "Disabled." });
+        const live = !!(res.data.enabled && res.data.pixelId && res.data.hasAccessToken);
+        toast({ title: "Meta Conversions Settings Saved", description: live ? "Active." : res.data.enabled ? "Saved, but a Pixel ID and access token are both needed before events are sent." : "Disabled." });
         setCapiConfig(res.data);
+        setCapiLive(live);
       } else {
         toast({ title: "Save failed", description: res.message, variant: "destructive" });
       }
@@ -133,36 +168,60 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
     }
   }, []);
 
-  const handleExtendGrace = async (orgId: string) => {
-    setBillingBusyId(`extend-${orgId}`);
+  const billingName = (orgId: string) => billingList.find((b) => b.orgId === orgId)?.orgName ?? "this workspace";
+
+  const [refreshingFleet, setRefreshingFleet] = React.useState(false);
+  const handleRefreshFleet = async () => {
+    setRefreshingFleet(true);
     try {
-      const res = await extendGracePeriodAction(orgId, 7);
-      if (res.ok) {
-        toast({ title: "Grace Period Extended", description: "+7 days added to tenant grace period." });
-        await refreshBillingFleet();
-      } else {
-        toast({ title: "Failed to extend grace", description: res.message, variant: "destructive" });
-      }
+      await refreshBillingFleet();
+    } catch {
+      toast({ title: "Couldn't refresh", description: "Try again in a moment.", variant: "destructive" });
     } finally {
-      setBillingBusyId(null);
+      setRefreshingFleet(false);
     }
   };
 
-  const billingName = (orgId: string) => billingList.find((b) => b.orgId === orgId)?.orgName ?? "this workspace";
+  // One "why" dialog for the actions that change a tenant's access or books (all are audited with the reason).
+  type ReasonKind = "grace" | "paid" | "credit";
+  const [reasonDlg, setReasonDlg] = React.useState<{ kind: ReasonKind; id: string } | null>(null);
+  const [reasonText, setReasonText] = React.useState("");
+  const [reasonBusy, setReasonBusy] = React.useState(false);
+  const [offlineAmount, setOfflineAmount] = React.useState("");
+  const openReason = (kind: ReasonKind, id: string) => {
+    setReasonText(kind === "credit" ? "Double charge refund" : "");
+    setOfflineAmount("");
+    setReasonDlg({ kind, id });
+  };
 
-  const handleMarkPaid = async (orgId: string) => {
-    if (!(await confirm({ title: `Mark ${billingName(orgId)} as paid offline?`, description: "They get 30 days of full access without a charge.", confirmLabel: "Mark paid" }))) return;
-    setBillingBusyId(`paid-${orgId}`);
+  const submitReason = async () => {
+    if (!reasonDlg) return;
+    const reason = reasonText.trim();
+    if (reason.length < 3) {
+      toast({ title: "Add a reason", description: "3+ characters — it's saved to the audit log.", variant: "destructive" });
+      return;
+    }
+    setReasonBusy(true);
     try {
-      const res = await markTenantManuallyPaidAction(orgId, 30);
-      if (res.ok) {
-        toast({ title: "Marked Paid Offline", description: "Paid offline access granted for 30 days." });
+      if (reasonDlg.kind === "grace") {
+        const res = await extendGracePeriodAction(reasonDlg.id, 7, reason);
+        if (!res.ok) return void toast({ title: "Failed to extend grace", description: res.message, variant: "destructive" });
+        toast({ title: "Grace Period Extended", description: "+7 days added." });
+        await refreshBillingFleet();
+      } else if (reasonDlg.kind === "paid") {
+        const res = await markTenantManuallyPaidAction(reasonDlg.id, 30, reason, Number(offlineAmount) > 0 ? Number(offlineAmount) : undefined);
+        if (!res.ok) return void toast({ title: "Failed to update payment", description: res.message, variant: "destructive" });
+        toast({ title: "Offline payment recorded", description: res.data.invoiceNumber ? `Full access for 30 days. Invoice ${res.data.invoiceNumber} issued.` : "Full access for 30 days. No invoice was issued." });
         await refreshBillingFleet();
       } else {
-        toast({ title: "Failed to update payment", description: res.message, variant: "destructive" });
+        const res = await issueCreditNoteAction(reasonDlg.id, reason);
+        if (!res.ok) return void toast({ title: "Failed to issue credit note", description: res.message, variant: "destructive" });
+        toast({ title: "Credit Note Issued", description: `${res.data.invoiceNumber} for ₹${Math.abs(res.data.totalAmount)}. No money is moved — refund it in Razorpay or your bank.` });
+        setInvoices((prev) => [res.data, ...prev.map((i) => (i.id === reasonDlg.id ? { ...i, status: "refunded" as const } : i))]);
       }
+      setReasonDlg(null);
     } finally {
-      setBillingBusyId(null);
+      setReasonBusy(false);
     }
   };
 
@@ -172,10 +231,10 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
     try {
       const res = await sendDunningNoticeAction(orgId);
       if (res.ok) {
-        toast({ title: "Payment Reminder Sent", description: "Email & in-app warning sent to tenant admins." });
+        toast({ title: "Payment Reminder Sent", description: `Emailed ${res.data.sent} admin(s).` });
         await refreshBillingFleet();
       } else {
-        toast({ title: "Failed to send dunning", description: res.message, variant: "destructive" });
+        toast({ title: "Reminder not sent", description: res.message, variant: "destructive" });
       }
     } finally {
       setBillingBusyId(null);
@@ -186,13 +245,23 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
   const [invoices, setInvoices] = React.useState<TaxInvoice[]>(initialInvoices ?? []);
   const [invoiceModalOpen, setInvoiceModalOpen] = React.useState(false);
   const [invoiceOrgId, setInvoiceOrgId] = React.useState("");
-  const [invoicePlan, setInvoicePlan] = React.useState("starter");
+  const [invoicePlan, setInvoicePlan] = React.useState<"starter" | "unlimited">("starter");
   const [invoiceAmount, setInvoiceAmount] = React.useState("249");
   const [invoiceGstin, setInvoiceGstin] = React.useState("");
+  const [invoiceStatus, setInvoiceStatus] = React.useState<"paid" | "issued">("paid");
   const [invoiceGenerating, setInvoiceGenerating] = React.useState(false);
+
+  const invoiceBase = Number(invoiceAmount) || 0;
+  const invoiceGst = Math.round(invoiceBase * 18) / 100;
+  const invoiceTotal = invoiceBase + invoiceGst;
 
   const handleGenerateInvoice = async () => {
     if (!invoiceOrgId) return;
+    if (!(await confirm({
+      title: `Issue invoice for ${orgs.find((o) => o.id === invoiceOrgId)?.name ?? "this workspace"}?`,
+      description: `Total ₹${invoiceTotal.toLocaleString("en-IN", { maximumFractionDigits: 2 })} incl. GST. Invoice numbers can't be reused, and the workspace's billing contact is emailed a copy.`,
+      confirmLabel: "Issue invoice",
+    }))) return;
     setInvoiceGenerating(true);
     try {
       const res = await generateInvoiceAction({
@@ -200,7 +269,7 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
         plan: invoicePlan,
         amount: Number(invoiceAmount) || 0,
         gstin: invoiceGstin || null,
-        status: "paid",
+        status: invoiceStatus,
       });
       if (res.ok) {
         toast({ title: "Tax Invoice Issued", description: `Generated ${res.data.invoiceNumber}` });
@@ -226,27 +295,6 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
     }
   };
 
-  const handleIssueCreditNote = async (inv: TaxInvoice) => {
-    const reason = prompt(
-      `Issue GST Credit Note for ${inv.invoiceNumber} (₹${inv.totalAmount})?\nEnter reason:`,
-      "Double charge refund"
-    );
-    if (reason === null) return;
-    const res = await issueCreditNoteAction(inv.id, reason);
-    if (res.ok) {
-      toast({
-        title: "Credit Note Issued",
-        description: `${res.data.invoiceNumber} issued for ₹${Math.abs(res.data.totalAmount)}.`,
-      });
-      setInvoices((prev) => [
-        res.data,
-        ...prev.map((i) => (i.id === inv.id ? { ...i, status: "refunded" as const } : i)),
-      ]);
-    } else {
-      toast({ title: "Failed to issue credit note", description: res.message, variant: "destructive" });
-    }
-  };
-
   // --- Coupons State ---
   const [coupons, setCoupons] = React.useState<Coupon[]>(initialCoupons ?? []);
   const [couponModalOpen, setCouponModalOpen] = React.useState(false);
@@ -255,10 +303,12 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
   const [couponValue, setCouponValue] = React.useState("25");
   const [couponMax, setCouponMax] = React.useState("100");
   const [couponOfferId, setCouponOfferId] = React.useState("");
+  const [couponPlans, setCouponPlans] = React.useState<string[]>(["starter", "unlimited"]);
+  const [couponExpiry, setCouponExpiry] = React.useState("");
   const [couponSaving, setCouponSaving] = React.useState(false);
 
   const handleCreateCoupon = async () => {
-    if (!couponCode.trim()) return;
+    if (!couponCode.trim() || !couponOfferId.trim() || couponPlans.length === 0) return;
     setCouponSaving(true);
     try {
       const res = await createCouponAction({
@@ -267,6 +317,8 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
         discountValue: Number(couponValue) || 0,
         maxRedemptions: Number(couponMax) || 0,
         razorpayOfferId: couponOfferId.trim() || null,
+        plans: couponPlans,
+        expiresAt: couponExpiry || "",
       });
       if (res.ok) {
         toast({ title: "Coupon Created", description: `Code ${res.data.code} is now live.` });
@@ -274,6 +326,7 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
         setCouponModalOpen(false);
         setCouponCode("");
         setCouponOfferId("");
+        setCouponExpiry("");
       } else {
         toast({ title: "Failed to create coupon", description: res.message, variant: "destructive" });
       }
@@ -287,6 +340,8 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
     if (res.ok) {
       setCoupons((prev) => prev.map((c) => (c.id === id ? { ...c, active } : c)));
       toast({ title: active ? "Coupon Activated" : "Coupon Deactivated" });
+    } else {
+      toast({ title: "Couldn't update coupon", description: res.message, variant: "destructive" });
     }
   };
 
@@ -297,10 +352,12 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
     if (res.ok) {
       setCoupons((prev) => prev.filter((c) => c.id !== id));
       toast({ title: "Coupon Deleted" });
+    } else {
+      toast({ title: "Couldn't delete coupon", description: res.message, variant: "destructive" });
     }
   };
 
-  // --- Support Tickets State ---
+  // --- Executive digest state ---
   const [digestConfig, setDigestConfig] = React.useState<ExecutiveDigestConfig>(
     initialDigestConfig ?? { enabled: false, frequency: "weekly", recipients: [], lastSentAt: null }
   );
@@ -368,12 +425,11 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
     }
   };
 
-  // --- Anomaly & Abuse Detection State ---
+  // --- Credit grant state ---
   const [creditModalOrg, setCreditModalOrg] = React.useState<TenantHealthSummary | null>(null);
   const [aiGrantAmount, setAiGrantAmount] = React.useState("500");
   const [grantingCredits, setGrantingCredits] = React.useState(false);
 
-  // Compliance & GDPR Data Request state
   const impersonate = useImpersonate(setBusy, confirm);
 
   async function handleGrantCredits() {
@@ -418,6 +474,22 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
     <>
       {confirmDialog}
       <div className="space-y-6">
+        <div role="tablist" className="flex flex-wrap gap-1.5">
+          {SECTIONS.map((sec) => (
+            <Button
+              key={sec.key}
+              role="tab"
+              aria-selected={section === sec.key}
+              variant={section === sec.key ? "default" : "outline"}
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => setSection(sec.key)}
+            >
+              {sec.label}
+            </Button>
+          ))}
+        </div>
+        {show("overview") && (<>
         {/* Executive RevOps KPI Bar */}
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
           <div className="rounded-xl border bg-card p-4 shadow-sm">
@@ -468,15 +540,17 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
 
           <div className="rounded-xl border bg-card p-4 shadow-sm">
             <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Cancellation Danger Index
+              Paying Accounts At Risk
             </div>
             <div className="mt-2 text-2xl font-bold tracking-tight text-amber-600 dark:text-amber-400">
               {revops?.churnRiskCount ?? 0}
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">Tenants inactive &gt;7 days</p>
+            <p className="mt-1 text-xs text-muted-foreground">Paying workspaces with no lead activity for 7+ days</p>
           </div>
         </div>
 
+        </>)}
+        {show("overview") && (<>
         {/* Revenue at a glance — only figures we can actually compute (list-price MRR; no invented upgrade/churn flows) */}
         {revops && (
           <div className="rounded-2xl border bg-card p-5 shadow-sm space-y-3">
@@ -485,15 +559,10 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
                 <TrendingUp className="h-4 w-4 text-primary" /> Monthly revenue
               </h3>
               <p className="text-xs text-muted-foreground">
-                At list price for paying workspaces. Trials and complimentary plans are excluded; coupons aren&apos;t deducted.
+                Figures use list price for paying workspaces. Trials and complimentary plans are excluded; coupons aren&apos;t deducted.
               </p>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
-              <div className="rounded-lg bg-primary/10 border border-primary/20 p-3">
-                <div className="text-[11px] font-medium text-primary uppercase">MRR</div>
-                <div className="text-lg font-bold mt-1 text-foreground">₹{revops.mrr.toLocaleString()}</div>
-                <p className="text-[10px] text-muted-foreground">{revops.paidAccounts} paying · ARR ₹{revops.arr.toLocaleString()}</p>
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
               <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3">
                 <div className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 uppercase">From new workspaces</div>
                 <div className="text-lg font-bold mt-1 text-emerald-600 dark:text-emerald-400">₹{revops.newAccountsMrr.toLocaleString()}</div>
@@ -502,7 +571,7 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
               <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3">
                 <div className="text-[11px] font-medium text-destructive uppercase">At risk</div>
                 <div className="text-lg font-bold mt-1 text-destructive">₹{revops.churnRiskMrr.toLocaleString()}</div>
-                <p className="text-[10px] text-muted-foreground">{revops.churnRiskCount} inactive 7+ days</p>
+                <p className="text-[10px] text-muted-foreground">{revops.churnRiskCount} paying workspaces inactive 7+ days</p>
               </div>
               <div className="rounded-lg bg-muted/40 p-3">
                 <div className="text-[11px] font-medium text-muted-foreground uppercase">Complimentary</div>
@@ -513,6 +582,8 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
           </div>
         )}
 
+        </>)}
+        {show("overview") && (<>
         {/* Signup -> Activation -> Paid Funnel Card */}
         {revops?.funnel && (
           <div className="rounded-2xl border bg-card p-5 shadow-sm space-y-4">
@@ -522,7 +593,7 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
                   <Target className="h-4 w-4 text-primary" /> Signup → Activation → Paid Funnel
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Cohort conversion rates for last 30 days of tenant signups: dropoffs between onboarding, lead creation, and paid tiers.
+                  Workspaces that signed up in the last 30 days. Many are still in their free trial, so the paid rate keeps rising as trials end.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -535,7 +606,7 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
               {revops.funnel.stages.map((stage) => {
                 const isDropoff = stage.dropoffRate !== undefined && stage.dropoffRate > 0;
                 return (
@@ -577,16 +648,18 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
           </div>
         )}
 
+        </>)}
+        {show("billing") && (<>
         {/* Subscription Payment & Dunning Fleet Inspector Card */}
         <div className="rounded-2xl border bg-card shadow-sm">
           <div className="p-5 border-b space-y-3">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h3 className="text-base font-semibold flex items-center gap-2">
-                  <CreditCard className="h-4 w-4 text-primary" /> Subscription Payment &amp; Dunning Fleet Inspector
+                  <CreditCard className="h-4 w-4 text-primary" /> Payments &amp; Overdue Accounts
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Live account-by-account payment status, 7-day grace period countdowns, automated dunning dispatch, and delinquency feature locking.
+                  Every workspace's payment status. Overdue accounts get a 7-day grace period, then features lock until they pay.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -594,9 +667,10 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
                   variant="outline"
                   size="sm"
                   className="h-8 text-xs gap-1.5"
-                  onClick={refreshBillingFleet}
+                  disabled={refreshingFleet}
+                  onClick={handleRefreshFleet}
                 >
-                  <RefreshCw className="h-3.5 w-3.5" /> Refresh Fleet
+                  <RefreshCw className={`h-3.5 w-3.5 ${refreshingFleet ? "animate-spin" : ""}`} /> Refresh
                 </Button>
               </div>
             </div>
@@ -613,7 +687,7 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
                 />
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">
-                {(["all", "paid", "grace_period", "locked", "pending", "free"] as const).map((statusVal) => {
+                {(["all", "paid", "trial", "grace_period", "locked", "pending", "complimentary", "free"] as const).map((statusVal) => {
                   const count =
                     statusVal === "all"
                       ? billingList.length
@@ -621,6 +695,8 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
                   const labels: Record<string, string> = {
                     all: "All Accounts",
                     paid: "Paid",
+                    trial: "Trial",
+                    complimentary: "Free for client",
                     grace_period: "Grace Period",
                     locked: "Locked / Delinquent",
                     pending: "Pending Checkout",
@@ -650,9 +726,9 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
                   <th className="p-3 pl-5">Tenant</th>
                   <th className="p-3">Plan &amp; Gateway</th>
                   <th className="p-3">Payment Status</th>
-                  <th className="p-3">Failed &amp; Overdue Payments</th>
+                  <th className="p-3">Payment problem</th>
                   <th className="p-3">Next Renewal / Expiry</th>
-                  <th className="p-3 pr-5 text-right">Lifecycle Overrides</th>
+                  <th className="p-3 pr-5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -663,11 +739,12 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
                     </td>
                   </tr>
                 ) : (
-                  filteredBilling.map((b) => {
+                  filteredBilling.slice(0, fleetLimit).map((b) => {
                     const isGrace = b.status === "grace_period";
                     const isLocked = b.status === "locked";
                     const isPaid = b.status === "paid";
                     const isPending = b.status === "pending";
+                    const overdue = isGrace || isLocked;
                     return (
                       <tr key={b.orgId} className="hover:bg-muted/30 transition-colors">
                         <td className="p-3 pl-5">
@@ -715,6 +792,16 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
                               Pending Checkout
                             </Badge>
                           )}
+                          {b.status === "trial" && (
+                            <Badge className="bg-sky-500/15 text-sky-700 dark:text-sky-400 border-sky-500/30">
+                              Trial{b.trialEndsAt ? ` · ends ${new Date(b.trialEndsAt).toLocaleDateString()}` : ""}
+                            </Badge>
+                          )}
+                          {b.status === "complimentary" && (
+                            <Badge variant="outline" className="text-muted-foreground">
+                              Free for client
+                            </Badge>
+                          )}
                           {b.status === "free" && (
                             <Badge variant="outline" className="text-muted-foreground">
                               Free Tier
@@ -756,14 +843,13 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
                         </td>
                         <td className="p-3 pr-5 text-right">
                           <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                            {(isGrace || isLocked) && (
+                            {overdue && (
                               <>
                                 <Button
                                   variant="outline"
                                   size="sm"
                                   className="h-7 px-2 text-[11px] text-amber-700 dark:text-amber-300 border-amber-500/30"
-                                  disabled={billingBusyId === `extend-${b.orgId}`}
-                                  onClick={() => handleExtendGrace(b.orgId)}
+                                                                    onClick={() => openReason("grace", b.orgId)}
                                   title="Add 7 extra days of grace period"
                                 >
                                   +7d Grace
@@ -774,22 +860,21 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
                                   className="h-7 px-2 text-[11px] gap-1"
                                   disabled={billingBusyId === `dunning-${b.orgId}`}
                                   onClick={() => handleSendDunning(b.orgId)}
-                                  title="Send dunning notice email & in-app alert"
+                                  title="Email the workspace admins a payment reminder"
                                 >
-                                  <Mail className="h-3 w-3" /> Mail Alert
+                                  <Mail className="h-3 w-3" /> Send reminder
                                 </Button>
                               </>
                             )}
-                            <Button
+                            {overdue && (                            <Button
                               variant="outline"
                               size="sm"
                               className="h-7 px-2 text-[11px] text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
-                              disabled={billingBusyId === `paid-${b.orgId}`}
-                              onClick={() => handleMarkPaid(b.orgId)}
-                              title="Mark account manually paid offline for 30 days"
+                                                            onClick={() => openReason("paid", b.orgId)}
+                              title="Payment received outside Razorpay: restores full access for 30 days"
                             >
-                              Mark Paid
-                            </Button>
+                              Record offline payment
+                            </Button>)}
                           </div>
                         </td>
                       </tr>
@@ -797,20 +882,33 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
                   })
                 )}
               </tbody>
+            {filteredBilling.length > fleetLimit && (
+              <tfoot>
+                <tr>
+                  <td colSpan={9} className="p-3 text-center">
+                    <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setFleetLimit((n) => n + 100)}>
+                      Show more ({filteredBilling.length - fleetLimit} hidden)
+                    </Button>
+                  </td>
+                </tr>
+              </tfoot>
+            )}
             </table>
           </div>
         </div>
 
+        </>)}
+        {show("health") && (<>
         {/* Tenant Cancellation Risk & Health Predictor Card */}
         <div className="rounded-2xl border bg-card shadow-sm">
           <div className="p-5 border-b space-y-3">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h3 className="text-base font-semibold flex items-center gap-2">
-                  <HeartPulse className="h-4 w-4 text-primary" /> Tenant Cancellation Risk &amp; Usage Quota Predictor
+                  <HeartPulse className="h-4 w-4 text-primary" /> Tenant Activity &amp; AI Credits
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Real-time engagement telemetry detecting slowing and at-risk accounts with instant support impersonation and credit grants.
+                  Based on when each workspace last touched a lead, least active first. Only paying workspaces count towards revenue at risk.
                 </p>
               </div>
             </div>
@@ -865,12 +963,12 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
               <tbody className="divide-y divide-border">
                 {filteredHealth.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-muted-foreground">
+                    <td colSpan={7} className="p-8 text-center text-muted-foreground">
                       No organizations found matching the filter.
                     </td>
                   </tr>
                 ) : (
-                  filteredHealth.map((tenant) => (
+                  filteredHealth.slice(0, healthLimit).map((tenant) => (
                     <tr key={tenant.id} className="hover:bg-muted/30 transition-colors">
                       <td className="p-3 pl-5">
                         <Link
@@ -904,7 +1002,7 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
                         )}
                         {tenant.health === "critical" && (
                           <Badge className="bg-destructive/10 text-destructive hover:bg-destructive/20 border-destructive/20">
-                            Critical Cancellation
+                            Inactive 14d+
                           </Badge>
                         )}
                       </td>
@@ -959,19 +1057,32 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
                   ))
                 )}
               </tbody>
+            {filteredHealth.length > healthLimit && (
+              <tfoot>
+                <tr>
+                  <td colSpan={9} className="p-3 text-center">
+                    <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setHealthLimit((n) => n + 100)}>
+                      Show more ({filteredHealth.length - healthLimit} hidden)
+                    </Button>
+                  </td>
+                </tr>
+              </tfoot>
+            )}
             </table>
           </div>
         </div>
 
+        </>)}
+        {show("billing") && (<>
         {/* GST Tax Invoicing & Billing Ledger Card */}
         <div className="rounded-2xl border bg-card shadow-sm">
           <div className="p-5 border-b flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-base font-semibold flex items-center gap-2">
-                <Receipt className="h-4 w-4 text-primary" /> Manual invoices (offline / bank-transfer payments)
+                <Receipt className="h-4 w-4 text-primary" /> Tax invoices &amp; credit notes
               </h3>
               <p className="text-xs text-muted-foreground">
-                Sequential tax-compliant invoice generator (SAC 998313, 18% GST breakdown) with audit trails.
+                Razorpay payments get an invoice automatically. Use "Issue Tax Invoice" for customers who pay offline. Showing the latest 50.
               </p>
             </div>
             <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => setInvoiceModalOpen(true)}>
@@ -998,7 +1109,7 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
                 {invoices.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="p-6 text-center text-muted-foreground">
-                      No manual invoices yet. Online (Razorpay) payments get their invoices from Razorpay automatically — use this only for customers who pay offline.
+                      No invoices yet.
                     </td>
                   </tr>
                 ) : (
@@ -1051,18 +1162,21 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
                       </td>
                       <td className="p-3 pr-5 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          <Link href={`/invoice/${inv.id}`} target="_blank" title="Open invoice" className="inline-flex h-6 items-center px-1.5 text-muted-foreground hover:text-primary">
+                            <ExternalLink className="h-3 w-3" />
+                          </Link>
                           {inv.status === "paid" && inv.type !== "credit_note" && (
                             <Button
                               variant="ghost"
                               size="sm"
                               className="h-6 px-2 text-[10px] text-purple-600 hover:bg-purple-500/10"
-                              onClick={() => handleIssueCreditNote(inv)}
-                              title="Issue GST Credit Note / Refund"
+                              onClick={() => openReason("credit", inv.id)}
+                              title="Issue a GST credit note (records the reversal; does not move money)"
                             >
                               Credit Note
                             </Button>
                           )}
-                          {inv.status !== "void" && inv.status !== "refunded" && inv.type !== "credit_note" && (
+                          {inv.status === "issued" && inv.type !== "credit_note" && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -1082,6 +1196,8 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
           </div>
         </div>
 
+        </>)}
+        {show("billing") && (<>
         {/* Coupons & Promo Codes Engine Card */}
         <div className="rounded-2xl border bg-card shadow-sm">
           <div className="p-5 border-b flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -1175,6 +1291,8 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
           </div>
         </div>
 
+        </>)}
+        {show("overview") && (<>
         {/* Automated Executive Email Digest Card */}
         <div className="rounded-2xl border bg-card p-5 space-y-4 shadow-sm">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b pb-4">
@@ -1196,7 +1314,7 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
                   )}
                 </h3>
                 <p className="text-xs text-muted-foreground">
-                  Delivers scheduled KPI briefings (ARR, tenant velocity, churn risks, DLQ status) directly to leadership inboxes.
+                  Emails a revenue and health summary on the schedule below (checked hourly). Save the schedule after changing it.
                 </p>
               </div>
             </div>
@@ -1296,6 +1414,8 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
           </div>
         </div>
 
+        </>)}
+        {show("growth") && (<>
         {/* Growth Campaigns & Attribution Performance */}
         <div className="rounded-2xl border bg-card shadow-sm p-5 space-y-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b pb-3">
@@ -1304,11 +1424,11 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
                 <Target className="h-4 w-4 text-primary" /> Growth Campaigns &amp; Conversion Attribution
               </h3>
               <p className="text-xs text-muted-foreground">
-                Multi-touch tracking for ad campaigns (Meta, Google, Affiliates) capturing UTM parameters, click IDs, and paid tenant conversions.
+                Each workspace is credited to the campaign it first arrived from (UTM parameters and ad click IDs), across all signups to date.
               </p>
             </div>
             <Badge variant="outline" className="font-mono text-xs w-fit">
-              {campaignStats?.campaigns?.length ?? 0} Active Channels
+              {campaignStats?.campaigns?.length ?? 0} campaign groups
             </Badge>
           </div>
 
@@ -1348,11 +1468,11 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
               <div className="text-xl font-bold flex items-center gap-1.5">
                 <span
                   className={`h-2.5 w-2.5 rounded-full ${
-                    capiConfig.enabled ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground"
+                    capiLive ? "bg-emerald-500 animate-pulse" : "bg-muted-foreground"
                   }`}
                 />
                 <span className="text-sm">
-                  {capiConfig.enabled ? "Live Active" : "Paused"}
+                  {capiLive ? "Live" : capiConfig.enabled ? "Needs setup" : "Paused"}
                 </span>
               </div>
               <div className="text-[10px] text-muted-foreground">Server-to-server tracking</div>
@@ -1414,12 +1534,14 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
           </div>
         </div>
 
+        </>)}
+        {show("growth") && (<>
         {/* Meta Conversions API (Conversions) & Server-Side Ad Engine */}
         <div className="rounded-2xl border bg-card shadow-sm p-5 space-y-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b pb-3">
             <div>
               <h3 className="text-base font-semibold flex items-center gap-2">
-                <Radio className="h-4 w-4 text-primary" /> Meta Conversions API (Conversions) Server-Side Tracking
+                <Radio className="h-4 w-4 text-primary" /> Meta Conversions API
               </h3>
               <p className="text-xs text-muted-foreground">
                 Dispatches server-to-server <code className="bg-muted px-1 rounded font-mono">CompleteRegistration</code> and <code className="bg-muted px-1 rounded font-mono">Subscribe</code> events to Meta Graph API, bypassing ad-blockers and iOS 14.5+ ATT restrictions.
@@ -1434,6 +1556,9 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
               >
                 <Power className="h-3.5 w-3.5" />
                 {capiConfig.enabled ? "Conversions Enabled" : "Conversions Disabled"}
+              </Button>
+              <Button size="sm" variant="outline" className="h-8 text-xs" disabled={testingCapi || !capiLive} onClick={handleCapiTest} title={capiLive ? "Sends a test Lead event using your email" : "Save a Pixel ID and token, and enable, first"}>
+                {testingCapi ? "Sending..." : "Send test event"}
               </Button>
               <Button
                 size="sm"
@@ -1485,7 +1610,9 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
           <div className="pt-2">
             <div className="text-xs font-semibold text-foreground mb-2 flex items-center justify-between">
               <span>Recent Server-Side Conversions Dispatches</span>
-              <span className="text-[10px] text-muted-foreground font-normal">Last {capiLogs.length} events logged</span>
+              <button type="button" onClick={refreshCapiLogs} className="text-[10px] text-muted-foreground font-normal hover:text-primary inline-flex items-center gap-1">
+                <RefreshCw className="h-3 w-3" /> Refresh · last {capiLogs.length} events
+              </button>
             </div>
             <div className="rounded-xl border overflow-hidden">
               <table className="w-full text-[11px]">
@@ -1501,7 +1628,7 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
                   {capiLogs.length === 0 ? (
                     <tr>
                       <td colSpan={4} className="p-4 text-center text-muted-foreground">
-                        No Conversions events dispatched yet. Click &quot;Send Test Ping&quot; above to verify connectivity.
+                        No Conversions events dispatched yet. Use &quot;Send test event&quot; above to check the connection.
                       </td>
                     </tr>
                   ) : (
@@ -1539,7 +1666,42 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
             </div>
           </div>
         </div>
+        </>)}
       </div>
+
+      {/* Reason dialog: grace / offline payment / credit note */}
+      <Dialog open={!!reasonDlg} onOpenChange={(open) => !open && !reasonBusy && setReasonDlg(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {reasonDlg?.kind === "grace" && `Give ${billingName(reasonDlg.id)} 7 more days?`}
+              {reasonDlg?.kind === "paid" && `Record an offline payment for ${billingName(reasonDlg.id)}?`}
+              {reasonDlg?.kind === "credit" && `Issue a credit note for ${invoices.find((i) => i.id === reasonDlg.id)?.invoiceNumber ?? "this invoice"}?`}
+            </DialogTitle>
+            <DialogDescription>
+              {reasonDlg?.kind === "grace" && "They keep full access for 7 more days and are notified."}
+              {reasonDlg?.kind === "paid" && "Full access for 30 days without a Razorpay charge. Enter the amount to also issue the tax invoice."}
+              {reasonDlg?.kind === "credit" && "Reverses the invoice for GST. It doesn't refund any money — do that in Razorpay or your bank."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <label htmlFor="reason" className="text-xs font-medium text-foreground">Reason (saved to the audit log)</label>
+            <Input id="reason" value={reasonText} onChange={(e) => setReasonText(e.target.value)} maxLength={500} className="h-9 text-xs" autoFocus />
+          </div>
+          {reasonDlg?.kind === "paid" && (
+            <div className="space-y-2 pb-2">
+              <label htmlFor="offline-amt" className="text-xs font-medium text-foreground">Amount received before GST, ₹ (optional — issues a paid tax invoice)</label>
+              <Input id="offline-amt" type="number" min="0" value={offlineAmount} onChange={(e) => setOfflineAmount(e.target.value)} className="h-9 text-xs font-mono" placeholder="Leave blank for no invoice" />
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setReasonDlg(null)} disabled={reasonBusy}>Cancel</Button>
+            <Button size="sm" onClick={submitReason} disabled={reasonBusy || reasonText.trim().length < 3}>
+              {reasonBusy ? "Working..." : "Confirm"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Credit Grant Dialog */}
       <Dialog open={!!creditModalOrg} onOpenChange={(open) => !open && setCreditModalOrg(null)}>
@@ -1612,21 +1774,19 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <label className="text-xs font-medium text-foreground">Plan Tier</label>
-                <Select value={invoicePlan} onValueChange={setInvoicePlan}>
+                <Select value={invoicePlan} onValueChange={(v) => setInvoicePlan(v as "starter" | "unlimited")}>
                   <SelectTrigger className="h-9 text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="starter">Starter</SelectItem>
-                    <SelectItem value="starter">Starter</SelectItem>
                     <SelectItem value="unlimited">Unlimited</SelectItem>
-                    <SelectItem value="enterprise">Enterprise</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs font-medium text-foreground">Base Amount</label>
+                <label className="text-xs font-medium text-foreground">Amount before GST (₹)</label>
                 <Input
                   type="number"
                   min="0"
@@ -1638,6 +1798,19 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
             </div>
 
             <div className="space-y-2">
+              <label className="text-xs font-medium text-foreground">Payment</label>
+              <Select value={invoiceStatus} onValueChange={(v) => setInvoiceStatus(v as "paid" | "issued")}>
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="paid">Already paid</SelectItem>
+                  <SelectItem value="issued">Not paid yet</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
               <label className="text-xs font-medium text-foreground">B2B GSTIN (Optional)</label>
               <Input
                 placeholder="29ABCDE1234F1Z5"
@@ -1646,6 +1819,12 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
                 className="h-9 text-xs font-mono"
               />
             </div>
+          </div>
+
+          <div className="rounded-lg bg-muted/40 p-3 text-xs space-y-0.5">
+            <div className="flex justify-between"><span className="text-muted-foreground">GST 18%</span><span className="font-mono">₹{invoiceGst.toLocaleString("en-IN")}</span></div>
+            <div className="flex justify-between font-semibold"><span>Total</span><span className="font-mono">₹{invoiceTotal.toLocaleString("en-IN")}</span></div>
+            <p className="text-[10px] text-muted-foreground pt-1">GST is added on top of the amount. Split into CGST/SGST or IGST is decided from the GSTIN.</p>
           </div>
 
           <DialogFooter>
@@ -1707,7 +1886,7 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-medium text-foreground">Razorpay Offer ID</label>
+              <label className="text-xs font-medium text-foreground">Razorpay Offer ID (required)</label>
               <Input
                 value={couponOfferId}
                 onChange={(e) => setCouponOfferId(e.target.value)}
@@ -1715,8 +1894,29 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
                 className="h-9 text-xs font-mono"
               />
               <p className="text-[11px] text-muted-foreground">
-                Create the offer (same discount) in Razorpay → Offers, enable it for subscriptions, paste its ID here. Codes without one can&apos;t be redeemed.
+                Create the offer (same discount) in Razorpay → Offers, enable it for subscriptions, paste its ID here. Without it customers can't use the code.
               </p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-foreground">Valid for plans</label>
+              <div className="flex gap-3 text-xs">
+                {["starter", "unlimited"].map((p) => (
+                  <label key={p} className="flex items-center gap-1.5 capitalize">
+                    <input
+                      type="checkbox"
+                      checked={couponPlans.includes(p)}
+                      onChange={(e) => setCouponPlans((prev) => (e.target.checked ? [...prev, p] : prev.filter((x) => x !== p)))}
+                    />
+                    {p}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-foreground">Expires on (optional)</label>
+              <Input type="date" value={couponExpiry} onChange={(e) => setCouponExpiry(e.target.value)} className="h-9 text-xs" />
             </div>
 
             <div className="space-y-2">
@@ -1736,7 +1936,7 @@ export function RevOpsTab({ initial = [], revops, tenantHealth = [], initialBill
             <Button variant="outline" size="sm" onClick={() => setCouponModalOpen(false)}>
               Cancel
             </Button>
-            <Button size="sm" disabled={couponSaving || !couponCode.trim()} onClick={handleCreateCoupon}>
+            <Button size="sm" disabled={couponSaving || !couponCode.trim() || !couponOfferId.trim() || couponPlans.length === 0} onClick={handleCreateCoupon}>
               {couponSaving ? "Creating..." : "Save & Activate Coupon"}
             </Button>
           </DialogFooter>

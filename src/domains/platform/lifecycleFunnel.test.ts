@@ -36,7 +36,7 @@ describe("RevOpsService.getLifecycleFunnel", () => {
     expect(funnel.activationRate).toBe(0);
     expect(funnel.paidConversionRate).toBe(0);
     expect(funnel.churnRate).toBe(0);
-    expect(funnel.stages).toHaveLength(4);
+    expect(funnel.stages).toHaveLength(5);
     expect(funnel.stages[0].count).toBe(0);
   });
 
@@ -88,7 +88,7 @@ describe("RevOpsService.getLifecycleFunnel", () => {
     expect(funnel.paidConversionRate).toBe(50);
     expect(funnel.churnRate).toBe(25);
 
-    const [signupStage, activatedStage, paidStage, churnedStage] = funnel.stages;
+    const [signupStage, activatedStage, , paidStage, churnedStage] = funnel.stages;
     expect(signupStage.stage).toBe("signed_up");
     expect(signupStage.count).toBe(4);
     expect(signupStage.rate).toBe(100);

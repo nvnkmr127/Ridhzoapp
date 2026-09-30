@@ -150,4 +150,21 @@ describe("ExecutiveDigestService", () => {
       })
     );
   });
+
+  it("sends on schedule only when enabled and a full period has passed", async () => {
+    const send = vi.spyOn(ExecutiveDigestService, "sendDigest").mockResolvedValue({ count: 1, recipients: ["a@b.co"] });
+    const cfg = (o: object) => vi.mocked(PlatformConfigService.get).mockResolvedValue({ enabled: true, frequency: "weekly", recipients: [], lastSentAt: null, ...o } as any);
+    const now = Date.now();
+
+    cfg({ enabled: false });
+    expect(await ExecutiveDigestService.sendDigestIfDue(now)).toBe(false);
+    cfg({ lastSentAt: new Date(now - 2 * 86_400_000).toISOString() });
+    expect(await ExecutiveDigestService.sendDigestIfDue(now)).toBe(false);
+    cfg({ lastSentAt: new Date(now - 7 * 86_400_000).toISOString() });
+    expect(await ExecutiveDigestService.sendDigestIfDue(now)).toBe(true);
+    cfg({ frequency: "daily", lastSentAt: null });
+    expect(await ExecutiveDigestService.sendDigestIfDue(now)).toBe(true);
+    expect(send).toHaveBeenCalledTimes(2);
+    send.mockRestore();
+  });
 });

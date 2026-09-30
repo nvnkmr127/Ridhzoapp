@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { PlatformConfigService } from "./configService";
+import { encryptSecret, readSecret } from "@/lib/crypto/secret";
 
 export interface MetaCapiConfig {
   pixelId: string;
@@ -20,6 +21,9 @@ export interface CapiEventLog {
   timestamp: string;
 }
 
+let logSeq = 0;
+const logId = () => `log_${Date.now()}_${logSeq++}`;
+
 const CONFIG_KEY = "meta_capi_config";
 const LOGS_KEY = "meta_capi_event_logs";
 const DEFAULT_CONFIG: MetaCapiConfig = {
@@ -36,7 +40,8 @@ function sha256(val: string): string {
 export class MetaCapiService {
   static async getConfig(): Promise<MetaCapiConfig> {
     const saved = await PlatformConfigService.get<MetaCapiConfig>(CONFIG_KEY, DEFAULT_CONFIG);
-    return { ...DEFAULT_CONFIG, ...saved };
+    // The stored token is encrypted; older rows are still plaintext until their next save.
+    return { ...DEFAULT_CONFIG, ...saved, accessToken: readSecret(saved.accessToken) ?? DEFAULT_CONFIG.accessToken };
   }
 
   // What the console may see: the access token is write-only (never sent to the browser), only
@@ -48,7 +53,7 @@ export class MetaCapiService {
   static async saveConfig(input: Partial<MetaCapiConfig>): Promise<MetaCapiConfig> {
     const current = await this.getConfig();
     const updated: MetaCapiConfig = { ...current, ...input };
-    await PlatformConfigService.set(CONFIG_KEY, updated);
+    await PlatformConfigService.set(CONFIG_KEY, { ...updated, accessToken: updated.accessToken ? encryptSecret(updated.accessToken) : "" });
     return updated;
   }
 
@@ -78,12 +83,14 @@ export class MetaCapiService {
     ip?: string;
     userAgent?: string;
     eventSourceUrl?: string;
+    /** Stable id so Meta can de-duplicate against a browser pixel event or a retry. */
+    eventId?: string;
   }): Promise<{ ok: boolean; message: string; httpCode?: number; data?: any }> {
     const config = await this.getConfig();
 
     if (!config.enabled || !config.pixelId || !config.accessToken) {
       await this.appendLog({
-        id: `log_${Date.now()}`,
+        id: logId(),
         eventName: input.eventName,
         orgId: input.orgId,
         orgName: input.orgName,
@@ -103,7 +110,22 @@ export class MetaCapiService {
     if (input.fbp) userData.fbp = input.fbp;
     if (input.fbc) userData.fbc = input.fbc;
 
+    // Meta rejects events with no way to match a person; don't burn a request (and a failure log) on them.
+    if (Object.keys(userData).length === 0) {
+      await this.appendLog({
+        id: logId(),
+        eventName: input.eventName,
+        orgId: input.orgId,
+        orgName: input.orgName,
+        status: "skipped",
+        metaResponse: "No identifiers (email, phone, fbp, fbc) to match on",
+        timestamp: new Date().toISOString(),
+      });
+      return { ok: false, message: "No identifiers to match this event on, so it was not sent." };
+    }
+
     const payload: any = {
+      event_id: input.eventId ?? (input.orgId ? `${input.eventName}_${input.orgId}` : undefined),
       event_name: input.eventName,
       event_time: Math.floor(Date.now() / 1000),
       event_source_url: input.eventSourceUrl || "https://ridhzo.com/signup",
@@ -121,6 +143,7 @@ export class MetaCapiService {
 
     const body: any = {
       data: [payload],
+      access_token: config.accessToken, // in the body, not the URL, so it never lands in request logs
     };
 
     if (config.testEventCode) {
@@ -128,9 +151,7 @@ export class MetaCapiService {
     }
 
     try {
-      const url = `https://graph.facebook.com/v19.0/${config.pixelId}/events?access_token=${encodeURIComponent(
-        config.accessToken
-      )}`;
+      const url = `https://graph.facebook.com/v19.0/${config.pixelId}/events`;
 
       const res = await fetch(url, {
         method: "POST",
@@ -142,7 +163,7 @@ export class MetaCapiService {
       const isSuccess = res.ok && !data.error;
 
       await this.appendLog({
-        id: `log_${Date.now()}`,
+        id: logId(),
         eventName: input.eventName,
         orgId: input.orgId,
         orgName: input.orgName,
@@ -161,7 +182,7 @@ export class MetaCapiService {
       };
     } catch (err: any) {
       await this.appendLog({
-        id: `log_${Date.now()}`,
+        id: logId(),
         eventName: input.eventName,
         orgId: input.orgId,
         orgName: input.orgName,

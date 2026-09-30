@@ -39,7 +39,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     when(needs("dlq"), () => PlatformService.getFailedDeliveries(15)),
     when(needs("initialBroadcast"), () => PlatformService.getBroadcast()),
     when(needs("revops"), () => RevOpsService.getMetrics()),
-    when(needs("tenantHealth"), () => RevOpsService.listTenantHealth(30)),
+    when(needs("tenantHealth"), () => RevOpsService.listTenantHealth(500)),
     PlatformConfigService.get("maintenance_mode", { enabled: false, message: "" }), // tab badge
     OpsAlertService.getView(), // tab badge
     when(needs("initialBilling"), () => BillingLifecycleService.listFleetBillingStatus()),

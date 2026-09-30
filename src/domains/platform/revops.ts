@@ -13,6 +13,8 @@ export interface TenantHealthSummary {
   lastActiveAt: string | null;
   daysInactive: number;
   health: "healthy" | "slowing" | "at_risk" | "critical";
+  /** Actually paying (not trial, not complimentary, not suspended) — only these carry revenue at risk. */
+  paying: boolean;
   /** AI credits left this month on the real meter (plan allowance + any super-admin bonus − used). */
   aiCreditsLeft: number;
   aiCreditsMax: number;
@@ -20,7 +22,7 @@ export interface TenantHealthSummary {
 
 
 export interface LifecycleFunnelStage {
-  stage: "signed_up" | "activated" | "paid" | "churned";
+  stage: "signed_up" | "activated" | "trial" | "paid" | "churned";
   label: string;
   count: number;
   rate: number;
@@ -30,6 +32,7 @@ export interface LifecycleFunnelStage {
 export interface LifecycleFunnel {
   totalSignedUp: number;
   totalActivated: number;
+  totalTrial: number;
   totalPaid: number;
   totalChurned: number;
   activationRate: number;
@@ -95,10 +98,11 @@ export class RevOpsService {
   static async getMetrics(): Promise<RevOpsMetrics> {
     const [{ mrr, paidAccounts, freeAccounts, complimentaryAccounts, newAccountsMrr }, healthList, funnel] = await Promise.all([
       this.revenue(),
-      this.listTenantHealth(50),
+      this.listTenantHealth(Number.MAX_SAFE_INTEGER),
       this.getLifecycleFunnel(30),
     ]);
-    const atRiskList = healthList.filter((t) => t.health === "at_risk" || t.health === "critical");
+    // Paying workspaces only: free, trial and complimentary orgs carry no revenue to lose.
+    const atRiskList = healthList.filter((t) => t.paying && (t.health === "at_risk" || t.health === "critical"));
     return {
       mrr,
       arr: mrr * 12,
@@ -134,6 +138,7 @@ export class RevOpsService {
 
     const totalSignedUp = rows.length;
     let totalActivated = 0;
+    let totalTrial = 0;
     let totalPaid = 0;
     let totalChurned = 0;
 
@@ -142,6 +147,7 @@ export class RevOpsService {
       const isSuspended = !!r.suspendedAt;
       const isPaid = isPayingOrg(r) && !isSuspended;
       if (isPaid) totalPaid++;
+      else if (!isSuspended && r.trialEndsAt && new Date(r.trialEndsAt).getTime() > Date.now()) totalTrial++;
       const isCancelled = r.planStatus === "cancelled" || r.planStatus === "halted";
       if (isSuspended || isCancelled) totalChurned++;
     }
@@ -151,7 +157,9 @@ export class RevOpsService {
     const churnRate = totalSignedUp > 0 ? Math.round((totalChurned / totalSignedUp) * 1000) / 10 : 0;
 
     const activationDropoff = totalSignedUp > 0 ? Math.round(((totalSignedUp - totalActivated) / totalSignedUp) * 1000) / 10 : 0;
-    const paidDropoff = totalActivated > 0 ? Math.round(((totalActivated - totalPaid) / totalActivated) * 1000) / 10 : 0;
+    const trialRate = totalSignedUp > 0 ? Math.round((totalTrial / totalSignedUp) * 1000) / 10 : 0;
+    // Paid orgs needn't be activated, so this can go negative — clamp.
+    const paidDropoff = totalActivated > 0 ? Math.max(0, Math.round(((totalActivated - totalPaid) / totalActivated) * 1000) / 10) : 0;
 
     const stages: LifecycleFunnelStage[] = [
       {
@@ -166,6 +174,12 @@ export class RevOpsService {
         count: totalActivated,
         rate: activationRate,
         dropoffRate: activationDropoff,
+      },
+      {
+        stage: "trial",
+        label: "In Trial Now",
+        count: totalTrial,
+        rate: trialRate,
       },
       {
         stage: "paid",
@@ -185,6 +199,7 @@ export class RevOpsService {
     return {
       totalSignedUp,
       totalActivated,
+      totalTrial,
       totalPaid,
       totalChurned,
       activationRate,
@@ -204,6 +219,10 @@ export class RevOpsService {
         createdAt: organizations.createdAt,
         aiUsed: organizations.aiCreditsUsed,
         aiPeriod: organizations.aiCreditsPeriod,
+        planStatus: organizations.planStatus,
+        complimentary: organizations.complimentary,
+        trialEndsAt: organizations.trialEndsAt,
+        suspendedAt: organizations.suspendedAt,
       })
       .from(organizations);
 
@@ -255,6 +274,7 @@ export class RevOpsService {
         lastActiveAt: lastActiveDate ? new Date(lastActiveDate).toISOString() : null,
         daysInactive,
         health,
+        paying: isPayingOrg(o) && !o.suspendedAt,
         aiCreditsLeft: Math.max(0, allowance - used),
         aiCreditsMax: allowance - Math.min(0, used),
       };

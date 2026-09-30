@@ -24,7 +24,7 @@ function periodLabel(inv: Invoice) {
 }
 
 const INVOICE_STATUS: Record<string, string> = { paid: "Paid", issued: "Due", partially_paid: "Part paid", expired: "Not paid", cancelled: "Cancelled", draft: "Draft" };
-type BillingStatus = "paid" | "pending" | "grace_period" | "locked" | "free" | "trial";
+type BillingStatus = "paid" | "pending" | "grace_period" | "locked" | "free" | "trial" | "complimentary";
 type Cycle = "monthly" | "yearly";
 
 declare global {

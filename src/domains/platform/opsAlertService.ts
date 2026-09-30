@@ -68,7 +68,7 @@ async function zohoToken(accountsHost: string, params: Record<string, string>): 
   });
   const json: any = await res.json().catch(() => ({}));
   if (json.error || !res.ok) {
-    const hint = json.error === "invalid_code" ? " — the code or token is wrong, expired or already used; generate a new grant code and use Connect with code" : "";
+    const hint = json.error === "invalid_code" ? " — the code or token is wrong, expired or already used; get a new one-time code and press Connect" : "";
     throw new Error(`Zoho token request failed: ${json.error ?? res.status}${hint}`);
   }
   return json;

@@ -154,9 +154,10 @@ describe("MetaCapiService", () => {
     expect(globalFetch).toHaveBeenCalledTimes(1);
     const [callUrl, callInit] = globalFetch.mock.calls[0];
     expect(callUrl).toContain("https://graph.facebook.com/v19.0/123456789/events");
-    expect(callUrl).toContain("access_token=TEST_TOKEN_123");
+    expect(callUrl).not.toContain("access_token"); // the token travels in the body, not the URL
 
     const body = JSON.parse(callInit.body);
+    expect(body.access_token).toBe("TEST_TOKEN_123");
     expect(body.test_event_code).toBe("TEST9999");
     expect(body.data[0].event_name).toBe("CompleteRegistration");
     // Email should be sha256 hashed and lowercased

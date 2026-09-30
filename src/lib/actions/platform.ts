@@ -551,9 +551,10 @@ export async function listBillingLifecycleAction() {
   }
 }
 
-export async function extendGracePeriodAction(organizationId: string, days = 7) {
+export async function extendGracePeriodAction(organizationId: string, days = 7, reason?: string) {
   const session = await requireSuperAdmin();
   if (!orgIdSchema.safeParse(organizationId).success) return invalid("organization");
+  if (!reasonSchema.safeParse(reason).success) return needReason();
   if (!z.number().int().min(1).max(90).safeParse(days).success) return fail("VALIDATION", "Grace extension must be 1–90 days.");
   try {
     const { BillingLifecycleService } = await import("@/domains/billing/lifecycleService");
@@ -564,7 +565,7 @@ export async function extendGracePeriodAction(organizationId: string, days = 7) 
       action: "platform.extend_grace_period",
       entityType: "organization",
       entityId: organizationId,
-      metadata: { days, graceEndsAt: updated.gracePeriodEndsAt },
+      metadata: { days, graceEndsAt: updated.gracePeriodEndsAt, reason: reason?.trim() },
     });
     revalidatePath("/admin");
     return ok(updated);
@@ -573,23 +574,39 @@ export async function extendGracePeriodAction(organizationId: string, days = 7) 
   }
 }
 
-export async function markTenantManuallyPaidAction(organizationId: string, days = 30) {
+export async function markTenantManuallyPaidAction(organizationId: string, days = 30, reason?: string, invoiceAmount?: number) {
   const session = await requireSuperAdmin();
   if (!orgIdSchema.safeParse(organizationId).success) return invalid("organization");
+  if (!reasonSchema.safeParse(reason).success) return needReason();
+  if (invoiceAmount != null && !z.number().positive().max(10_000_000).safeParse(invoiceAmount).success) return fail("VALIDATION", "Invoice amount must be more than zero.");
   if (!z.number().int().min(1).max(366).safeParse(days).success) return fail("VALIDATION", "Paid period must be 1–366 days.");
   try {
     const { BillingLifecycleService } = await import("@/domains/billing/lifecycleService");
+    // Only meaningful for a paid-tier workspace that is behind on payment; on Free or an active
+    // subscription it would just show a "Paid" badge with no effect on what the tenant can use.
+    const current = await BillingLifecycleService.getTenantBillingStatus(organizationId);
+    if (!current) return fail("NOT_FOUND", "Organization not found");
+    if (current.status !== "grace_period" && current.status !== "locked") return fail("VALIDATION", "Offline payment only applies to workspaces in grace or locked. Change the plan from the Tenants tab instead.");
     const updated = await BillingLifecycleService.markManuallyPaid(organizationId, days);
+    // Optional: book the payment as a paid tax invoice (amount before GST) so access and books agree.
+    let invoiceNumber: string | null = null;
+    if (invoiceAmount) {
+      const { InvoiceService } = await import("@/domains/billing/invoiceService");
+      const { canonicalPlan } = await import("@/domains/billing/planNames");
+      const plan = canonicalPlan(current.plan);
+      const inv = await InvoiceService.generateInvoice({ orgId: organizationId, plan: plan === "free" ? "starter" : plan, amount: invoiceAmount, status: "paid" }, session.user.id);
+      invoiceNumber = inv.invoiceNumber;
+    }
     await AuditService.log({
       organizationId,
       userId: session.user.id,
       action: "platform.mark_manually_paid",
       entityType: "organization",
       entityId: organizationId,
-      metadata: { days, manualPaidUntil: updated.manualPaidUntil },
+      metadata: { days, manualPaidUntil: updated.manualPaidUntil, reason: reason?.trim(), invoiceNumber },
     });
     revalidatePath("/admin");
-    return ok(updated);
+    return ok({ ...updated, invoiceNumber });
   } catch (e) {
     return actionFail(e);
   }
@@ -602,22 +619,28 @@ export async function sendDunningNoticeAction(organizationId: string) {
     const { BillingLifecycleService } = await import("@/domains/billing/lifecycleService");
     const status = await BillingLifecycleService.getTenantBillingStatus(organizationId);
     if (!status) return fail("NOT_FOUND", "Organization not found");
-    const expiry = status.gracePeriodEndsAt ? new Date(status.gracePeriodEndsAt) : new Date(Date.now() + 7 * 86400000);
-    await BillingLifecycleService.sendDunningEmail(
+    if (status.status !== "grace_period" && status.status !== "locked") return fail("VALIDATION", "Only workspaces in grace or locked can be sent a payment reminder.");
+    const expiry = status.status === "grace_period" && status.gracePeriodEndsAt ? new Date(status.gracePeriodEndsAt) : null;
+    const sent = await BillingLifecycleService.sendDunningEmail(
       organizationId,
       status.orgName,
       status.plan,
       expiry,
       status.failureReason || "Payment past due"
     );
+    if (sent === 0) return fail("VALIDATION", "No email was sent — the workspace has no active admin with an email, or delivery failed.");
+    const lifecycle = await BillingLifecycleService.getLifecycle(organizationId);
+    await BillingLifecycleService.setLifecycle(organizationId, { ...lifecycle, dunningSentAt: new Date().toISOString() });
     await AuditService.log({
       organizationId,
       userId: session.user.id,
       action: "platform.send_dunning_notice",
       entityType: "organization",
       entityId: organizationId,
+      metadata: { recipients: sent },
     });
-    return ok({ sent: true });
+    revalidatePath("/admin");
+    return ok({ sent });
   } catch (e) {
     return actionFail(e);
   }
@@ -625,7 +648,7 @@ export async function sendDunningNoticeAction(organizationId: string) {
 
 const invoiceSchema = z.object({
   orgId: orgIdSchema,
-  plan: z.string().trim().min(1).max(50),
+  plan: z.enum(["starter", "unlimited"]),
   amount: z.number().positive("Amount must be more than zero.").max(10_000_000),
   status: z.enum(["paid", "issued"]).optional(),
   // 15-char GSTIN: 2-digit state code, PAN, entity, Z, checksum.
@@ -989,6 +1012,19 @@ export async function saveCapiConfigAction(input: z.input<typeof capiSchema>) {
     await audit(session, "platform.capi_config", { metadata: { enabled: updated.enabled, pixelId: updated.pixelId, tokenChanged: !!accessToken } });
     revalidatePath("/admin");
     return ok(MetaCapiService.publicConfig(updated));
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function sendCapiTestEventAction() {
+  const session = await requireSuperAdmin();
+  try {
+    const { MetaCapiService } = await import("@/domains/platform/capiService");
+    const res = await MetaCapiService.sendEvent({ eventName: "Lead", email: session.user.email ?? undefined, eventSourceUrl: "https://ridhzo.com/admin" });
+    await audit(session, "platform.capi_test", { metadata: { ok: res.ok } });
+    revalidatePath("/admin");
+    return res.ok ? ok({ message: res.message }) : fail("VALIDATION", res.message);
   } catch (e) {
     return actionFail(e);
   }

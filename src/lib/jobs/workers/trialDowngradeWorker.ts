@@ -11,6 +11,13 @@ export async function processTrialDowngradeJob() {
   if (result.downgradedCount > 0) {
     console.log(`[TRIAL_DOWNGRADE_WORKER] Reverted ${result.downgradedCount} expired trials to free`);
   }
+  // Same hourly tick drives the scheduled executive digest; a failure here must not fail the billing scan.
+  try {
+    const { ExecutiveDigestService } = await import("@/domains/platform/executiveDigestService");
+    if (await ExecutiveDigestService.sendDigestIfDue()) console.log("[TRIAL_DOWNGRADE_WORKER] Sent scheduled executive digest");
+  } catch (err) {
+    console.error("[TRIAL_DOWNGRADE_WORKER] Executive digest failed:", err);
+  }
   return result;
 }
 

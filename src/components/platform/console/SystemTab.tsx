@@ -197,7 +197,7 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
     if (!res.ok) return toast({ variant: "destructive", title: "Couldn't connect to Zoho", description: res.message });
     setOpsAlert((prev) => ({ ...prev, ...res.data, cliqClientSecret: "", cliqRefreshToken: "" }));
     setGrantCode("");
-    toast({ title: "Zoho Cliq connected", description: "Now press Test Webhook Ping." });
+    toast({ title: "Zoho Cliq connected", description: "Now press Send test message." });
   }
 
   async function handleSaveOpsAlert() {
@@ -227,10 +227,35 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
     }
   }
 
+  const [section, setSection] = React.useState<"security" | "alerts" | "data" | "activity">("security");
+  const activeThreats = anomalies.filter((a) => a.status === "active").length;
+
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       {confirmDialog}
+      <nav aria-label="System sections" className="lg:col-span-2 flex flex-wrap gap-1.5 border-b pb-3">
+        {([
+          ["security", "Security", activeThreats > 0 ? `${activeThreats} threat${activeThreats > 1 ? "s" : ""}` : null],
+          ["alerts", "Alerts", opsAlert.enabled ? "on" : "off"],
+          ["data", "Data & reports", null],
+          ["activity", "Activity log", null],
+        ] as const).map(([key, label, note]) => (
+          <Button
+            key={key}
+            type="button"
+            size="sm"
+            variant={section === key ? "default" : "ghost"}
+            aria-current={section === key ? "page" : undefined}
+            className="h-8 text-xs gap-1.5"
+            onClick={() => setSection(key)}
+          >
+            {label}
+            {note && <span className={`rounded-full px-1.5 text-[10px] ${key === "security" ? "bg-destructive/15 text-destructive" : "bg-muted text-muted-foreground"}`}>{note}</span>}
+          </Button>
+        ))}
+      </nav>
       {/* Fleet Anomaly & Threat Detection Engine */}
+      {section === "security" && (
       <div className="lg:col-span-2 rounded-2xl border bg-card shadow-sm overflow-hidden">
         <div className="p-5 border-b flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-muted/10">
           <div className="flex items-center gap-2.5">
@@ -239,19 +264,19 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
             </div>
             <div>
               <h3 className="text-base font-semibold flex items-center gap-2">
-                Fleet Anomaly &amp; Abuse Detection Cockpit
+                Threat watch
                 {anomalies.filter((a) => a.status === "active").length > 0 ? (
                   <Badge className="bg-destructive/15 text-destructive border-destructive/30 text-[10px] animate-pulse">
-                    {anomalies.filter((a) => a.status === "active").length} Active Threat{anomalies.filter((a) => a.status === "active").length > 1 ? "s" : ""}
+                    {anomalies.filter((a) => a.status === "active").length} Threat{anomalies.filter((a) => a.status === "active").length > 1 ? "s" : ""}
                   </Badge>
                 ) : (
                   <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 text-[10px]">
-                    Fleet Clean • 0 Active Threats
+                    All clear • 0 threats
                   </Badge>
                 )}
               </h3>
               <p className="text-xs text-muted-foreground">
-                Continuous heuristic detection for data exfiltration spikes, webhook failure storms, bot injection, and suspended tenant access.
+                Watches all workspaces for unusual data downloads, many failed webhooks, fake signups, and use of suspended accounts.
               </p>
             </div>
           </div>
@@ -361,15 +386,17 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
           )}
         </div>
       </div>
+      )}
 
       {/* Database Storage & Recycle Bin */}
+      {section === "data" && (
       <div className="rounded-2xl border bg-card p-5 space-y-4">
         <div className="flex items-center gap-2 border-b pb-3">
           <Database className="h-5 w-5 text-primary" />
           <div>
-            <h3 className="text-sm font-semibold">Database Records &amp; Storage Maintenance</h3>
+            <h3 className="text-sm font-semibold">Stored data</h3>
             <p className="text-xs text-muted-foreground">
-              Table row counts across all tenants and soft-deleted recycle bin purge.
+              How much data is stored across all workspaces, and deleted leads waiting to be removed.
             </p>
           </div>
         </div>
@@ -406,16 +433,18 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
           </div>
         </div>
       </div>
+      )}
 
       {/* Platform Ops Webhook Alerts */}
-      <div className="rounded-2xl border bg-card p-5 space-y-4">
+      {section === "alerts" && (
+      <div className="lg:col-span-2 rounded-2xl border bg-card p-5 space-y-4">
         <div className="flex items-center justify-between border-b pb-3">
           <div className="flex items-center gap-2">
             <Bell className="h-5 w-5 text-primary" />
             <div>
-              <h3 className="text-sm font-semibold">Platform Ops Webhook Alerts (Zoho Cliq)</h3>
+              <h3 className="text-sm font-semibold">Team alerts (Zoho Cliq)</h3>
               <p className="text-xs text-muted-foreground">
-                Stream critical platform events (new support tickets, missed deadlines, failed-delivery spikes, plan changes, data requests) to your Zoho Cliq channel.
+                Send important events to your Zoho Cliq channel: new tickets, late replies, failed deliveries, plan changes and data requests.
               </p>
             </div>
           </div>
@@ -426,7 +455,7 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
 
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-medium text-foreground">Incoming Webhook URL</label>
+            <label className="text-xs font-medium text-foreground">Cliq channel URL</label>
             <Input
               placeholder="https://cliq.zoho.in/company/<id>/api/v2/channelsbyname/<channel>/message"
               value={opsAlert.url}
@@ -438,7 +467,7 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
           {/* Zoho Cliq API URLs (no ?zapikey=) authenticate with OAuth; leave these blank for other webhooks. */}
           <div className="grid gap-2 sm:grid-cols-3">
             <div>
-              <label className="text-xs font-medium text-foreground">Zoho Client ID</label>
+              <label className="text-xs font-medium text-foreground">Client ID (from Zoho)</label>
               <Input value={opsAlert.cliqClientId ?? ""} onChange={(e) => setOpsAlert((prev) => ({ ...prev, cliqClientId: e.target.value }))} className="mt-1 h-9 text-xs font-mono" autoComplete="off" />
             </div>
             <div>
@@ -453,11 +482,11 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
 
           <div className="flex items-end gap-2">
             <div className="flex-1">
-              <label className="text-xs font-medium text-foreground">Grant code (one-time — Zoho API Console → Self Client → Generate Code)</label>
+              <label className="text-xs font-medium text-foreground">One-time code (Zoho API Console → Self Client → Generate Code)</label>
               <Input value={grantCode} onChange={(e) => setGrantCode(e.target.value)} className="mt-1 h-9 text-xs font-mono" autoComplete="off" />
             </div>
             <Button type="button" variant="outline" size="sm" className="h-9 text-xs" disabled={connectingCliq || !grantCode.trim() || !opsAlert.url} onClick={handleConnectCliq}>
-              {connectingCliq ? "Connecting..." : "Connect with code"}
+              {connectingCliq ? "Connecting..." : "Connect"}
             </Button>
           </div>
 
@@ -469,7 +498,7 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
                 onChange={(e) => setOpsAlert((prev) => ({ ...prev, notifyOnSladeadline: e.target.checked }))}
                 className="rounded border-border"
               />
-              <span>Missed deadlines</span>
+              <span>Late tickets and leads</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer border rounded-lg p-2.5 bg-muted/20">
               <input
@@ -478,7 +507,7 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
                 onChange={(e) => setOpsAlert((prev) => ({ ...prev, notifyOnDlq: e.target.checked }))}
                 className="rounded border-border"
               />
-              <span>Failed Deliveries</span>
+              <span>Failed deliveries</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer border rounded-lg p-2.5 bg-muted/20">
               <input
@@ -487,7 +516,7 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
                 onChange={(e) => setOpsAlert((prev) => ({ ...prev, notifyOnPlanChange: e.target.checked }))}
                 className="rounded border-border"
               />
-              <span>Plan Changes</span>
+              <span>Plan changes</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer border rounded-lg p-2.5 bg-muted/20">
               <input
@@ -496,7 +525,7 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
                 onChange={(e) => setOpsAlert((prev) => ({ ...prev, notifyOnGdpr: e.target.checked }))}
                 className="rounded border-border"
               />
-              <span>Data Requests</span>
+              <span>Data requests</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer border rounded-lg p-2.5 bg-muted/20">
               <input
@@ -505,7 +534,7 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
                 onChange={(e) => setOpsAlert((prev) => ({ ...prev, notifyOnTickets: e.target.checked }))}
                 className="rounded border-border"
               />
-              <span>Support tickets &amp; replies</span>
+              <span>New tickets &amp; replies</span>
             </label>
           </div>
 
@@ -517,7 +546,7 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
               className="h-8 text-xs"
               onClick={() => setOpsAlert((prev) => ({ ...prev, enabled: !prev.enabled }))}
             >
-              {opsAlert.enabled ? "Disable Alerts" : "Enable Alerts"}
+              {opsAlert.enabled ? "Turn alerts off" : "Turn alerts on"}
             </Button>
             <div className="flex items-center gap-2">
               <select
@@ -526,13 +555,13 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
                 onChange={(e) => setSampleEvent(e.target.value)}
                 className="h-8 rounded-md border border-input bg-background px-2 text-xs"
               >
-                <option value="">Connection ping</option>
-                <option value="support.new">Sample: new ticket</option>
-                <option value="support.reply">Sample: tenant reply</option>
-                <option value="sla.support_ticket">Sample: SLA breach</option>
-                <option value="dlq.spike">Sample: failed deliveries</option>
-                <option value="plan.change">Sample: plan change</option>
-                <option value="compliance.request">Sample: data request</option>
+                <option value="">Simple test message</option>
+                <option value="support.new">Example: new ticket</option>
+                <option value="support.reply">Example: customer reply</option>
+                <option value="sla.support_ticket">Example: late ticket</option>
+                <option value="dlq.spike">Example: failed deliveries</option>
+                <option value="plan.change">Example: plan change</option>
+                <option value="compliance.request">Example: data request</option>
               </select>
               <Button
                 variant="outline"
@@ -541,7 +570,7 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
                 disabled={testingOpsAlert || !opsAlert.url}
                 onClick={handleTestOpsAlert}
               >
-                {testingOpsAlert ? "Sending..." : sampleEvent ? "Send sample" : "Test Webhook Ping"}
+                {testingOpsAlert ? "Sending..." : sampleEvent ? "Send example" : "Send test message"}
               </Button>
               <Button
                 size="sm"
@@ -549,7 +578,7 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
                 disabled={opsAlertSaving}
                 onClick={handleSaveOpsAlert}
               >
-                {opsAlertSaving ? "Saving..." : "Save Configuration"}
+                {opsAlertSaving ? "Saving..." : "Save"}
               </Button>
             </div>
           </div>
@@ -568,15 +597,17 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
           )}
         </div>
       </div>
+      )}
 
       {/* 1-Click Platform CSV Exporters Card */}
+      {section === "data" && (
       <div className="rounded-2xl border bg-card p-5 shadow-sm space-y-3">
         <div className="flex items-center gap-2 border-b pb-3">
           <FileSpreadsheet className="h-5 w-5 text-primary" />
           <div>
-            <h3 className="text-sm font-semibold">1-Click Platform Data Exporters</h3>
+            <h3 className="text-sm font-semibold">Download reports</h3>
             <p className="text-xs text-muted-foreground">
-              Generate instant CSV snapshots for executive reporting, financial reconciliation, and sales re-engagement.
+              Download CSV files for reports, billing checks, and win-back campaigns.
             </p>
           </div>
         </div>
@@ -607,15 +638,17 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
           </Button>
         </div>
       </div>
+      )}
 
       {/* Security Session Killswitch Card */}
+      {section === "security" && (
       <div className="rounded-2xl border bg-card p-5 shadow-sm space-y-3">
         <div className="flex items-center gap-2 border-b pb-3">
           <UserX className="h-5 w-5 text-destructive" />
           <div>
-            <h3 className="text-sm font-semibold">Security Emergency Session Killswitch</h3>
+            <h3 className="text-sm font-semibold">Sign users out now</h3>
             <p className="text-xs text-muted-foreground">
-              Immediately terminate all active session tokens for a compromised user or an entire tenant organization.
+              Use this if an account may be hacked. It signs out one user, or everyone in one workspace.
             </p>
           </div>
         </div>
@@ -636,7 +669,7 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
                 </SelectContent>
               </Select>
             </div>
-            <p className="text-[11px] text-muted-foreground">Forces selected user to immediately log back in.</p>
+            <p className="text-[11px] text-muted-foreground">The user must log in again.</p>
           </div>
 
           <div className="space-y-2 border rounded-xl p-3 bg-muted/20">
@@ -655,20 +688,22 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
                 </SelectContent>
               </Select>
             </div>
-            <p className="text-[11px] text-muted-foreground">Forces all users in selected tenant to sign out instantly.</p>
+            <p className="text-[11px] text-muted-foreground">Everyone in this workspace must log in again.</p>
           </div>
         </div>
       </div>
+      )}
 
       {/* Fleet API Key & Integration Inspector Card */}
+      {section === "security" && (
       <div className="rounded-2xl border bg-card shadow-sm">
         <div className="p-5 border-b flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-base font-semibold flex items-center gap-2">
-              <Key className="h-4 w-4 text-primary" /> Cross-Tenant API Key &amp; Integration Inspector
+              <Key className="h-4 w-4 text-primary" /> API keys
             </h3>
             <p className="text-xs text-muted-foreground">
-              Inspect REST API credentials issued across all organizations, scopes, and revocation status.
+              See the API keys of all workspaces, what they can do, and whether they were revoked.
             </p>
           </div>
           <Badge variant="outline">{apiKeys.length} Issued Keys</Badge>
@@ -738,16 +773,18 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
           </table>
         </div>
       </div>
+      )}
 
       {/* Platform Fleet Activity Log Panel */}
+      {section === "activity" && (
       <div className="lg:col-span-2 rounded-2xl border bg-card shadow-sm overflow-hidden">
         <div className="p-5 border-b flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-base font-semibold flex items-center gap-2">
-              <Activity className="h-4 w-4 text-primary" /> Platform Operator Activity Trail
+              <Activity className="h-4 w-4 text-primary" /> Admin activity log
             </h3>
             <p className="text-xs text-muted-foreground">
-              Fleet-wide audit log of administrative and super-admin actions executed across all tenant organizations.
+              A record of what admins and super-admins did in any workspace.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -818,6 +855,7 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
           </table>
         </div>
       </div>
+      )}
     </div>
   );
 }

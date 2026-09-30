@@ -3,6 +3,7 @@ import { PlatformService, PlatformMetrics } from "./service";
 import { RevOpsService, RevOpsMetrics, TenantHealthSummary } from "./revops";
 import { SupportTicketService } from "./supportService";
 import { sendEmail } from "@/lib/mail/mailer";
+import { escapeHtml } from "@/lib/utils";
 import { AuditService } from "@/domains/audit/service";
 import { db } from "@/db";
 import { users } from "@/db/schema";
@@ -82,8 +83,8 @@ export class ExecutiveDigestService {
       .map(
         (t) => `
         <tr style="border-bottom: 1px solid #e5e7eb;">
-          <td style="padding: 10px 12px; font-weight: 600; color: #111827;">${t.name}</td>
-          <td style="padding: 10px 12px; color: #4b5563; text-transform: uppercase; font-size: 11px;">${t.plan}</td>
+          <td style="padding: 10px 12px; font-weight: 600; color: #111827;">${escapeHtml(t.name)}</td>
+          <td style="padding: 10px 12px; color: #4b5563; text-transform: uppercase; font-size: 11px;">${escapeHtml(t.plan)}</td>
           <td style="padding: 10px 12px; color: #6b7280;">${t.daysInactive} days</td>
           <td style="padding: 10px 12px;">
             <span style="display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 10px; font-weight: 700; text-transform: uppercase; background-color: ${
@@ -221,6 +222,7 @@ export class ExecutiveDigestService {
       }
     }
 
+    if (successCount === 0) throw new Error("The digest could not be delivered to any recipient.");
     const now = new Date().toISOString();
     await this.saveConfig({ lastSentAt: now });
 
@@ -232,6 +234,17 @@ export class ExecutiveDigestService {
     });
 
     return { count: successCount, recipients };
+  }
+
+  // Called by the hourly worker: sends when the schedule is on and the last send is a full period old.
+  static async sendDigestIfDue(now = Date.now()): Promise<boolean> {
+    const config = await this.getConfig();
+    if (!config.enabled) return false;
+    const periodMs = (config.frequency === "daily" ? 1 : 7) * 86_400_000;
+    // 1h slack so an hourly tick that lands a few minutes early doesn't skip a whole extra period.
+    if (config.lastSentAt && now - new Date(config.lastSentAt).getTime() < periodMs - 3_600_000) return false;
+    await this.sendDigest();
+    return true;
   }
 
   static async sendTestDigest(targetEmail: string): Promise<boolean> {

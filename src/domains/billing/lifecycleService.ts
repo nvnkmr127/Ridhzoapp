@@ -1,14 +1,15 @@
-import { trialExpired } from "./planNames";
+import { trialExpired, canonicalPlan, PLAN_MONTHLY_PRICE } from "./planNames";
 import { db } from "@/db";
 import { PLAN_LIMITS } from "./planService";
 import { organizations, users, roles } from "@/db/schema";
-import { eq, desc, and, isNotNull, lte, ne } from "drizzle-orm";
+import { eq, desc, and, isNotNull, lte, ne, sql } from "drizzle-orm";
 import { PlatformConfigService } from "@/domains/platform/configService";
 import { NotificationService } from "@/domains/notifications/service";
 import { sendEmail, appUrl } from "@/lib/mail/mailer";
 import { AuditService } from "@/domains/audit/service";
+import { escapeHtml as esc } from "@/lib/utils";
 
-export type BillingStatus = "paid" | "pending" | "grace_period" | "locked" | "free" | "trial";
+export type BillingStatus = "paid" | "pending" | "grace_period" | "locked" | "free" | "trial" | "complimentary";
 
 export interface TenantBillingLifecycle {
   gracePeriodEndsAt?: string | null;
@@ -21,6 +22,8 @@ export interface TenantBillingLifecycle {
   // (browser verify + Razorpay `activated`/`charged` + retries), so we suppress repeats within a
   // short window to avoid duplicate bell/push notifications for the same payment.
   lastPaymentSuccessNotifiedAt?: string | null;
+  // Meta "Subscribe" is a conversion: report it once per workspace, not on every monthly renewal.
+  capiSubscribeSentAt?: string | null;
 }
 
 // A single payment produces multiple success calls seconds/minutes apart; real renewals are ~monthly.
@@ -62,7 +65,7 @@ export class BillingLifecycleService {
   }
 
   static computeStatus(
-    org: { plan?: string | null; planStatus?: string | null; trialEndsAt?: Date | string | null },
+    org: { plan?: string | null; planStatus?: string | null; trialEndsAt?: Date | string | null; complimentary?: number | null },
     lifecycle: TenantBillingLifecycle
   ): { status: BillingStatus; daysRemainingInGrace: number } {
     const now = Date.now();
@@ -78,6 +81,9 @@ export class BillingLifecycleService {
     if (plan === "free" || trialExpired(org, now)) {
       return { status: "free", daysRemainingInGrace: 0 };
     }
+
+    // Paid plan handed out free by an admin: not a payer, and never delinquent.
+    if (org.complimentary === 1) return { status: "complimentary", daysRemainingInGrace: 0 };
 
     // 2. Active trial window
     if (org.trialEndsAt && new Date(org.trialEndsAt).getTime() > now) {
@@ -96,7 +102,10 @@ export class BillingLifecycleService {
       return { status: "pending", daysRemainingInGrace: 0 };
     }
 
-    // 5. Halted, cancelled, or failed payment: check grace period
+    // A customer who cancelled is simply gone, not delinquent.
+    if (planStatus === "cancelled") return { status: "free", daysRemainingInGrace: 0 };
+
+    // 5. Halted or failed payment: check grace period
     if (lifecycle.gracePeriodEndsAt) {
       const graceEnd = new Date(lifecycle.gracePeriodEndsAt).getTime();
       if (graceEnd > now) {
@@ -123,6 +132,7 @@ export class BillingLifecycleService {
           currentPeriodEnd: organizations.currentPeriodEnd,
           razorpaySubscriptionId: organizations.razorpaySubscriptionId,
           trialEndsAt: organizations.trialEndsAt,
+          complimentary: organizations.complimentary,
         })
         .from(organizations)
         .where(eq(organizations.id, orgId))
@@ -266,9 +276,10 @@ export class BillingLifecycleService {
     orgId: string,
     orgName: string,
     plan: string,
-    graceEndsAt: Date,
+    graceEndsAt: Date | null,
     reason: string
-  ): Promise<void> {
+  ): Promise<number> {
+    let sent = 0;
     try {
       const adminUsers = await db
         .select({ email: users.email, roleName: roles.name, permissions: roles.permissions })
@@ -282,25 +293,29 @@ export class BillingLifecycleService {
       });
 
       const billingUrl = appUrl("/settings?tab=billing");
-      const expiryFormatted = graceEndsAt.toLocaleDateString("en-US", {
+      // null = the grace period is over and the workspace is locked.
+      const expiryFormatted = graceEndsAt?.toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
         year: "numeric",
       });
+      const status = expiryFormatted
+        ? `<strong>Grace Period:</strong> Your account will remain fully operational until <strong>${expiryFormatted}</strong>.`
+        : `<strong>Status:</strong> Some features are paused until the payment is resolved. Your data is safe.`;
 
       for (const admin of admins) {
         if (!admin.email) continue;
         await sendEmail({
           to: admin.email,
-          subject: `[Action Required] Payment failed for ${orgName} — Grace period active`,
+          subject: expiryFormatted ? `[Action Required] Payment failed for ${esc(orgName)} — Grace period active` : `[Action Required] Payment overdue for ${esc(orgName)}`,
           html: `
             <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; padding: 24px; color: #111;">
               <h2 style="color: #d97706; margin-top: 0;">Subscription Payment Failed</h2>
               <p>Hello,</p>
-              <p>We were unable to process the recurring payment for your <strong>${plan}</strong> plan on <strong>${orgName}</strong>.</p>
+              <p>We were unable to process the recurring payment for your <strong>${esc(plan)}</strong> plan on <strong>${esc(orgName)}</strong>.</p>
               <p style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 4px; font-size: 14px;">
-                <strong>Reason:</strong> ${reason}<br />
-                <strong>Grace Period:</strong> Your account will remain fully operational until <strong>${expiryFormatted}</strong>.
+                <strong>Reason:</strong> ${esc(reason)}<br />
+                ${status}
               </p>
               <p>To avoid any disruption to your automated workflows, WhatsApp integrations, and team seats, please update your billing payment method promptly:</p>
               <p style="margin: 24px 0;">
@@ -312,10 +327,12 @@ export class BillingLifecycleService {
             </div>
           `,
         });
+        sent++;
       }
     } catch (err) {
       console.error("[lifecycleService] Failed to send dunning emails", err);
     }
+    return sent;
   }
 
   static async handlePaymentSuccess(orgId: string): Promise<void> {
@@ -329,8 +346,10 @@ export class BillingLifecycleService {
         : 0;
       const alreadyNotified = Date.now() - lastNotifiedAt < PAYMENT_SUCCESS_NOTIFY_DEDUP_MS;
 
+      const sendCapi = !currentLifecycle.capiSubscribeSentAt && !alreadyNotified;
       const updatedLifecycle: TenantBillingLifecycle = {
         ...currentLifecycle,
+        ...(sendCapi ? { capiSubscribeSentAt: new Date().toISOString() } : {}),
         failureCount: 0,
         gracePeriodEndsAt: null,
         lastPaymentFailureAt: null,
@@ -363,13 +382,18 @@ export class BillingLifecycleService {
       }
 
       // Meta Conversions API (CAPI) Subscribe / Purchase Event
+      if (!sendCapi) return;
       try {
         const { MetaCapiService } = await import("@/domains/platform/capiService");
         const { PlatformAttributionService } = await import("@/domains/platform/attributionService");
         const attr = await PlatformAttributionService.getAttribution(orgId);
+        const [o] = await db.select({ plan: organizations.plan }).from(organizations).where(eq(organizations.id, orgId)).limit(1);
+        const paidValue = PLAN_MONTHLY_PRICE[canonicalPlan(o?.plan)];
         await MetaCapiService.sendEvent({
           eventName: "Subscribe",
           orgId,
+          value: paidValue,
+          currency: "INR",
           fbp: attr?.fbp,
           fbc: attr?.fbc,
           eventSourceUrl: attr?.landingPage || "https://ridhzo.com/billing",
@@ -447,14 +471,27 @@ export class BillingLifecycleService {
         currentPeriodEnd: organizations.currentPeriodEnd,
         razorpaySubscriptionId: organizations.razorpaySubscriptionId,
         trialEndsAt: organizations.trialEndsAt,
+        complimentary: organizations.complimentary,
       })
       .from(organizations)
       .orderBy(desc(organizations.createdAt));
 
+    // One query for every tenant's lifecycle blob instead of one per org.
+    const prefix = "billing_lifecycle:";
+    const lifecycles = new Map<string, TenantBillingLifecycle>();
+    try {
+      const rows = (await db.execute(
+        sql`SELECT key, value FROM platform_configs WHERE key LIKE ${prefix + "%"}`
+      )) as unknown as Array<{ key: string; value: TenantBillingLifecycle }>;
+      for (const r of rows) lifecycles.set(r.key.slice(prefix.length), r.value);
+    } catch (err) {
+      console.error("[lifecycleService] fleet lifecycle read failed", err);
+    }
+
     const results: TenantBillingInfo[] = [];
 
     for (const org of orgs) {
-      const lifecycle = await this.getLifecycle(org.id);
+      const lifecycle = lifecycles.get(org.id) ?? {};
       const { status, daysRemainingInGrace } = this.computeStatus(org, lifecycle);
 
       results.push({

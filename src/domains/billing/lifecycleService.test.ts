@@ -255,3 +255,18 @@ describe("BillingLifecycleService.handlePaymentFailure auto-downgrade", () => {
   });
 });
 
+
+describe("computeStatus: fleet status rules", () => {
+  const paidOrg = { plan: "starter", planStatus: "active" as string | null, trialEndsAt: null, complimentary: 0 };
+
+  it("shows a running trial as trial and a free-for-client plan as complimentary", () => {
+    const future = new Date(Date.now() + 5 * 86_400_000);
+    expect(BillingLifecycleService.computeStatus({ ...paidOrg, trialEndsAt: future }, {}).status).toBe("trial");
+    expect(BillingLifecycleService.computeStatus({ ...paidOrg, complimentary: 1 }, {}).status).toBe("complimentary");
+  });
+
+  it("treats a cancelled customer as gone, not delinquent", () => {
+    expect(BillingLifecycleService.computeStatus({ ...paidOrg, planStatus: "cancelled" }, {}).status).toBe("free");
+    expect(BillingLifecycleService.computeStatus({ ...paidOrg, planStatus: "halted" }, {}).status).toBe("locked");
+  });
+});
