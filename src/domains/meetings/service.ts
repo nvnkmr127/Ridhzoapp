@@ -217,7 +217,7 @@ export class MeetingService {
         }[kind];
         const link = kind === "cancel" ? "" : `<p><a href="${esc(googleCalendarLink(m, `With ${org.name}`))}">Add to Google Calendar</a></p>`;
         const html = `<div style="font-family:sans-serif;font-size:14px;line-height:1.5">${esc(text).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>').replace(/\n/g, "<br>")}${link}</div>`;
-        await sendEmail({ from: "hello", to: lead.email, subject, html }, m.organizationId);
+        await sendEmail({ to: lead.email, subject, html }, m.organizationId);
         notice.emailed = true;
       } catch (e) {
         console.error("[meetings] lead email failed", (e as Error)?.message);

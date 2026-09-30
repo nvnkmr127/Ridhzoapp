@@ -1,6 +1,7 @@
 // Mailer backed by the Resend SDK. With RESEND_API_KEY set it sends via Resend; otherwise it logs
 // to the console so invite/notification flows work end-to-end in dev.
 import { Resend } from "resend";
+import { brandedHtml } from "./layout";
 
 // `from` picks the platform sender: hello (support), notifications (alerts), billing (invoices/receipts),
 // noreply (password resets, invites). Default = MAIL_FROM.
@@ -46,7 +47,9 @@ export async function sendEmail(mail: Mail, organizationId?: string): Promise<vo
     console.log(`[mail:dev] to=${mail.to} subject="${mail.subject}"\n${mail.html}`);
     return;
   }
-  const { error } = await r.emails.send({ ...senderFor(mail.from), to: mail.to, subject: mail.subject, html: mail.html });
+  // Platform mail (has a `from` kind) gets the Ridhzo shell; tenant-to-lead mail stays unbranded.
+  const html = mail.from ? brandedHtml(mail.html, appUrl("").replace(/\/$/, "")) : mail.html;
+  const { error } = await r.emails.send({ ...senderFor(mail.from), to: mail.to, subject: mail.subject, html });
   if (error) {
     throw new Error(`Email send failed: ${error.name ? `${error.name}: ` : ""}${error.message}`);
   }

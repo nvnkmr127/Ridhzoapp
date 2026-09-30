@@ -16,6 +16,9 @@ async function main() {
   const resend = new Resend(key);
   const segment = process.env.RESEND_SEGMENT_ID;
 
+  // Resend rejects properties it doesn't know, so define them first (create fails harmlessly if they exist).
+  for (const k of ["org", "plan", "plan_status"]) await resend.contactProperties.create({ key: k, type: "string", fallbackValue: "" });
+
   const rows = await db
     .select({ email: users.email, firstName: users.firstName, lastName: users.lastName, optOut: users.emailOptOut, org: organizations.name, plan: organizations.plan, planStatus: organizations.planStatus })
     .from(users)

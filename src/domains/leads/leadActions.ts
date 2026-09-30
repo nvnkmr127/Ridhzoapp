@@ -95,7 +95,7 @@ export async function updateLeadStageAndValue(
 export async function sendLeadEmail(input: { leadId: string; userId: string; organizationId: string; to: string; subject: string; body: string }) {
   const { sendEmail } = await import("@/lib/mail/mailer");
   await sendEmail(
-    { from: "hello", to: input.to, subject: input.subject, html: `<p>${escapeHtml(input.body).replace(/\n/g, "<br/>")}</p>` },
+    { to: input.to, subject: input.subject, html: `<p>${escapeHtml(input.body).replace(/\n/g, "<br/>")}</p>` },
     input.organizationId,
   );
   await ActivityService.addActivity({ leadId: input.leadId, userId: input.userId, type: "email", content: `[email] ${input.subject}` });
