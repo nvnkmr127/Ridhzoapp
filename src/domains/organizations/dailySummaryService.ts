@@ -4,6 +4,7 @@ import { and, count, eq, gte, isNull, lt, or, sql, sum } from "drizzle-orm";
 import { callCounts } from "@/domains/leads/callStats";
 import { formatCallDuration } from "@/domains/leads/contactLog";
 import { appUrl, sendEmail } from "@/lib/mail/mailer";
+import { mh, mp, mbtn, mfine, mtag, mtable } from "@/lib/mail/layout";
 import { HabitService, recapLine, type Recap } from "@/domains/organizations/habitService";
 import { isWorkDay } from "@/lib/workHours";
 import { t, type Lang } from "@/lib/i18n";
@@ -124,26 +125,30 @@ const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&
 
 /** Pure: the email body. */
 export function renderSummaryHtml(orgName: string, s: DailySummaryStats) {
-  const row = (label: string, n: number, href: string) =>
-    n > 0 ? `<tr><td style="padding:6px 12px 6px 0">${label}</td><td style="padding:6px 0;font-weight:600"><a href="${appUrl(href)}">${n}</a></td></tr>` : "";
+  const rows = ([
+    ["Overdue follow-ups", s.overdueFollowUps, "/follow-ups", "#dc2626"],
+    ["Meetings without an outcome", s.meetingsNeedOutcome, "/meetings", "#f59e0b"],
+    ["Meetings today", s.meetingsToday, "/meetings", "#111"],
+    ["New leads (last 24h)", s.newLeads, "/leads", "#16a34a"],
+    ["New leads not contacted after 24h", s.uncontactedLeads, "/leads", "#f59e0b"],
+    ["Unassigned leads", s.unassignedLeads, "/leads", "#f59e0b"],
+  ] as [string, number, string, string][])
+    .filter(([, n]) => n > 0)
+    .map(([label, n, href, color]) => [label, `<a href="${appUrl(href)}" style="color:${color};font-weight:700;font-size:16px;text-decoration:none;">${n}</a>`]);
   const reps = s.byRep
     .filter((r) => r.overdue + r.needOutcome > 0)
     .map((r) => `<li>${esc(r.name)}: ${[r.overdue && `${r.overdue} overdue follow-up${r.overdue === 1 ? "" : "s"}`, r.needOutcome && `${r.needOutcome} meeting${r.needOutcome === 1 ? "" : "s"} without outcome`].filter(Boolean).join(", ")}</li>`)
     .join("");
-  return `<div style="font-family:sans-serif;font-size:14px;line-height:1.5">
-<p>Good morning — here's what needs attention at <b>${esc(orgName)}</b> today.</p>
-<table>${[
-    row("Overdue follow-ups", s.overdueFollowUps, "/follow-ups"),
-    row("Meetings without an outcome", s.meetingsNeedOutcome, "/meetings"),
-    row("Meetings today", s.meetingsToday, "/meetings"),
-    row("New leads (last 24h)", s.newLeads, "/leads"),
-    row("New leads not contacted after 24h", s.uncontactedLeads, "/leads"),
-    row("Unassigned leads", s.unassignedLeads, "/leads"),
-  ].join("")}</table>
-${reps ? `<p style="margin-top:16px"><b>By team member</b></p><ul>${reps}</ul>` : ""}
-${s.calls.length ? `<p style="margin-top:16px"><b>Calls in the last 24 hours</b></p><ul>${s.calls.map((r) => `<li>${esc(r.name)}: ${callsLine(r)}</li>`).join("")}</ul>` : ""}
-<p style="color:#888;font-size:12px;margin-top:24px">Turn this email off in <a href="${appUrl("/settings")}">Settings → General</a>.</p>
-</div>`;
+  const list = (items: string) => `<ul style="margin:0 0 16px;padding-left:20px;">${items}</ul>`;
+  return (
+    mtag("Daily summary") +
+    mh(`Good morning — here's today at ${esc(orgName)}`) +
+    mtable(["What needs attention", "Count"], rows) +
+    (reps ? `<p style="margin:0 0 8px;font-weight:700;">By team member</p>${list(reps)}` : "") +
+    (s.calls.length ? `<p style="margin:0 0 8px;font-weight:700;">Calls in the last 24 hours</p>${list(s.calls.map((r) => `<li>${esc(r.name)}: ${callsLine(r)}</li>`).join(""))}` : "") +
+    mbtn("Open your dashboard", appUrl("/")) +
+    mfine(`Turn this email off in <a href="${appUrl("/settings")}" style="color:#6b7280;">Settings → General</a>.`)
+  );
 }
 
 export class DailySummaryService {
@@ -335,8 +340,8 @@ export class DailySummaryService {
     const { NotificationService } = await import("@/domains/notifications/service");
     const { title, body } = milestoneCopy(milestone, await HabitService.recap(organizationId, since));
     await NotificationService.notifyOrgAdmins(organizationId, { type: milestone, title, body });
-    const html = `<div style="font-family:sans-serif;font-size:14px;line-height:1.5"><p><b>${esc(title)}</b></p><p>${esc(body)}</p>
-<p><a href="${appUrl(milestone === "week_one" ? "/" : "/settings/billing")}">${milestone === "week_one" ? "Open your dashboard" : "Keep Starter"}</a></p></div>`;
+    const html = mtag(milestone === "week_one" ? "Your first week" : "Trial ending soon", milestone === "week_one" ? "ok" : "warn") + mh(esc(title)) + mp(esc(body)) +
+      mbtn(milestone === "week_one" ? "Open your dashboard" : "Keep Starter", appUrl(milestone === "week_one" ? "/" : "/settings/billing"));
     for (const to of await this.adminEmails(organizationId)) await sendEmail({ from: "notifications", to, subject: title, html }, organizationId);
   }
 

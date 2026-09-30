@@ -1,10 +1,20 @@
 import { db } from "@/db";
-import { notifications, users, roles } from "@/db/schema";
+import { notifications, users, roles, leads } from "@/db/schema";
 import { and, desc, eq, isNull, inArray, lt, sql } from "drizzle-orm";
 import { keepAlive } from "@/lib/keepAlive";
 import { escapeHtml } from "@/lib/utils";
 
 // High-signal notification types that also warrant an email. Chatty ones (self-completions) don't.
+// Email look per notification type: tag text/tone and the button label.
+const EMAIL_LOOK: Record<string, { tag: string; tone: "info" | "warn" | "danger" | "ok"; cta: string }> = {
+  new_lead: { tag: "New lead", tone: "ok", cta: "Open lead" },
+  lead_assigned: { tag: "Lead assigned", tone: "info", cta: "Open lead" },
+  follow_up_due: { tag: "Follow-up due", tone: "warn", cta: "Open follow-up" },
+  follow_up_overdue: { tag: "Overdue follow-up", tone: "danger", cta: "Follow up now" },
+  sla_escalation: { tag: "Needs attention", tone: "danger", cta: "Contact lead" },
+  meeting_scheduled: { tag: "Meeting scheduled", tone: "info", cta: "View meeting" },
+  meeting_reminder: { tag: "Meeting reminder", tone: "warn", cta: "View meeting" },
+};
 const EMAIL_TYPES = new Set(["new_lead", "lead_assigned", "follow_up_due", "follow_up_overdue", "sla_escalation", "meeting_scheduled", "meeting_reminder"]);
 
 type Vars = Record<string, string | number>;
@@ -76,16 +86,32 @@ export class NotificationService {
   // otherwise the mailer logs to the console so the flow still works in dev.
   private static async email(data: { userId: string; type: string; title: string; body?: string; leadId?: string }) {
     try {
-      const [user] = await db.select({ email: users.email, emailOptOut: users.emailOptOut }).from(users).where(eq(users.id, data.userId)).limit(1);
+      const [user] = await db.select({ email: users.email, emailOptOut: users.emailOptOut, language: users.language }).from(users).where(eq(users.id, data.userId)).limit(1);
       if (!user?.email) return;
       if ((user.emailOptOut ?? []).includes(data.type)) return; // user muted email for this type
       const { sendEmail, appUrl } = await import("@/lib/mail/mailer");
+      const { mh, mp, mbtn, mtag, mfine, mfacts, mlinks } = await import("@/lib/mail/layout");
+      const { t } = await import("@/lib/i18n");
+      const look = EMAIL_LOOK[data.type] ?? { tag: "Notification", tone: "info" as const, cta: "Open in Ridhzo" };
       const link = appUrl(data.leadId ? `/leads/${data.leadId}` : "/");
+      // Lead context + one-tap call / WhatsApp so the recipient can act straight from the email.
+      let context = "";
+      if (data.leadId) {
+        const [lead] = await db.select({ name: leads.name, phone: leads.phone, email: leads.email, company: leads.company }).from(leads).where(eq(leads.id, data.leadId)).limit(1);
+        if (lead) {
+          const rows = ([["Name", lead.name], ["Company", lead.company], ["Phone", lead.phone], ["Email", lead.email]] as [string, string | null][])
+            .filter(([, v]) => v).map(([k, v]) => [k, escapeHtml(v!)] as [string, string]);
+          const digits = (lead.phone ?? "").replace(/\D/g, "");
+          const wa = digits.length === 10 ? `91${digits}` : digits; // ponytail: assumes India for bare 10-digit numbers
+          context = (rows.length ? mfacts(rows) : "") + (digits.length >= 10 ? mlinks([[`📞 ${t(user.language, "Call")}`, `tel:+${wa}`], ["💬 WhatsApp", `https://wa.me/${wa}`]]) : "");
+        }
+      }
       await sendEmail({ from: "notifications",
         to: user.email,
         subject: data.title,
         // Title/body carry lead data from public forms and webhooks — escape before it becomes HTML.
-        html: `<p>${escapeHtml(data.body ?? data.title)}</p><p><a href="${escapeHtml(link)}">Open in Ridhzo</a></p>`,
+        preheader: data.body ? escapeHtml(data.body).slice(0, 110) : undefined,
+        html: mtag(t(user.language, look.tag), look.tone) + mh(escapeHtml(data.title)) + (data.body ? mp(escapeHtml(data.body)) : "") + context + mbtn(t(user.language, look.cta), escapeHtml(link)) + mfine(t(user.language, "The sooner you follow up, the better the chance of winning the lead.")),
       });
     } catch (e) {
       console.error("[notifications] email failed", e);

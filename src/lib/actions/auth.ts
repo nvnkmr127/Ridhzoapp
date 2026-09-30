@@ -9,6 +9,7 @@ import { and, eq, gt, isNull } from "drizzle-orm";
 import { OrgService } from "@/domains/organizations/service";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
 import { sendEmail, appUrl } from "@/lib/mail/mailer";
+import { mh, mp, mbtn, mfine, mtag, mtable } from "@/lib/mail/layout";
 import { requireOrg } from "@/lib/rbac";
 import { RateLimiter } from "@/lib/rate-limit";
 import { headers } from "next/headers";
@@ -87,6 +88,31 @@ export async function signupAction(input: z.infer<typeof signupSchema>) {
       }
     }
 
+    // Welcome email — best-effort, never blocks signup.
+    try {
+      const name = (data.firstName ?? "").replace(/[&<>"']/g, "").trim();
+      const org = orgName.replace(/[&<>"']/g, "");
+      await sendEmail({
+        from: "hello",
+        to: data.email,
+        subject: `Welcome to Ridhzo, ${name || "there"} — your workspace is ready`,
+        preheader: "Three quick steps to get your first leads moving",
+        html:
+          mtag("Welcome", "ok") +
+          mh(`Your workspace “${org}” is ready`) +
+          mp(`${name ? `Hi ${name}, w` : "W"}elcome to Ridhzo — leads move faster here. Three steps to get going:`) +
+          mtable(["Step", "What to do"], [
+            ["<strong>1. Add leads</strong>", "Import a CSV, connect a lead source or add one by hand."],
+            ["<strong>2. Invite your team</strong>", "Add teammates so leads get assigned and followed up."],
+            ["<strong>3. Set follow-ups</strong>", "Never lose a lead — every lead gets a next step and a reminder."],
+          ]) +
+          mbtn("Open your workspace", appUrl("/")) +
+          mfine("Need a hand? Just reply to this email and a real person will help."),
+      });
+    } catch (err) {
+      console.warn("[signupAction] welcome email failed", err);
+    }
+
     return ok({ created: true });
   } catch (e: any) {
     if (String(e?.message || e).includes("duplicate") || e?.code === "23505") {
@@ -153,23 +179,14 @@ export async function requestPasswordResetAction(input: { email: string }) {
     await sendEmail({ from: "noreply",
       to: email,
       subject: "Reset your Ridhzo password",
-      html: `
-        <div style="font-family: sans-serif; max-width: 540px; margin: 0 auto; padding: 24px; color: #111;">
-          <h2 style="font-size: 20px; font-weight: 700; margin-bottom: 16px;">Reset your password</h2>
-          <p style="font-size: 15px; line-height: 1.5;">${greeting}</p>
-          <p style="font-size: 15px; line-height: 1.5;">
-            We received a request to reset the password for your Ridhzo account. Click the button below to choose a new password:
-          </p>
-          <div style="margin: 28px 0;">
-            <a href="${resetLink}" style="background-color: #0f172a; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;">
-              Reset Password
-            </a>
-          </div>
-          <p style="font-size: 13px; color: #64748b; line-height: 1.5;">
-            This link is valid for 1 hour. If you didn't request a password reset, you can safely ignore this email.
-          </p>
-        </div>
-      `,
+      preheader: "Use this link within 1 hour to choose a new password",
+      html:
+        mh("Reset your password") +
+        mp(greeting) +
+        mp("We received a request to reset the password for your Ridhzo account. Choose a new one with the button below.") +
+        mbtn("Reset password", resetLink) +
+        mfine(`This link is valid for 1 hour and works once. If the button doesn't work, paste this into your browser:<br><a href="${resetLink}" style="color:#6b7280;word-break:break-all;">${resetLink}</a>`) +
+        mfine("Didn't ask for this? You can safely ignore this email — your password won't change."),
     });
 
     return ok({ sent: true });

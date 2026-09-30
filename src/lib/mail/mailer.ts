@@ -6,7 +6,7 @@ import { brandedHtml } from "./layout";
 // `from` picks the platform sender: hello (support), notifications (alerts), billing (invoices/receipts),
 // noreply (password resets, invites). Default = MAIL_FROM.
 export type Sender = "hello" | "notifications" | "billing" | "noreply";
-type Mail = { to: string; subject: string; html: string; from?: Sender };
+type Mail = { to: string; subject: string; html: string; from?: Sender; preheader?: string };
 
 const FROM = process.env.MAIL_FROM || "Ridhzo <onboarding@resend.dev>";
 // Set MAIL_DOMAIN to the domain verified in Resend (e.g. send.ridhzo.com) to use these senders;
@@ -34,6 +34,8 @@ function resend(): Resend | null {
 // from the platform address. Otherwise the shared Resend transport is used (console in dev).
 // The settings service is imported lazily so nodemailer never enters client/edge bundles.
 export async function sendEmail(mail: Mail, organizationId?: string): Promise<void> {
+  // Platform mail (has a `from` kind) gets the Ridhzo shell; tenant-to-lead mail stays unbranded.
+  if (mail.from) mail = { ...mail, html: brandedHtml(mail.html, appUrl("").replace(/\/$/, ""), mail.preheader) };
   if (organizationId) {
     const { EmailSettingsService } = await import("@/domains/organizations/emailSettingsService");
     if (await EmailSettingsService.sendForOrg(organizationId, mail)) return;
@@ -47,9 +49,8 @@ export async function sendEmail(mail: Mail, organizationId?: string): Promise<vo
     console.log(`[mail:dev] to=${mail.to} subject="${mail.subject}"\n${mail.html}`);
     return;
   }
-  // Platform mail (has a `from` kind) gets the Ridhzo shell; tenant-to-lead mail stays unbranded.
-  const html = mail.from ? brandedHtml(mail.html, appUrl("").replace(/\/$/, "")) : mail.html;
-  const { error } = await r.emails.send({ ...senderFor(mail.from), to: mail.to, subject: mail.subject, html });
+  const text = mail.html.replace(/<(style|head)[\s\S]*?<\/\1>/gi, "").replace(/<br\s*\/?>|<\/(p|h1|tr|div|blockquote)>/gi, "\n").replace(/<[^>]+>/g, "").replace(/&nbsp;|&zwnj;/g, "").replace(/\n{3,}/g, "\n\n").trim();
+  const { error } = await r.emails.send({ ...senderFor(mail.from), to: mail.to, subject: mail.subject, html: mail.html, text });
   if (error) {
     throw new Error(`Email send failed: ${error.name ? `${error.name}: ` : ""}${error.message}`);
   }

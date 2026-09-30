@@ -4,6 +4,7 @@ import type { DistributionRecipient, DistributionConditionGroup } from "@/db/sch
 import { and, eq, desc, sql } from "drizzle-orm";
 import { evaluateConditionGroup } from "@/lib/leads/conditions";
 import { escapeHtml } from "@/lib/utils";
+import { mh, mbtn, mfine, mtag, mfacts } from "@/lib/mail/layout";
 
 type LeadForDistribution = {
   id: string;
@@ -20,20 +21,10 @@ type LeadForDistribution = {
 type Rule = typeof leadDistributionRules.$inferSelect;
 
 function leadEmail(lead: LeadForDistribution, link: string) {
-  const row = (label: string, value: string | null) =>
-    value ? `<tr><td style="padding:2px 12px 2px 0;color:#666">${label}</td><td style="padding:2px 0"><b>${escapeHtml(value)}</b></td></tr>` : "";
-  return `
-    <div style="font-family:system-ui,sans-serif;font-size:14px;color:#111">
-      <h2 style="margin:0 0 12px">New lead: ${escapeHtml(lead.name || "Unnamed")}</h2>
-      <table style="border-collapse:collapse">
-        ${row("Name", lead.name)}
-        ${row("Email", lead.email)}
-        ${row("Phone", lead.phone)}
-        ${row("Company", lead.company)}
-        ${row("Status", lead.status)}
-      </table>
-      <p style="margin:16px 0 0"><a href="${escapeHtml(link)}" style="color:#2563eb">Open lead in Ridhzo →</a></p>
-    </div>`;
+  const rows = ([["Name", lead.name], ["Email", lead.email], ["Phone", lead.phone], ["Company", lead.company], ["Status", lead.status]] as [string, string | null][])
+    .filter(([, v]) => v)
+    .map(([k, v]) => [k, escapeHtml(v!)] as [string, string]);
+  return mtag("New lead", "ok") + mh(`New lead: ${escapeHtml(lead.name || "Unnamed")}`) + mfacts(rows) + mbtn("Open lead in Ridhzo", escapeHtml(link)) + mfine("The sooner you reach out, the better the chance of winning this lead.");
 }
 
 // Accept both the current group shape and legacy flat arrays, so old rows still evaluate.

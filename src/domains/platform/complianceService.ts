@@ -4,7 +4,8 @@ import { eq, or, ilike, and, isNull, isNotNull, inArray } from "drizzle-orm";
 import { AuditService } from "@/domains/audit/service";
 import { OpsAlertService } from "./opsAlertService";
 import { PlatformConfigService } from "./configService";
-import { sendEmail } from "@/lib/mail/mailer";
+import { sendEmail, appUrl } from "@/lib/mail/mailer";
+import { mh, mp, mbtn, mcallout } from "@/lib/mail/layout";
 
 export interface SubjectMatch {
   id: string;
@@ -297,15 +298,14 @@ export class ComplianceService {
           await sendEmail({ from: "hello",
             to: owner.email,
             subject: `[Compliance Notice] Data retention expiry for ${org.name}`,
-            html: `
-              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
-                <h2 style="color: #b91c1c; margin-top: 0;">Data Retention Expiry Notice</h2>
-                <p>Hello ${esc(owner.firstName || "there")},</p>
-                <p>Your organization <strong>${esc(org.name)}</strong> (${esc(org.slug)}) has been suspended for ${daysSuspended} days.</p>
-                <p>Under our compliance data retention policy, all customer records and personal data will be permanently anonymized in <strong>${daysLeft} days</strong>.</p>
-                <p>If you wish to reactivate your account or export your data before it is anonymized, please contact support immediately.</p>
-              </div>
-            `,
+            preheader: `${org.name} data will be anonymized in ${daysLeft} days`,
+            html:
+              mh("Data retention expiry notice") +
+              mp(`Hello ${esc(owner.firstName || "there")},`) +
+              mp(`Your organization <strong>${esc(org.name)}</strong> (${esc(org.slug)}) has been suspended for ${daysSuspended} days.`) +
+              mcallout(`Under our data retention policy, all customer records and personal data will be permanently anonymized in <strong>${daysLeft} days</strong>.`, "danger") +
+              mp("To reactivate your account or export your data before then, contact support now.") +
+              mbtn("Contact support", "mailto:hello@ridhzo.com"),
           });
         }
 

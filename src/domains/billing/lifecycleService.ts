@@ -6,6 +6,7 @@ import { eq, desc, and, isNotNull, lte, ne, sql } from "drizzle-orm";
 import { PlatformConfigService } from "@/domains/platform/configService";
 import { NotificationService } from "@/domains/notifications/service";
 import { sendEmail, appUrl } from "@/lib/mail/mailer";
+import { mh, mp, mbtn, mfine, mcallout } from "@/lib/mail/layout";
 import { AuditService } from "@/domains/audit/service";
 import { escapeHtml as esc } from "@/lib/utils";
 
@@ -24,6 +25,8 @@ export interface TenantBillingLifecycle {
   lastPaymentSuccessNotifiedAt?: string | null;
   // Meta "Subscribe" is a conversion: report it once per workspace, not on every monthly renewal.
   capiSubscribeSentAt?: string | null;
+  // One-shot email guards for renewal reminders / usage alerts: key → ISO time sent (see billingEmails.ts).
+  emailsSent?: Record<string, string>;
 }
 
 // A single payment produces multiple success calls seconds/minutes apart; real renewals are ~monthly.
@@ -308,24 +311,15 @@ export class BillingLifecycleService {
         await sendEmail({ from: "billing",
           to: admin.email,
           subject: expiryFormatted ? `[Action Required] Payment failed for ${esc(orgName)} — Grace period active` : `[Action Required] Payment overdue for ${esc(orgName)}`,
-          html: `
-            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; padding: 24px; color: #111;">
-              <h2 style="color: #d97706; margin-top: 0;">Subscription Payment Failed</h2>
-              <p>Hello,</p>
-              <p>We were unable to process the recurring payment for your <strong>${esc(plan)}</strong> plan on <strong>${esc(orgName)}</strong>.</p>
-              <p style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 4px; font-size: 14px;">
-                <strong>Reason:</strong> ${esc(reason)}<br />
-                ${status}
-              </p>
-              <p>To avoid any disruption to your automated workflows, WhatsApp integrations, and team seats, please update your billing payment method promptly:</p>
-              <p style="margin: 24px 0;">
-                <a href="${billingUrl}" style="background-color: #2563eb; color: #ffffff; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 500; display: inline-block;">Update Payment Method</a>
-              </p>
-              <p style="font-size: 12px; color: #6b7280; margin-top: 32px;">
-                If you believe this is an error or already resolved it, no further action is needed. Your data is always safely preserved.
-              </p>
-            </div>
-          `,
+          preheader: expiryFormatted ? `Update your payment method before ${expiryFormatted} to avoid disruption` : "Update your payment method to restore paused features",
+          html:
+            mh("Subscription payment failed") +
+            mp("Hello,") +
+            mp(`We couldn't process the recurring payment for your <strong>${esc(plan)}</strong> plan on <strong>${esc(orgName)}</strong>.`) +
+            mcallout(`<strong>Reason:</strong> ${esc(reason)}<br>${status}`, "warn") +
+            mp("To avoid disruption to your automations, WhatsApp integrations and team seats, please update your payment method.") +
+            mbtn("Update payment method", billingUrl) +
+            mfine("Already resolved? No further action is needed. Your data is always safely preserved."),
         });
         sent++;
       }
@@ -544,10 +538,13 @@ export class BillingLifecycleService {
           await sendEmail({ from: "billing",
             to: owner.email,
             subject: `Your free Ridhzo plan for ${org.name} has ended`,
-            html: `<div style="font-family:sans-serif;font-size:14px;line-height:1.5">
-<p>Hello ${owner.firstName || "there"},</p>
-<p>The free plan you were given for <b>${org.name}</b> has ended, so the workspace is now on Free. Your leads and follow-ups are safe.</p>
-<p>To keep AI replies, automations and all your lead sources: <a href="${appUrl("/settings/billing")}">choose a plan</a> (from ${PLAN_LIMITS.starter.price.replace(" / mo", "")} a month).</p></div>`,
+            preheader: "Your leads and follow-ups are safe — pick a plan to keep everything running",
+            html:
+              mh("Your free plan has ended") +
+              mp(`Hello ${owner.firstName || "there"},`) +
+              mp(`The free plan you were given for <strong>${org.name}</strong> has ended, so the workspace is now on Free. Your leads and follow-ups are safe.`) +
+              mp(`To keep AI replies, automations and all your lead sources, choose a plan — from ${PLAN_LIMITS.starter.price.replace(" / mo", "")} a month.`) +
+              mbtn("Choose a plan", appUrl("/settings/billing")),
           });
         }
       } catch {
@@ -622,15 +619,14 @@ export class BillingLifecycleService {
           await sendEmail({ from: "billing",
             to: owner.email,
             subject: `Your Ridhzo trial for ${org.name} has ended — your leads are safe`,
-            html: `
-              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px;">
-                <h2 style="color: #4b5563; margin-top: 0;">Your free trial has ended</h2>
-                <p>Hello ${owner.firstName || "there"},</p>
-                <p>Your <strong>${org.plan}</strong> trial on <strong>${org.name}</strong> is over, so the workspace is now on the <strong>Free</strong> plan. All your leads and follow-ups are safe.</p>
-                <p>On Free you get ${PLAN_LIMITS.free.aiCredits} AI credits a month, ${PLAN_LIMITS.free.automations} automations, ${PLAN_LIMITS.free.sequences} sequence and ${PLAN_LIMITS.free.sources} lead source. Anything above that is paused, not deleted.</p>
-                <p>Keep everything running for ${PLAN_LIMITS.starter.price.replace(" / mo", "")} a month: <a href="${appUrl("/settings/billing")}">upgrade to Starter</a>.</p>
-              </div>
-            `,
+            preheader: "Your leads and follow-ups are safe — upgrade to keep everything running",
+            html:
+              mh("Your free trial has ended") +
+              mp(`Hello ${owner.firstName || "there"},`) +
+              mp(`Your <strong>${org.plan}</strong> trial on <strong>${org.name}</strong> is over, so the workspace is now on the <strong>Free</strong> plan. All your leads and follow-ups are safe.`) +
+              mcallout(`On Free you get ${PLAN_LIMITS.free.aiCredits} AI credits a month, ${PLAN_LIMITS.free.automations} automations, ${PLAN_LIMITS.free.sequences} sequence and ${PLAN_LIMITS.free.sources} lead source. Anything above that is paused, not deleted.`) +
+              mp(`Keep everything running for ${PLAN_LIMITS.starter.price.replace(" / mo", "")} a month.`) +
+              mbtn("Upgrade to Starter", appUrl("/settings/billing")),
           });
         }
       } catch {

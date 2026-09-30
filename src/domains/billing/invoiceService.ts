@@ -4,6 +4,7 @@ import { desc, eq, like, sql } from "drizzle-orm";
 import { AuditService } from "@/domains/audit/service";
 import { UserFacingError } from "@/lib/actions/result";
 import { sendEmail, appUrl } from "@/lib/mail/mailer";
+import { mh, mp, mbtn, mfine, mfacts } from "@/lib/mail/layout";
 
 export interface TaxInvoice {
   id: string;
@@ -71,10 +72,13 @@ async function emailInvoice(to: string, inv: TaxInvoice) {
   await sendEmail({ from: "billing",
     to,
     subject: `Ridhzo tax invoice ${inv.invoiceNumber} — ${inr(inv.totalAmount)}`,
-    html: `<p>Hi,</p>
-<p>Thanks for your payment. Your GST tax invoice <strong>${inv.invoiceNumber}</strong> for ${inr(inv.totalAmount)} (incl. GST) is ready.</p>
-<p><a href="${link}">View and download the invoice</a></p>
-<p style="color:#666;font-size:12px">You're getting this because this address is set for invoices on the Plan &amp; billing page. Change it there any time.</p>`,
+    preheader: `Payment received — invoice ${inv.invoiceNumber} for ${inr(inv.totalAmount)}`,
+    html:
+      mh("Payment received — thank you") +
+      mp("Your GST tax invoice is ready to view and download.") +
+      mfacts([["Invoice number", inv.invoiceNumber], ["Amount (incl. GST)", inr(inv.totalAmount)]]) +
+      mbtn("View invoice", link) +
+      mfine("You're getting this because this address is set for invoices on the Plan &amp; billing page. Change it there any time."),
   });
 }
 
