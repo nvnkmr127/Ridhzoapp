@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, Calendar, MessageCircle, Megaphone, CreditCard, Bell, Webhook, Sparkles, Smartphone } from "lucide-react";
+import { ArrowLeft, Calendar, MessageCircle, Megaphone, CreditCard, Bell, Webhook, Sparkles, Smartphone, LifeBuoy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { requireOrg } from "@/lib/rbac";
 import { getServerSession } from "next-auth/next";
@@ -107,6 +107,14 @@ export default async function IntegrationsPage() {
           icon={<Smartphone className="h-5 w-5 text-emerald-500" />}
           status="configured"
           action={<ManageLink href="/" label="Open PWA" />}
+        />
+
+        <IntegrationCard
+          name="Need another integration?"
+          description="Tell us which tool you want connected (WhatsApp number, CRM, ad platform…) and we'll get back to you."
+          icon={<LifeBuoy className="h-5 w-5 text-rose-500" />}
+          status="configured"
+          action={<ManageLink href="/settings/support?category=integration_request&subject=Integration%20request" label="Request" />}
         />
 
         <IntegrationCard

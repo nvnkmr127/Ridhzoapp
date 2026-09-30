@@ -2,7 +2,9 @@
 
 import * as React from "react";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, RotateCcw } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { AlertCircle, LifeBuoy, RotateCcw } from "lucide-react";
 
 export default function DashboardError({
   error,
@@ -11,6 +13,12 @@ export default function DashboardError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const pathname = usePathname();
+  const report = new URLSearchParams({
+    category: "technical",
+    subject: "Error on " + pathname,
+    body: `Something went wrong on ${pathname}.\nReference: ${error?.digest ?? "n/a"}\n\nWhat I was doing:\n`,
+  });
   React.useEffect(() => {
     console.error("[DashboardError]", error);
   }, [error]);
@@ -35,6 +43,9 @@ export default function DashboardError({
         <div className="pt-2 flex justify-center">
           <Button onClick={() => reset()} className="gap-2">
             <RotateCcw className="h-4 w-4" /> Try again
+          </Button>
+          <Button asChild variant="outline" className="ml-2 gap-2">
+            <Link href={`/settings/support?${report}`}><LifeBuoy className="h-4 w-4" /> Report this</Link>
           </Button>
         </div>
       </div>

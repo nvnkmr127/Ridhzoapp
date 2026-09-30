@@ -44,6 +44,7 @@ export const navRoutes: NavRoute[] = [
   { label: "Sequences", icon: GitFork, href: "/sequences", group: "Productivity" },
   { label: "Sources", icon: Network, href: "/settings/sources", group: "Settings", permission: "sources.manage" },
   { label: "Settings", icon: Settings, href: "/settings", group: "Settings" },
+  { label: "Help & support", icon: LifeBuoy, href: "/settings/support", group: "Settings" },
 ];
 
 export function visibleRoutes(allowed: string[] = [], isSuperAdmin = false) {

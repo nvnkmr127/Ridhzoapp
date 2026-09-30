@@ -12,7 +12,7 @@ export interface SupportTicket {
   userId: string;
   userEmail: string;
   subject: string;
-  category: "billing" | "technical" | "feature_request" | "urgent";
+  category: "billing" | "technical" | "feature_request" | "integration_request" | "urgent";
   priority: "low" | "medium" | "high" | "urgent";
   status: "open" | "in_progress" | "resolved";
   assignedTo?: string | null;
@@ -70,7 +70,7 @@ export class SupportTicketService {
     userId: string;
     subject: string;
     body: string;
-    category?: "billing" | "technical" | "feature_request" | "urgent";
+    category?: "billing" | "technical" | "feature_request" | "integration_request" | "urgent";
     priority?: "low" | "medium" | "high" | "urgent";
   }): Promise<SupportTicket> {
     const [org] = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, input.orgId)).limit(1);
@@ -114,6 +114,17 @@ export class SupportTicketService {
       createdAt: now,
       updatedAt: now,
     });
+    // Best-effort ping to the ops channel (Zoho Cliq) so new tickets don't sit unseen.
+    try {
+      const { OpsAlertService } = await import("./opsAlertService");
+      await OpsAlertService.dispatchAlert(
+        "support.new",
+        `New ${ticket.category.replace("_", " ")} ticket (${ticket.priority})`,
+        `*${ticket.orgName}* — ${ticket.subject}\n${input.body.slice(0, 300)}`,
+      );
+    } catch {
+      // never block ticket creation on an alert
+    }
     return ticket;
   }
 

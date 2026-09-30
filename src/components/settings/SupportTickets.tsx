@@ -16,16 +16,17 @@ const CATEGORIES = [
   { value: "technical", label: "Something isn't working" },
   { value: "billing", label: "Billing or plan" },
   { value: "feature_request", label: "Feature request" },
+  { value: "integration_request", label: "Integration request" },
   { value: "urgent", label: "Urgent — work is blocked" },
 ] as const;
 const STATUS: Record<Ticket["status"], string> = { open: "Waiting for us", in_progress: "In progress", resolved: "Resolved" };
 
-export function SupportTickets({ initial }: { initial: Ticket[] }) {
+export function SupportTickets({ initial, prefill }: { initial: Ticket[]; prefill?: { category?: string; subject?: string; body?: string } }) {
   const { toast } = useToast();
   const [tickets, setTickets] = React.useState(initial);
-  const [subject, setSubject] = React.useState("");
-  const [body, setBody] = React.useState("");
-  const [category, setCategory] = React.useState<(typeof CATEGORIES)[number]["value"]>("technical");
+  const [subject, setSubject] = React.useState(prefill?.subject ?? "");
+  const [body, setBody] = React.useState(prefill?.body ?? "");
+  const [category, setCategory] = React.useState<(typeof CATEGORIES)[number]["value"]>(CATEGORIES.find((c) => c.value === prefill?.category)?.value ?? "technical");
   const [status, setStatus] = React.useState<Status>(null);
   const [busy, setBusy] = React.useState(false);
   const [openId, setOpenId] = React.useState<string | null>(null);

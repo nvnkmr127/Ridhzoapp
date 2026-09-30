@@ -24,7 +24,7 @@ export async function listMySupportTicketsAction() {
 const createSchema = z.object({
   subject: z.string().trim().min(3, "Add a short subject.").max(150),
   body: z.string().trim().min(10, "Describe the problem in a few words.").max(5000),
-  category: z.enum(["billing", "technical", "feature_request", "urgent"]),
+  category: z.enum(["billing", "technical", "feature_request", "integration_request", "urgent"]),
 });
 
 export async function createSupportTicketAction(input: z.input<typeof createSchema>) {

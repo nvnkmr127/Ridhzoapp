@@ -392,9 +392,9 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
           <div className="flex items-center gap-2">
             <Bell className="h-5 w-5 text-primary" />
             <div>
-              <h3 className="text-sm font-semibold">Platform Ops Webhook Alerts (Slack / Discord)</h3>
+              <h3 className="text-sm font-semibold">Platform Ops Webhook Alerts (Zoho Cliq)</h3>
               <p className="text-xs text-muted-foreground">
-                Stream critical platform events (missed deadlines, failed-delivery spikes, plan changes, data requests) to your tech team channel.
+                Stream critical platform events (new support tickets, missed deadlines, failed-delivery spikes, plan changes, data requests) to your Zoho Cliq channel.
               </p>
             </div>
           </div>
@@ -407,7 +407,7 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
           <div>
             <label className="text-xs font-medium text-foreground">Incoming Webhook URL</label>
             <Input
-              placeholder="https://hooks.slack.com/services/... or https://discord.com/api/webhooks/..."
+              placeholder="https://cliq.zoho.com/api/v2/channelsbyname/<channel>/message?zapikey=..."
               value={opsAlert.url}
               onChange={(e) => setOpsAlert((prev) => ({ ...prev, url: e.target.value }))}
               className="mt-1 h-9 text-xs font-mono"
