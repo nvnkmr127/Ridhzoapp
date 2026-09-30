@@ -31,6 +31,26 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import type { PlatformConsoleProps } from "./types";
 import { useImpersonate } from "./useImpersonate";
 
+const CATEGORY_LABEL: Record<string, string> = {
+  technical: "Issue",
+  billing: "Billing",
+  feature_request: "Feature request",
+  integration_request: "Integration request",
+  urgent: "Urgent",
+};
+const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 };
+
+// Queue order: unresolved first; among those, the ones closest to (or past) their SLA deadline.
+function bySla(a: SupportTicket, b: SupportTicket) {
+  const ra = a.status === "resolved" ? 1 : 0;
+  const rb = b.status === "resolved" ? 1 : 0;
+  if (ra !== rb) return ra - rb;
+  if (ra === 0) return new Date(a.slaDeadline).getTime() - new Date(b.slaDeadline).getTime();
+  return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+}
+
+const selectCls = "h-7 rounded-md border border-input bg-background px-2 text-xs";
+
 export function SupportTab({ initialTickets = [] }: PlatformConsoleProps) {
   const [confirm, confirmDialog] = useConfirm();
   const { toast } = useToast();
@@ -41,10 +61,23 @@ export function SupportTab({ initialTickets = [] }: PlatformConsoleProps) {
   const [ticketReplyText, setTicketReplyText] = React.useState("");
   const [replySending, setReplySending] = React.useState(false);
 
+  const [query, setQuery] = React.useState("");
+  const [categoryFilter, setCategoryFilter] = React.useState("all");
+  const [priorityFilter, setPriorityFilter] = React.useState("all");
+  const [sort, setSort] = React.useState<"sla" | "newest">("sla");
+
   const filteredTickets = React.useMemo(() => {
-    if (ticketFilter === "all") return tickets;
-    return tickets.filter((t) => t.status === ticketFilter);
-  }, [tickets, ticketFilter]);
+    const q = query.trim().toLowerCase();
+    const rows = tickets.filter((t) =>
+      (ticketFilter === "all" || t.status === ticketFilter) &&
+      (categoryFilter === "all" || t.category === categoryFilter) &&
+      (priorityFilter === "all" || t.priority === priorityFilter) &&
+      (!q || `${t.subject} ${t.orgName} ${t.userEmail}`.toLowerCase().includes(q)),
+    );
+    return rows.sort(sort === "sla"
+      ? (a, b) => bySla(a, b) || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]
+      : (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  }, [tickets, ticketFilter, categoryFilter, priorityFilter, query, sort]);
 
   const handleSendTicketReply = async () => {
     if (!selectedTicket || !ticketReplyText.trim()) return;
@@ -137,6 +170,29 @@ export function SupportTab({ initialTickets = [] }: PlatformConsoleProps) {
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center gap-2 px-5 py-3 border-b">
+          <Input
+            aria-label="Search tickets"
+            placeholder="Search subject, organization or email…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="h-7 text-xs w-full sm:w-64"
+          />
+          <select aria-label="Category" className={selectCls} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+            <option value="all">All types</option>
+            {Object.entries(CATEGORY_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+          <select aria-label="Priority" className={selectCls} value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)}>
+            <option value="all">All priorities</option>
+            {["urgent", "high", "medium", "low"].map((p) => <option key={p} value={p} className="capitalize">{p}</option>)}
+          </select>
+          <select aria-label="Sort" className={selectCls} value={sort} onChange={(e) => setSort(e.target.value as "sla" | "newest")}>
+            <option value="sla">Sort: SLA deadline</option>
+            <option value="newest">Sort: recently updated</option>
+          </select>
+          <span className="ml-auto text-xs text-muted-foreground">{filteredTickets.length} shown</span>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-border min-h-[480px]">
           {/* Left Column: Tickets List */}
           <div className="overflow-y-auto max-h-[560px] divide-y divide-border">
@@ -180,8 +236,8 @@ export function SupportTab({ initialTickets = [] }: PlatformConsoleProps) {
                       · {t.userEmail}
                     </div>
                     <div className="flex items-center gap-1.5 pt-0.5 flex-wrap">
-                      <Badge variant="outline" className="text-[10px] capitalize">
-                        {t.category}
+                      <Badge variant="outline" className="text-[10px]">
+                        {CATEGORY_LABEL[t.category] ?? t.category}
                       </Badge>
                       <Badge
                         variant="outline"

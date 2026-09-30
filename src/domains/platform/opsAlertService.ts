@@ -8,6 +8,7 @@ export interface OpsWebhookConfig {
   notifyOnDlq: boolean;
   notifyOnPlanChange: boolean;
   notifyOnGdpr: boolean;
+  notifyOnTickets?: boolean; // new tickets + tenant replies (undefined = on)
   // Zoho Cliq OAuth (Self Client) — only for Cliq API URLs without a ?zapikey=. Secrets stay encrypted.
   cliqClientId?: string;
   cliqClientSecretEnc?: string;
@@ -16,7 +17,20 @@ export interface OpsWebhookConfig {
 }
 
 // What the browser gets: never the secrets, only whether they're set.
-export type OpsWebhookView = Omit<OpsWebhookConfig, "cliqClientSecretEnc" | "cliqRefreshTokenEnc"> & { hasCliqOAuth: boolean };
+export interface AlertLogEntry { at: string; event: string; title: string; ok: boolean; error?: string }
+export type OpsWebhookView = Omit<OpsWebhookConfig, "cliqClientSecretEnc" | "cliqRefreshTokenEnc"> & { hasCliqOAuth: boolean; recentAlerts: AlertLogEntry[] };
+
+// Sample messages for the console's per-event test button.
+export const SAMPLE_ALERTS: Record<string, { label: string; title: string; body: string }> = {
+  "support.new": { label: "New support ticket", title: "New technical ticket (medium)", body: "*Acme Corp* — Sample: WhatsApp messages not sending" },
+  "support.reply": { label: "Tenant reply", title: "Tenant replied on a ticket", body: "*Acme Corp* — Sample: WhatsApp messages not sending\nStill failing after the token refresh." },
+  "sla.support_ticket": { label: "Ticket SLA breach", title: "Support SLA missed (high)", body: "*Acme Corp* — Sample: WhatsApp messages not sending\nOpen 7h past its response deadline." },
+  "dlq.spike": { label: "Failed deliveries", title: "Failed-delivery spike", body: "Sample: 12 webhook deliveries failed in the last hour." },
+  "plan.change": { label: "Plan change", title: "Plan changed", body: "*Acme Corp* moved from starter to pro (sample)." },
+  "compliance.request": { label: "Data request", title: "GDPR data request", body: "Sample: erasure request received for *Acme Corp*." },
+};
+const LOG_KEY = "ops_alert_log";
+const LOG_MAX = 10;
 
 export interface OpsWebhookInput extends Omit<OpsWebhookConfig, "cliqClientSecretEnc" | "cliqRefreshTokenEnc" | "updatedAt"> {
   cliqClientSecret?: string; // blank keeps the stored value
@@ -80,9 +94,24 @@ export class OpsAlertService {
     return PlatformConfigService.get<OpsWebhookConfig>(this.CONFIG_KEY, DEFAULT_CONFIG);
   }
 
+  static getLog(): Promise<AlertLogEntry[]> {
+    return PlatformConfigService.get<AlertLogEntry[]>(LOG_KEY, []);
+  }
+
+  // Newest first, last LOG_MAX. Best-effort: never let logging break (or mask) an alert.
+  // ponytail: read-modify-write, so two simultaneous alerts can drop one log line.
+  private static async log(entry: Omit<AlertLogEntry, "at">): Promise<void> {
+    try {
+      const prev = await this.getLog();
+      await PlatformConfigService.set(LOG_KEY, [{ at: new Date().toISOString(), ...entry }, ...prev].slice(0, LOG_MAX));
+    } catch {
+      // ignore
+    }
+  }
+
   static async getView(): Promise<OpsWebhookView> {
     const { cliqClientSecretEnc, cliqRefreshTokenEnc, ...rest } = await this.getConfig();
-    return { ...rest, hasCliqOAuth: !!(rest.cliqClientId && cliqClientSecretEnc && cliqRefreshTokenEnc) };
+    return { ...rest, hasCliqOAuth: !!(rest.cliqClientId && cliqClientSecretEnc && cliqRefreshTokenEnc), recentAlerts: await this.getLog() };
   }
 
   static async saveConfig(input: OpsWebhookInput): Promise<void> {
@@ -145,6 +174,7 @@ export class OpsAlertService {
     if (event.startsWith("dlq") && !config.notifyOnDlq) return false;
     if (event.startsWith("plan") && !config.notifyOnPlanChange) return false;
     if (event.startsWith("compliance") && !config.notifyOnGdpr) return false;
+    if (event.startsWith("support") && config.notifyOnTickets === false) return false;
 
     try {
       const res = await this.post(
@@ -152,29 +182,33 @@ export class OpsAlertService {
         `🚨 *[Ridhzo Ops Alert]*: *${title}*\n${markdownMessage}\n_Timestamp: ${new Date().toISOString()}_`,
         6000,
       );
+      await this.log({ event, title, ok: res.ok, error: res.ok ? undefined : `HTTP ${res.status}` });
       return res.ok;
-    } catch {
+    } catch (e) {
+      await this.log({ event, title, ok: false, error: e instanceof Error ? e.message : "failed" });
       return false;
     }
   }
 
-  static async sendTestPing(): Promise<{ ok: boolean; message: string }> {
+  // Sends a sample for `event` (or a plain connection ping) regardless of the per-event toggles.
+  static async sendTestPing(event?: string): Promise<{ ok: boolean; message: string }> {
     const config = await this.getConfig();
     if (!config.url) {
       return { ok: false, message: "No webhook URL configured." };
     }
-
+    const sample = event ? SAMPLE_ALERTS[event] : undefined;
+    const text = sample
+      ? `🧪 *[Ridhzo Ops Alert — sample]*: *${sample.title}*\n${sample.body}\n_Timestamp: ${new Date().toISOString()}_`
+      : `✅ *[Ridhzo Ops]* Connection Verified!\nSuperAdmin test notification sent from platform console.\n_Time: ${new Date().toISOString()}_`;
+    const name = event ?? "test";
+    const title = sample?.title ?? "Connection test";
     try {
-      const res = await this.post(
-        config,
-        `✅ *[Ridhzo Ops]* Connection Verified!\nSuperAdmin test notification sent from platform console.\n_Time: ${new Date().toISOString()}_`,
-        8000,
-      );
-      if (res.ok) {
-        return { ok: true, message: "Test alert delivered successfully (HTTP 200)." };
-      }
+      const res = await this.post(config, text, 8000);
+      await this.log({ event: name, title, ok: res.ok, error: res.ok ? undefined : `HTTP ${res.status}` });
+      if (res.ok) return { ok: true, message: "Test alert delivered successfully." };
       return { ok: false, message: `Webhook responded with status HTTP ${res.status}.` };
     } catch (e: any) {
+      await this.log({ event: name, title, ok: false, error: e.message });
       return { ok: false, message: `Failed to deliver webhook: ${e.message || "Network timeout"}` };
     }
   }

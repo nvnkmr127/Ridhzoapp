@@ -631,6 +631,13 @@
       "when": 1790700100000,
       "tag": "0089_capi_token_expiry",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1790700200000,
+      "tag": "0090_support_sla_alerted",
+      "breakpoints": true
     }
   ]
 }

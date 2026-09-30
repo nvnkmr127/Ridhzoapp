@@ -27,6 +27,10 @@ vi.mock("@/lib/jobs/workers/sequenceWorker", () => ({
   createSequenceWorker: vi.fn(),
   scheduleSequenceScan: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock("@/lib/jobs/workers/supportSlaWorker", () => ({
+  createSupportSlaWorker: vi.fn(),
+  scheduleSupportSlaScan: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("@/lib/jobs/workers/recycleBinWorker", () => ({
   createRecycleBinWorker: vi.fn(),
   scheduleRecycleBinScan: vi.fn().mockResolvedValue(undefined),

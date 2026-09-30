@@ -63,6 +63,10 @@ export async function startWorkers(): Promise<void> {
   createTrialDowngradeWorker();
   await scheduleTrialDowngradeScan();
 
+  const { createSupportSlaWorker, scheduleSupportSlaScan } = await import("@/lib/jobs/workers/supportSlaWorker");
+  createSupportSlaWorker();
+  await scheduleSupportSlaScan();
+
   // Consumers with an external producer (event bus).
   const { createWebhookRetryWorker } = await import("@/lib/jobs/workers/webhookRetryWorker");
   createWebhookRetryWorker();

@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { organizations, users, supportTickets, type TicketMessage, type InternalNote } from "@/db/schema";
-import { count, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, isNull, lt, ne } from "drizzle-orm";
+import { sendEmail, appUrl } from "@/lib/mail/mailer";
 import { NotificationService } from "@/domains/notifications/service";
 
 export type { TicketMessage, InternalNote };
@@ -34,6 +35,31 @@ const toTicket = (r: TicketRow): SupportTicket => ({
   createdAt: r.createdAt.toISOString(),
   updatedAt: r.updatedAt.toISOString(),
 });
+
+const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+const label = (c: string) => c.replace("_", " ");
+
+// Best-effort email to the ticket owner (platform mailer, never the tenant's SMTP). Never blocks the caller.
+async function emailOwner(t: SupportTicket, subject: string, lead: string, body?: string) {
+  try {
+    await sendEmail({
+      to: t.userEmail,
+      subject,
+      html: `<p>${esc(lead)}</p>${body ? `<blockquote style="border-left:3px solid #ccc;margin:0;padding-left:12px;white-space:pre-wrap">${esc(body)}</blockquote>` : ""}<p><a href="${appUrl("/settings/support")}">Open your support requests</a></p>`,
+    });
+  } catch (err) {
+    console.warn("[supportService] failed to email ticket owner", err);
+  }
+}
+
+async function opsAlert(event: string, title: string, message: string) {
+  try {
+    const { OpsAlertService } = await import("./opsAlertService");
+    await OpsAlertService.dispatchAlert(event, title, message);
+  } catch {
+    // never block a ticket action on an alert
+  }
+}
 
 const SLA_HOURS: Record<string, number> = {
   urgent: 2,
@@ -115,16 +141,11 @@ export class SupportTicketService {
       updatedAt: now,
     });
     // Best-effort ping to the ops channel (Zoho Cliq) so new tickets don't sit unseen.
-    try {
-      const { OpsAlertService } = await import("./opsAlertService");
-      await OpsAlertService.dispatchAlert(
-        "support.new",
-        `New ${ticket.category.replace("_", " ")} ticket (${ticket.priority})`,
-        `*${ticket.orgName}* — ${ticket.subject}\n${input.body.slice(0, 300)}`,
-      );
-    } catch {
-      // never block ticket creation on an alert
-    }
+    await opsAlert(
+      "support.new",
+      `New ${label(ticket.category)} ticket (${ticket.priority})`,
+      `*${ticket.orgName}* — ${ticket.subject}\n${input.body.slice(0, 300)}`,
+    );
     return ticket;
   }
 
@@ -181,6 +202,9 @@ export class SupportTicketService {
       } catch (err) {
         console.warn("[supportService] failed to notify user of support reply", err);
       }
+      await emailOwner(ticket, `Re: ${ticket.subject}`, "Ridhzo support replied to your request:", body);
+    } else {
+      await opsAlert("support.reply", "Tenant replied on a ticket", `*${ticket.orgName}* — ${ticket.subject}\n${body.slice(0, 300)}`);
     }
 
     return ticket;
@@ -201,8 +225,27 @@ export class SupportTicketService {
       } catch {
         // ignore
       }
+      await emailOwner(ticket, `Resolved: ${ticket.subject}`, "Your support request has been marked resolved. Reply on the ticket if you still need help.");
     }
 
     return ticket;
+  }
+
+  // Worker scan: alert once per ticket that is still unresolved past its SLA deadline.
+  // Claims each row first (slaAlertedAt) so two workers can't double-post.
+  static async alertSlaBreaches(): Promise<number> {
+    const due = await db.select().from(supportTickets)
+      .where(and(ne(supportTickets.status, "resolved"), lt(supportTickets.slaDeadline, new Date()), isNull(supportTickets.slaAlertedAt)))
+      .limit(50);
+    let sent = 0;
+    for (const r of due) {
+      const claimed = await db.update(supportTickets).set({ slaAlertedAt: new Date() })
+        .where(and(eq(supportTickets.id, r.id), isNull(supportTickets.slaAlertedAt))).returning({ id: supportTickets.id });
+      if (!claimed.length) continue;
+      const hours = Math.max(1, Math.round((Date.now() - r.slaDeadline.getTime()) / 3_600_000));
+      await opsAlert("sla.support_ticket", `Support SLA missed (${r.priority})`, `*${r.orgName}* — ${r.subject}\nOpen ${hours}h past its response deadline.`);
+      sent++;
+    }
+    return sent;
   }
 }

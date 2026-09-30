@@ -28,6 +28,7 @@ import {
   saveOpsAlertConfigAction,
   connectCliqAction,
   testOpsAlertAction,
+  refreshOpsAlertLogAction,
   revokeUserSessionsAction,
   revokeOrgSessionsAction,
   exportPlatformCsvAction,
@@ -178,6 +179,7 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
       notifyOnPlanChange: true,
       notifyOnGdpr: true,
       hasCliqOAuth: false,
+      recentAlerts: [],
     }
   );
   const [opsAlertSaving, setOpsAlertSaving] = React.useState(false);
@@ -210,14 +212,18 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
     }
   }
 
+  const [sampleEvent, setSampleEvent] = React.useState("");
   async function handleTestOpsAlert() {
     setTestingOpsAlert(true);
-    const res = await testOpsAlertAction();
+    const res = await testOpsAlertAction(sampleEvent || undefined);
     setTestingOpsAlert(false);
+    // Refresh the "recent alerts" list either way — a failed test is logged too.
+    const fresh = await refreshOpsAlertLogAction();
+    if (fresh.ok) setOpsAlert((prev) => ({ ...prev, recentAlerts: fresh.data }));
     if (!res.ok) {
       toast({ variant: "destructive", title: "Webhook test failed", description: res.message });
     } else {
-      toast({ title: "Ping delivered successfully!", description: res.data.message });
+      toast({ title: sampleEvent ? "Sample alert delivered" : "Ping delivered successfully!", description: res.data.message });
     }
   }
 
@@ -455,7 +461,7 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
             </Button>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1 text-xs">
             <label className="flex items-center gap-2 cursor-pointer border rounded-lg p-2.5 bg-muted/20">
               <input
                 type="checkbox"
@@ -492,6 +498,15 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
               />
               <span>Data Requests</span>
             </label>
+            <label className="flex items-center gap-2 cursor-pointer border rounded-lg p-2.5 bg-muted/20">
+              <input
+                type="checkbox"
+                checked={opsAlert.notifyOnTickets !== false}
+                onChange={(e) => setOpsAlert((prev) => ({ ...prev, notifyOnTickets: e.target.checked }))}
+                className="rounded border-border"
+              />
+              <span>Support tickets &amp; replies</span>
+            </label>
           </div>
 
           <div className="flex items-center justify-between pt-2">
@@ -505,6 +520,20 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
               {opsAlert.enabled ? "Disable Alerts" : "Enable Alerts"}
             </Button>
             <div className="flex items-center gap-2">
+              <select
+                aria-label="Sample alert to send"
+                value={sampleEvent}
+                onChange={(e) => setSampleEvent(e.target.value)}
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+              >
+                <option value="">Connection ping</option>
+                <option value="support.new">Sample: new ticket</option>
+                <option value="support.reply">Sample: tenant reply</option>
+                <option value="sla.support_ticket">Sample: SLA breach</option>
+                <option value="dlq.spike">Sample: failed deliveries</option>
+                <option value="plan.change">Sample: plan change</option>
+                <option value="compliance.request">Sample: data request</option>
+              </select>
               <Button
                 variant="outline"
                 size="sm"
@@ -512,7 +541,7 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
                 disabled={testingOpsAlert || !opsAlert.url}
                 onClick={handleTestOpsAlert}
               >
-                {testingOpsAlert ? "Pinging..." : "Test Webhook Ping"}
+                {testingOpsAlert ? "Sending..." : sampleEvent ? "Send sample" : "Test Webhook Ping"}
               </Button>
               <Button
                 size="sm"
@@ -524,6 +553,19 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
               </Button>
             </div>
           </div>
+
+          {opsAlert.recentAlerts.length > 0 && (
+            <div className="rounded-lg border divide-y text-xs">
+              <div className="px-3 py-1.5 font-medium text-muted-foreground">Recent alerts</div>
+              {opsAlert.recentAlerts.map((a, i) => (
+                <div key={i} className="flex items-center gap-2 px-3 py-1.5">
+                  <span className={a.ok ? "text-emerald-600" : "text-destructive"}>{a.ok ? "Sent" : "Failed"}</span>
+                  <span className="truncate flex-1">{a.title}{a.error ? ` — ${a.error}` : ""}</span>
+                  <span className="text-muted-foreground shrink-0">{new Date(a.at).toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

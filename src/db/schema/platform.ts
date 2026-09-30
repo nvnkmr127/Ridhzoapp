@@ -59,6 +59,7 @@ export const supportTickets = pgTable('support_tickets', {
   status: varchar('status', { length: 16 }).notNull(),
   assignedTo: varchar('assigned_to', { length: 255 }),
   slaDeadline: timestamp('sla_deadline').notNull(),
+  slaAlertedAt: timestamp('sla_alerted_at'), // set once the SLA-breach alert has gone to the ops channel
   messages: jsonb('messages').$type<TicketMessage[]>().notNull().default([]),
   internalNotes: jsonb('internal_notes').$type<InternalNote[]>().notNull().default([]),
   createdAt: timestamp('created_at').defaultNow().notNull(),

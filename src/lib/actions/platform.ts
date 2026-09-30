@@ -451,6 +451,7 @@ const opsAlertSchema = z.object({
   notifyOnDlq: z.boolean(),
   notifyOnPlanChange: z.boolean(),
   notifyOnGdpr: z.boolean(),
+  notifyOnTickets: z.boolean().optional(),
   cliqClientId: z.string().trim().max(200).optional(),
   cliqClientSecret: z.string().trim().max(500).optional(),
   cliqRefreshToken: z.string().trim().max(500).optional(),
@@ -517,13 +518,23 @@ export async function connectCliqAction(input: z.input<typeof cliqConnectSchema>
   }
 }
 
-export async function testOpsAlertAction() {
+export async function testOpsAlertAction(event?: string) {
   await requireSuperAdmin();
   try {
     const { OpsAlertService } = await import("@/domains/platform/opsAlertService");
-    const res = await OpsAlertService.sendTestPing();
+    const res = await OpsAlertService.sendTestPing(event);
     if (!res.ok) return fail("SERVER", res.message);
     return ok({ message: res.message });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+export async function refreshOpsAlertLogAction() {
+  await requireSuperAdmin();
+  try {
+    const { OpsAlertService } = await import("@/domains/platform/opsAlertService");
+    return ok(await OpsAlertService.getLog());
   } catch (e) {
     return actionFail(e);
   }
