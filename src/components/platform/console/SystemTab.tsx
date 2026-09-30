@@ -37,7 +37,7 @@ import {
   remediateAnomalyAction,
 } from "@/lib/actions/platform";
 import type { GlobalUserSummary, OrgSummary, FleetApiKeySummary, PlatformActivitySummary } from "@/domains/platform/service";
-import type { OpsWebhookConfig } from "@/domains/platform/opsAlertService";
+import type { OpsWebhookView } from "@/domains/platform/opsAlertService";
 import type { SecurityAnomaly } from "@/domains/platform/anomalyDetectionService";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import type { PlatformConsoleProps } from "./types";
@@ -168,7 +168,7 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
   };
 
   // --- Support Triage & Internal Notes State ---
-  const [opsAlert, setOpsAlert] = React.useState<OpsWebhookConfig>(
+  const [opsAlert, setOpsAlert] = React.useState<OpsWebhookView & { cliqClientSecret?: string; cliqRefreshToken?: string }>(
     initialOpsAlert ?? {
       url: "",
       enabled: false,
@@ -176,6 +176,7 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
       notifyOnDlq: true,
       notifyOnPlanChange: true,
       notifyOnGdpr: true,
+      hasCliqOAuth: false,
     }
   );
   const [opsAlertSaving, setOpsAlertSaving] = React.useState(false);
@@ -191,6 +192,7 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
     if (!res.ok) {
       toast({ variant: "destructive", title: "Failed to save ops webhook", description: res.message });
     } else {
+      setOpsAlert({ ...res.data, cliqClientSecret: "", cliqRefreshToken: "" });
       toast({ title: "Ops webhook configuration saved" });
     }
   }
@@ -407,11 +409,27 @@ export function SystemTab({ initial = [], initialUsers = [], metrics, initialOps
           <div>
             <label className="text-xs font-medium text-foreground">Incoming Webhook URL</label>
             <Input
-              placeholder="https://cliq.zoho.com/api/v2/channelsbyname/<channel>/message?zapikey=..."
+              placeholder="https://cliq.zoho.in/company/<id>/api/v2/channelsbyname/<channel>/message"
               value={opsAlert.url}
               onChange={(e) => setOpsAlert((prev) => ({ ...prev, url: e.target.value }))}
               className="mt-1 h-9 text-xs font-mono"
             />
+          </div>
+
+          {/* Zoho Cliq API URLs (no ?zapikey=) authenticate with OAuth; leave these blank for other webhooks. */}
+          <div className="grid gap-2 sm:grid-cols-3">
+            <div>
+              <label className="text-xs font-medium text-foreground">Zoho Client ID</label>
+              <Input value={opsAlert.cliqClientId ?? ""} onChange={(e) => setOpsAlert((prev) => ({ ...prev, cliqClientId: e.target.value }))} className="mt-1 h-9 text-xs font-mono" autoComplete="off" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-foreground">Client Secret</label>
+              <Input type="password" placeholder={opsAlert.hasCliqOAuth ? "•••• saved (blank keeps it)" : ""} value={opsAlert.cliqClientSecret ?? ""} onChange={(e) => setOpsAlert((prev) => ({ ...prev, cliqClientSecret: e.target.value }))} className="mt-1 h-9 text-xs font-mono" autoComplete="off" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-foreground">Refresh Token</label>
+              <Input type="password" placeholder={opsAlert.hasCliqOAuth ? "•••• saved (blank keeps it)" : ""} value={opsAlert.cliqRefreshToken ?? ""} onChange={(e) => setOpsAlert((prev) => ({ ...prev, cliqRefreshToken: e.target.value }))} className="mt-1 h-9 text-xs font-mono" autoComplete="off" />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-xs">

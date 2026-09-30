@@ -13,7 +13,7 @@ import type {
 } from "@/domains/platform/service";
 import type { BroadcastConfig } from "@/domains/platform/configService";
 import type { RevOpsMetrics, TenantHealthSummary } from "@/domains/platform/revops";
-import type { OpsWebhookConfig } from "@/domains/platform/opsAlertService";
+import type { OpsWebhookView } from "@/domains/platform/opsAlertService";
 import type { TenantBillingInfo } from "@/domains/billing/lifecycleService";
 import type { TaxInvoice } from "@/domains/billing/invoiceService";
 import type { Coupon } from "@/domains/billing/couponService";
@@ -33,7 +33,7 @@ export type PlatformConsoleProps = {
   revops?: RevOpsMetrics;
   tenantHealth?: TenantHealthSummary[];
   initialMaintenance?: { enabled: boolean; message: string };
-  initialOpsAlert?: OpsWebhookConfig;
+  initialOpsAlert?: OpsWebhookView;
   initialBilling?: TenantBillingInfo[];
   initialInvoices?: TaxInvoice[];
   initialCoupons?: Coupon[];

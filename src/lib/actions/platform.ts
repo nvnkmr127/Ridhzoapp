@@ -451,6 +451,9 @@ const opsAlertSchema = z.object({
   notifyOnDlq: z.boolean(),
   notifyOnPlanChange: z.boolean(),
   notifyOnGdpr: z.boolean(),
+  cliqClientId: z.string().trim().max(200).optional(),
+  cliqClientSecret: z.string().trim().max(500).optional(),
+  cliqRefreshToken: z.string().trim().max(500).optional(),
 });
 
 export async function saveOpsAlertConfigAction(input: z.input<typeof opsAlertSchema>) {
@@ -470,6 +473,7 @@ export async function saveOpsAlertConfigAction(input: z.input<typeof opsAlertSch
   try {
     const { OpsAlertService } = await import("@/domains/platform/opsAlertService");
     await OpsAlertService.saveConfig(config);
+    const view = await OpsAlertService.getView();
     await AuditService.log({
         organizationId: session.user.organizationId ?? PLATFORM_ORG_ID,
         userId: session.user.id,
@@ -478,7 +482,7 @@ export async function saveOpsAlertConfigAction(input: z.input<typeof opsAlertSch
         metadata: { enabled: config.enabled, urlSet: !!config.url, by: "super_admin" },
       });
     revalidatePath("/admin");
-    return ok(config);
+    return ok(view);
   } catch (e) {
     return actionFail(e);
   }

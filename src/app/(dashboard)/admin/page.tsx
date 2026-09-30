@@ -41,7 +41,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     when(needs("revops"), () => RevOpsService.getMetrics()),
     when(needs("tenantHealth"), () => RevOpsService.listTenantHealth(30)),
     PlatformConfigService.get("maintenance_mode", { enabled: false, message: "" }), // tab badge
-    OpsAlertService.getConfig(), // tab badge
+    OpsAlertService.getView(), // tab badge
     when(needs("initialBilling"), () => BillingLifecycleService.listFleetBillingStatus()),
     when(needs("initialInvoices"), () => InvoiceService.listInvoices(50)),
     when(needs("initialCoupons"), () => CouponService.list()),
