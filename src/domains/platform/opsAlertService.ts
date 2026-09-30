@@ -59,7 +59,10 @@ async function cliqAccessToken(cfg: OpsWebhookConfig, accountsHost: string): Pro
     signal: AbortSignal.timeout(4000),
   });
   const json: any = await res.json().catch(() => ({}));
-  if (!json.access_token) throw new Error(`Zoho token refresh failed: ${json.error ?? res.status}`);
+  if (!json.access_token) {
+    const hint = json.error === "invalid_code" ? " — the Refresh Token must be the refresh_token from the code exchange (not the grant code), created on this data center" : "";
+    throw new Error(`Zoho token refresh failed: ${json.error ?? res.status}${hint}`);
+  }
   tokenCache = { key, token: json.access_token, exp: Date.now() + (Number(json.expires_in) || 3600) * 1000 };
   return json.access_token;
 }
