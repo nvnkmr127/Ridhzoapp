@@ -10,21 +10,15 @@ import { escapeHtml as esc } from "@/lib/utils";
 import { PlanService } from "./planService";
 import { PLAN_LABELS, canonicalPlan, trialExpired } from "./planNames";
 import { BillingLifecycleService } from "./lifecycleService";
+import { recipientsWithPermission } from "@/lib/mail/recipients";
 
 const DAY = 86_400_000;
 const REMIND_DAYS = 3;
 const fmtDate = (d: Date) => d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
+// Workspace members who manage billing (permission, not role name), minus anyone who muted `optOutKey`.
 async function adminEmails(orgId: string, optOutKey?: string): Promise<{ email: string; firstName: string | null }[]> {
-  const rows = await db
-    .select({ email: users.email, firstName: users.firstName, roleName: roles.name, perms: roles.permissions, optOut: users.emailOptOut })
-    .from(users)
-    .leftJoin(roles, eq(users.roleId, roles.id))
-    .where(and(eq(users.organizationId, orgId), eq(users.isActive, true), isNull(users.deletedAt)));
-  return rows
-    .filter((u) => (u.roleName ?? "").toLowerCase() === "admin" || (u.perms ?? []).includes("*"))
-    .filter((u) => !u.email.endsWith("@phone.ridhzo.com")) // placeholder address, undeliverable
-    .filter((u) => !optOutKey || !(u.optOut ?? []).includes(optOutKey));
+  return recipientsWithPermission(orgId, "billing.manage", { optOutKey });
 }
 
 // `optOut` = category for reminder-type mail: skips admins who muted it and adds an unsubscribe link.

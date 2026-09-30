@@ -9,6 +9,7 @@ import { HabitService, recapLine, type Recap } from "@/domains/organizations/hab
 import { isWorkDay } from "@/lib/workHours";
 import { t, type Lang } from "@/lib/i18n";
 import { dayKey, startOfZonedDay } from "@/lib/tz";
+import { recipientsWithPermission } from "@/lib/mail/recipients";
 
 // Morning team summary for workspace admins: what needs attention today. Sent once per org-local
 // day between 8 and 11 AM, only when something is actionable, to admins who haven't opted out of email.
@@ -280,15 +281,11 @@ export class DailySummaryService {
     return { overdue: overdue.n, dueToday: dueToday.n, meetingsToday: meetingsToday.n, newLeads: fresh.n, uncontacted: uncontacted.n };
   }
 
+  // The morning summary goes to whoever runs the workspace (settings.manage — admins and owners),
+  // unless they turned it off. Milestone (trial / week-one) mails reuse it.
   private static async adminEmails(organizationId: string) {
-    const rows = await db
-      .select({ email: users.email, optOut: users.emailOptOut, roleName: roles.name, perms: roles.permissions })
-      .from(users)
-      .leftJoin(roles, eq(users.roleId, roles.id))
-      .where(and(eq(users.organizationId, organizationId), eq(users.isActive, true), isNull(users.deletedAt)));
-    return rows
-      .filter((u) => !(u.optOut ?? []).includes("daily_summary") && u.email && ((u.roleName ?? "").toLowerCase() === "admin" || (u.perms ?? []).includes("*") || (u.perms ?? []).includes("settings.manage")))
-      .map((u) => u.email);
+    const people = await recipientsWithPermission(organizationId, "settings.manage", { optOutKey: "daily_summary" });
+    return people.map((u) => u.email);
   }
 
   /** Hourly: send to every org that's in its morning window and hasn't had today's summary. */

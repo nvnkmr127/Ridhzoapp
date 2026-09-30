@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ComplianceService } from "./complianceService";
 import { db } from "@/db";
 import { PlatformConfigService } from "./configService";
+import { recipientsWithPermission } from "@/lib/mail/recipients";
 import { sendEmail } from "@/lib/mail/mailer";
 
 vi.mock("@/db", () => ({
@@ -18,6 +19,7 @@ vi.mock("./configService", () => ({
   },
 }));
 
+vi.mock("@/lib/mail/recipients", () => ({ recipientsWithPermission: vi.fn().mockResolvedValue([]) }));
 vi.mock("@/lib/mail/mailer", () => ({
   sendEmail: vi.fn().mockResolvedValue(undefined),
 }));
@@ -65,6 +67,7 @@ describe("ComplianceService - Suspension Retention Policy", () => {
     const currentDate = new Date("2026-06-20T00:00:00Z"); // ~170 days suspended
 
     let selectCallCount = 0;
+    vi.mocked(recipientsWithPermission).mockResolvedValue([{ id: "u1", email: "owner@warn.com", firstName: "Alice" }]);
     vi.mocked(db.select).mockImplementation(() => {
       selectCallCount++;
       return {
@@ -106,6 +109,7 @@ describe("ComplianceService - Suspension Retention Policy", () => {
     const currentDate = new Date("2026-07-15T00:00:00Z"); // 195 days, but the owner was never warned
 
     let selectCallCount = 0;
+    vi.mocked(recipientsWithPermission).mockResolvedValue([{ id: "u1", email: "owner@late.com", firstName: "Bo" }]);
     vi.mocked(db.select).mockImplementation(() => {
       selectCallCount++;
       return {
@@ -130,6 +134,7 @@ describe("ComplianceService - Suspension Retention Policy", () => {
     const suspendedDate = new Date("2026-01-01T00:00:00Z");
     const currentDate = new Date("2026-07-15T00:00:00Z");
     let selectCallCount = 0;
+    vi.mocked(recipientsWithPermission).mockResolvedValue([{ id: "u1", email: "o@re.com", firstName: "R" }]);
     vi.mocked(db.select).mockImplementation(() => {
       selectCallCount++;
       return {

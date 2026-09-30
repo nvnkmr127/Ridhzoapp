@@ -16,6 +16,7 @@
     "backfill:enrichment": "tsx -r dotenv/config src/scripts/backfill-enrichment.ts",
     "sync:contacts": "tsx -r dotenv/config src/scripts/sync-resend-contacts.ts",
     "mail:samples": "tsx -r dotenv/config src/scripts/send-sample-emails.ts",
+    "newsletter:build": "tsx -r dotenv/config src/scripts/build-newsletter.ts",
     "db:baseline": "tsx -r dotenv/config src/scripts/baseline-migrations.ts"
   },
   "dependencies": {

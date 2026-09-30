@@ -3,6 +3,7 @@ import { notifications, users, roles } from "@/db/schema";
 import { and, desc, eq, isNull, inArray, lt, sql } from "drizzle-orm";
 import { keepAlive } from "@/lib/keepAlive";
 import { escapeHtml } from "@/lib/utils";
+import type { PermissionKey } from "@/lib/permissions";
 
 // High-signal notification types that also warrant an email. Chatty ones (self-completions) don't.
 // Email look per notification type: tag text/tone and the button label.
@@ -61,25 +62,19 @@ export class NotificationService {
     return row;
   }
 
-  // Notify the org's admins/owners (role "admin" or a wildcard permission) — used to alert the
-  // account that a lead came in, even when it lands unassigned. `excludeUserId` skips the assignee,
-  // who already gets their own "assigned" alert, so a solo owner isn't pinged twice for one lead.
+  // Notify the people in the workspace who hold `permission` (default: settings.manage — owners and
+  // admins) — used to alert the account that a lead came in, even when it lands unassigned. Decided by
+  // permission, not role name, so a custom role with the permission is included and a Member isn't.
+  // `excludeUserId` skips the assignee, who already gets their own "assigned" alert.
   static async notifyOrgAdmins(
     organizationId: string,
     payload: { type: string; title: string; body?: string; leadId?: string; titleVars?: Vars; bodyVars?: Vars },
     excludeUserId?: string,
+    permission: PermissionKey = "settings.manage",
   ) {
-    const rows = await db
-      .select({ id: users.id, roleName: roles.name, perms: roles.permissions })
-      .from(users)
-      .leftJoin(roles, eq(users.roleId, roles.id))
-      .where(and(eq(users.organizationId, organizationId), eq(users.isActive, true)));
-    const admins = rows.filter((u) => {
-      if (excludeUserId && u.id === excludeUserId) return false;
-      const name = (u.roleName ?? "").toLowerCase();
-      return name === "admin" || (u.perms ?? []).includes("*");
-    });
-    await Promise.all(admins.map((a) => this.create({ userId: a.id, ...payload })));
+    const { recipientsWithPermission } = await import("@/lib/mail/recipients");
+    const people = await recipientsWithPermission(organizationId, permission, { excludeUserId, anyAddress: true });
+    await Promise.all(people.map((a) => this.create({ userId: a.id, ...payload })));
   }
 
   // Best-effort email channel — never throws into the caller. Real delivery needs RESEND_API_KEY;

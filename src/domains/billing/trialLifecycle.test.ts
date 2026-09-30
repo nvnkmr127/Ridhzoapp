@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { BillingLifecycleService } from "./lifecycleService";
 import { PlatformService } from "@/domains/platform/service";
 import { db } from "@/db";
+import { recipientsWithPermission } from "@/lib/mail/recipients";
 import { sendEmail } from "@/lib/mail/mailer";
 
 vi.mock("@/db", () => ({
@@ -15,6 +16,7 @@ vi.mock("@/lib/jobs/redis", () => ({
   redisConfigured: false,
 }));
 
+vi.mock("@/lib/mail/recipients", () => ({ recipientsWithPermission: vi.fn().mockResolvedValue([]) }));
 vi.mock("@/lib/mail/mailer", () => ({
   sendEmail: vi.fn().mockResolvedValue(undefined),
   appUrl: (p: string) => `https://app.test${p}`,
@@ -110,7 +112,8 @@ describe("Trial Lifecycle", () => {
       const expiredDate = new Date(Date.now() - 2 * 86_400_000);
       let selectCallCount = 0;
 
-      vi.mocked(db.select).mockImplementation(() => {
+      vi.mocked(recipientsWithPermission).mockResolvedValue([{ id: "u1", email: "owner@acme.com", firstName: "Acme Owner" }]);
+    vi.mocked(db.select).mockImplementation(() => {
         selectCallCount++;
         return {
           from: vi.fn().mockReturnValue({

@@ -9,6 +9,7 @@ import { sendEmail, appUrl } from "@/lib/mail/mailer";
 import { mh, mp, mbtn, mfine, mcallout, mtag, mfacts, mcompare } from "@/lib/mail/layout";
 import { AuditService } from "@/domains/audit/service";
 import { escapeHtml as esc } from "@/lib/utils";
+import { recipientsWithPermission } from "@/lib/mail/recipients";
 
 export type BillingStatus = "paid" | "pending" | "grace_period" | "locked" | "free" | "trial" | "complimentary";
 
@@ -219,7 +220,7 @@ export class BillingLifecycleService {
             type: "billing_dunning",
             title: "Plan Downgraded to Free — Payment Failed Twice",
             body: `Your subscription payment failed 2 times. Your workspace has been downgraded to the Free tier. Reactivate your subscription at any time to restore access.`,
-          });
+          }, undefined, "billing.manage");
         } catch (err) {
           console.warn("[lifecycleService] Failed to notify admins of downgrade", err);
         }
@@ -247,7 +248,7 @@ export class BillingLifecycleService {
           type: "billing_dunning",
           title: "Payment Renewal Failed — 7-Day Grace Period",
           body: `Your ${org.plan} renewal could not be processed (${reason}). Features remain active until ${graceEndsAt.toLocaleDateString()}. Please update payment details.`,
-        });
+        }, undefined, "billing.manage");
       } catch (err) {
         console.warn("[lifecycleService] Failed to notify admins of payment failure", err);
       }
@@ -284,16 +285,7 @@ export class BillingLifecycleService {
   ): Promise<number> {
     let sent = 0;
     try {
-      const adminUsers = await db
-        .select({ email: users.email, roleName: roles.name, permissions: roles.permissions })
-        .from(users)
-        .leftJoin(roles, eq(users.roleId, roles.id))
-        .where(and(eq(users.organizationId, orgId), eq(users.isActive, true)));
-
-      const admins = adminUsers.filter((u) => {
-        const role = (u.roleName ?? "").toLowerCase();
-        return role === "admin" || (u.permissions ?? []).includes("*");
-      });
+      const admins = await recipientsWithPermission(orgId, "billing.manage");
 
       const billingUrl = appUrl("/settings?tab=billing");
       // null = the grace period is over and the workspace is locked.
@@ -360,7 +352,7 @@ export class BillingLifecycleService {
           type: "billing_success",
           title: "Subscription Payment Successful",
           body: "Your subscription payment was processed successfully. All features are fully active.",
-        });
+        }, undefined, "billing.manage");
       } catch (err) {
         console.warn("[lifecycleService] Failed to notify admins of payment success", err);
       }
@@ -419,7 +411,7 @@ export class BillingLifecycleService {
       type: "billing_grace_extended",
       title: `Grace Period Extended (+${days} Days)`,
       body: `Platform operations extended your grace period until ${newEnd.toLocaleDateString()}. Full access is preserved.`,
-    });
+    }, undefined, "billing.manage");
 
     return updated;
   }
@@ -441,7 +433,7 @@ export class BillingLifecycleService {
       type: "billing_manual_paid",
       title: "Payment Recorded Offline",
       body: `Platform operations recorded offline payment. Paid status valid until ${paidUntil.toLocaleDateString()}.`,
-    });
+    }, undefined, "billing.manage");
 
     return updated;
   }
@@ -530,12 +522,8 @@ export class BillingLifecycleService {
         metadata: { note: org.note },
       });
       try {
-        const [owner] = await db
-          .select({ email: users.email, firstName: users.firstName })
-          .from(users)
-          .where(and(eq(users.organizationId, org.id), eq(users.isActive, true)))
-          .limit(1);
-        if (owner?.email) {
+        // Everyone who manages billing for the workspace — not just whichever user happens to be first.
+        for (const owner of await recipientsWithPermission(org.id, "billing.manage")) {
           await sendEmail({ from: "billing",
             to: owner.email,
             subject: `Your free Ridhzo plan for ${org.name} has ended`,
@@ -614,13 +602,8 @@ export class BillingLifecycleService {
       });
 
       try {
-        const [owner] = await db
-          .select({ email: users.email, firstName: users.firstName })
-          .from(users)
-          .where(and(eq(users.organizationId, org.id), eq(users.isActive, true)))
-          .limit(1);
-
-        if (owner?.email) {
+        // Everyone who manages billing for the workspace — not just whichever user happens to be first.
+        for (const owner of await recipientsWithPermission(org.id, "billing.manage")) {
           await sendEmail({ from: "billing",
             to: owner.email,
             subject: `Your Ridhzo trial for ${org.name} has ended — your leads are safe`,

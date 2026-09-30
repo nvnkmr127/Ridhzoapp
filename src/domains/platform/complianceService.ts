@@ -5,6 +5,7 @@ import { AuditService } from "@/domains/audit/service";
 import { OpsAlertService } from "./opsAlertService";
 import { PlatformConfigService } from "./configService";
 import { sendEmail, appUrl } from "@/lib/mail/mailer";
+import { recipientsWithPermission } from "@/lib/mail/recipients";
 import { mh, mp, mbtn, mstamp, mhero, mfacts } from "@/lib/mail/layout";
 
 export interface SubjectMatch {
@@ -287,14 +288,11 @@ export class ComplianceService {
       }
 
       if (daysSuspended >= ComplianceService.RETENTION_WARN_DAYS && !state.warnedAt) {
-        const [owner] = await db
-          .select({ email: users.email, firstName: users.firstName })
-          .from(users)
-          .where(and(eq(users.organizationId, org.id), eq(users.isActive, true)))
-          .limit(1);
+        // Everyone who manages the workspace's billing/account, not just the first user found.
+        const owners = await recipientsWithPermission(org.id, "billing.manage");
 
         const daysLeft = Math.max(ComplianceService.RETENTION_DAYS - daysSuspended, Math.ceil(WARNING_NOTICE_MS / 86_400_000));
-        if (owner?.email) {
+        for (const owner of owners) {
           await sendEmail({ from: "hello",
             to: owner.email,
             subject: `[Compliance Notice] Data retention expiry for ${org.name}`,
@@ -317,7 +315,7 @@ export class ComplianceService {
           action: "compliance.retention_warning_sent",
           entityType: "organization",
           entityId: org.id,
-          metadata: { daysSuspended, daysLeft, recipient: owner?.email ?? null },
+          metadata: { daysSuspended, daysLeft, recipients: owners.map((o) => o.email) },
         });
         warnedCount++;
       }

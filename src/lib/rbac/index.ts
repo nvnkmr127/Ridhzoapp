@@ -8,6 +8,7 @@ import { eq, and, isNull, or } from "drizzle-orm";
 import type { PermissionKey } from "@/lib/permissions";
 import { SYSTEM_ROLE_PERMISSIONS, ALL_PERMISSIONS } from "@/lib/permissions";
 import { cachedRole } from "./roleCache";
+import { roleGrants } from "./grants";
 
 // A single dashboard render calls into rbac many times (layout + page each do requireOrg/isSuperAdmin/
 // hasPermission). Memoize per request so the session decode and each DB round-trip (role, suspension)
@@ -133,25 +134,6 @@ const currentRole = cache(async function currentRole(): Promise<{ name: string; 
 
 export async function currentRoleName(): Promise<string | null> {
   return (await currentRole())?.name ?? null;
-}
-
-// Shared grant logic: does this role (by name/permissions/org) hold `key`? Factored out so both
-// the session-based hasPermission() below and the token-based checkRolePermission() (used by the
-// /api/v1 bearer-token routes, which have no next-auth session to read) apply the same rules.
-function roleGrants(role: { name: string; permissions: string[]; organizationId: string | null }, key: PermissionKey): boolean {
-  // The "*" wildcard grants every permission. The "admin" NAME only grants everything for the
-  // shared SYSTEM admin role (organizationId === null) — a tenant-owned role named "admin" gets
-  // only what its permissions array lists, so `roles.manage` can't be used to mint a full-power
-  // role by naming it "admin" (privilege escalation).
-  const isSystemAdmin = role.organizationId === null && role.name.toLowerCase() === "admin";
-  if (isSystemAdmin || role.permissions.includes("*") || role.permissions.includes(key)) {
-    return true;
-  }
-  // Shared system roles (member/admin, org-less) derive their baseline from code, so a stored
-  // `member` row with an empty permissions array still gets its defaults (e.g. leads.edit) without
-  // a data migration. Custom roles are unaffected (their name isn't in the map).
-  const systemDefaults = SYSTEM_ROLE_PERMISSIONS[role.name.toLowerCase()];
-  return systemDefaults ? systemDefaults.includes(key) : false;
 }
 
 // admin implicitly has every permission; other roles must list the key explicitly.
