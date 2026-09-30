@@ -8,6 +8,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Copy, Code, ExternalLink, ShieldCheck, SlidersHorizontal, Loader2, MoreHorizontal, RefreshCw, AlertTriangle } from "lucide-react";
 import { FormFieldsEditor } from "./FormFieldsEditor";
 import { SourceFieldMappingEditor } from "./SourceFieldMappingEditor";
+import { sendSampleGoogleLeadAction } from "@/lib/actions/sources";
+import { useToast } from "@/hooks/use-toast";
 
 export type Source = {
   id: string;
@@ -84,6 +86,13 @@ export const SourceCard = React.memo(function SourceCard({
   onCopy, onToggleEdit, onAsk, onResume, onAssign, onReconnect, onSubscribe, onOpenFilter, onSyncPastLeads,
 }: Props) {
   const [showFieldMapping, setShowFieldMapping] = React.useState(false);
+  const { toast } = useToast();
+  const sendSample = async () => {
+    const res = await sendSampleGoogleLeadAction(s.id);
+    toast(res.ok
+      ? { title: "Sample lead created", description: "Find \"Sample Google Lead (test)\" in your leads. Delete it when you're done." }
+      : { variant: "destructive", title: "Couldn't create sample lead", description: res.message });
+  };
   const cfg = (s.config ?? {}) as Record<string, any>;
   const isFacebook = s.type === "facebook_lead_ads";
   const formFilter: string[] = Array.isArray(cfg.formFilter) ? cfg.formFilter : [];
@@ -111,6 +120,8 @@ export const SourceCard = React.memo(function SourceCard({
           {isSubscribing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />} {isSubscribing ? "Enabling…" : "Enable live leads"}
         </Button>
       ) }
+    : s.type === "google_lead_ads" && !leadCount?.total
+    ? { tone: "warn", text: cfg.lastTestAt ? "Test received — waiting for the first real lead" : "Waiting for Google's test — click Send test data in Google Ads", action: null }
     : { tone: "good", text: isFacebook ? "Live — leads arrive instantly" : "Active", action: null };
   const toneClass = {
     good: "border-green-500/30 bg-green-500/10 text-green-700 dark:text-green-300",
@@ -147,6 +158,7 @@ export const SourceCard = React.memo(function SourceCard({
                 <DropdownMenuSeparator />
               </>
             )}
+            {s.type === "google_lead_ads" && s.isActive ? <DropdownMenuItem onSelect={sendSample}>Send a sample lead</DropdownMenuItem> : null}
             <DropdownMenuItem onSelect={() => onAsk("rename", s)}>Rename…</DropdownMenuItem>
             {s.isActive ? <DropdownMenuItem onSelect={() => onAsk("pause", s)}>Pause…</DropdownMenuItem> : <DropdownMenuItem onSelect={() => onResume(s)}>Resume</DropdownMenuItem>}
             {s.webhookSecret && <DropdownMenuItem onSelect={() => onAsk("regenerate", s)}>{s.type === "google_lead_ads" ? "New key…" : "New secret key…"}</DropdownMenuItem>}

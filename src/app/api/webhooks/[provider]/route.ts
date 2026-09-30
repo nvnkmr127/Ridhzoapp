@@ -5,6 +5,7 @@ import { webhookEvents } from "@/db/schema";
 import { ingestionQueue } from "@/lib/jobs/workers/ingestionWorker";
 
 import { z } from "zod";
+import { readSecret } from "@/lib/crypto/secret";
 import { createHmac, timingSafeEqual } from "crypto";
 
 const webhookPayloadSchema = z.object({
@@ -103,15 +104,16 @@ export async function POST(
 
     // Authentication, either way: (a) the secret itself as `?key=` / `x-webhook-key` — for form tools
     // that can't compute signatures — or (b) an HMAC SHA-256 signature of the raw body.
-    if (source.webhookSecret) {
+    const secret = readSecret(source.webhookSecret); // stored encrypted; legacy rows are plaintext
+    if (secret) {
       const key = req.nextUrl.searchParams.get("key") ?? req.headers.get("x-webhook-key");
       const signature = req.headers.get("x-hub-signature-256");
       if (key) {
-        if (!safeEqual(key, source.webhookSecret)) {
+        if (!safeEqual(key, secret)) {
           return NextResponse.json({ success: false, error: "Invalid key" }, { status: 401 });
         }
       } else if (signature && rawText !== null) {
-        const expected = createHmac("sha256", source.webhookSecret).update(rawText).digest("hex");
+        const expected = createHmac("sha256", secret).update(rawText).digest("hex");
         const cleanSig = signature.startsWith("sha256=") ? signature.slice(7) : signature;
         if (!safeEqual(cleanSig, expected)) {
           return NextResponse.json({ success: false, error: "Invalid signature" }, { status: 401 });

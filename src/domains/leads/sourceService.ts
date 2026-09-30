@@ -25,7 +25,7 @@ export function toClientSource(s: typeof leadSources.$inferSelect) {
     name: s.name,
     type: s.type,
     isActive: s.isActive,
-    webhookSecret: WEBHOOK_SOURCE_TYPES.has(s.type ?? "") ? s.webhookSecret : null,
+    webhookSecret: WEBHOOK_SOURCE_TYPES.has(s.type ?? "") ? readSecret(s.webhookSecret) : null,
     config,
   };
 }
@@ -102,7 +102,7 @@ export class LeadSourceService {
     }
     const { PlanService } = await import("@/domains/billing/planService");
     await PlanService.assertCanAdd(data.organizationId, "sources");
-    const webhookSecret = crypto.randomBytes(32).toString("hex");
+    const webhookSecret = encryptSecret(crypto.randomBytes(32).toString("hex"));
 
     const [source] = await db.insert(leadSources).values({
       name: data.name,
@@ -202,12 +202,13 @@ export class LeadSourceService {
 
   // New webhook/Google key. The old one stops working immediately.
   static async regenerateSecret(id: string, organizationId: string) {
+    const plain = crypto.randomBytes(32).toString("hex");
     const [row] = await db
       .update(leadSources)
-      .set({ webhookSecret: crypto.randomBytes(32).toString("hex") })
+      .set({ webhookSecret: encryptSecret(plain) })
       .where(and(eq(leadSources.id, id), eq(leadSources.organizationId, organizationId)))
       .returning();
-    return row;
+    return row && { ...row, webhookSecret: plain };
   }
 
   // --- Automatic owner assignment (one rule per source; AssignmentService applies it on ingest) ---

@@ -253,7 +253,7 @@ Google transmits payloads via HTTP POST in the following structure:
   - `EMAIL` or `USER_EMAIL` → `leads.email`
   - `PHONE_NUMBER` or `USER_PHONE` → `leads.phone`
   - `COMPANY_NAME` → `leads.company`
-- **Ad Attribution Preservation**: `gcl_id` (Google Click ID), `campaign_id`, and `form_id` are permanently stored inside `leads.customData`, enabling end-to-end ROAS calculation and offline conversion tracking.
+- **Ad Attribution Preservation**: `gcl_id` (Google Click ID), `campaign_id`, and `form_id` are permanently stored inside `leads.customData` (offline conversion upload to Google Ads is not built yet).
 - **Synchronous Ingestion**: Google webhook processing executes inline with direct DB transactions, guaranteeing zero queue delays and immediate HTTP 200 acknowledgment back to Google's delivery servers.
 
 ---

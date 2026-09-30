@@ -31,3 +31,11 @@ describe("applySourceFieldMappings", () => {
     expect(out.name).toBeUndefined();
   });
 });
+
+describe("company mapping", () => {
+  it("routes a question to company", () => {
+    const out = applySourceFieldMappings({ ORG: "Acme" }, [{ facebookFieldKey: "org", targetField: "company" }]);
+    expect(out.company).toBe("Acme");
+    expect(out.customData.ORG).toBeUndefined();
+  });
+});

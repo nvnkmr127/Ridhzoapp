@@ -8,7 +8,7 @@ import { cleanFormAnswer } from "./answerText";
 export interface SourceFieldMappingRule {
   // The raw field key as the source delivers it (Google column_id, etc.). Matched case-insensitively.
   facebookFieldKey: string;
-  targetField: "name" | "email" | "phone" | "expectedValue" | "customData";
+  targetField: "name" | "email" | "phone" | "company" | "expectedValue" | "customData";
   customDataKey?: string;
 }
 
@@ -16,6 +16,7 @@ export interface AppliedFieldMapping {
   name?: string;
   email?: string;
   phone?: string;
+  company?: string;
   expectedValue?: number;
   customData: Record<string, string>;
 }
@@ -43,6 +44,7 @@ export function applySourceFieldMappings(
       case "name": if (!out.name) out.name = val; break;
       case "email": out.email = val; break;
       case "phone": out.phone = val; break;
+      case "company": out.company = val; break;
       case "expectedValue": {
         out.customData.budget = cleanFormAnswer(val);
         out.expectedValue = parseBudget(val) ?? out.expectedValue;

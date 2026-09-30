@@ -345,7 +345,7 @@ const fieldMappingSchema = z.object({
   sourceId: z.guid(),
   fieldMappings: z.array(z.object({
     facebookFieldKey: z.string().min(1),
-    targetField: z.enum(["name", "email", "phone", "expectedValue", "customData"]),
+    targetField: z.enum(["name", "email", "phone", "company", "expectedValue", "customData"]),
     customDataKey: z.string().optional(),
   })),
 });
@@ -467,6 +467,32 @@ export async function regenerateSourceSecretAction(sourceId: string) {
     await AuditService.log({ organizationId, userId, action: "source.secret_rotated", entityType: "lead_source", entityId: sourceId });
     revalidatePath("/settings/sources");
     return ok({ webhookSecret: row.webhookSecret });
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
+/** Creates one clearly-labelled sample lead through the real Google pipeline (mapping, assignment,
+ *  notifications) so a user can verify setup without waiting for Google. Delete it from the leads list. */
+export async function sendSampleGoogleLeadAction(sourceId: string) {
+  const { organizationId } = await requirePermission("sources.manage");
+  try {
+    const source = await LeadSourceService.getSource(sourceId);
+    if (!source || source.organizationId !== organizationId) return fail("NOT_FOUND", "Source not found");
+    if (source.type !== "google_lead_ads") return fail("VALIDATION", "Sample leads are only for Google Lead Form sources.");
+    if (!source.isActive) return fail("VALIDATION", "Resume this source first.");
+    const { IngestionService } = await import("@/lib/leads/ingestion");
+    const tag = Math.random().toString(36).slice(2, 8);
+    const result = await IngestionService.processLead({
+      name: "Sample Google Lead (test)",
+      email: `sample-${tag}@example.com`,
+      sourceId,
+      organizationId,
+      customData: { formId: "sample", campaignId: "sample", gclId: "sample", googleLeadId: `sample-${tag}` },
+    });
+    revalidatePath("/leads");
+    revalidatePath("/settings/sources");
+    return ok({ leadId: result.leadId });
   } catch (e) {
     return actionFail(e);
   }

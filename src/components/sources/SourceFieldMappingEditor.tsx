@@ -13,7 +13,7 @@ import {
 import { listCustomFieldsAction } from "@/lib/actions/customFields";
 import type { CustomFieldDef } from "@/components/leads/CustomFieldInputs";
 
-type Rule = { facebookFieldKey: string; targetField: "name" | "email" | "phone" | "expectedValue" | "customData"; customDataKey?: string };
+type Rule = { facebookFieldKey: string; targetField: "name" | "email" | "phone" | "company" | "expectedValue" | "customData"; customDataKey?: string };
 type SourceField = { key: string; label: string };
 
 // The fixed lead-field targets a question can map to. "" = leave in customData under its raw key
@@ -25,6 +25,8 @@ const STANDARD_TARGETS: { value: string; label: string }[] = [
   { value: "std:phone", label: "Phone" },
   { value: "std:expectedValue", label: "Expected value" },
 ];
+// Only the Google mapper applies a company rule (Facebook's has no company field).
+const GOOGLE_ONLY_TARGETS = [{ value: "std:company", label: "Company" }];
 
 // Encodes a rule's target as a single <select> value: "std:email" for a lead field, "cf:<key>" for
 // a custom field. Keeps one dropdown per question.
@@ -141,7 +143,7 @@ export function SourceFieldMappingEditor({
                 onChange={(e) => setTarget(row.key, e.target.value)}
                 className="h-8 rounded-md border bg-background px-2 text-xs"
               >
-                {STANDARD_TARGETS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                {(provider === "google" ? [...STANDARD_TARGETS, ...GOOGLE_ONLY_TARGETS] : STANDARD_TARGETS).map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                 {customFields.length > 0 && (
                   <optgroup label="Custom fields">
                     {customFields.map((cf) => <option key={cf.key} value={`cf:${cf.key}`}>{cf.label}</option>)}

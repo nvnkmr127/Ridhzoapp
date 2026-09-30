@@ -8,7 +8,7 @@ The **Google Lead Form Ads** integration connects Ridhzo directly to Google Ads 
 
 - **Channel Focus**: High-intent Google Search, Performance Max, Display, and YouTube Video ad campaigns.
 - **Conversion Mechanism**: Google's native Lead Form extension appears beneath the ad headline. Users submit without leaving the Google search results page or YouTube video player.
-- **Ridhzo Value**: Ingests leads immediately, verifies Google's cryptographic payload key, maps Google's uppercase column keys into standard CRM fields, and stores GCLID (Google Click ID) for closed-loop ROAS analysis and offline conversion tracking.
+- **Ridhzo Value**: Ingests leads immediately, verifies the shared key Google echoes in each payload, maps Google's uppercase column keys into standard CRM fields, and stores GCLID (Google Click ID) and campaign/form IDs on the lead. (Uploading conversions back to Google Ads is **not** built yet.)
 
 ---
 
@@ -28,7 +28,7 @@ The **Google Lead Form Ads** integration connects Ridhzo directly to Google Ads 
 |                                                                                                    |
 |  1. UUID Syntax Guard: Rejects non-UUID sourceId query params with 400 Bad Request                 |
 |  2. Source Lookup: Validates active status and organizationId via LeadSourceService.getSource()    |
-|  3. Google Key Echo Validation: Verifies body.google_key === source.webhookSecret                  |
+|  3. Google Key Echo Validation: body.google_key must equal the secret (no secret = rejected)      |
 |  4. Test Ping Detection: If body.is_test === true, returns 200 { status: "test_ok" }               |
 |  5. Column Normalization: Transforms user_column_data into standard CRM attributes                 |
 |  6. Attribution Extraction: Captures gcl_id, campaign_id, and form_id                              |
@@ -39,7 +39,7 @@ The **Google Lead Form Ads** integration connects Ridhzo directly to Google Ads 
 |                                   CRM INGESTION & PIPELINE ROUTING                                 |
 |                                                                                                    |
 |  Service: src/lib/leads/ingestion.ts (IngestionService.processLead)                                |
-|  - Deduplication: Matches against existing leads by Email, Phone, or Google lead_id                |
+|  - Deduplication: Matches existing leads by Email or Phone. Retried deliveries are skipped by Google `lead_id` (recorded in `webhook_events`); a repeat submission from a known contact adds a note to the lead                |
 |  - Custom Data Payload: Stores full user_column_data, gclId, campaignId, and formId                |
 |  - Assignment Engine: Triggers round-robin rep distribution and auto-response sequences           |
 +----------------------------------------------------------------------------------------------------+
@@ -63,7 +63,7 @@ To activate lead delivery from Google Ads into Ridhzo:
 3. **Configure Google Ads Campaign Manager**:
    - In your Google Ads dashboard, navigate to **Ads & assets → Assets → Lead form**.
    - Create or edit a lead form asset.
-   - Expand the **Export leads from Google Ads** section and select **Other data integration options (Webhook)**.
+   - Open **Lead delivery** and choose **Webhook integration** (Google occasionally renames this option).
    - Paste the **Webhook URL** into the *Webhook URL* field.
    - Paste the Ridhzo **Signing Secret** into the *Key* field.
    - Click **Send test data**.
@@ -125,18 +125,18 @@ function mapColumns(userColumnData: unknown): Record<string, string> {
 ### 1. Key Echo Authentication
 Google does not use HMAC request signatures; instead, it echoes the configured secret inside the payload body as `google_key`. Ridhzo performs an exact equality check:
 ```typescript
-if (source.webhookSecret && (body as any).google_key !== source.webhookSecret) {
+if (!secret || key !== secret /* constant-time */) {
   return NextResponse.json({ error: "Invalid key" }, { status: 401 });
 }
 ```
-Unauthorized requests from scrapers or bots are blocked with 401 Unauthorized before touching database tables.
+A source with no secret rejects everything. Requests are also rate limited (100/min per source+IP) and capped at 256 KB. Wrong keys get 401 before any lead data is touched.
 
 ### 2. Test Ping Handling
 When saving a webhook in Google Ads, Google dispatches a mock payload with `"is_test": true`. Ridhzo detects this flag and returns HTTP 200 with `{ status: "test_ok" }`:
 ```typescript
 if ((body as any).is_test) return NextResponse.json({ status: "test_ok" }, { status: 200 });
 ```
-This enables successful verification in Google Ads while preventing test records from entering sales reps' queues.
+The time of the last test is saved so the source card can show "Test received". Test pings never enter reps' queues.
 
 ### 3. Google Click ID (GCLID) Attribution
 The `gcl_id` query parameter is Google's primary tracking token for ad interactions. Ridhzo permanently persists:
@@ -145,9 +145,12 @@ The `gcl_id` query parameter is Google's primary tracking token for ad interacti
 - `gclId`: Google Click ID
 - `fields`: Raw column array
 
-These values are saved to `leads.customData`, allowing sales teams to see which keyword or campaign generated the lead and enabling automated offline conversion uploads back to Google Ads once a deal closes.
+These values are saved to `leads.customData`, so sales can see which campaign and form produced a lead. The first submission's attribution is kept when the same contact submits again. Offline conversion upload to Google Ads is not implemented.
 
 ---
+
+### 4. Failures and retries
+Every delivery is logged in `webhook_events` (ids only, no personal data). Failures (no email/phone, ingestion error) are counted in the "failed to import in the last 7 days" warning on the source card, and Google's retry of the same `lead_id` is re-processed until it succeeds. Missed leads from before setup must be exported from Google Ads as CSV and imported.
 
 ## 6. Code & Symbol Reference
 
