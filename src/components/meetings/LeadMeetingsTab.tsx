@@ -38,7 +38,7 @@ export function LeadMeetingsTab({
       ) : (
         <div className="space-y-2">
           {upcoming.map((m) => (
-            <MeetingCard key={m.id} meeting={m} lead={lead} assigneeName={m.assigneeId ? userNames[m.assigneeId] : null} bookedByName={m.organizerId ? userNames[m.organizerId] : "booking page"} onEdit={() => emitLeadAction({ type: "meeting", meeting: m })} />
+            <MeetingCard key={m.id} meeting={m} lead={lead} assigneeName={m.assigneeId ? userNames[m.assigneeId] : null} coAttendeeNames={(m.coAttendeeIds ?? []).map((id) => userNames[id]).filter(Boolean)} bookedByName={m.organizerId ? userNames[m.organizerId] : "booking page"} onEdit={() => emitLeadAction({ type: "meeting", meeting: m })} />
           ))}
         </div>
       )}
@@ -47,7 +47,7 @@ export function LeadMeetingsTab({
         <div className="space-y-2 border-t pt-4">
           <h5 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Past ({past.length})</h5>
           {past.map((m) => (
-            <MeetingCard key={m.id} meeting={m} lead={lead} assigneeName={m.assigneeId ? userNames[m.assigneeId] : null} bookedByName={m.organizerId ? userNames[m.organizerId] : "booking page"} />
+            <MeetingCard key={m.id} meeting={m} lead={lead} assigneeName={m.assigneeId ? userNames[m.assigneeId] : null} coAttendeeNames={(m.coAttendeeIds ?? []).map((id) => userNames[id]).filter(Boolean)} bookedByName={m.organizerId ? userNames[m.organizerId] : "booking page"} />
           ))}
         </div>
       )}

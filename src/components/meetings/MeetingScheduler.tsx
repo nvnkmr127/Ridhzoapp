@@ -58,6 +58,7 @@ type Form = {
   startAt: string;
   durationMinutes: number;
   assigneeId: string;
+  coAttendeeIds: string[];
   linkKind: "meet" | "paste";
   meetingUrl: string;
   locationId: string;
@@ -76,6 +77,7 @@ function initialForm(m: MeetingView | undefined, defaults: { assigneeId: string;
       startAt: toLocalInput(new Date(m.startAt)),
       durationMinutes: m.durationMinutes,
       assigneeId: m.assigneeId ?? defaults.assigneeId,
+      coAttendeeIds: m.coAttendeeIds ?? [],
       linkKind: "paste",
       meetingUrl: m.meetingUrl ?? "",
       locationId: "",
@@ -92,6 +94,7 @@ function initialForm(m: MeetingView | undefined, defaults: { assigneeId: string;
     startAt: toLocalInput(tomorrowAt(11)),
     durationMinutes: 30,
     assigneeId: defaults.assigneeId,
+    coAttendeeIds: [],
     linkKind: defaults.canAutoMeet ? "meet" : "paste",
     meetingUrl: "",
     locationId: "",
@@ -173,6 +176,7 @@ export function MeetingScheduler({
       startAt: start.toISOString(),
       durationMinutes: f.durationMinutes,
       assigneeId: f.assigneeId || null,
+      coAttendeeIds: f.coAttendeeIds.filter((id) => id !== f.assigneeId),
       autoMeet: online && f.linkKind === "meet",
       meetingUrl: online && f.linkKind === "paste" ? f.meetingUrl || null : null,
       locationId: useSaved ? f.locationId : null,
@@ -385,6 +389,28 @@ export function MeetingScheduler({
                   </SelectContent>
                 </Select>
               </label>
+            )}
+
+            {users.length > 2 && (
+              <div className="space-y-1">
+                <span className="text-xs text-muted-foreground">Also attending (optional)</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {users.filter((u) => u.id !== f.assigneeId).map((u) => {
+                    const on = f.coAttendeeIds.includes(u.id);
+                    return (
+                      <button
+                        key={u.id}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => set("coAttendeeIds", on ? f.coAttendeeIds.filter((id) => id !== u.id) : [...f.coAttendeeIds, u.id])}
+                        className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${on ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"}`}
+                      >
+                        {on ? "✓ " : "+ "}{u.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             )}
 
             <Input placeholder="Title (optional)" value={f.title} onChange={(e) => set("title", e.target.value)} className="h-9 text-sm" />

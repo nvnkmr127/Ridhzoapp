@@ -27,7 +27,7 @@ function revalidate(leadId: string) {
 async function assertMeetingAccess(id: string, ctx: { userId: string; organizationId: string }) {
   const m = await MeetingService.get(id, ctx.organizationId);
   if (!m) throw new Error("Meeting not found");
-  if (m.assigneeId !== ctx.userId && m.organizerId !== ctx.userId) await assertLeadAccess(m.leadId, ctx);
+  if (m.assigneeId !== ctx.userId && m.organizerId !== ctx.userId && !m.coAttendeeIds.includes(ctx.userId)) await assertLeadAccess(m.leadId, ctx);
   return m;
 }
 

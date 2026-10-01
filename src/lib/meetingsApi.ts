@@ -40,7 +40,7 @@ export async function meetingForApi(auth: ApiAuth, id: string) {
   if (!idOk(id)) return null;
   const m = await MeetingService.get(id, auth.organizationId);
   if (!m) return null;
-  if (!auth.userId || m.assigneeId === auth.userId || m.organizerId === auth.userId) return m;
+  if (!auth.userId || m.assigneeId === auth.userId || m.organizerId === auth.userId || m.coAttendeeIds.includes(auth.userId)) return m;
   return (await leadForApi(auth, m.leadId)) ? m : null;
 }
 
@@ -55,6 +55,7 @@ export function serializeMeeting(m: Meeting) {
     startAt: m.startAt.toISOString(),
     durationMinutes: m.durationMinutes,
     assigneeId: m.assigneeId,
+    coAttendeeIds: m.coAttendeeIds,
     organizerId: m.organizerId,
     locationName: m.locationName,
     address: m.address,

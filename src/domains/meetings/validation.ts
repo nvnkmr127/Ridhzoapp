@@ -23,6 +23,7 @@ export const meetingSchema = z.object({
   startAt: z.coerce.date(),
   durationMinutes: z.coerce.number().int().min(5).max(24 * 60),
   assigneeId: guid().optional().nullable().or(z.literal("")),
+  coAttendeeIds: z.array(guid()).max(20).optional(),
   locationId: guid().optional().nullable().or(z.literal("")),
   locationName: optText(255),
   address: optText(1000),

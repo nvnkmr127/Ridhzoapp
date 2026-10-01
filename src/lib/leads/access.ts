@@ -21,7 +21,7 @@ async function canSeeAllLeads() {
 // lead stays with its owner/admins (checked separately in deleteLeadAction).
 export function worksOnLeadSql(userId: string): SQL {
   return or(
-    exists(db.select({ one: sql`1` }).from(meetings).where(and(eq(meetings.leadId, leads.id), eq(meetings.assigneeId, userId)))),
+    exists(db.select({ one: sql`1` }).from(meetings).where(and(eq(meetings.leadId, leads.id), or(eq(meetings.assigneeId, userId), sql`${meetings.coAttendeeIds} @> ARRAY[${userId}]::uuid[]`)))),
     exists(db.select({ one: sql`1` }).from(followUps).where(and(eq(followUps.leadId, leads.id), eq(followUps.userId, userId)))),
   )!;
 }

@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { meetings, meetingLocations, leads, users, organizations } from "@/db/schema";
-import { and, asc, desc, eq, gte, lte, or, isNull, inArray, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, or, isNull, inArray, sql, type SQL } from "drizzle-orm";
 import { ActivityService } from "@/domains/activities/service";
 import { NotificationService } from "@/domains/notifications/service";
 import { GoogleCalendarService } from "@/domains/integrations/googleCalendarService";
@@ -30,6 +30,8 @@ export interface MeetingInput {
   startAt: Date;
   durationMinutes: number;
   assigneeId?: string | null;
+  // Others attending besides the assignee. Undefined on edit = leave as is.
+  coAttendeeIds?: string[];
   locationId?: string | null;
   locationName?: string | null;
   address?: string | null;
@@ -147,7 +149,7 @@ export class MeetingService {
   // Meetings list/calendar. `userId` limits to meetings the user attends, booked, or whose lead they own.
   static async list(organizationId: string, f: { userId?: string; assigneeId?: string; mode?: string; status?: string; from?: Date; to?: Date } = {}) {
     const conds: (SQL | undefined)[] = [eq(meetings.organizationId, organizationId), isNull(leads.deletedAt)];
-    if (f.userId) conds.push(or(eq(meetings.assigneeId, f.userId), eq(meetings.organizerId, f.userId), eq(leads.ownerId, f.userId)));
+    if (f.userId) conds.push(or(eq(meetings.assigneeId, f.userId), eq(meetings.organizerId, f.userId), eq(leads.ownerId, f.userId), sql`${meetings.coAttendeeIds} @> ARRAY[${f.userId}]::uuid[]`));
     if (f.assigneeId) conds.push(eq(meetings.assigneeId, f.assigneeId));
     if (f.mode) conds.push(eq(meetings.mode, f.mode));
     if (f.status) conds.push(eq(meetings.status, f.status));
@@ -261,6 +263,7 @@ export class MeetingService {
     let assigneeId = input.assigneeId || null;
     if (assigneeId) await this.assertOrgUser(assigneeId, ctx.organizationId);
     else assigneeId = lead.ownerId && (await this.isActiveOrgUser(lead.ownerId, ctx.organizationId)) ? lead.ownerId : ctx.userId;
+    const coAttendeeIds = await this.cleanCoAttendees(input.coAttendeeIds, assigneeId, ctx.organizationId);
     const place = await this.resolvePlace(input, ctx.organizationId);
 
     const [created] = await db.insert(meetings).values({
@@ -268,6 +271,7 @@ export class MeetingService {
       leadId: input.leadId,
       organizerId: ctx.userId,
       assigneeId,
+      coAttendeeIds,
       mode: input.mode,
       title: input.title?.trim() || `${modeLabel(input.mode)} with ${lead.name}`,
       startAt: input.startAt,
@@ -281,18 +285,20 @@ export class MeetingService {
     const meeting = await this.syncCalendarOnCreate(created, lead, ctx.userId, input.mode === "online" && !!input.autoMeet);
     await syncLeadFollowUpState(meeting.leadId);
 
-    const [assignee, org] = await Promise.all([getUser(assigneeId), getOrg(ctx.organizationId)]);
+    const [assignee, org, others] = await Promise.all([getUser(assigneeId), getOrg(ctx.organizationId), Promise.all(coAttendeeIds.map((id) => getUser(id)))]);
     const when = formatMeetingTime(meeting.startAt, org.timezone, org.locale);
+    const withNames = [assignee && assigneeId !== ctx.userId ? userName(assignee) : null, ...others.map(userName)].filter(Boolean).join(", ");
     await ActivityService.addActivity({
       leadId: meeting.leadId,
       userId: ctx.userId ?? undefined,
       type: "meeting",
-      content: `${modeLabel(meeting.mode)} scheduled for ${when}${assignee && assigneeId !== ctx.userId ? ` with ${userName(assignee)}` : ""}${meetingWhere(meeting) ? ` — ${meetingWhere(meeting)}` : ""}`,
+      content: `${modeLabel(meeting.mode)} scheduled for ${when}${withNames ? ` with ${withNames}` : ""}${meetingWhere(meeting) ? ` — ${meetingWhere(meeting)}` : ""}`,
     });
 
-    if (assigneeId && assigneeId !== ctx.userId) {
+    for (const uid of [assigneeId, ...coAttendeeIds]) {
+      if (!uid || uid === ctx.userId) continue;
       await NotificationService.create({
-        userId: assigneeId,
+        userId: uid,
         type: "meeting_scheduled",
         title: `${modeLabel(meeting.mode)} with ${lead.name}`,
         body: `${when}${meetingWhere(meeting) ? ` · ${meetingWhere(meeting)}` : ""}`,
@@ -311,6 +317,10 @@ export class MeetingService {
     if (!existing) return null;
     if (existing.status !== "scheduled") throw new MeetingError("Only scheduled meetings can be edited");
     if (input.assigneeId) await this.assertOrgUser(input.assigneeId, ctx.organizationId);
+    const newAssignee = input.assigneeId || existing.assigneeId;
+    const coAttendeeIds = input.coAttendeeIds === undefined
+      ? (existing.coAttendeeIds ?? []).filter((id) => id !== newAssignee)
+      : await this.cleanCoAttendees(input.coAttendeeIds, newAssignee, ctx.organizationId);
     const place = await this.resolvePlace({ ...input, leadId: existing.leadId }, ctx.organizationId);
     const moved = new Date(input.startAt).getTime() !== new Date(existing.startAt).getTime();
 
@@ -319,7 +329,8 @@ export class MeetingService {
       title: input.title?.trim() || existing.title,
       startAt: input.startAt,
       durationMinutes: input.durationMinutes,
-      assigneeId: input.assigneeId || existing.assigneeId,
+      assigneeId: newAssignee,
+      coAttendeeIds,
       ...place,
       // Keep an auto-generated Meet link when the rep didn't paste a different one.
       meetingUrl: input.mode === "online" ? place.meetingUrl || existing.meetingUrl : null,
@@ -428,6 +439,13 @@ export class MeetingService {
     const [u] = await db.select({ id: users.id }).from(users)
       .where(and(eq(users.id, userId), eq(users.organizationId, organizationId), eq(users.isActive, true), isNull(users.deletedAt))).limit(1);
     return !!u;
+  }
+
+  // Unique, active teammates only; the assignee is never repeated as a co-attendee.
+  private static async cleanCoAttendees(ids: string[] | undefined, assigneeId: string | null, organizationId: string) {
+    const out = [...new Set(ids ?? [])].filter((id) => id !== assigneeId);
+    for (const id of out) await this.assertOrgUser(id, organizationId);
+    return out;
   }
 
   private static async assertOrgUser(userId: string, organizationId: string) {

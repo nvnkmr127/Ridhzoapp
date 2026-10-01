@@ -645,6 +645,13 @@
       "when": 1790786600000,
       "tag": "0091_account_setup",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1790873000000,
+      "tag": "0092_meeting_co_attendees",
+      "breakpoints": true
     }
   ]
 }

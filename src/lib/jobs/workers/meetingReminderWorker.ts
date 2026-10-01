@@ -79,13 +79,16 @@ export async function processMeetingReminderScan() {
         if (kind === "lead_24h" || kind === "lead_1h") {
           await MeetingService.notifyLead("reminder", m, { send: true });
         } else if (rep && kind === "rep") {
-          await NotificationService.create({
-            userId: rep,
-            type: "meeting_reminder",
-            title: `${modeLabel(m.mode)} with ${lead.name} starts soon`,
-            body: m.meetingUrl || [m.locationName, m.address].filter(Boolean).join(", ") || m.title,
-            leadId: m.leadId,
-          });
+          // Everyone attending gets the heads-up, not just the main attendee.
+          for (const userId of new Set([rep, ...m.coAttendeeIds])) {
+            await NotificationService.create({
+              userId,
+              type: "meeting_reminder",
+              title: `${modeLabel(m.mode)} with ${lead.name} starts soon`,
+              body: m.meetingUrl || [m.locationName, m.address].filter(Boolean).join(", ") || m.title,
+              leadId: m.leadId,
+            });
+          }
         } else if (rep && kind === "outcome") {
           await NotificationService.create({
             userId: rep,

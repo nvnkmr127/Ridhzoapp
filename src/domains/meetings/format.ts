@@ -35,6 +35,7 @@ export interface MeetingView extends MeetingLike {
   id: string;
   leadId: string;
   assigneeId: string | null;
+  coAttendeeIds?: string[];
   organizerId?: string | null; // who booked it (null = public booking page)
   status: string;
   notes: string | null;

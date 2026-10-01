@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { pgTable, uuid, varchar, text, timestamp, index, integer, doublePrecision } from 'drizzle-orm/pg-core';
 
 import { leads } from './leads';
@@ -12,7 +13,9 @@ export const meetings = pgTable('meetings', {
   organizationId: uuid('organization_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
   leadId: uuid('lead_id').references(() => leads.id, { onDelete: 'cascade' }).notNull(),
   organizerId: uuid('organizer_id').references(() => users.id, { onDelete: 'set null' }), // who booked it (null = public booking page)
-  assigneeId: uuid('assignee_id').references(() => users.id, { onDelete: 'set null' }), // who attends
+  assigneeId: uuid('assignee_id').references(() => users.id, { onDelete: 'set null' }), // who attends (main person)
+  // Everyone else attending besides the assignee. A plain array (no FK) — the list is short and only ever read whole.
+  coAttendeeIds: uuid('co_attendee_ids').array().notNull().default(sql`'{}'::uuid[]`),
   mode: varchar('mode', { length: 20 }).notNull(), // online | site_visit | store_visit | in_person
   title: varchar('title', { length: 255 }).notNull(),
   startAt: timestamp('start_at').notNull(),

@@ -36,13 +36,14 @@ export default async function MeetingsPage({
   const [{ timezone }, dialCode, orgUsers] = await Promise.all([
     getOrgFormat(organizationId),
     orgDialCode(organizationId),
-    isAdmin ? UserService.list(organizationId) : Promise.resolve([]),
+    UserService.list(organizationId),
   ]);
   const users = (orgUsers as { id: string; firstName: string | null; lastName: string | null; email: string }[]).map((u) => ({
     id: u.id,
     name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email,
   }));
 
+  const userNames = Object.fromEntries(users.map((u) => [u.id, u.name]));
   const mode = sp.mode && (MEETING_MODE_KEYS as string[]).includes(sp.mode) ? sp.mode : undefined;
   // Admins see the whole team (optionally one person); everyone else sees their own meetings.
   const scope = isAdmin ? { assigneeId: sp.assignee || undefined } : { userId };
@@ -88,7 +89,7 @@ export default async function MeetingsPage({
           {title} ({items.length})
         </h2>
         {items.map((r) => (
-          <MeetingCard key={r.meeting.id} meeting={r.meeting} lead={r.lead} assigneeName={nameOf(r.assignee)} showLead />
+          <MeetingCard key={r.meeting.id} meeting={r.meeting} lead={r.lead} assigneeName={nameOf(r.assignee)} coAttendeeNames={r.meeting.coAttendeeIds.map((id) => userNames[id]).filter(Boolean)} showLead />
         ))}
       </section>
     );

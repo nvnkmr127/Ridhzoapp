@@ -35,6 +35,7 @@ export function MeetingCard({
   lead,
   assigneeName,
   bookedByName,
+  coAttendeeNames = [],
   onEdit,
   showLead = false,
 }: {
@@ -43,6 +44,7 @@ export function MeetingCard({
   assigneeName?: string | null;
   /** Who booked it (the booking page when nobody did). */
   bookedByName?: string | null;
+  coAttendeeNames?: string[];
   onEdit?: () => void;
   showLead?: boolean;
 }) {
@@ -141,7 +143,7 @@ export function MeetingCard({
             <span className="flex items-center gap-1"><Clock className="h-3 w-3" /><LocalTime iso={m.startAt} mode="full" /></span>
             <span>· {m.durationMinutes} min</span>
             <span>· {modeLabel(m.mode)}</span>
-            {assigneeName && <span>· {assigneeName}</span>}
+            {assigneeName && <span>· {[assigneeName, ...coAttendeeNames].join(", ")}</span>}
             {bookedByName && <span>· booked by {bookedByName}</span>}
           </p>
           {showLead && (
