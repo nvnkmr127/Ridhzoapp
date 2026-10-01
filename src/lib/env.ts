@@ -12,7 +12,7 @@ const OPTIONAL_FEATURES: Record<string, string[]> = {
   "Redis (rate limiting + background jobs)": ["REDIS_URL"],
   "Billing (Razorpay)": ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET", "RAZORPAY_WEBHOOK_SECRET"],
   "WhatsApp (Watxio)": ["WATXIO_API_KEY", "WATXIO_BASE_URL", "WATXIO_PHONE_NUMBER_ID"],
-  "AI drafting (Anthropic)": ["ANTHROPIC_API_KEY"],
+  "AI (Vercel AI Gateway)": ["AI_GATEWAY_API_KEY"],
   "Web push": ["NEXT_PUBLIC_VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY"],
   "Mobile push (Firebase/FCM)": ["FIREBASE_PROJECT_ID", "FIREBASE_CLIENT_EMAIL", "FIREBASE_PRIVATE_KEY"],
   "Google Calendar": ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"],
