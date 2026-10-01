@@ -118,8 +118,9 @@ export class NextBestActionService {
       };
     }
 
-    // 2. Never contacted
-    if (!input.lastContactedAt) {
+    // 2. Never contacted. Only for a lead still in "open": once the rep has moved it on, it has been
+    // worked (notes, a visit) even if no call/message was logged, so "send a welcome" would be wrong.
+    if (!input.lastContactedAt && category === "open") {
       if (input.phone) {
         return {
           action: "send_template",
@@ -165,8 +166,8 @@ export class NextBestActionService {
       };
     }
 
-    // 5. Going cold
-    if (lastContactDays > 5) {
+    // 5. Going cold (not when contact was simply never logged on a lead that's already being worked)
+    if (Number.isFinite(lastContactDays) && lastContactDays > 5) {
       return {
         action: "reengage_cold_lead",
         label: "Send a re-engagement message",

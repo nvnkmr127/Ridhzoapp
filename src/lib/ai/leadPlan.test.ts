@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseLeadBrief, validatePlan, visiblePlan, briefFormatInstructions, type PlanInput } from "./leadPlan";
+import { BROKEN_RECAP, parseLeadBrief, validatePlan, visiblePlan, briefFormatInstructions, type PlanInput } from "./leadPlan";
 
 const now = new Date("2026-09-26T10:00:00Z");
 
@@ -122,6 +122,10 @@ describe("parseLeadBrief — malformed model output", () => {
 
   it("gives a plain message when nothing is recoverable", () => {
     expect(parseLeadBrief('{"fields": [{"key": "bud', input).recap).toMatch(/Refresh/);
+  });
+
+  it("rejects long rambling prose instead of pinning half of it as the recap", () => {
+    expect(parseLeadBrief("Let me analyze this lead carefully. " + "x".repeat(700), input).recap).toBe(BROKEN_RECAP);
   });
 
   it("still passes through a plain-text reply", () => {

@@ -6,7 +6,7 @@ import { streamText } from 'ai';
 // A plain "provider/model" string routes through Vercel AI Gateway,
 // authenticated by AI_GATEWAY_API_KEY from .env.local.
 const result = streamText({
-  model: 'inclusionai/ling-3.0-flash-fin',
+  model: 'inclusionai/ling-3.1-flash-free',
   prompt: 'In two sentences, what is the Vercel AI Gateway?',
 });
 

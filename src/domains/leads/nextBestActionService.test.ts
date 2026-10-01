@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { NextBestActionService } from "./nextBestActionService";
 
 describe("NextBestActionService", () => {
+  it("does not say 'send a welcome' for a lead the rep already moved past new, even with no contact logged", () => {
+    const rec = NextBestActionService.getRecommendation({ status: "active", phone: "+1234567890", lastContactedAt: null, nextFollowUpAt: new Date(Date.now() + 86_400_000) });
+    expect(rec.action).toBe("wait");
+  });
+
   it("should recommend welcome template for uncontacted new lead with phone", () => {
     const rec = NextBestActionService.getRecommendation({
       status: "new",

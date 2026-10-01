@@ -99,7 +99,12 @@ function extractJson(raw: string): Record<string, unknown> | null {
  */
 export function parseLeadBrief(raw: string, input: PlanInput): { recap: string; plan: LeadPlan } {
   const json = extractJson(raw);
-  if (!json) return { recap: recapFromBrokenJson(raw), plan: EMPTY_PLAN };
+  if (!json) {
+    // A short plain reply is a usable recap. A long one is the model thinking out loud (cut off at the
+    // token limit): slicing it would pin half a sentence on the lead, so callers show the fallback instead.
+    const prose = raw.trim();
+    return { recap: prose.length > 600 ? BROKEN_RECAP : recapFromBrokenJson(raw), plan: EMPTY_PLAN };
+  }
   // Never show raw JSON to the rep: if "recap" is missing, the reply isn't a usable brief.
   const recap = text(json.recap, 600) || recapFromBrokenJson(raw);
   return { recap, plan: validatePlan(json, input) };

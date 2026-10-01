@@ -100,6 +100,14 @@ const RECAP_SYSTEM = `You brief a busy salesperson on one lead and propose concr
 Recap: plain, specific, factual — what the lead wants (from their answers, notes and messages), where things stand right now given the latest activity, and the single most useful next step.
 Suggestions are only proposals the rep accepts or dismisses, so only make ones the context clearly supports.`;
 
+// Plain recap with no AI: the newest activity (a note counts) and the status.
+function lastTouchSummary(activities: { type: string; content: string | null }[], status: string): string {
+  const last = activities[0];
+  return last
+    ? `Last touch: ${last.type}${last.content ? ` — ${last.content.trim().replace(/\s+/g, " ").slice(0, 200).replace(/[.\s]+$/, "")}` : ""}. Status is ${status}.`
+    : `New lead with no activity yet — reach out to make first contact.`;
+}
+
 export type RecapCache = { text: string; at: string; sig: string; bsig?: string; plan?: LeadPlan; dismissed?: string[] };
 
 export type RecapResult = {
@@ -152,14 +160,7 @@ export async function recapForLead(lead: Lead, organizationId: string, refresh =
   // there's genuinely nothing to read.
   const outOfCredits = aiEnabled() && hasAiWorthyContext(activities, extras) && !(await PlanService.consumeAiCredit(organizationId));
   if (!aiEnabled() || !hasAiWorthyContext(activities, extras) || outOfCredits) {
-    const last = activities[0];
-    return {
-      outOfCredits,
-      summary: last
-        ? `Last touch: ${last.type}${last.content ? ` — ${last.content.trim().replace(/[.\s]+$/, "")}` : ""}. Status is ${extras.statusLabel ?? lead.status}.`
-        : `New lead with no activity yet — reach out to make first contact.`,
-      ai: false,
-    };
+    return { outOfCredits, summary: lastTouchSummary(activities, extras.statusLabel ?? lead.status), ai: false };
   }
 
   const defs = fieldDefs as unknown as Parameters<typeof CustomFieldService.validateWith>[0];
@@ -191,7 +192,7 @@ export async function recapForLead(lead: Lead, organizationId: string, refresh =
   if (summary === BROKEN_RECAP) {
     // Cut off or malformed: saving this would pin the error message as the recap until the lead changes.
     await PlanService.refundAiCredit(organizationId);
-    return { summary: `Status is ${extras.statusLabel ?? lead.status}. Review recent activity and follow up.`, ai: false };
+    return { summary: lastTouchSummary(activities, extras.statusLabel ?? lead.status), ai: false };
   }
 
   const at = new Date().toISOString();
