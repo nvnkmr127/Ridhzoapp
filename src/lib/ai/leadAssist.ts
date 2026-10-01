@@ -101,11 +101,12 @@ Recap: plain, specific, factual — what the lead wants (from their answers, not
 Suggestions are only proposals the rep accepts or dismisses, so only make ones the context clearly supports.`;
 
 // Plain recap with no AI: the newest activity (a note counts) and the status.
-function lastTouchSummary(activities: { type: string; content: string | null }[], status: string): string {
-  const last = activities[0];
+function lastTouchSummary(activities: { type: string; content: string | null; by?: string | null }[], status: string): string {
+  // System notes ("Lead was assigned to…", "Lead came in from…") have no author; a person's note or call does.
+  const last = activities.find((a) => a.by);
   return last
     ? `Last touch: ${last.type}${last.content ? ` — ${last.content.trim().replace(/\s+/g, " ").slice(0, 200).replace(/[.\s]+$/, "")}` : ""}. Status is ${status}.`
-    : `New lead with no activity yet — reach out to make first contact.`;
+    : `New lead with no activity from your team yet — reach out to make first contact.`;
 }
 
 export type RecapCache = { text: string; at: string; sig: string; bsig?: string; plan?: LeadPlan; dismissed?: string[] };
@@ -183,7 +184,12 @@ export async function recapForLead(lead: Lead, organizationId: string, refresh =
 
   const orgWithKnowledge = await loadAiBusiness(organizationId, { sourceId: lead.sourceId, query: context });
   const system = leadSystemPrompt(orgWithKnowledge, `${RECAP_SYSTEM}\n\n${briefFormatInstructions(planInput, extras.timezone ?? "UTC")}`);
-  const raw = await generateText(system, context, 1400);
+  // This model tends to write a long analysis before (or instead of) the JSON, so it gets room to finish,
+  // and one strict retry when the first reply has no usable JSON. Same credit — it's one recap.
+  let raw = await generateText(system, context, 3000);
+  if (raw && parseLeadBrief(raw, planInput).recap === BROKEN_RECAP) {
+    raw = (await generateText(`${system}\n\nReply with the JSON object ONLY. The first character of your reply must be "{". No analysis, no preface.`, context, 3000)) ?? raw;
+  }
   if (!raw) {
     await PlanService.refundAiCredit(organizationId);
     return { summary: `Status is ${extras.statusLabel ?? lead.status}. Review recent activity and follow up.`, ai: false };

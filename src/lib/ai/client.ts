@@ -18,7 +18,7 @@ export async function generateText(system: string, prompt: string, maxTokens = 1
   if (!aiEnabled()) return null;
   try {
     const { text } = await gatewayGenerate({
-      model: process.env.AI_MODEL || "inclusionai/ling-3.1-flash-free",
+      model: process.env.AI_MODEL || "inclusionai/ling-3.1-flash",
       system,
       prompt,
       maxOutputTokens: maxTokens,

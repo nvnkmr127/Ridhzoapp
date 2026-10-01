@@ -47,7 +47,7 @@ interface AgentContext {
 // to a tool-capable gateway model; either way it uses the one gateway key. If the tool loop fails
 // (e.g. the model has no tool support), runLeadAgent falls back to a plain grounded answer so the
 // assistant still responds instead of erroring.
-const AGENT_MODEL = process.env.AI_AGENT_MODEL || process.env.AI_MODEL || "inclusionai/ling-3.1-flash-free";
+const AGENT_MODEL = process.env.AI_AGENT_MODEL || process.env.AI_MODEL || "inclusionai/ling-3.1-flash";
 
 const SYSTEM = `You are the sales assistant inside a WhatsApp-first lead CRM. You help a salesperson
 triage and act on their leads. Use the tools to look up real data before answering — never invent
