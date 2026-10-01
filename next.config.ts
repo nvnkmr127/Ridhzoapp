@@ -18,13 +18,28 @@ const SECURITY_HEADERS = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
 
+  // WordPress permalinks end in "/". Without this Next 308-redirects /blog/post/ -> /blog/post and WP
+  // redirects it back, looping forever.
+  skipTrailingSlashRedirect: true,
+
   async headers() {
     return [
       {
-        source: "/((?!f/|book/).*)",
+        source: "/((?!f/|book/|blog).*)",
         headers: [...SECURITY_HEADERS, { key: "X-Frame-Options", value: "DENY" }, { key: "Content-Security-Policy", value: "frame-ancestors 'none'" }],
       },
-      { source: "/(f|book)/:path*", headers: SECURITY_HEADERS },
+      { source: "/(f|book|blog)/:path*", headers: SECURITY_HEADERS },
+    ];
+  },
+
+  // WordPress blog lives on its own PHP host; proxy it under /blog so the public URL stays ridhzo.com/blog.
+  // Set WORDPRESS_ORIGIN (e.g. https://wp-origin.ridhzo.com) in Vercel env; unset = no proxy.
+  async rewrites() {
+    const origin = process.env.WORDPRESS_ORIGIN;
+    if (!origin) return [];
+    return [
+      { source: "/blog", destination: `${origin}/blog/` },
+      { source: "/blog/:path*", destination: `${origin}/blog/:path*` },
     ];
   },
 
