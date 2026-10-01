@@ -41,6 +41,8 @@ function tomorrowAt(hour: number) {
   return d;
 }
 
+const fmtPicked = (d: Date) => d.toLocaleString("en-IN", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true, timeZoneName: "short" });
+
 type Form = {
   mode: MeetingMode;
   startAt: string;
@@ -147,6 +149,10 @@ export function MeetingScheduler({
     const start = new Date(f.startAt);
     if (!f.startAt || Number.isNaN(start.getTime())) {
       toast({ variant: "destructive", title: "Pick a date and time first" });
+      return;
+    }
+    if (start.getTime() < Date.now() - 5 * 60_000) {
+      toast({ variant: "destructive", title: "That time has already passed", description: `${fmtPicked(start)} is in the past. Check AM/PM.` });
       return;
     }
     const online = f.mode === "online";
@@ -263,6 +269,9 @@ export function MeetingScheduler({
               <label className="col-span-2 space-y-1">
                 <span className="text-xs text-muted-foreground">Date & time *</span>
                 <Input type="datetime-local" value={f.startAt} onChange={(e) => set("startAt", e.target.value)} required className="h-9 text-sm" />
+                {f.startAt && !Number.isNaN(new Date(f.startAt).getTime()) && (
+                  <span className="text-xs text-muted-foreground">{fmtPicked(new Date(f.startAt))}</span>
+                )}
               </label>
               <label className="space-y-1">
                 <span className="text-xs text-muted-foreground">Length</span>
