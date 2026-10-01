@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clientIp } from "@/lib/clientIp";
 import { z } from "zod";
 import { authorizePhoneOtp } from "@/lib/auth";
 import { issueMobileSession } from "@/lib/mobileSession";
@@ -14,7 +15,7 @@ const REASONS: Record<string, string> = {
 
 // Mobile login step 2: { phone (as returned by /otp/send), otp } → { token, user }.
 export async function POST(req: NextRequest) {
-  const ip = req.headers.get("x-forwarded-for") || "unknown";
+  const ip = clientIp(req);
   if (!(await RateLimiter.checkLimit(`auth:otp:verify:${ip}`, 20, 10 * 60)).success) {
     return NextResponse.json({ error: "Too many attempts. Please wait a few minutes." }, { status: 429 });
   }

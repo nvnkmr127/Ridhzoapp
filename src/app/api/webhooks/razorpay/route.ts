@@ -24,7 +24,8 @@ export async function POST(req: NextRequest) {
     await BillingService.handleWebhook(body?.event, subscription, payment);
   } catch (e) {
     console.error("[razorpay] webhook handling failed", e);
-    // Still 200 so Razorpay doesn't retry-storm; we've logged it.
+    // 500 so Razorpay retries (it backs off for up to 24h); handleWebhook is idempotent and drops stale events.
+    return NextResponse.json({ ok: false, error: "temporary failure" }, { status: 500 });
   }
   return NextResponse.json({ ok: true });
 }

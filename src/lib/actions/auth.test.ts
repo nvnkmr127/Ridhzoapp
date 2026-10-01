@@ -32,6 +32,9 @@ vi.mock("@/lib/messaging/whatsapp/client", () => ({
   },
 }));
 
+vi.mock("next/headers", () => ({ headers: async () => new Headers({ "x-forwarded-for": "203.0.113.9" }) }));
+vi.mock("@/lib/rate-limit", () => ({ RateLimiter: { checkLimit: vi.fn(async () => ({ success: true })) } }));
+
 import { sendWhatsAppOtpAction } from "./auth";
 
 describe("sendWhatsAppOtpAction", () => {

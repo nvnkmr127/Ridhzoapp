@@ -77,6 +77,7 @@ describe("Connect Google (signIn callback)", () => {
     const user = google("ravi@gmail.com");
     expect(await signIn(user)).toBe(true);
     expect(user.user.id).toBe("u2");
-    expect(updateSet).not.toHaveBeenCalled();
+    // Only the "Google is connected" marks are written — never an email change.
+    expect(updateSet).not.toHaveBeenCalledWith(expect.objectContaining({ email: expect.anything() }));
   });
 });

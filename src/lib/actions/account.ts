@@ -10,6 +10,12 @@ import { ok, fail } from "@/lib/actions/result";
 import { verifyPhoneOtp } from "@/lib/auth/phoneOtp";
 import { GOOGLE_LINK_COOKIE, GOOGLE_LINK_TTL_SEC, isPlaceholderEmail, makeGoogleLinkToken } from "@/lib/auth/googleLink";
 import { RateLimiter } from "@/lib/rate-limit";
+import crypto from "crypto";
+import { z } from "zod";
+import { emailVerifications } from "@/db/schema";
+import { hashToken } from "@/lib/auth/emailVerify";
+import { sendEmail, appUrl } from "@/lib/mail/mailer";
+import { mh, mp, mbtn, mfine, mkey, mtag } from "@/lib/mail/layout";
 
 // Step 1 of "Connect Google": remember who is linking; the client then starts the Google sign-in and
 // the signIn callback in lib/auth.ts attaches the Google email to this user.
@@ -57,13 +63,13 @@ export async function changePasswordAction(input: { currentPassword?: string; ne
   }
 
   const [me] = await db
-    .select({ email: users.email, passwordHash: users.passwordHash, passwordSet: users.passwordSet })
+    .select({ email: users.email, phone: users.phone, passwordHash: users.passwordHash, passwordSet: users.passwordSet })
     .from(users)
     .where(and(eq(users.id, session.user.id), isNull(users.deletedAt)))
     .limit(1);
   if (!me) return fail("NOT_FOUND", "Account not found.");
-  // Password login is by email, so a WhatsApp-only account needs a real email (Connect Google) first.
-  if (isPlaceholderEmail(me.email)) return fail("VALIDATION", "Connect Google first so you have an email to log in with.");
+  // Password login is by email or phone number, so a WhatsApp-only account can set one as long as it has a number.
+  if (isPlaceholderEmail(me.email) && !me.phone) return fail("VALIDATION", "Add an email or mobile number first so you have something to log in with.");
 
   if (me.passwordSet) {
     const limit = await RateLimiter.checkLimit(`auth:change-password:${session.user.id}`, 5, 15 * 60);
@@ -76,4 +82,55 @@ export async function changePasswordAction(input: { currentPassword?: string; ne
   const passwordHash = await bcrypt.hash(newPassword, 10);
   await db.update(users).set({ passwordHash, passwordSet: true, updatedAt: new Date() }).where(eq(users.id, session.user.id));
   return ok({ changed: true });
+}
+
+// "Add email" from the account-setup prompt: email a verification link. The address becomes the login
+// only after the link is clicked (consumeEmailVerification), so an unverified or someone else's
+// address never replaces the phone login.
+export async function requestEmailVerificationAction(input: { email: string }) {
+  const session = await requireAuth();
+  const parsed = z.string().trim().toLowerCase().email().max(255).safeParse(input.email);
+  if (!parsed.success) return fail("VALIDATION", "Please enter a valid email address.");
+  const email = parsed.data;
+
+  const limit = await RateLimiter.checkLimit(`account:email-verify:${session.user.id}`, 5, 60 * 60);
+  if (!limit.success) return fail("RATE_LIMIT", "Too many attempts. Please try again in an hour.");
+
+  const [me] = await db
+    .select({ email: users.email, emailVerifiedAt: users.emailVerifiedAt, firstName: users.firstName })
+    .from(users)
+    .where(and(eq(users.id, session.user.id), isNull(users.deletedAt)))
+    .limit(1);
+  if (!me) return fail("NOT_FOUND", "Account not found.");
+  if (!isPlaceholderEmail(me.email)) return fail("VALIDATION", "This account already has an email address.");
+
+  const [taken] = await db.select({ id: users.id }).from(users).where(and(eq(users.email, email), ne(users.id, session.user.id))).limit(1);
+  if (taken) return fail("CONFLICT", "This email is already used by another Ridhzo account. Use a different one, or log in with it.");
+
+  const rawToken = crypto.randomBytes(32).toString("hex");
+  await db.delete(emailVerifications).where(and(eq(emailVerifications.userId, session.user.id), isNull(emailVerifications.usedAt)));
+  await db.insert(emailVerifications).values({
+    userId: session.user.id,
+    email,
+    tokenHash: hashToken(rawToken),
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+  });
+
+  const link = appUrl(`/verify-email/${rawToken}`);
+  const safeName = (me.firstName ?? "").replace(/[&<>"']/g, "");
+  await sendEmail({
+    from: "noreply",
+    to: email,
+    subject: "Verify your email for Ridhzo",
+    preheader: "Confirm this address to log in with it",
+    html:
+      mtag("Account") +
+      mh("Verify your email.") +
+      mp(safeName ? `Hi ${safeName},` : "Hello,") +
+      mp("Confirm this address to add email login to your Ridhzo account. Your account and data stay exactly as they are. The link works once, for 24 hours.") +
+      mbtn("Verify email", link) +
+      mkey("Button not working? Paste this link", link) +
+      mfine("Didn't ask for this? Ignore this email — nothing changes."),
+  });
+  return ok({ sent: true, email });
 }

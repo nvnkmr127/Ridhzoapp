@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clientIp } from "@/lib/clientIp";
 import { z } from "zod";
 import { verifyGoogleCode } from "@/lib/mobileAuth";
 import { issueMobileSession } from "@/lib/mobileSession";
@@ -8,7 +9,7 @@ const schema = z.object({ code: z.string().min(1).max(2000), verifier: z.string(
 
 // Final step of mobile Google sign-in: { code, verifier } → { token, user }.
 export async function POST(req: NextRequest) {
-  const ip = req.headers.get("x-forwarded-for") || "unknown";
+  const ip = clientIp(req);
   if (!(await RateLimiter.checkLimit(`auth:google:exchange:${ip}`, 20, 60)).success) {
     return NextResponse.json({ error: "Too many attempts. Please wait a minute." }, { status: 429 });
   }

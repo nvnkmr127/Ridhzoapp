@@ -17,6 +17,7 @@ export function ResetPasswordForm({ token, email }: { token: string; email: stri
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [success, setSuccess] = React.useState(false);
+  const [mobile, setMobile] = React.useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -40,9 +41,10 @@ export function ResetPasswordForm({ token, email }: { token: string; email: stri
         return;
       }
       setSuccess(true);
-      setTimeout(() => {
-        router.push("/login?notice=password-reset");
-      }, 2500);
+      // On a phone the reset usually started in the Ridhzo app: offer the way back instead of the web login.
+      const onPhone = /Android|iPhone|iPad/i.test(navigator.userAgent);
+      setMobile(onPhone);
+      if (!onPhone) setTimeout(() => router.push("/login?notice=password-reset"), 2500);
     } catch {
       setError("We couldn't reach the server. Please try again.");
     } finally {
@@ -53,8 +55,13 @@ export function ResetPasswordForm({ token, email }: { token: string; email: stri
   if (success) {
     return (
       <div className="space-y-4 text-center">
-        <StatusMessage className="text-left" status={{ kind: "success", text: "Password updated. Taking you to log in…" }} />
-        <Button asChild className="w-full">
+        <StatusMessage className="text-left" status={{ kind: "success", text: mobile ? "Password updated." : "Password updated. Taking you to log in…" }} />
+        {mobile ? (
+          <Button asChild className="w-full">
+            <a href="ridhzo://login">Open the Ridhzo app</a>
+          </Button>
+        ) : null}
+        <Button asChild variant={mobile ? "outline" : "default"} className="w-full">
           <Link href="/login">Log in now</Link>
         </Button>
       </div>

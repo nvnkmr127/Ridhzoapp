@@ -6,7 +6,28 @@ import type { NextConfig } from "next";
 // `instrumentation.ts` layer, which serverExternalPackages does not reach in Next 15.0.
 const NODE_ONLY = ["bullmq", "ioredis", "web-push", "postgres", "mysql2", "pg", "https-proxy-agent", "agent-base", "resend", "nodemailer"];
 
+// Baseline browser hardening. Hosted forms and booking pages are meant to be embedded, so they're exempt
+// from the frame restriction (later rule wins for those paths).
+const SECURITY_HEADERS = [
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(self)" },
+  { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
+];
+
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
+
+  async headers() {
+    return [
+      {
+        source: "/((?!f/|book/).*)",
+        headers: [...SECURITY_HEADERS, { key: "X-Frame-Options", value: "DENY" }, { key: "Content-Security-Policy", value: "frame-ancestors 'none'" }],
+      },
+      { source: "/(f|book)/:path*", headers: SECURITY_HEADERS },
+    ];
+  },
+
   // Style-lint (unused vars, unescaped entities) shouldn't fail the production build.
   // TypeScript type-checking stays on — that's the real correctness gate. Run `next lint` in CI.
   eslint: { ignoreDuringBuilds: true },

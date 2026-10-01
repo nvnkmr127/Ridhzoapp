@@ -48,7 +48,7 @@ export async function signupAction(input: z.infer<typeof signupSchema>) {
   const data = { ...parsed.data, email: parsed.data.email.trim().toLowerCase() };
   // Throttle workspace creation per client (bots can't mass-create accounts).
   const ip = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-  if (!(await RateLimiter.checkLimit(`auth:signup:ip:${ip}`, 5, 60 * 60)).success) {
+  if (!(await RateLimiter.checkLimit(`auth:signup:ip:${ip}`, 20, 60 * 60)).success) {
     return fail("RATE_LIMIT", "Too many sign-ups from this network. Please try again in an hour.");
   }
   // Business name is optional; fall back to "<name>'s Workspace" like the Google/phone flows.
@@ -98,7 +98,7 @@ export async function signupAction(input: z.infer<typeof signupSchema>) {
 
     return ok({ created: true });
   } catch (e: any) {
-    if (String(e?.message || e).includes("duplicate") || e?.code === "23505") {
+    if (/duplicate|already exists/i.test(String(e?.message || e)) || e?.code === "23505") {
       return fail("CONFLICT", "An account with that email already exists. Try signing in instead.", { email: "This email is already registered." });
     }
     return actionFail(e);
@@ -215,6 +215,12 @@ export async function sendWhatsAppOtpAction(input: z.infer<typeof sendOtpSchema>
     return fail("CONFLICT", "This number is already used by another Ridhzo account.");
   }
 
+  // Per-client cap so one network can't trigger codes to unlimited numbers (WhatsApp cost / harassment).
+  const otpIp = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  if (!(await RateLimiter.checkLimit(`auth:otp:send-action:${otpIp}`, 15, 10 * 60)).success) {
+    return fail("RATE_LIMIT", "Too many code requests. Please wait a few minutes.");
+  }
+
   // Rate limit: 45s between OTP requests to prevent spamming
   const [recent] = await db
     .select({ createdAt: phoneOtps.createdAt })
@@ -232,7 +238,7 @@ export async function sendWhatsAppOtpAction(input: z.infer<typeof sendOtpSchema>
   }
 
   // 6-digit numeric OTP
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const code = crypto.randomInt(100000, 1000000).toString();
   const otpHash = crypto.createHash("sha256").update(code).digest("hex");
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 mins
 
@@ -358,6 +364,18 @@ export async function resetPasswordAction(input: z.infer<typeof resetPasswordSch
       .update(passwordResets)
       .set({ usedAt: new Date() })
       .where(eq(passwordResets.id, reset.id));
+
+    // A reset usually means the old password (and any session made with it) can't be trusted:
+    // close every session issued before now (honoured within the jwt() refresh window).
+    try {
+      const [u] = await db.select({ id: users.id }).from(users).where(and(eq(users.email, reset.email), isNull(users.deletedAt))).limit(1);
+      if (u) {
+        const { SessionService } = await import("@/domains/platform/sessionService");
+        await SessionService.revokeUserSessions(u.id);
+      }
+    } catch (e) {
+      console.warn("[password-reset] session revoke failed", e);
+    }
 
     return ok({ reset: true });
   } catch (err: any) {

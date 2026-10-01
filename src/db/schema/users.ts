@@ -37,6 +37,10 @@ export const users = pgTable('users', {
   // false = random hash from a Google/WhatsApp signup; the user never chose a password, so the
   // profile lets them set one without asking for the current password.
   passwordSet: boolean('password_set').default(true).notNull(),
+  // 'phone' = registered with a mobile number (drives the "complete your account" prompt).
+  signupMethod: varchar('signup_method', { length: 10 }),
+  emailVerifiedAt: timestamp('email_verified_at'), // set once the email is proven (link click or Google)
+  googleLinkedAt: timestamp('google_linked_at'),
   firstName: varchar('first_name', { length: 255 }),
   lastName: varchar('last_name', { length: 255 }),
   roleId: uuid('role_id').references(() => roles.id),

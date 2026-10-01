@@ -19,6 +19,7 @@ import { useEffect, useState } from "react";
 import { sendWhatsAppOtpAction } from "@/lib/actions/auth";
 import { useCooldown } from "@/hooks/use-cooldown";
 import { COUNTRY_CODES } from "@/lib/countryCodes";
+import { captureAttribution } from "@/lib/tracking/utm";
 
 const DEV = process.env.NODE_ENV === "development";
 const DEV_EMAIL = process.env.NEXT_PUBLIC_DEV_LOGIN_EMAIL || "admin@acme.com";
@@ -41,6 +42,9 @@ function afterLoginPath(): string {
 
 export default function LoginPage() {
   const router = useRouter();
+  useEffect(() => {
+    captureAttribution();
+  }, []);
   const [status, setStatus] = useState<Status>(null);
   const setError = (text: string | null) => setStatus(text ? { kind: "error", text } : null);
   const setSuccess = (text: string) => setStatus({ kind: "success", text });
@@ -239,7 +243,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <Tabs defaultValue="phone" className="w-full">
+          <Tabs defaultValue="email" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="phone">WhatsApp OTP</TabsTrigger>
               <TabsTrigger value="email">Email</TabsTrigger>

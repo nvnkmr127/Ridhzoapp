@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clientIp } from "@/lib/clientIp";
 import { sendWhatsAppOtpAction } from "@/lib/actions/auth";
 import { RateLimiter } from "@/lib/rate-limit";
 
 // Mobile login step 1: send a WhatsApp OTP to an existing account's number. Body: { phone }.
 // Same rules as the web login (per-number 45s cooldown, unknown numbers refused); plus a per-IP cap.
 export async function POST(req: NextRequest) {
-  const ip = req.headers.get("x-forwarded-for") || "unknown";
+  const ip = clientIp(req);
   if (!(await RateLimiter.checkLimit(`auth:otp:send:${ip}`, 10, 10 * 60)).success) {
     return NextResponse.json({ error: "Too many code requests. Please wait a few minutes." }, { status: 429 });
   }

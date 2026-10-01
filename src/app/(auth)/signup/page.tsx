@@ -236,7 +236,7 @@ export default function SignupPage() {
             </div>
           </div>
 
-          <Tabs defaultValue="phone" className="w-full">
+          <Tabs defaultValue="email" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="phone">WhatsApp OTP</TabsTrigger>
               <TabsTrigger value="email">Email</TabsTrigger>
@@ -396,6 +396,12 @@ export default function SignupPage() {
               </form>
             </TabsContent>
           </Tabs>
+
+          <p className="text-center text-xs text-muted-foreground">
+            By creating a workspace you agree to our{" "}
+            <a href="https://ridhzo.com/terms" target="_blank" rel="noopener noreferrer" className="underline">Terms</a>{" "}and{" "}
+            <a href="https://ridhzo.com/privacy" target="_blank" rel="noopener noreferrer" className="underline">Privacy Policy</a>.
+          </p>
 
           <p className="text-center text-sm text-muted-foreground pt-2">
             Already have an account?{" "}

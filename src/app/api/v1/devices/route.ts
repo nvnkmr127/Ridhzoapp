@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clientIp } from "@/lib/clientIp";
 import { z } from "zod";
 import { authorizeApiRequest } from "@/lib/apiAuth";
 import { MobilePushService } from "@/lib/push/mobile";
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
 // Unregister on sign-out. No bearer needed: the app calls this after its session has already ended
 // (expired or revoked), and the push token itself is an unguessable device secret.
 export async function DELETE(req: NextRequest) {
-  const ip = req.headers.get("x-forwarded-for") || "unknown";
+  const ip = clientIp(req);
   if (!(await RateLimiter.checkLimit(`devices:delete:${ip}`, 30, 60)).success) {
     return NextResponse.json({ error: "Too many requests. Please slow down." }, { status: 429 });
   }

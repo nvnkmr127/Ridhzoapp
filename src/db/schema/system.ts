@@ -108,6 +108,20 @@ export const passwordResets = pgTable('password_resets', {
   emailIdx: index('password_resets_email_idx').on(t.email),
 }));
 
+// "Add email" verification for a signed-in user. The address only becomes the login once the link is
+// clicked, so nobody can squat an email they don't own. Tokens are sha256-hashed, valid 24 hours.
+export const emailVerifications = pgTable('email_verifications', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  email: varchar('email', { length: 255 }).notNull(),
+  tokenHash: varchar('token_hash', { length: 64 }).notNull().unique(),
+  expiresAt: timestamp('expires_at').notNull(),
+  usedAt: timestamp('used_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => ({
+  userIdx: index('email_verifications_user_idx').on(t.userId),
+}));
+
 // WhatsApp / Phone OTP verification tokens. OTPs are sha256-hashed with 5-minute expiry.
 export const phoneOtps = pgTable('phone_otps', {
   id: uuid('id').defaultRandom().primaryKey(),

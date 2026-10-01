@@ -140,6 +140,10 @@ export async function POST(
         .limit(1);
 
       if (existingEvent) {
+        // A retry of an event that was stored but never queued (Redis was down) must be queued now.
+        if (existingEvent.status === "pending") {
+          await ingestionQueue.add(`ingest-${existingEvent.id}`, { webhookEventId: existingEvent.id }, { jobId: `ingest-${existingEvent.id}` });
+        }
         return NextResponse.json({ success: true, eventId: existingEvent.id, duplicate: true }, { status: 200 });
       }
     }
@@ -172,9 +176,14 @@ export async function POST(
     }
 
     // 2. Offload to BullMQ for asynchronous processing
-    await ingestionQueue.add(`ingest-${event.id}`, {
-      webhookEventId: event.id
-    });
+    try {
+      await ingestionQueue.add(`ingest-${event.id}`, { webhookEventId: event.id }, { jobId: `ingest-${event.id}` });
+    } catch (queueErr) {
+      // Queue unavailable: the event row stays 'pending' so the sender's retry (which hits the
+      // idempotency path above) or the next pending sweep re-queues it. 503 asks the sender to retry.
+      console.error("Webhook enqueue failed (event kept pending):", queueErr);
+      return NextResponse.json({ success: false, error: "Temporarily unavailable, retry shortly", eventId: event.id }, { status: 503 });
+    }
 
     return NextResponse.json({ success: true, eventId: event.id }, { status: 202 });
 

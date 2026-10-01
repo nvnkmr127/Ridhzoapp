@@ -531,7 +531,7 @@ export class BillingLifecycleService {
             html:
               mtag("Plan update") +
               mh("Your free plan has ended.") +
-              mp(`Hello ${owner.firstName || "there"}, the complimentary plan for <strong>${org.name}</strong> has finished, so the workspace now runs on Free. Your leads and follow-ups are safe.`) +
+              mp(`Hello ${esc(owner.firstName || "there")}, the complimentary plan for <strong>${esc(org.name)}</strong> has finished, so the workspace now runs on Free. Your leads and follow-ups are safe.`) +
               mcompare(
                 { title: "Before", items: ["Complimentary plan", "AI replies", "All lead sources", "Full automations"] },
                 { title: "Now", items: ["Free plan", "Leads &amp; follow-ups kept", "Extras paused, not deleted"] },
@@ -611,7 +611,7 @@ export class BillingLifecycleService {
             html:
               mtag("Trial complete") +
               mh("Your trial has ended.<br>Your leads haven't.") +
-              mp(`Hello ${owner.firstName || "there"}, the <strong>${org.plan}</strong> trial on <strong>${org.name}</strong> is over. The workspace is now on Free, and everything you captured is safe.`) +
+              mp(`Hello ${esc(owner.firstName || "there")}, the <strong>${esc(org.plan)}</strong> trial on <strong>${esc(org.name)}</strong> is over. The workspace is now on Free, and everything you captured is safe.`) +
               mcompare(
                 { title: `${org.plan} trial`, items: ["Full feature access", "Higher limits"] },
                 { title: "Free plan", items: [`${PLAN_LIMITS.free.aiCredits} AI credits / month`, `${PLAN_LIMITS.free.automations} automations`, `${PLAN_LIMITS.free.sequences} sequence`, `${PLAN_LIMITS.free.sources} lead source`] },

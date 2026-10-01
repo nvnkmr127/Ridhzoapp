@@ -56,6 +56,16 @@ const SESSION_MAX_AGE_SEC = 30 * 24 * 60 * 60;
 // cost against a remote database for no benefit at sub-minute granularity.
 const SESSION_REFRESH_INTERVAL_MS = 60_000;
 
+const AUTH_CODES = new Set(["RATE_LIMITED", "ACCOUNT_DISABLED", "ACCOUNT_SUSPENDED", "OTP_LOCKED"]);
+// Only our own error codes may reach the client (they land in the /login?error= URL); anything else
+// (e.g. a multi-line "Failed query: select …" with params) is logged and replaced by a fixed code.
+function safeAuthError(err: unknown): Error {
+  const msg = err instanceof Error ? err.message : "";
+  if (AUTH_CODES.has(msg)) return new Error(msg);
+  console.error("[auth] sign-in failed:", err);
+  return new Error("ServerError");
+}
+
 // WhatsApp OTP (or legacy Firebase token) sign-in: verifies the code, creates the user + workspace on
 // first login, and returns the NextAuth user. Shared by the web "phone-otp" provider and the mobile API.
 export async function authorizePhoneOtp(credentials?: Record<string, string>) {
@@ -124,6 +134,7 @@ export async function authorizePhoneOtp(credentials?: Record<string, string>) {
           lastName,
           passwordHash: randomPasswordHash,
           passwordSet: false,
+          signupMethod: "phone",
           roleId: adminRole?.id ?? null,
           isActive: true,
         })
@@ -153,7 +164,7 @@ export async function authorizePhoneOtp(credentials?: Record<string, string>) {
       phone: existingUser.phone,
     };
   } catch (err: any) {
-    throw new Error(err.message?.replace(/\r?\n/g, " ") || "Unknown error");
+    throw safeAuthError(err);
   }
 }
 
@@ -240,7 +251,7 @@ export const authOptions: NextAuthOptions = {
             phone: user.phone,
           };
         } catch (err: any) {
-          throw new Error(err.message?.replace(/\r?\n/g, " ") || "Unknown error");
+          throw safeAuthError(err);
         }
       },
     }),
@@ -324,6 +335,14 @@ export const authOptions: NextAuthOptions = {
             })(), "google welcome");
           }
 
+          // Google proved this address: mark it verified and Google as a connected login.
+          if (!existingUser.googleLinkedAt || !existingUser.emailVerifiedAt) {
+            await db
+              .update(users)
+              .set({ googleLinkedAt: existingUser.googleLinkedAt ?? new Date(), emailVerifiedAt: existingUser.emailVerifiedAt ?? new Date() })
+              .where(eq(users.id, existingUser.id));
+          }
+
           if (!existingUser.isActive) return "/login?error=ACCOUNT_DISABLED";
 
           if (existingUser.organizationId && !existingUser.isSuperAdmin) {
@@ -391,7 +410,9 @@ export const authOptions: NextAuthOptions = {
       // their session's effective access closed within one interval instead of up to 30 days.
       const refreshedAt = (token.refreshedAt as number | undefined) ?? 0;
       if (token.id && Date.now() - refreshedAt > SESSION_REFRESH_INTERVAL_MS) {
-        const [u] = await db
+        let u;
+        try {
+          [u] = await db
           .select({
             firstName: users.firstName,
             lastName: users.lastName,
@@ -406,6 +427,12 @@ export const authOptions: NextAuthOptions = {
           .from(users)
           .where(eq(users.id, token.id as string))
           .limit(1);
+        } catch (e) {
+          // Database unreachable (pooled socket reset, proxy blip): keep the session as-is and retry at
+          // the next refresh instead of throwing — a throw here logs the user out.
+          console.warn("[auth] jwt refresh skipped, DB unavailable:", e instanceof Error ? e.message : e);
+          return token;
+        }
         // Honor a super-admin "revoke sessions": if the user or their org was revoked AFTER this
         // session was issued, close it. Checked inside the same throttled window (not every request).
         let revoked = false;

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clientIp } from "@/lib/clientIp";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { and, eq, isNull } from "drizzle-orm";
@@ -12,7 +13,7 @@ const schema = z.object({ email: z.string().min(3), password: z.string().min(1) 
 
 // Native login: verify credentials (same bcrypt store as NextAuth) and return a bearer token.
 export async function POST(req: NextRequest) {
-  const ip = req.headers.get("x-forwarded-for") || "unknown";
+  const ip = clientIp(req);
   const limit = await RateLimiter.checkLimit(`auth:login:${ip}`, 10, 60);
   // Per-account guard too (shared with the web login), so rotating IPs can't brute-force one user.
   const peek = await req.clone().json().catch(() => null);
