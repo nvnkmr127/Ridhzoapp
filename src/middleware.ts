@@ -4,6 +4,17 @@ import { getToken } from "next-auth/jwt";
 
 export async function middleware(req: NextRequest) {
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  const { pathname, searchParams } = req.nextUrl;
+  if (pathname === "/login" || pathname === "/signup") {
+    // Already signed in: skip the form. A revoked/deactivated session keeps its cookie but has no org
+    // (requireOrg sends it back to /login), so it must stay on the form or the two would loop.
+    if (token?.organizationId) {
+      const cb = searchParams.get("callbackUrl");
+      const safe = cb && cb.startsWith("/") && !cb.startsWith("//") && !cb.startsWith("/\\") ? cb : "/";
+      return NextResponse.redirect(new URL(safe, req.url));
+    }
+    return NextResponse.next();
+  }
   if (!token) {
     const signInUrl = new URL("/login", req.url);
     // Keep the query too, so a list's filters/page survive signing in again.
@@ -16,6 +27,8 @@ export async function middleware(req: NextRequest) {
 export const config = {
   matcher: [
     "/",
+    "/login",
+    "/signup",
     "/admin/:path*",
     "/assistant/:path*",
     "/leads/:path*",
