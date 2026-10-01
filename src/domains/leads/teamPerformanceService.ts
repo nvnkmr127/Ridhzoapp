@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { CustomStatusSchemaService } from "./customStatusSchemaService";
 import { leads, users, followUps, activities } from "@/db/schema";
-import { and, eq, gte, inArray, count, sum } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, count, sum } from "drizzle-orm";
 import { answerRate, callCounts } from "./callStats";
 
 export interface RepPerformanceMetric {
@@ -16,6 +16,8 @@ export interface RepPerformanceMetric {
   calls: number; // logged calls (manual + phone call log)
   talkTimeSec: number; // from the Android call log; manual logs carry no duration
   answerRate: number | null; // % of outgoing calls answered; null = no outgoing calls
+  overdueFollowUps: number; // pending and past due right now
+  avgResponseMin: number | null; // lead arrived → first contact, minutes; null = none contacted yet
   rank: number;
 }
 
@@ -60,6 +62,8 @@ export class TeamPerformanceService {
         ownerId: leads.ownerId,
         status: leads.status,
         expectedValue: leads.expectedValue,
+        createdAt: leads.createdAt,
+        firstContactedAt: leads.firstContactedAt,
       })
       .from(leads)
       .where(and(...leadConditions));
@@ -89,6 +93,14 @@ export class TeamPerformanceService {
       }
     }
 
+    // Follow-ups each rep is sitting on past their due time (a snapshot, not limited to the period).
+    const overdueRows = await db
+      .select({ userId: followUps.userId, count: count() })
+      .from(followUps)
+      .where(and(eq(followUps.status, "pending"), lt(followUps.dueAt, new Date()), inArray(followUps.userId, userIds)))
+      .groupBy(followUps.userId);
+    const overdueMap = new Map(overdueRows.map((r) => [r.userId, Number(r.count)]));
+
     // Calls per rep, by when the call happened.
     const callConditions = [eq(activities.type, "call"), inArray(activities.userId, userIds)];
     if (startDate) callConditions.push(gte(activities.occurredAt, startDate));
@@ -108,9 +120,11 @@ export class TeamPerformanceService {
       statsMap[u.id] = { total: 0, won: 0, revenue: 0 };
     }
 
+    const respMs: Record<string, number[]> = {};
     for (const l of orgLeads) {
       if (l.ownerId && statsMap[l.ownerId]) {
         statsMap[l.ownerId].total += 1;
+        if (l.firstContactedAt) (respMs[l.ownerId] ??= []).push(Math.max(0, +l.firstContactedAt - +l.createdAt));
         if (cat(l.status) === "won") {
           statsMap[l.ownerId].won += 1;
           const val = Number(l.expectedValue ?? 0);
@@ -138,6 +152,8 @@ export class TeamPerformanceService {
         calls: callsMap.get(u.id)?.calls ?? 0,
         talkTimeSec: callsMap.get(u.id)?.talk ?? 0,
         answerRate: callsMap.get(u.id)?.rate ?? null,
+        overdueFollowUps: overdueMap.get(u.id) ?? 0,
+        avgResponseMin: respMs[u.id]?.length ? Math.round(respMs[u.id].reduce((a, b) => a + b, 0) / respMs[u.id].length / 60_000) : null,
         rank: 0,
       };
     });

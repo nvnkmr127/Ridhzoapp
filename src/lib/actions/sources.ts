@@ -372,6 +372,24 @@ export async function updateSourceFieldMappingsAction(input: z.infer<typeof fiel
   }
 }
 
+const adSpendSchema = z.object({ sourceId: z.guid(), adSpend: z.number().min(0).max(1e9) });
+
+/** Total ad spend for this source (the owner types it); Insights turns it into cost per lead / per sale. */
+export async function updateSourceAdSpendAction(input: z.infer<typeof adSpendSchema>) {
+  const { organizationId } = await requirePermission("sources.manage");
+  const parsed = adSpendSchema.safeParse(input);
+  if (!parsed.success) return fail("VALIDATION", "Enter a valid amount");
+  try {
+    const updated = await LeadSourceService.updateSource(parsed.data.sourceId, { configPatch: { adSpend: parsed.data.adSpend } }, organizationId);
+    if (!updated) return fail("NOT_FOUND", "Source not found");
+    revalidatePath("/settings/sources");
+    revalidatePath("/insights");
+    return ok(toClientSource(updated));
+  } catch (e) {
+    return actionFail(e);
+  }
+}
+
 /** If the error is a dead-token error, mark the source as needing reconnect. Returns whether it was. */
 async function flagIfAuthError(e: unknown, sourceId: string): Promise<boolean> {
   const { MetaTokenRefreshService } = await import("@/domains/leads/metaTokenRefreshService");

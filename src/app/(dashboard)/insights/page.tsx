@@ -367,6 +367,8 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
                     <TableHead className="text-right">Calls</TableHead>
                     <TableHead className="text-right" title="Outgoing calls that connected">Answer %</TableHead>
                     <TableHead className="text-right">Talk time</TableHead>
+                    <TableHead className="text-right" title="Average time from lead arriving to first contact">Response</TableHead>
+                    <TableHead className="text-right" title="Follow-ups past their due time right now">Overdue</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -380,6 +382,8 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
                       <TableCell className="text-right tabular-nums">{r.calls}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.answerRate == null ? "—" : `${r.answerRate}%`}</TableCell>
                       <TableCell className="text-right tabular-nums">{r.talkTimeSec ? formatCallDuration(r.talkTimeSec) : "—"}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.avgResponseMin == null ? "—" : r.avgResponseMin >= 60 ? `${Math.round(r.avgResponseMin / 60)}h` : `${r.avgResponseMin}m`}</TableCell>
+                      <TableCell className={`text-right tabular-nums ${r.overdueFollowUps ? "text-rose-500 font-medium" : ""}`}>{r.overdueFollowUps}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -578,6 +582,10 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
                   <TableHead className="text-right">Win rate</TableHead>
                   <TableHead className="text-right">Revenue</TableHead>
                   <TableHead className="text-right">Avg deal</TableHead>
+                  <TableHead className="text-right" title="Enter spend per source in Settings → Sources">Spend</TableHead>
+                  <TableHead className="text-right">Cost / lead</TableHead>
+                  <TableHead className="text-right">Cost / sale</TableHead>
+                  <TableHead className="text-right" title="Revenue ÷ ad spend">ROAS</TableHead>
                   <TableHead className="text-right" title="Outgoing calls that connected — low means bad numbers">Answer %</TableHead>
                 </TableRow>
               </TableHeader>
@@ -593,6 +601,10 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
                     <TableCell className="text-right tabular-nums">{s.winRatePercentage.toFixed(0)}%</TableCell>
                     <TableCell className="text-right tabular-nums">{money(s.totalRevenue)}</TableCell>
                     <TableCell className="text-right tabular-nums">{money(s.avgDealValue)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{s.adSpend == null ? "—" : money(s.adSpend)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{s.costPerLead == null ? "—" : money(s.costPerLead)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{s.costPerWon == null ? "—" : money(s.costPerWon)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{s.roas == null ? "—" : `${s.roas}x`}</TableCell>
                     <TableCell className="text-right tabular-nums">{sourceAnswer.get(s.sourceId) == null ? "—" : `${sourceAnswer.get(s.sourceId)}%`}</TableCell>
                   </TableRow>
                 ))}

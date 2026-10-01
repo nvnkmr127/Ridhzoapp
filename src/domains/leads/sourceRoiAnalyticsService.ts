@@ -12,6 +12,10 @@ export interface SourceRoiMetric {
   winRatePercentage: number;
   totalRevenue: number;
   avgDealValue: number;
+  adSpend: number | null; // typed in Settings → Sources; null = not entered
+  costPerLead: number | null;
+  costPerWon: number | null;
+  roas: number | null; // revenue ÷ spend
 }
 
 export class SourceRoiAnalyticsService {
@@ -28,13 +32,15 @@ export class SourceRoiAnalyticsService {
         id: leadSources.id,
         name: leadSources.name,
         type: leadSources.type,
+        config: leadSources.config,
       })
       .from(leadSources)
       .where(eq(leadSources.organizationId, organizationId));
 
-    const sourceMap: Record<string, { name: string; type: string }> = {};
+    const sourceMap: Record<string, { name: string; type: string; adSpend: number | null }> = {};
     for (const s of sourcesList) {
-      sourceMap[s.id] = { name: s.name, type: s.type ?? "custom" };
+      const spend = Number((s.config as { adSpend?: unknown } | null)?.adSpend);
+      sourceMap[s.id] = { name: s.name, type: s.type ?? "custom", adSpend: spend > 0 ? spend : null };
     }
 
     const leadRows = preloadedLeads ?? await db
@@ -75,6 +81,9 @@ export class SourceRoiAnalyticsService {
       const winRatePercentage = g.totalLeads > 0 ? Math.round((g.wonLeads / g.totalLeads) * 1000) / 10 : 0;
       const avgDealValue = g.wonLeads > 0 ? Math.round((g.totalRevenue / g.wonLeads) * 100) / 100 : 0;
 
+      const spend = info?.adSpend ?? null;
+      const per = (n: number) => (spend != null && n > 0 ? Math.round((spend / n) * 100) / 100 : null);
+
       results.push({
         sourceId: g.sourceId,
         sourceName,
@@ -84,6 +93,10 @@ export class SourceRoiAnalyticsService {
         winRatePercentage,
         totalRevenue: g.totalRevenue,
         avgDealValue,
+        adSpend: spend,
+        costPerLead: per(g.totalLeads),
+        costPerWon: per(g.wonLeads),
+        roas: spend != null ? Math.round((g.totalRevenue / spend) * 100) / 100 : null,
       });
     }
 

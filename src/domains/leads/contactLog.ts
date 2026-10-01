@@ -157,6 +157,7 @@ export async function recordLeadContact(input: {
   await saveCallNote(leadId, userId, note);
 
   const completedFollowUpIds: string[] = [];
+  let unansweredStreak = 0;
 
   if (channel === "call") {
     // Unanswered run including this call — "not answered 3 times in a row" automations read it.
@@ -166,6 +167,7 @@ export async function recordLeadContact(input: {
       .where(and(eq(activities.leadId, leadId), eq(activities.type, "call")))
       .orderBy(desc(activities.occurredAt))
       .limit(20);
+    unansweredStreak = ScoringService.callStats(recent).unansweredStreak;
     eventBus.emit("call.logged", {
       leadId,
       userId,
@@ -174,7 +176,7 @@ export async function recordLeadContact(input: {
         outcome: missed ? "missed" : outcome ?? "unknown",
         direction: incoming ? "incoming" : "outgoing",
         durationSec: durationSec ?? null,
-        unansweredStreak: ScoringService.callStats(recent).unansweredStreak,
+        unansweredStreak,
       },
     });
   }
@@ -248,6 +250,29 @@ export async function recordLeadContact(input: {
         type: "call",
         title: leadRec?.name ? `Call back ${leadRec.name}` : "Call back",
         dueAt: at,
+        userId: leadRec?.ownerId ?? userId,
+      });
+    }
+  }
+
+  // Rep called and nobody picked up: book the next attempt (+1, +2, +4, +7 days for the 1st..4th miss in
+  // a row) so the lead isn't dropped. Stops after that; sequences / going-cold take over.
+  // ponytail: fixed cadence, make it a workspace setting if teams ask to tune it.
+  const RETRY_DAYS = [1, 2, 4, 7];
+  const noPickup = outcome === "no_answer" || outcome === "busy" || outcome === "switched_off" || outcome === "rejected";
+  if (channel === "call" && !incoming && noPickup && Date.now() - at.getTime() < CALLBACK_WITHIN_MS) {
+    const days = RETRY_DAYS[unansweredStreak - 1];
+    const [openCall] = days
+      ? await db.select({ id: followUps.id }).from(followUps).where(and(eq(followUps.leadId, leadId), eq(followUps.type, "call"), eq(followUps.status, "pending"))).limit(1)
+      : [];
+    if (days && !openCall) {
+      const { FollowUpService } = await import("@/domains/follow-ups/service");
+      const [leadRec] = await db.select({ name: leads.name, ownerId: leads.ownerId }).from(leads).where(eq(leads.id, leadId)).limit(1);
+      await FollowUpService.createFollowUp({
+        leadId,
+        type: "call",
+        title: leadRec?.name ? `Try ${leadRec.name} again (attempt ${unansweredStreak + 1})` : `Try again (attempt ${unansweredStreak + 1})`,
+        dueAt: new Date(at.getTime() + days * 86_400_000),
         userId: leadRec?.ownerId ?? userId,
       });
     }

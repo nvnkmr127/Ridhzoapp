@@ -8,7 +8,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Copy, Code, ExternalLink, ShieldCheck, SlidersHorizontal, Loader2, MoreHorizontal, RefreshCw, AlertTriangle } from "lucide-react";
 import { FormFieldsEditor } from "./FormFieldsEditor";
 import { SourceFieldMappingEditor } from "./SourceFieldMappingEditor";
-import { sendSampleGoogleLeadAction } from "@/lib/actions/sources";
+import { Input } from "@/components/ui/input";
+import { sendSampleGoogleLeadAction, updateSourceAdSpendAction } from "@/lib/actions/sources";
 import { useToast } from "@/hooks/use-toast";
 
 export type Source = {
@@ -86,6 +87,7 @@ export const SourceCard = React.memo(function SourceCard({
   onCopy, onToggleEdit, onAsk, onResume, onAssign, onReconnect, onSubscribe, onOpenFilter, onSyncPastLeads,
 }: Props) {
   const [showFieldMapping, setShowFieldMapping] = React.useState(false);
+  const [spend, setSpend] = React.useState(String((s.config as Record<string, unknown> | null)?.adSpend ?? ""));
   const { toast } = useToast();
   const sendSample = async () => {
     const res = await sendSampleGoogleLeadAction(s.id);
@@ -257,6 +259,21 @@ export const SourceCard = React.memo(function SourceCard({
             ) : null}
           </div>
         )}
+
+        <div className="flex items-center gap-2 text-xs">
+          <label htmlFor={`spend-${s.id}`} className="font-semibold text-muted-foreground">Ad spend so far:</label>
+          <Input
+            id={`spend-${s.id}`} type="number" min={0} inputMode="decimal" placeholder="optional" value={spend}
+            onChange={(e) => setSpend(e.target.value)} className="h-8 w-32 text-xs"
+            onBlur={async () => {
+              const n = Number(spend || 0);
+              if (spend === "" || Number.isNaN(n)) return;
+              const res = await updateSourceAdSpendAction({ sourceId: s.id, adSpend: n });
+              if (!res.ok) toast({ variant: "destructive", title: "Couldn't save spend", description: res.message });
+            }}
+          />
+          <span className="text-muted-foreground">shows cost per lead &amp; sale in Insights</span>
+        </div>
 
         {(isFacebook || s.type === "google_lead_ads") && (
           <div>

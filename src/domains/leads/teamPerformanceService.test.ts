@@ -49,7 +49,7 @@ describe("TeamPerformanceService", () => {
       from: () => ({
         where: () =>
           Promise.resolve([
-            { id: "lead-1", ownerId: "user-1", status: "won", expectedValue: "10000" },
+            { id: "lead-1", ownerId: "user-1", status: "won", expectedValue: "10000", createdAt: new Date("2026-01-01T10:00:00Z"), firstContactedAt: new Date("2026-01-01T10:10:00Z") },
             { id: "lead-2", ownerId: "user-1", status: "active", expectedValue: "5000" },
             { id: "lead-3", ownerId: "user-2", status: "won", expectedValue: "25000" },
           ]),
@@ -69,6 +69,13 @@ describe("TeamPerformanceService", () => {
       }),
     }));
 
+    // Mock overdue follow-ups
+    (db.select as any).mockImplementationOnce(() => ({
+      from: () => ({
+        where: () => ({ groupBy: () => Promise.resolve([{ userId: "user-1", count: 3 }]) }),
+      }),
+    }));
+
     // Mock calls
     (db.select as any).mockImplementationOnce(() => ({
       from: () => ({
@@ -79,7 +86,7 @@ describe("TeamPerformanceService", () => {
     }));
 
     const leaderboard = await TeamPerformanceService.getTeamLeaderboard("org-1");
-    expect(leaderboard.find((r) => r.userId === "user-1")).toMatchObject({ calls: 5, talkTimeSec: 600, answerRate: 75 });
+    expect(leaderboard.find((r) => r.userId === "user-1")).toMatchObject({ calls: 5, talkTimeSec: 600, answerRate: 75, overdueFollowUps: 3, avgResponseMin: 10 });
     expect(leaderboard.find((r) => r.userId === "user-2")).toMatchObject({ calls: 0, talkTimeSec: 0, answerRate: null });
 
     expect(leaderboard.length).toBe(2);
