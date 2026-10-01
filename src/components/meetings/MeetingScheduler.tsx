@@ -43,6 +43,16 @@ function tomorrowAt(hour: number) {
 
 const fmtPicked = (d: Date) => d.toLocaleString("en-IN", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true, timeZoneName: "short" });
 
+// Half-hour slots as "HH:mm" (24h value), shown as "4:00 PM"; keeps an off-grid current value selectable.
+const label12 = (t: string) => {
+  const [h, m] = t.split(":").map(Number);
+  return `${h % 12 || 12}:${pad(m)} ${h < 12 ? "AM" : "PM"}`;
+};
+function timeSlots(current: string) {
+  const slots = Array.from({ length: 48 }, (_, i) => `${pad(Math.floor(i / 2))}:${i % 2 ? "30" : "00"}`);
+  return current && !slots.includes(current) ? [...slots, current].sort() : slots;
+}
+
 type Form = {
   mode: MeetingMode;
   startAt: string;
@@ -268,7 +278,15 @@ export function MeetingScheduler({
             <div className="grid grid-cols-3 gap-3">
               <label className="col-span-2 space-y-1">
                 <span className="text-xs text-muted-foreground">Date & time *</span>
-                <Input type="datetime-local" value={f.startAt} onChange={(e) => set("startAt", e.target.value)} required className="h-9 text-sm" />
+                <div className="flex gap-2">
+                  <Input type="date" value={f.startAt.slice(0, 10)} onChange={(e) => set("startAt", `${e.target.value}T${f.startAt.slice(11, 16) || "11:00"}`)} required className="h-9 text-sm" />
+                  <Select value={f.startAt.slice(11, 16)} onValueChange={(v) => set("startAt", `${f.startAt.slice(0, 10)}T${v}`)}>
+                    <SelectTrigger className="h-9 w-32 text-sm"><SelectValue placeholder="Time" /></SelectTrigger>
+                    <SelectContent>
+                      {timeSlots(f.startAt.slice(11, 16)).map((t) => <SelectItem key={t} value={t}>{label12(t)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
                 {f.startAt && !Number.isNaN(new Date(f.startAt).getTime()) && (
                   <span className="text-xs text-muted-foreground">{fmtPicked(new Date(f.startAt))}</span>
                 )}
