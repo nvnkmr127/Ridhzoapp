@@ -94,7 +94,7 @@ export interface PlatformMetrics {
 
 export interface GlobalUserSummary {
   id: string;
-  email: string;
+  email: string | null;
   firstName: string | null;
   lastName: string | null;
   organizationId: string | null;
@@ -168,7 +168,7 @@ export interface FoundOrg {
 
 export interface TenantUserSummary {
   id: string;
-  email: string;
+  email: string | null;
   firstName: string | null;
   lastName: string | null;
   roleName: string | null;

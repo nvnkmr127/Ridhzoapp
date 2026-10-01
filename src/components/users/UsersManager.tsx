@@ -21,7 +21,7 @@ import { UserPlus, Plus, Trash2, Mail, MoreHorizontal, Pencil, Check, X, RotateC
 
 type User = {
   id: string;
-  email: string;
+  email: string | null;
   phone?: string | null;
   firstName: string | null;
   lastName: string | null;
@@ -30,7 +30,7 @@ type User = {
   teamId: string | null;
 };
 // Members added by phone number have a placeholder email — show their number instead.
-const contact = (u: { email: string; phone?: string | null }) => (u.email.endsWith("@phone.ridhzo.com") ? u.phone || u.email : u.email);
+const contact = (u: { email: string | null; phone?: string | null }) => (!u.email || u.email.endsWith("@phone.ridhzo.com") ? u.phone || u.email || "" : u.email);
 type Team = { id: string; name: string };
 type Role = { id: string; name: string };
 // `link` is only present for invites created in this session whose email failed to send —

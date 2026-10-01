@@ -20,8 +20,8 @@ async function main() {
 
   let ok = 0, skipped = 0, failed = 0;
   for (const u of rows) {
-    if (u.email.endsWith(PHONE_EMAIL_DOMAIN)) { skipped++; continue; } // placeholder address, not deliverable
-    (await upsertContact({ ...u, unsubscribed: u.optOut.includes("newsletter") })) ? ok++ : failed++;
+    if (!u.email || u.email.endsWith(PHONE_EMAIL_DOMAIN)) { skipped++; continue; } // no address (or a legacy placeholder)
+    (await upsertContact({ ...u, email: u.email, unsubscribed: u.optOut.includes("newsletter") })) ? ok++ : failed++;
     await sleep(600); // Resend default limit is 2 req/s
   }
   console.log(`contacts synced=${ok} skipped=${skipped} failed=${failed}`);

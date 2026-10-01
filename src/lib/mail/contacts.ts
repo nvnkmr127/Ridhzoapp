@@ -54,7 +54,8 @@ export async function syncOrgContacts(organizationId: string) {
       .leftJoin(organizations, eq(users.organizationId, organizations.id))
       .where(and(eq(users.organizationId, organizationId), eq(users.isActive, true), isNull(users.deletedAt)));
     for (const u of rows) {
-      await upsertContact({ ...u, unsubscribed: u.optOut.includes("newsletter") });
+      if (!u.email) continue; // phone-only people have no address to subscribe
+      await upsertContact({ ...u, email: u.email, unsubscribed: u.optOut.includes("newsletter") });
       await new Promise((r) => setTimeout(r, 600)); // Resend default limit: 2 req/s
     }
   } catch (e) {

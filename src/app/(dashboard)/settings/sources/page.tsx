@@ -25,7 +25,7 @@ export default async function LeadSourcesPage() {
   const clientSources = sources.map(toClientSource);
   const users = orgUsers
     .filter((u) => u.isActive)
-    .map((u) => ({ id: u.id, name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email }));
+    .map((u) => ({ id: u.id, name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Unnamed" }));
 
   return (
     <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6">

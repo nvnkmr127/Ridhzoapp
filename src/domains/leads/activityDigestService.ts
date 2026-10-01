@@ -24,7 +24,7 @@ export class ActivityDigestService {
   static async getDailyActivityDigest(
     organizationId: string,
     targetDateStr?: string,
-    preloadedUsers?: { id: string; firstName: string | null; lastName: string | null; email: string }[]
+    preloadedUsers?: { id: string; firstName: string | null; lastName: string | null; email: string | null }[]
   ): Promise<DailyActivityDigest> {
     let startOfDay: Date;
     let endOfDay: Date;
@@ -58,7 +58,7 @@ export class ActivityDigestService {
     const userIds = orgUsers.map((u) => u.id);
     const userMap: Record<string, string> = {};
     for (const u of orgUsers) {
-      userMap[u.id] = [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email;
+      userMap[u.id] = [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Unnamed";
     }
 
     // Query activities for the date range via direct relationship join

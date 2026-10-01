@@ -172,7 +172,7 @@ eventBus.on('lead.assigned', async (p) => {
       .where(eq(users.id, p.ownerId))
       .limit(1);
     if (u) {
-      ownerName = [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email;
+      ownerName = [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Unnamed";
     }
   }
   const content = p.ownerId ? `Lead was assigned to ${ownerName ?? "team member"}.` : "Lead was unassigned.";
@@ -188,7 +188,7 @@ eventBus.on('lead.assigned', async (p) => {
     let assignerName: string | undefined;
     if (!isFresh && isUuid(p.assignedById)) {
       const [a] = await db.select({ firstName: users.firstName, lastName: users.lastName, email: users.email }).from(users).where(eq(users.id, p.assignedById!)).limit(1);
-      if (a) assignerName = [a.firstName, a.lastName].filter(Boolean).join(" ") || a.email;
+      if (a) assignerName = [a.firstName, a.lastName].filter(Boolean).join(" ") || a.email || "Unnamed";
     }
     await NotificationService.create(
       isFresh

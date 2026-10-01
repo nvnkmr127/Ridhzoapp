@@ -4,12 +4,13 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { requireOrg, hasPermission } from "@/lib/rbac";
 import { EmailSettingsService } from "@/domains/organizations/emailSettingsService";
+import { getOrgFormat } from "@/lib/format.server";
 import { EmailSettingsManager } from "@/components/settings/EmailSettingsManager";
 
 export default async function EmailSettingsPage() {
   if (!(await hasPermission("settings.manage"))) redirect("/leads");
   const { organizationId } = await requireOrg();
-  const settings = await EmailSettingsService.getView(organizationId);
+  const [settings, { timezone }] = await Promise.all([EmailSettingsService.getView(organizationId), getOrgFormat(organizationId)]);
 
   return (
     <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6 max-w-2xl">
@@ -22,7 +23,7 @@ export default async function EmailSettingsPage() {
           </p>
         </div>
       </div>
-      <EmailSettingsManager initial={settings} />
+      <EmailSettingsManager initial={settings} timezone={timezone} />
     </div>
   );
 }

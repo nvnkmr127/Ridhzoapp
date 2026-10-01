@@ -38,9 +38,9 @@ export default async function MeetingsPage({
     orgDialCode(organizationId),
     UserService.list(organizationId),
   ]);
-  const users = (orgUsers as { id: string; firstName: string | null; lastName: string | null; email: string }[]).map((u) => ({
+  const users = (orgUsers as { id: string; firstName: string | null; lastName: string | null; email: string | null }[]).map((u) => ({
     id: u.id,
-    name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email,
+    name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Unnamed",
   }));
 
   const userNames = Object.fromEntries(users.map((u) => [u.id, u.name]));
@@ -64,8 +64,8 @@ export default async function MeetingsPage({
       : { from: new Date(now.getTime() - 30 * DAY), to: new Date(now.getTime() + 90 * DAY) }),
   });
 
-  const nameOf = (a: { firstName: string | null; lastName: string | null; email: string } | null) =>
-    a ? [a.firstName, a.lastName].filter(Boolean).join(" ") || a.email : null;
+  const nameOf = (a: { firstName: string | null; lastName: string | null; email: string | null } | null) =>
+    a ? [a.firstName, a.lastName].filter(Boolean).join(" ") || a.email || "Unnamed" : null;
   const withLead = rows.map((r) => ({ ...r, lead: { ...r.lead, phone: normalizePhone(r.lead.phone, dialCode) ?? null } }));
 
   const needsOutcome = withLead.filter((r) => r.meeting.status === "scheduled" && meetingEnd(r.meeting) < now);

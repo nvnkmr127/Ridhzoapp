@@ -164,6 +164,7 @@ export class EmailSettingsService {
       host: address,
       port: cfg.port,
       secure: isImplicitTls(cfg.port),
+      requireTLS: !isImplicitTls(cfg.port), // fail rather than fall back to plaintext if STARTTLS is stripped
       auth: { user: cfg.user, pass: cfg.pass },
       tls: { servername: cfg.host }, // certificate is checked against the hostname, not the IP
       connectionTimeout: 10_000,

@@ -68,7 +68,7 @@ export class ActivityService {
         .from(users)
         .where(inArray(users.id, Array.from(mentionedUuids)));
       for (const u of foundUsers) {
-        const name = [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email;
+        const name = [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Unnamed";
         userMap.set(u.id, name);
       }
     }

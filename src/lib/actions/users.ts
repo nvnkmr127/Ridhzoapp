@@ -31,7 +31,7 @@ export async function listUsersAction() {
   const rows = await getActiveUsersCached(organizationId);
   return rows.map((u) => ({
     id: u.id,
-    name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email,
+    name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Unnamed",
   }));
 }
 

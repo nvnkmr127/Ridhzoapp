@@ -113,7 +113,7 @@ export class ExecutiveDigestService {
         .from(users)
         .where(and(eq(users.isSuperAdmin, true), isNull(users.deletedAt)))
         .catch(() => []);
-      recipients = superadmins.map((u) => u.email).filter(Boolean);
+      recipients = superadmins.map((u) => u.email).filter((e): e is string => !!e);
     }
 
     if (recipients.length === 0) {

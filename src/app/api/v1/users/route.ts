@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
     .filter((u: any) => u.isActive !== false)
     .map((u: any) => ({
       id: u.id,
-      name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email,
+      name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Unnamed",
       email: u.email,
     }));
   return NextResponse.json({ data });

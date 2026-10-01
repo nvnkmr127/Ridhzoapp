@@ -139,7 +139,7 @@ export async function saveAiContextAction(input: ContextInput) {
         .from(organizations).where(eq(organizations.id, organizationId)).limit(1),
       db.select({ firstName: users.firstName, lastName: users.lastName, email: users.email }).from(users).where(eq(users.id, userId)).limit(1),
     ]);
-    const by = me ? [me.firstName, me.lastName].filter(Boolean).join(" ") || me.email : null;
+    const by = me ? [me.firstName, me.lastName].filter(Boolean).join(" ") || me.email || "Unnamed" : null;
     let history = org?.history ?? [];
     // First save after this feature shipped: keep the old free text as a version to go back to.
     if (!history.length && (org?.aiContext || Object.keys(org?.aiProfile ?? {}).length)) {

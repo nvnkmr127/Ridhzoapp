@@ -29,4 +29,5 @@ export function readGoogleLinkToken(raw: string | undefined, now = Date.now()): 
 
 // Phone signups get a placeholder address; treat it as "no email" everywhere users see it.
 export const PHONE_EMAIL_DOMAIN = "@phone.ridhzo.com";
-export const isPlaceholderEmail = (email: string | null | undefined) => !!email?.endsWith(PHONE_EMAIL_DOMAIN);
+// "Has no real email": phone sign-ups now store none (null); older ones carry a made-up @phone.ridhzo.com address.
+export const isPlaceholderEmail = (email: string | null | undefined) => !email || email.endsWith(PHONE_EMAIL_DOMAIN);

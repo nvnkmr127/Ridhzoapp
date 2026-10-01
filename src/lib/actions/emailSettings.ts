@@ -9,6 +9,7 @@ import { RateLimiter } from "@/lib/rate-limit";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { isPlaceholderEmail } from "@/lib/auth/googleLink";
 import { ok, fail, actionFail, zodFieldErrors, type ActionError } from "@/lib/actions/result";
 
 const blank = (v: unknown) => (typeof v === "string" && v.trim() === "" ? null : v);
@@ -52,7 +53,8 @@ async function runTest(organizationId: string, userId: string, input: EmailSetti
   const limit = await RateLimiter.checkLimit(`smtp-test:${organizationId}`, 5, 60);
   if (!limit.success) return fail("RATE_LIMIT", "Too many test emails. Please wait a minute and try again.");
   const [u] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
-  if (!u?.email) return fail("VALIDATION", "Your account has no email address to send the test to.");
+  // Phone sign-ups carry a made-up address; a "sent" test there would reach no one.
+  if (!u?.email || isPlaceholderEmail(u.email)) return fail("VALIDATION", "Add your real email address in your profile first — the test email is sent to it.");
   try {
     const cfg = await EmailSettingsService.resolveConfig(organizationId, input);
     await EmailSettingsService.sendTest(cfg, u.email);

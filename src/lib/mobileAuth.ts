@@ -11,7 +11,7 @@ export interface MobileTokenPayload {
   sub: string;            // userId
   org: string;            // organizationId
   role: string | null;   // roleId
-  email: string;
+  email: string | null;   // null for phone-only accounts
   jti?: string;           // per-token id, so one phone's sign-out can revoke just its token
   iat?: number;
   exp?: number;
@@ -80,7 +80,7 @@ export function verifyGoogleCode(code: string, verifier: string): string | null 
 // The {token, user} body every mobile sign-in route returns.
 export function mobileSession(user: {
   id: string;
-  email: string;
+  email: string | null;
   firstName: string | null;
   lastName: string | null;
   phone?: string | null;
@@ -92,7 +92,7 @@ export function mobileSession(user: {
     user: {
       id: user.id,
       email: user.email,
-      name: [user.firstName, user.lastName].filter(Boolean).join(" ") || user.phone || user.email,
+      name: [user.firstName, user.lastName].filter(Boolean).join(" ") || user.phone || user.email || "User",
       phone: user.phone ?? null,
       organizationId: user.organizationId,
     },

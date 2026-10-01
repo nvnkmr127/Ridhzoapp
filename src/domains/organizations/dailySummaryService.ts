@@ -227,7 +227,7 @@ export class DailySummaryService {
       byRep,
       calls: callRows
         .map((r) => ({
-          name: [r.firstName, r.lastName].filter(Boolean).join(" ") || r.email,
+          name: [r.firstName, r.lastName].filter(Boolean).join(" ") || r.email || "Unnamed",
           calls: Number(r.total),
           attempts: Number(r.attempts),
           answered: Number(r.answered),

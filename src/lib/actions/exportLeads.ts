@@ -66,7 +66,7 @@ export async function exportLeadsCsvAction(input: z.input<typeof schema>) {
       db.select({ id: leadPipelineStages.id, name: leadPipelineStages.name }).from(leadPipelineStages).where(eq(leadPipelineStages.organizationId, organizationId)),
     ]);
     const statusLabel = new Map(statuses.map((s) => [s.key, s.label]));
-    const ownerName = new Map(owners.map((u) => [u.id, [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email]));
+    const ownerName = new Map(owners.map((u) => [u.id, [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Unnamed"]));
     const sourceName = new Map(sources.map((s) => [s.id, s.name]));
     const stageName = new Map(stages.map((s) => [s.id, s.name]));
     const fields = (defs as { key: string; label: string; adminOnly?: boolean; disabled?: boolean }[]).filter((f) => !f.disabled && (isAdmin || !f.adminOnly));

@@ -6,7 +6,7 @@ import { AssignmentService } from "@/domains/leads/assignmentService";
 
 export interface RepCapacity {
   userId: string;
-  email: string;
+  email: string | null;
   activeLeadsCount: number;
   maxCapacity: number;
   capacityRemaining: number;
@@ -20,7 +20,7 @@ export class CapacityAssignmentService {
   static async getRepCapacities(
     organizationId: string,
     defaultMaxCapacity: number = 25,
-    preloadedUsers?: { id: string; email: string }[]
+    preloadedUsers?: { id: string; email: string | null }[]
   ): Promise<RepCapacity[]> {
     const { openKeys } = await CustomStatusSchemaService.resolver(organizationId); // custom statuses count by category
     const orgUsers = preloadedUsers ?? await db

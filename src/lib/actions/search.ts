@@ -19,7 +19,7 @@ export type SearchLead = {
 export type SearchUser = {
   id: string;
   name: string;
-  email: string;
+  email: string | null;
   roleName: string | null;
 };
 
@@ -89,7 +89,7 @@ export async function searchUniversalAction(query: string): Promise<UniversalSea
     leads: leadRows,
     users: userRows.map((u) => ({
       id: u.id,
-      name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email,
+      name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Unnamed",
       email: u.email,
       roleName: u.roleName,
     })),

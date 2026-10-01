@@ -29,7 +29,8 @@ export const teams = pgTable('teams', {
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
   organizationId: uuid('organization_id').references(() => organizations.id), // required in practice; backfilled
-  email: varchar('email', { length: 255 }).notNull().unique(),
+  // Null for people who registered with a phone number only (unique still holds for real addresses).
+  email: varchar('email', { length: 255 }).unique(),
   phone: varchar('phone', { length: 30 }),
   // App language for this person's menu and phone notifications ('en' | 'hi' | 'te'). See lib/i18n.
   language: varchar('language', { length: 5 }).default('en').notNull(),

@@ -58,9 +58,9 @@ class MeetingError extends Error {
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-function userName(u: { firstName: string | null; lastName: string | null; email: string } | undefined | null) {
+function userName(u: { firstName: string | null; lastName: string | null; email: string | null } | undefined | null) {
   if (!u) return null;
-  return [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email;
+  return [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Unnamed";
 }
 
 async function getUser(id: string | null | undefined) {

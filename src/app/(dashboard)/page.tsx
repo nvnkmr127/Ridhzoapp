@@ -95,7 +95,7 @@ export default async function ExecutiveDashboardPage({
       .where(and(eq(users.organizationId, organizationId), eq(users.isActive, true), isNull(users.deletedAt))).orderBy(asc(users.firstName)),
     db.select({ id: teams.id, name: teams.name }).from(teams).where(eq(teams.organizationId, organizationId)).orderBy(asc(teams.name)),
   ]);
-  const ownerOptions = owners.map((u) => ({ id: u.id, name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email }));
+  const ownerOptions = owners.map((u) => ({ id: u.id, name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Unnamed" }));
   const workspaceLeads = firstLeads.length;
 
   // First two weeks (the trial): show what Ridhzo already did for them — proof before the trial ends.

@@ -31,7 +31,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { cookies } from "next/headers";
 import { RateLimiter } from "@/lib/rate-limit";
-import { GOOGLE_LINK_COOKIE, PHONE_EMAIL_DOMAIN, isPlaceholderEmail, readGoogleLinkToken } from "@/lib/auth/googleLink";
+import { GOOGLE_LINK_COOKIE, isPlaceholderEmail, readGoogleLinkToken } from "@/lib/auth/googleLink";
 
 async function consumeGoogleLinkCookie(): Promise<string | null> {
   try {
@@ -113,7 +113,6 @@ export async function authorizePhoneOtp(credentials?: Record<string, string>) {
       const workspaceName = credentials?.orgName?.trim() || `${baseName}'s Workspace`;
       const slug = `${slugify(workspaceName)}-${Math.random().toString(36).slice(2, 7)}`;
       const randomPasswordHash = await bcrypt.hash(crypto.randomUUID(), 10);
-      const syntheticEmail = `${cleanDigits}${PHONE_EMAIL_DOMAIN}`;
 
       const [newOrg] = await db
         .insert(organizations)
@@ -128,8 +127,7 @@ export async function authorizePhoneOtp(credentials?: Record<string, string>) {
         .insert(users)
         .values({
           organizationId: newOrg.id,
-          email: syntheticEmail,
-          phone,
+          phone, // no email: phone sign-ups are identified by their number
           firstName,
           lastName,
           passwordHash: randomPasswordHash,
@@ -244,7 +242,7 @@ export const authOptions: NextAuthOptions = {
           return {
             id: user.id,
             email: user.email,
-            name: [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email,
+            name: [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email || "Unnamed",
             roleId: user.roleId,
             organizationId: user.organizationId,
             isSuperAdmin: user.isSuperAdmin,
@@ -455,7 +453,7 @@ export const authOptions: NextAuthOptions = {
           token.isSuperAdmin = false;
           token.phone = null;
         } else {
-          token.name = [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email;
+          token.name = [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Unnamed";
           token.roleId = u.roleId;
           token.organizationId = u.organizationId;
           token.isSuperAdmin = u.isSuperAdmin;

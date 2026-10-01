@@ -23,7 +23,7 @@ export interface AnalyticsLeadRecord {
 
 export interface AnalyticsUserRecord {
   id: string;
-  email: string;
+  email: string | null;
   firstName: string | null;
   lastName: string | null;
 }

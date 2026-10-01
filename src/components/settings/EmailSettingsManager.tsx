@@ -34,7 +34,9 @@ function toForm(v: EmailSettingsView) {
 }
 type Form = ReturnType<typeof toForm>;
 
-const when = (d: Date | string) => new Date(d).toLocaleString();
+// Fixed zone + locale so the server render and the browser agree (and match the workspace, not the viewer's PC).
+const whenIn = (timezone: string) => (d: Date | string) =>
+  new Date(d).toLocaleString("en-IN", { timeZone: timezone, dateStyle: "medium", timeStyle: "short" });
 
 function Field({ id, label, error, hint, children }: { id: string; label: string; error?: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -46,7 +48,8 @@ function Field({ id, label, error, hint, children }: { id: string; label: string
   );
 }
 
-export function EmailSettingsManager({ initial }: { initial: EmailSettingsView }) {
+export function EmailSettingsManager({ initial, timezone = "Asia/Kolkata" }: { initial: EmailSettingsView; timezone?: string }) {
+  const when = whenIn(timezone);
   const { toast } = useToast();
   const [view, setView] = React.useState(initial);
   const [f, setF] = React.useState(() => toForm(initial));

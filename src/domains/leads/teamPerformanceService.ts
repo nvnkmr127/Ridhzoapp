@@ -7,7 +7,7 @@ import { answerRate, callCounts } from "./callStats";
 export interface RepPerformanceMetric {
   userId: string;
   name: string;
-  email: string;
+  email: string | null;
   totalAssignedLeads: number;
   wonLeads: number;
   winRatePercentage: number;
@@ -28,7 +28,7 @@ export class TeamPerformanceService {
   static async getTeamLeaderboard(
     organizationId: string,
     periodDays?: number,
-    preloadedUsers?: { id: string; email: string; firstName: string | null; lastName: string | null }[]
+    preloadedUsers?: { id: string; email: string | null; firstName: string | null; lastName: string | null }[]
   ): Promise<RepPerformanceMetric[]> {
     const { cat } = await CustomStatusSchemaService.resolver(organizationId); // custom statuses count by category
     const orgUsers = preloadedUsers ?? await db
@@ -120,7 +120,7 @@ export class TeamPerformanceService {
     }
 
     const leaderboard: RepPerformanceMetric[] = orgUsers.map((u) => {
-      const name = [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email;
+      const name = [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Unnamed";
       const stats = statsMap[u.id] ?? { total: 0, won: 0, revenue: 0 };
       const winRatePercentage =
         stats.total > 0 ? Math.round((stats.won / stats.total) * 1000) / 10 : 0;

@@ -7,7 +7,7 @@ import { isPlaceholderEmail } from "@/lib/auth/googleLink";
 export const hashToken = (raw: string) => crypto.createHash("sha256").update(raw).digest("hex");
 
 // Which of the three extra logins a phone-registered account still lacks.
-export function setupStatus(u: { email: string; emailVerifiedAt: Date | null; passwordSet: boolean; googleLinkedAt: Date | null; signupMethod: string | null }) {
+export function setupStatus(u: { email: string | null; emailVerifiedAt: Date | null; passwordSet: boolean; googleLinkedAt: Date | null; signupMethod: string | null }) {
   const email = !isPlaceholderEmail(u.email) && !!u.emailVerifiedAt;
   const status = { email, password: u.passwordSet, google: !!u.googleLinkedAt };
   const done = Object.values(status).filter(Boolean).length;

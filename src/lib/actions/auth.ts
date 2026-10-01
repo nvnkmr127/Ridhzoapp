@@ -410,7 +410,7 @@ export async function recordSignupAttributionAction(input: StoredAttribution) {
     const { MetaCapiService } = await import("@/domains/platform/capiService");
     await MetaCapiService.sendEvent({
       eventName: "CompleteRegistration",
-      email: isPlaceholderEmail(row.email) ? undefined : row.email,
+      email: !row.email || isPlaceholderEmail(row.email) ? undefined : row.email,
       phone: row.phone ?? undefined,
       orgId: organizationId,
       orgName: row.orgName,

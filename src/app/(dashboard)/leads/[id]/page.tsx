@@ -189,7 +189,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email })
       .from(users)
       .where(and(eq(users.organizationId, organizationId), eq(users.isActive, true), isNull(users.deletedAt)))
-      .then((rows) => rows.map((u) => ({ id: u.id, name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email })))
+      .then((rows) => rows.map((u) => ({ id: u.id, name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Unnamed" })))
       .catch(() => []),
     MeetingService.listForLead(id, organizationId).catch(() => []),
     MeetingService.listLocations(organizationId).catch(() => []),

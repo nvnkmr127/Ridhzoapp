@@ -40,7 +40,7 @@ export default async function FollowUpsDashboard({ searchParams }: { searchParam
       .from(users)
       .where(and(eq(users.organizationId, organizationId), eq(users.isActive, true), isNull(users.deletedAt))),
   ]);
-  const people = orgUsers.map((u) => ({ id: u.id, name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email }));
+  const people = orgUsers.map((u) => ({ id: u.id, name: [u.firstName, u.lastName].filter(Boolean).join(" ") || u.email || "Unnamed" }));
   const nameOf = (id: string | null) => (id ? people.find((p) => p.id === id)?.name ?? "Former member" : null);
 
   const scope: SQL = and(

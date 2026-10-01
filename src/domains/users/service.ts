@@ -50,11 +50,9 @@ export class UserService {
     organizationId: string,
     input: { email?: string; phone?: string; firstName?: string; lastName?: string; password?: string; roleId: string },
   ) {
-    // Added by phone number: no email, so they get the same placeholder address a WhatsApp signup does
-    // (they sign in with the number — password or WhatsApp code).
+    // Added by phone number: no email is stored (they sign in with the number — password or WhatsApp code).
     const { normalizePhone } = await import("@/lib/leads/normalize");
     const { orgDialCode } = await import("@/lib/leads/orgDialCode");
-    const { PHONE_EMAIL_DOMAIN } = await import("@/lib/auth/googleLink");
     const phone = normalizePhone(input.phone, await orgDialCode(organizationId));
     if (phone) {
       const last = phone.replace(/\D/g, "").slice(-10);
@@ -65,11 +63,13 @@ export class UserService {
         .limit(1);
       if (taken) throw new UserFacingError("A user with that phone number already exists.");
     }
-    const cleanEmail = input.email?.trim().toLowerCase() || `${(phone ?? "").replace(/\D/g, "")}${PHONE_EMAIL_DOMAIN}`;
+    const cleanEmail = input.email?.trim().toLowerCase() || null;
+    if (!cleanEmail && !phone) throw new UserFacingError("Enter an email address or a mobile number.");
+    // Same person coming back (e.g. a removed teammate re-added): found by email, else by phone.
     const [existing] = await db
       .select({ id: users.id, organizationId: users.organizationId, deletedAt: users.deletedAt, firstName: users.firstName, lastName: users.lastName, roleId: users.roleId })
       .from(users)
-      .where(eq(users.email, cleanEmail))
+      .where(cleanEmail ? eq(users.email, cleanEmail) : sql`right(regexp_replace(${users.phone}, '\D', '', 'g'), 10) = ${phone!.replace(/\D/g, "").slice(-10)}`)
       .limit(1);
 
     // No password = added by phone number: they prove it's theirs with a WhatsApp code (and can set a password later).

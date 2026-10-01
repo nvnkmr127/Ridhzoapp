@@ -89,7 +89,7 @@ export class InvitationService {
         .where(eq(users.email, inv.email))
         .limit(1);
 
-      let user: { id: string; email: string };
+      let user: { id: string; email: string | null };
       if (existing) {
         if (existing.organizationId === inv.organizationId && existing.deletedAt) {
           const [restored] = await tx
