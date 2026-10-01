@@ -16,6 +16,8 @@ export interface NoteItem {
   createdAt: Date | string;
   /** When the note is about (older notes are backdated); falls back to createdAt. */
   occurredAt?: Date | string | null;
+  /** Who wrote it. */
+  userName?: string | null;
 }
 
 const when = (n: NoteItem) => new Date(n.occurredAt ?? n.createdAt).getTime();
@@ -232,6 +234,7 @@ export function LeadNotesTab({ leadId, initialNotes }: LeadNotesTabProps) {
                     <div className="flex items-center justify-between pt-1 border-t border-border/50 text-xs text-muted-foreground">
                       <span className="flex items-center gap-2">
                         <LocalTime iso={note.occurredAt ?? note.createdAt} mode="datetime" />
+                        {note.userName && <span>· by {note.userName}</span>}
                         {note.occurredAt && Math.abs(new Date(note.occurredAt).getTime() - new Date(note.createdAt).getTime()) > 10 * 60_000 && (
                           <span className="opacity-70">· added <LocalTime iso={note.createdAt} mode="datetime" /></span>
                         )}

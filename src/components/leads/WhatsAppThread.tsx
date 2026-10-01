@@ -7,6 +7,7 @@ type Message = {
   body: string | null;
   status: string;
   createdAt: Date;
+  userId?: string | null;
 };
 
 // Read receipt tick, matching WhatsApp's own semantics.
@@ -18,7 +19,7 @@ function StatusTick({ status }: { status: string }) {
   return <Clock className="h-3 w-3 text-muted-foreground" />; // queued
 }
 
-export function WhatsAppThread({ messages }: { messages: Message[] }) {
+export function WhatsAppThread({ messages, userNames = {} }: { messages: Message[]; userNames?: Record<string, string> }) {
   if (messages.length === 0) {
     return <div className="text-center py-8 text-sm text-muted-foreground">No WhatsApp messages yet.</div>;
   }
@@ -33,6 +34,7 @@ export function WhatsAppThread({ messages }: { messages: Message[] }) {
             }`}>
               <div className="whitespace-pre-wrap">{m.body}</div>
               <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-muted-foreground">
+                {outbound && <span>{m.userId ? userNames[m.userId] ?? "Team" : "Automation"} ·</span>}
                 <LocalTime iso={m.createdAt} mode="time" />
                 {outbound && <StatusTick status={m.status} />}
               </div>

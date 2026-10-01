@@ -9,8 +9,11 @@ import { Mail } from "lucide-react";
 import { AiDraftControls } from "@/components/leads/AiDraftControls";
 import { useLogContact } from "@/components/leads/useLogContact";
 import { useLeadAction, type LeadUiAction } from "@/components/leads/leadEvents";
+import { LocalTime } from "@/components/LocalTime";
 
-export function EmailSendBox({ leadId, email }: { leadId: string; email: string | null }) {
+export type SentEmail = { id: string; content: string | null; createdAt: Date | string; userName?: string | null };
+
+export function EmailSendBox({ leadId, email, history = [] }: { leadId: string; email: string | null; history?: SentEmail[] }) {
   const { toast } = useToast();
   const [subject, setSubject] = React.useState("");
   const [body, setBody] = React.useState("");
@@ -80,6 +83,17 @@ export function EmailSendBox({ leadId, email }: { leadId: string; email: string 
           <Mail className="h-4 w-4" />{sending ? "Sending…" : "Send email"}
         </Button>
       </div>
+      {history.length > 0 && (
+        <ul className="space-y-1 border-t pt-3 text-xs text-muted-foreground">
+          {history.map((h) => (
+            <li key={h.id} className="flex flex-wrap items-center gap-x-2">
+              <span className="font-medium text-foreground">{(h.content ?? "").replace(/^\[(sequence )?email\]\s*/i, "") || "Email"}</span>
+              <span>· {h.userName ? `by ${h.userName}` : "automatic"}</span>
+              <span>· <LocalTime iso={h.createdAt} mode="datetime" /></span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

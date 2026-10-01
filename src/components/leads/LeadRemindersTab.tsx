@@ -24,11 +24,13 @@ interface ReminderItem {
   dueAt: Date | string;
   completedAt?: Date | string | null;
   createdAt: Date | string;
+  userId?: string | null;
 }
 
 interface LeadRemindersTabProps {
   leadId: string;
   initialReminders: ReminderItem[];
+  userNames?: Record<string, string>;
   leadName?: string;
   leadPhone?: string | null;
 }
@@ -45,7 +47,7 @@ const formatForDateTimeLocal = (date: Date | string) => {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 };
 
-export function LeadRemindersTab({ leadId, initialReminders, leadName = "", leadPhone = null }: LeadRemindersTabProps) {
+export function LeadRemindersTab({ leadId, initialReminders, userNames = {}, leadName = "", leadPhone = null }: LeadRemindersTabProps) {
   const router = useRouter();
   const [reminders, setReminders] = useState<ReminderItem[]>(initialReminders);
   const [showAdd, setShowAdd] = useState(false);
@@ -363,6 +365,7 @@ export function LeadRemindersTab({ leadId, initialReminders, leadName = "", lead
                       <div className="flex items-center gap-2 text-xs text-muted-foreground mt-2">
                         <Calendar className="h-3 w-3" />
                         <LocalTime iso={reminder.dueAt} mode="datetime" />
+                        {reminder.userId && userNames[reminder.userId] && <span>· by {userNames[reminder.userId]}</span>}
                       </div>
                     </div>
                   </div>

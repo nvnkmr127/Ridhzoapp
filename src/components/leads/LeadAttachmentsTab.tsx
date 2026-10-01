@@ -28,15 +28,17 @@ interface AttachmentItem {
   fileUrl: string;
   fileSize?: number | null;
   fileType?: string | null;
+  uploadedById?: string | null;
   createdAt: Date | string;
 }
 
 interface LeadAttachmentsTabProps {
   leadId: string;
   initialAttachments: AttachmentItem[];
+  userNames?: Record<string, string>;
 }
 
-export function LeadAttachmentsTab({ leadId, initialAttachments }: LeadAttachmentsTabProps) {
+export function LeadAttachmentsTab({ leadId, initialAttachments, userNames = {} }: LeadAttachmentsTabProps) {
   const router = useRouter();
   const [attachments, setAttachments] = useState<AttachmentItem[]>(initialAttachments);
   const [showAdd, setShowAdd] = useState(false);
@@ -434,7 +436,7 @@ export function LeadAttachmentsTab({ leadId, initialAttachments }: LeadAttachmen
                       {file.fileName}
                     </a>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                      <span>Added <LocalTime iso={file.createdAt} mode="shortDate" /></span>
+                      <span>Added <LocalTime iso={file.createdAt} mode="shortDate" />{file.uploadedById && userNames[file.uploadedById] ? ` by ${userNames[file.uploadedById]}` : ""}</span>
                       {sizeStr && <span>• {sizeStr}</span>}
                     </div>
                   </div>

@@ -256,6 +256,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   const outboundCount = waTotal - inboundCount;
   // The lead's own budget words ("₹40–75 lakhs") beat our number; the number reads in lakhs/crores.
   const budgetText = (typeof cd.budget === "string" && cd.budget.replace(/_/g, " ").trim()) || formatInr(lead.expectedValue);
+  const userNames = Object.fromEntries(usersList.map((u) => [u.id, u.name]));
   const ownerName = usersList.find((u) => u.id === lead.ownerId)?.name ?? null;
   const answers = formAnswers(cd, Object.fromEntries(allCustomDefs.map((d) => [d.key, d.label])));
   const savedRecap = (cd._aiRecap as RecapCache | undefined) ?? null;
@@ -555,7 +556,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                   label: `WhatsApp (${waTotal})`,
                   content: (
                     <>
-                      <WhatsAppThread messages={waMessages} />
+                      <WhatsAppThread messages={waMessages} userNames={userNames} />
                       {whatsappMode === "personal" && dialPhone && <LogReplyBox leadId={lead.id} />}
                       <WhatsAppSendBox
                         leadId={lead.id}
@@ -576,17 +577,17 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                     <LeadMeetingsTab
                       lead={{ id: lead.id, name: lead.name, phone: dialPhone ?? null }}
                       meetings={leadMeetings}
-                      userNames={Object.fromEntries(usersList.map((u) => [u.id, u.name]))}
+                      userNames={userNames}
                     />
                   ),
                 },
                 {
                   value: "reminders",
                   label: `Follow-ups (${reminders.length})`,
-                  content: <LeadRemindersTab leadId={lead.id} initialReminders={reminders} leadName={lead.name} leadPhone={dialPhone} />,
+                  content: <LeadRemindersTab leadId={lead.id} initialReminders={reminders} userNames={userNames} leadName={lead.name} leadPhone={dialPhone} />,
                 },
-                { value: "attachments", label: `Files (${attachments.length})`, content: <LeadAttachmentsTab leadId={lead.id} initialAttachments={attachments} /> },
-                { value: "emails", label: "Email", content: <EmailSendBox leadId={lead.id} email={lead.email} /> },
+                { value: "attachments", label: `Files (${attachments.length})`, content: <LeadAttachmentsTab leadId={lead.id} initialAttachments={attachments} userNames={userNames} /> },
+                { value: "emails", label: "Email", content: <EmailSendBox leadId={lead.id} email={lead.email} history={activities.filter((a) => a.type === "email")} /> },
               ]}
             />
           </div>

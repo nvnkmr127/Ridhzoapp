@@ -34,12 +34,15 @@ export function MeetingCard({
   meeting: m,
   lead,
   assigneeName,
+  bookedByName,
   onEdit,
   showLead = false,
 }: {
   meeting: MeetingView;
   lead: { id: string; name: string; phone: string | null };
   assigneeName?: string | null;
+  /** Who booked it (the booking page when nobody did). */
+  bookedByName?: string | null;
   onEdit?: () => void;
   showLead?: boolean;
 }) {
@@ -139,6 +142,7 @@ export function MeetingCard({
             <span>· {m.durationMinutes} min</span>
             <span>· {modeLabel(m.mode)}</span>
             {assigneeName && <span>· {assigneeName}</span>}
+            {bookedByName && <span>· booked by {bookedByName}</span>}
           </p>
           {showLead && (
             <p className="text-xs">
