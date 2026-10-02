@@ -26,6 +26,8 @@
 
 - **H. Missing backend:** done — monthly metering for WhatsApp messages, emails, exports, imported rows and API-key requests plus an attachment storage cap (atomic, refunded on failure); per-user and per-workspace send rate limits; email-verification gate for new password sign-ups; per-area API-key scopes; central `AuditService.audited` wrapper. **Not done:** Postgres row-level security (needs every query to run inside a transaction that sets the tenant; not retrofittable safely across the codebase).
 
+- **I. Missing business logic:** done — over-cap lead sources are paused on downgrade (their leads are refused and recorded, replayable after upgrade); AI credits renew on the subscription's own billing day; a database error no longer silently demotes a paying workspace to Free (last known plan, logged); unused role-name admin helpers removed and the "admin" permission rules named in one place. Seats and leads over a cap keep working but nothing new can be added, with an over-limit notice in the usage menu.
+
 ## A. Executive Summary
 
 Ridhzo is a mature, unusually well-commented Next.js 15 / Drizzle / Postgres / BullMQ multi-tenant CRM. Typecheck is clean, 860 tests pass, org scoping in services is consistent, SSRF/webhook-signature/idempotency work has clearly been done with care, and secrets are not committed (`.env*` never appear in git history).

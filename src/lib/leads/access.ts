@@ -1,6 +1,7 @@
 import "server-only";
 import { and, eq, exists, inArray, or, sql, type SQL } from "drizzle-orm";
 import { assertWritable, hasPermission } from "@/lib/rbac";
+import { WORKSPACE_WIDE_VIEW_PERMISSION } from "@/lib/permissions";
 import { LeadService } from "@/domains/leads/service";
 import { db } from "@/db";
 import { followUps, leads, meetings } from "@/db/schema";
@@ -11,7 +12,7 @@ import { followUps, leads, meetings } from "@/db/schema";
 // without it a rep could still act on a colleague's lead by id (reassign, change status, add notes…).
 
 async function canSeeAllLeads() {
-  return hasPermission("settings.manage");
+  return hasPermission(WORKSPACE_WIDE_VIEW_PERMISSION);
 }
 
 // Besides its owner (and admins), a lead can be opened and worked by anyone doing work on it: assigned

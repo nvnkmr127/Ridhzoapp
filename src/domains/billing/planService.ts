@@ -35,6 +35,24 @@ export function signupTrial() {
 
 export const currentPeriod = () => new Date().toISOString().slice(0, 7); // 'YYYY-MM' (UTC)
 
+// The AI-credit period a workspace is in. A PAYING workspace's allowance renews on its own billing day (the
+// day-of-month of its subscription's current period end), not on the 1st: someone who subscribes on the 20th
+// gets a fresh allowance on the 20th. The key is the start date of the current cycle as 'YYMMDD' (6 chars —
+// can never equal a calendar 'YYYY-MM' key, so the switch-over resets the counter once). No billing date
+// (free / trial / complimentary) = the calendar month, as before.
+export function creditPeriodKey(currentPeriodEnd: Date | string | null | undefined, now = new Date()): string {
+  const end = currentPeriodEnd ? new Date(currentPeriodEnd) : null;
+  if (!end || Number.isNaN(end.getTime())) return now.toISOString().slice(0, 7);
+  const dim = (y: number, m: number) => new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  const startIn = (y: number, m: number) => Date.UTC(y, m, Math.min(end.getUTCDate(), dim(y, m)));
+  let y = now.getUTCFullYear();
+  let m = now.getUTCMonth();
+  let start = startIn(y, m);
+  if (start > now.getTime()) { m -= 1; if (m < 0) { m = 11; y -= 1; } start = startIn(y, m); }
+  const d = new Date(start);
+  return `${String(d.getUTCFullYear()).slice(2)}${String(d.getUTCMonth() + 1).padStart(2, "0")}${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
 // Countable per-org resources capped by plan. Counts every row (active or paused) so pausing
 // one can't be used to create more.
 const COUNTED = {
@@ -62,6 +80,14 @@ const releaseSlot = () => { const next = lockWaiters.shift(); if (next) next(); 
 export const limitLockSql = (organizationId: string, bucket: string) =>
   sql`select pg_advisory_xact_lock(hashtext(${`limit:${organizationId}:${bucket}`}))`;
 
+// Last plan successfully read per workspace (this process only) — the fallback when the database hiccups.
+const lastKnownPlan = new Map<string, string>();
+const remember = (organizationId: string, plan: string) => {
+  if (lastKnownPlan.size > 5000) lastKnownPlan.clear();
+  lastKnownPlan.set(organizationId, plan);
+  return plan;
+};
+
 export class PlanService {
   // Runs `fn` (an assertCanAdd… check followed by the INSERT it guards) one-at-a-time per org+bucket, so
   // two concurrent requests can't both see "under the limit" and both insert. The lock is released
@@ -86,17 +112,21 @@ export class PlanService {
         .where(eq(organizations.id, organizationId))
         .limit(1);
       const org = Array.isArray(res) ? res[0] : res;
-      if (!org || trialExpired(org)) return "free";
+      if (!org || trialExpired(org)) return remember(organizationId, "free");
       if (org.planStatus && org.planStatus !== "active") {
         const { BillingLifecycleService } = await import("./lifecycleService");
         const lifecycle = await BillingLifecycleService.getLifecycle(organizationId);
         const { status } = BillingLifecycleService.computeStatus(org, lifecycle);
-        if (status === "locked" || status === "free") return "free";
-        return org.plan ?? "free";
+        if (status === "locked" || status === "free") return remember(organizationId, "free");
+        return remember(organizationId, org.plan ?? "free");
       }
-      return org.plan ?? "free";
-    } catch {
-      return "free";
+      return remember(organizationId, org.plan ?? "free");
+    } catch (e) {
+      // A database blip must not silently demote a PAYING workspace to Free limits (and hide the outage):
+      // log it loudly and keep serving the last plan we successfully read for this workspace. Only a
+      // workspace we've never read in this process falls back to Free (the safe, restrictive default).
+      console.error(`[plan] lookup failed for org ${organizationId}; using ${lastKnownPlan.get(organizationId) ? "last known plan" : "free"}`, e instanceof Error ? e.message : e);
+      return lastKnownPlan.get(organizationId) ?? "free";
     }
   }
 
@@ -209,13 +239,13 @@ export class PlanService {
     const [planName, rows] = await Promise.all([
       knownPlan ?? this.plan(organizationId),
       db
-        .select({ used: organizations.aiCreditsUsed, period: organizations.aiCreditsPeriod })
+        .select({ used: organizations.aiCreditsUsed, period: organizations.aiCreditsPeriod, periodEnd: organizations.currentPeriodEnd })
         .from(organizations)
         .where(eq(organizations.id, organizationId)),
     ]);
     const max = limitsFor(planName).aiCredits;
     const row = Array.isArray(rows) ? rows[0] : rows;
-    const used = row?.period === currentPeriod() ? row.used : 0;
+    const used = row?.period === creditPeriodKey(row?.periodEnd) ? row.used : 0;
     // A super-admin grant drives `used` below zero (bonus credits); show it as extra allowance so
     // the meter never reads negative: same remaining credits, used >= 0.
     return { used: Math.max(0, used), max: max - used + Math.max(0, used) };
@@ -225,7 +255,7 @@ export class PlanService {
   // so concurrent requests can't overdraw. false = out of credits for this month.
   static async consumeAiCredit(organizationId: string): Promise<boolean> {
     const max = limitsFor(await this.plan(organizationId)).aiCredits;
-    const period = currentPeriod();
+    const period = await this.aiPeriod(organizationId);
     const rows = await db
       .update(organizations)
       .set({
@@ -240,12 +270,17 @@ export class PlanService {
     return rows.length > 0;
   }
 
+  private static async aiPeriod(organizationId: string): Promise<string> {
+    const [r] = await db.select({ end: organizations.currentPeriodEnd }).from(organizations).where(eq(organizations.id, organizationId)).limit(1);
+    return creditPeriodKey(r?.end);
+  }
+
   // Gives a credit back when the AI call failed and the user got the non-AI fallback.
   static async refundAiCredit(organizationId: string) {
     await db
       .update(organizations)
       .set({ aiCreditsUsed: sql`GREATEST(${organizations.aiCreditsUsed} - 1, 0)` })
-      .where(and(eq(organizations.id, organizationId), eq(organizations.aiCreditsPeriod, currentPeriod())));
+      .where(and(eq(organizations.id, organizationId), eq(organizations.aiCreditsPeriod, await this.aiPeriod(organizationId))));
   }
 
   // Message contains "plan" so actionFail maps it to code LIMIT → the UI opens the upgrade dialog.

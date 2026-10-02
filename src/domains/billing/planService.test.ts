@@ -124,13 +124,13 @@ describe("PlanService AI credits", () => {
   }
 
   it("spends a credit when the guarded update matches", async () => {
-    queueResults([[{ plan: "free" }]]);
+    queueResults([[{ plan: "free" }], [{ end: null }]]); // plan lookup, then the billing-cycle lookup
     mockUpdate([{ id: "org" }]);
     expect(await PlanService.consumeAiCredit("org")).toBe(true);
   });
 
   it("reports out of credits when the cap guard blocks the update", async () => {
-    queueResults([[{ plan: "free" }]]);
+    queueResults([[{ plan: "free" }], [{ end: null }]]);
     mockUpdate([]);
     expect(await PlanService.consumeAiCredit("org")).toBe(false);
   });
@@ -162,5 +162,20 @@ describe("PlanService.assertCanAddLead", () => {
       from: () => ({ where: () => (i++ === 0 ? { limit: () => Promise.resolve([{ plan: "free" }]), then: (r: any) => Promise.resolve([{ plan: "free" }]).then(r) } : Promise.reject(new Error("db down"))) }),
     }));
     await expect(PlanService.assertCanAddLead("org")).rejects.toThrow("db down");
+  });
+});
+
+describe("PlanService.plan on a database error", () => {
+  beforeEach(() => vi.clearAllMocks());
+  it("keeps the last known plan instead of silently demoting to free, and logs the failure", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    queueResults([[{ plan: "unlimited", planStatus: "active", trialEndsAt: null }]]);
+    expect(await PlanService.plan("org-keep")).toBe("unlimited");
+    (db.select as any).mockImplementationOnce(() => { throw new Error("db down"); });
+    expect(await PlanService.plan("org-keep")).toBe("unlimited");
+    expect(err).toHaveBeenCalled();
+    (db.select as any).mockImplementationOnce(() => { throw new Error("db down"); });
+    expect(await PlanService.plan("org-never-seen")).toBe("free");
+    err.mockRestore();
   });
 });

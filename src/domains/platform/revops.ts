@@ -219,6 +219,7 @@ export class RevOpsService {
         createdAt: organizations.createdAt,
         aiUsed: organizations.aiCreditsUsed,
         aiPeriod: organizations.aiCreditsPeriod,
+        periodEnd: organizations.currentPeriodEnd,
         planStatus: organizations.planStatus,
         complimentary: organizations.complimentary,
         trialEndsAt: organizations.trialEndsAt,
@@ -242,8 +243,7 @@ export class RevOpsService {
       .where(isNull(users.deletedAt))
       .groupBy(users.organizationId);
 
-    const { limitsFor, currentPeriod } = await import("@/domains/billing/planService");
-    const period = currentPeriod();
+    const { limitsFor, creditPeriodKey } = await import("@/domains/billing/planService");
 
     const leadMap = new Map(latestLeads.map((r) => [r.orgId, { count: Number(r.c), last: r.lastActivity }]));
     const userMap = new Map(userCounts.map((r) => [r.orgId, Number(r.c)]));
@@ -262,7 +262,7 @@ export class RevOpsService {
       else if (daysInactive >= 3) health = "slowing";
 
       const allowance = limitsFor(o.plan ?? "free").aiCredits;
-      const used = o.aiPeriod === period ? o.aiUsed : 0;
+      const used = o.aiPeriod === creditPeriodKey(o.periodEnd) ? o.aiUsed : 0;
 
       return {
         id: o.id,
@@ -291,8 +291,9 @@ export class RevOpsService {
     const { db } = await import("@/db");
     const { organizations } = await import("@/db/schema");
     const { eq, sql } = await import("drizzle-orm");
-    const { PlanService, currentPeriod } = await import("@/domains/billing/planService");
-    const period = currentPeriod();
+    const { PlanService, creditPeriodKey } = await import("@/domains/billing/planService");
+    const [cycle] = await db.select({ end: organizations.currentPeriodEnd }).from(organizations).where(eq(organizations.id, organizationId)).limit(1);
+    const period = creditPeriodKey(cycle?.end);
     const rows = await db
       .update(organizations)
       .set({

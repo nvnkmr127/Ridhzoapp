@@ -29,3 +29,11 @@ export const SYSTEM_ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
   admin: ALL_PERMISSIONS,
   member: ["leads.edit", "leads.export"],
 };
+
+// "Admin" is NOT a role name here — it is a set of permissions, and different rules intentionally key off
+// different ones. These names are the single place that says which, so they can't drift apart silently:
+//   • seeing EVERY lead in the workspace (not just your own) and workspace-wide reports  → settings.manage
+//   • counting toward the "last administrator" lockout guard (can't remove the last one) → users.manage
+//   • the shared system role named "admin" holds every permission, so it satisfies both.
+export const WORKSPACE_WIDE_VIEW_PERMISSION: PermissionKey = "settings.manage";
+export const LOCKOUT_GUARD_PERMISSION: PermissionKey = "users.manage";

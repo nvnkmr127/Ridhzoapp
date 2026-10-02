@@ -143,10 +143,6 @@ const currentRole = cache(async function currentRole(): Promise<{ name: string; 
   return res;
 });
 
-export async function currentRoleName(): Promise<string | null> {
-  return (await currentRole())?.name ?? null;
-}
-
 // admin implicitly has every permission; other roles must list the key explicitly.
 export async function hasPermission(key: PermissionKey): Promise<boolean> {
   // Platform super-admins hold every permission (incl. inside an impersonated tenant),
@@ -282,22 +278,4 @@ export async function requirePermission(key: PermissionKey) {
   if (!(await hasPermission(key))) throw new Error("Forbidden");
   if (!key.endsWith(".view")) await assertNotInMaintenance();
   return { organizationId, userId };
-}
-
-// Throws "Forbidden" unless the signed-in user holds one of the allowed roles.
-export async function requireRole(allowed: string[]) {
-  const session = await requireAuth();
-  const name = await currentRoleName();
-  if (!name || !allowed.includes(name)) {
-    throw new Error("Forbidden");
-  }
-  return session;
-}
-
-export function requireAdmin() {
-  return requireRole(["admin"]);
-}
-
-export async function isAdmin(): Promise<boolean> {
-  return (await currentRoleName()) === "admin";
 }

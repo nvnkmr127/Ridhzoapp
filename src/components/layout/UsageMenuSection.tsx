@@ -72,6 +72,7 @@ export function UsageMenuSection({ usageStats }: { usageStats: UsageStats }) {
             </span>
           </div>
           <ProgressBar current={usageStats.seats.current} max={usageStats.seats.max} />
+          {usageStats.seats.current > usageStats.seats.max && <p className="text-[10.5px] text-destructive">Over your plan: nobody new can be added until you deactivate users or upgrade.</p>}
         </div>
         
         <div className="space-y-1">
@@ -85,6 +86,7 @@ export function UsageMenuSection({ usageStats }: { usageStats: UsageStats }) {
             </span>
           </div>
           <ProgressBar current={usageStats.leads.current} max={usageStats.leads.max} />
+          {usageStats.leads.current > usageStats.leads.max && <p className="text-[10.5px] text-destructive">Over your plan: new leads are held back until you free space or upgrade.</p>}
         </div>
         
         <div className="space-y-1">
