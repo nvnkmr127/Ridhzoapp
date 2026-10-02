@@ -7,7 +7,7 @@ import { organizations } from './organizations';
 
 export const activities = pgTable('activities', {
   id: uuid('id').defaultRandom().primaryKey(),
-  leadId: uuid('lead_id').references(() => leads.id).notNull(),
+  leadId: uuid('lead_id').references(() => leads.id, { onDelete: 'cascade' }).notNull(),
   seq: integer('seq'), // per-lead timeline number (CRN-…-T7); assigned by DB trigger
   userId: uuid('user_id').references(() => users.id),
   type: varchar('type', { length: 50 }).notNull(), // email, call, meeting, note
@@ -30,7 +30,7 @@ export const activities = pgTable('activities', {
 
 export const followUps = pgTable('follow_ups', {
   id: uuid('id').defaultRandom().primaryKey(),
-  leadId: uuid('lead_id').references(() => leads.id).notNull(),
+  leadId: uuid('lead_id').references(() => leads.id, { onDelete: 'cascade' }).notNull(),
   userId: uuid('user_id').references(() => users.id),
   type: varchar('type', { length: 50 }).notNull(),
   title: varchar('title', { length: 255 }).notNull(),
@@ -61,7 +61,7 @@ export const reminders = pgTable('reminders', {
 
 export const leadAttachments = pgTable('lead_attachments', {
   id: uuid('id').defaultRandom().primaryKey(),
-  leadId: uuid('lead_id').references(() => leads.id).notNull(),
+  leadId: uuid('lead_id').references(() => leads.id, { onDelete: 'cascade' }).notNull(),
   organizationId: uuid('organization_id').references(() => organizations.id),
   fileName: varchar('file_name', { length: 255 }).notNull(),
   fileUrl: text('file_url').notNull(),

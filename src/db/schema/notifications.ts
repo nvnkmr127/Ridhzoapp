@@ -10,7 +10,7 @@ export const notifications = pgTable('notifications', {
   type: varchar('type', { length: 50 }).notNull(), // new_lead, follow_up_due, ...
   title: varchar('title', { length: 255 }).notNull(),
   body: text('body'),
-  leadId: uuid('lead_id').references(() => leads.id), // deep-link target, nullable
+  leadId: uuid('lead_id').references(() => leads.id, { onDelete: 'set null' }), // deep-link target, nullable
   readAt: timestamp('read_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (table) => ({

@@ -113,6 +113,8 @@ export const webhookEvents = pgTable('webhook_events', {
   // concurrent duplicate deliveries can't create two events. Postgres treats NULL keys as distinct,
   // so events without a key (some providers) are unaffected.
   providerIdemUnique: uniqueIndex('webhook_events_provider_idem_key_unique').on(t.provider, t.idempotencyKey),
+  // The retention prune and the pending-event sweeper both filter on status + age.
+  statusCreatedIdx: index('webhook_events_status_created_idx').on(t.status, t.createdAt),
 }));
 
 export const leadIngestionLogs = pgTable('lead_ingestion_logs', {

@@ -2,7 +2,7 @@ import { Worker, Queue, Job } from "bullmq";
 import { createRedis, quietErrors } from "../redis";
 import { ScoringService } from "@/domains/leads/scoringService";
 import { db } from "@/db";
-import { automationRuns, webhookEvents } from "@/db/schema";
+import { automationRuns, webhookEvents, auditLogs } from "@/db/schema";
 import { and, eq, lt, inArray } from "drizzle-orm";
 
 export const SCORE_DECAY_QUEUE_NAME = "score-decay";
@@ -34,6 +34,16 @@ export async function pruneProcessedWebhookEvents(retentionDays = WEBHOOK_EVENT_
   return deleted.length;
 }
 
+// The audit log is the trail for security reviews and disputes, so it is kept long (default 2 years) but not
+// forever: unbounded growth slows the audit screen and keeps personal data past any purpose. Override with
+// AUDIT_RETENTION_DAYS (min 90 — never trim the recent trail).
+export async function pruneOldAuditLogs() {
+  const days = Math.max(90, Number(process.env.AUDIT_RETENTION_DAYS) || 730);
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const deleted = await db.delete(auditLogs).where(lt(auditLogs.createdAt, cutoff)).returning({ id: auditLogs.id });
+  return deleted.length;
+}
+
 export interface ScoreDecayJobData {
   organizationId?: string;
   leadId?: string;
@@ -58,8 +68,12 @@ export async function processScoreDecayJob(job: Job<ScoreDecayJobData>) {
     console.error("[SCORE_DECAY_WORKER] webhook_events prune failed:", e);
     return 0;
   });
-  console.log(`[SCORE_DECAY_WORKER] Processed score decay for ${count} leads (Org: ${job.data?.organizationId ?? "all"}); pruned ${prunedRuns} old automation runs, ${prunedEvents} processed webhook events`);
-  return { processed: count, prunedRuns, prunedEvents };
+  const prunedAudit = await pruneOldAuditLogs().catch((e) => {
+    console.error("[SCORE_DECAY_WORKER] audit_logs prune failed:", e);
+    return 0;
+  });
+  console.log(`[SCORE_DECAY_WORKER] Processed score decay for ${count} leads (Org: ${job.data?.organizationId ?? "all"}); pruned ${prunedRuns} old automation runs, ${prunedEvents} processed webhook events, ${prunedAudit} expired audit entries`);
+  return { processed: count, prunedRuns, prunedEvents, prunedAudit };
 }
 
 export function createScoreDecayWorker(redisUrl?: string) {

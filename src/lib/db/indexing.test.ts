@@ -34,6 +34,7 @@ vi.mock('@/db', () => ({
     insert: vi.fn().mockReturnThis(),
     values: vi.fn().mockReturnValue({
       returning: vi.fn().mockResolvedValue([{ id: 'new-lead-id' }]),
+      onConflictDoNothing: () => ({ returning: vi.fn().mockResolvedValue([{ id: 'msg-1' }]) }),
     }),
     update: vi.fn().mockReturnThis(),
     set: vi.fn().mockReturnThis(),

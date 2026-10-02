@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { phoneMatchSql } from "@/lib/leads/dedupKeys";
 import { leads, whatsappMessages, organizations } from "@/db/schema";
 import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import { WatxioClient } from "./client";
@@ -209,16 +210,18 @@ export const WhatsAppService = {
     };
     // Fast path: stored phones are canonical E.164, which the phone index serves. The digit-stripping
     // scan is only the fallback for legacy-formatted numbers.
-    const lead = (await pick(sql`${leads.phone} in (${"+" + digits}, ${digits})`)) ?? (await pick(sql`regexp_replace(${leads.phone}, '\\D', '', 'g') = ${digits}`));
+    const lead = (await pick(sql`${leads.phone} in (${"+" + digits}, ${digits})`)) ?? (await pick(phoneMatchSql(`+${digits}`) ?? sql`false`));
     if (!lead) return { matched: false };
 
-    await db.insert(whatsappMessages).values({
+    // Unique on provider_message_id: a redelivery that slipped past the check above inserts nothing.
+    const inserted = await db.insert(whatsappMessages).values({
       leadId: lead.id,
       direction: "inbound",
       providerMessageId: input.providerMessageId,
       body: input.body,
       status: "received",
-    });
+    }).onConflictDoNothing().returning({ id: whatsappMessages.id });
+    if (inserted.length === 0) return { matched: false, duplicate: true };
     await ActivityService.addActivity({
       leadId: lead.id,
       type: "message",

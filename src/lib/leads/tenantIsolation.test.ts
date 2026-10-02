@@ -34,7 +34,8 @@ vi.mock('@/db', () => ({
     returning: vi.fn().mockResolvedValue([{ id: 'lead-123' }]),
     insert: vi.fn().mockReturnThis(),
     values: vi.fn().mockReturnValue({
-      returning: vi.fn().mockResolvedValue([{ id: 'new-tenant-lead' }])
+      returning: vi.fn().mockResolvedValue([{ id: 'new-tenant-lead' }]),
+      onConflictDoNothing: () => ({ returning: vi.fn().mockResolvedValue([{ id: 'msg-1' }]) }),
     }),
     transaction: vi.fn(async (cb: any) => cb({
       execute: vi.fn().mockResolvedValue([]),

@@ -101,8 +101,9 @@ export const leads = pgTable('leads', {
   // Enforce per-tenant dedup at the DB layer (replaces the racy check-then-insert).
   // Partial: only active (non-deleted) rows with a real value participate, so soft-deleted
   // leads and blank contacts never collide.
+  // Case-insensitive, to match the dedupe rule (lib/leads/dedupKeys.emailKey): A@x.com and a@x.com are one lead.
   orgEmailUnique: uniqueIndex('leads_org_email_unique')
-    .on(table.organizationId, table.email)
+    .on(table.organizationId, sql`lower(${table.email})`)
     .where(sql`${table.deletedAt} IS NULL AND ${table.email} IS NOT NULL AND ${table.email} <> ''`),
   orgPhoneUnique: uniqueIndex('leads_org_phone_unique')
     .on(table.organizationId, table.phone)
@@ -139,7 +140,7 @@ export const leadSeqCounters = pgTable('lead_seq_counters', {
 
 export const leadStatusHistory = pgTable('lead_status_history', {
   id: uuid('id').defaultRandom().primaryKey(),
-  leadId: uuid('lead_id').references(() => leads.id).notNull(),
+  leadId: uuid('lead_id').references(() => leads.id, { onDelete: 'cascade' }).notNull(),
   seq: integer('seq'), // per-lead lifecycle number (CRN-…-L3); assigned by DB trigger
   oldStatus: varchar('old_status', { length: 50 }),
   newStatus: varchar('new_status', { length: 50 }).notNull(),
@@ -159,7 +160,7 @@ export const tags = pgTable('tags', {
 }));
 
 export const leadTags = pgTable('lead_tags', {
-  leadId: uuid('lead_id').references(() => leads.id).notNull(),
+  leadId: uuid('lead_id').references(() => leads.id, { onDelete: 'cascade' }).notNull(),
   tagId: uuid('tag_id').references(() => tags.id).notNull(),
 }, (table) => ({
   // Real composite PK — prevents duplicate tag rows and makes onConflictDoNothing() in the tag

@@ -663,57 +663,78 @@
     {
       "idx": 94,
       "version": "7",
-      "when": 1791000000000,
+      "when": 1790959460000,
       "tag": "0094_admin_totp",
       "breakpoints": true
     },
     {
       "idx": 95,
       "version": "7",
-      "when": 1791100000000,
+      "when": 1790959520000,
       "tag": "0095_users_phone_unique",
       "breakpoints": true
     },
     {
       "idx": 96,
       "version": "7",
-      "when": 1791200000000,
+      "when": 1790959580000,
       "tag": "0096_lead_search_trgm",
       "breakpoints": true
     },
     {
       "idx": 97,
       "version": "7",
-      "when": 1791300000000,
+      "when": 1790959640000,
       "tag": "0097_api_key_expiry",
       "breakpoints": true
     },
     {
       "idx": 98,
       "version": "7",
-      "when": 1791400000000,
+      "when": 1790959700000,
       "tag": "0098_tenant_whatsapp",
       "breakpoints": true
     },
     {
       "idx": 99,
       "version": "7",
-      "when": 1791500000000,
+      "when": 1790959760000,
       "tag": "0099_usage_counters",
       "breakpoints": true
     },
     {
       "idx": 100,
       "version": "7",
-      "when": 1791600000000,
+      "when": 1790959820000,
       "tag": "0100_api_key_scopes",
       "breakpoints": true
     },
     {
       "idx": 101,
       "version": "7",
-      "when": 1791700000000,
+      "when": 1790959880000,
       "tag": "0101_tenant_columns_not_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1790959940000,
+      "tag": "0102_db_integrity",
+      "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1790960000000,
+      "tag": "0103_snapshot_sync",
+      "breakpoints": true
+    },
+    {
+      "idx": 104,
+      "version": "7",
+      "when": 1790960060000,
+      "tag": "0104_fk_drift_fixes",
       "breakpoints": true
     }
   ]
