@@ -1,6 +1,6 @@
 "use server";
 
-import { assertLeadAccess } from "@/lib/leads/access";
+import { assertLeadAccess, assertLeadWrite } from "@/lib/leads/access";
 import { db } from "@/db";
 import { leadAttachments } from "@/db/schema/activities";
 import { requireOrg, assertWritable } from "@/lib/rbac";
@@ -43,7 +43,7 @@ export async function uploadAttachmentAction(formData: FormData) {
   }
 
   try {
-    await assertLeadAccess(leadId, { userId, organizationId });
+    await assertLeadWrite(leadId, { userId, organizationId });
 
     const contentType = contentTypeFor(file.name);
     if (!contentType) {
@@ -90,7 +90,7 @@ export async function addAttachmentAction(input: z.infer<typeof addAttachmentSch
   }
 
   try {
-    await assertLeadAccess(parsed.data.leadId, { userId, organizationId });
+    await assertLeadWrite(parsed.data.leadId, { userId, organizationId });
 
     const [attachment] = await db
       .insert(leadAttachments)
@@ -133,7 +133,7 @@ export async function getAttachmentsAction(leadId: string) {
 export async function deleteAttachmentAction(attachmentId: string, leadId: string) {
   const { userId, organizationId } = await assertWritable();
   try {
-    await assertLeadAccess(leadId, { userId, organizationId });
+    await assertLeadWrite(leadId, { userId, organizationId });
 
     const [deleted] = await db
       .delete(leadAttachments)

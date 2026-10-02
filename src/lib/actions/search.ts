@@ -1,5 +1,6 @@
 "use server";
 
+import { escapeLike } from "@/lib/utils";
 import { requireOrg, isSuperAdmin } from "@/lib/rbac";
 import { db } from "@/db";
 import { leads, users, roles } from "@/db/schema";
@@ -35,7 +36,7 @@ export async function searchUniversalAction(query: string): Promise<UniversalSea
   const { userId, organizationId } = await requireOrg();
   const q = query.trim();
   if (q.length < 2) return { leads: [], users: [] };
-  const like = `%${q}%`;
+  const like = `%${escapeLike(q)}%`;
   const [isSuper, { hasPermission }] = await Promise.all([
     isSuperAdmin(),
     import("@/lib/rbac"),

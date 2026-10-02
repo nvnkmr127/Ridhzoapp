@@ -1,7 +1,7 @@
 "use server";
 
 import { leadLiveFingerprint } from "@/lib/leads/liveFingerprint";
-import { assertLeadAccess, filterAccessibleLeadIds } from "@/lib/leads/access";
+import { assertLeadAccess, filterAccessibleLeadIds, assertLeadWrite } from "@/lib/leads/access";
 import { requireOrg, requirePermission, hasPermission, assertWritable } from "@/lib/rbac";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
@@ -117,6 +117,7 @@ async function createLead(
     }
 
     const lead = await LeadService.createLead({ ...data, customData: finalCustomData }, userId, organizationId);
+    await AuditService.log({ organizationId, userId, action: "lead.create", entityType: "lead", entityId: lead.id });
 
     revalidatePath('/');
     revalidatePath('/my-dashboard');
@@ -378,6 +379,7 @@ export async function changeLeadStatusAction(id: string, status: string, reason?
     await assertLeadAccess(id, { userId, organizationId });
     const lead = await LeadService.changeStatus(id, status, userId, organizationId, reason);
     if (!lead) return fail("NOT_FOUND", "This lead no longer exists or was moved.");
+    await AuditService.log({ organizationId, userId, action: "lead.status_change", entityType: "lead", entityId: id, metadata: { status, reason: reason ?? null } });
     revalidatePath('/');
     revalidatePath('/my-dashboard');
     revalidatePath('/leads');
@@ -417,6 +419,7 @@ export async function bulkChangeLeadStatusAction(input: z.infer<typeof bulkChang
     }
   }
 
+  await AuditService.log({ organizationId, userId, action: "lead.bulk_status_change", entityType: "lead", entityId: organizationId, metadata: { status: parsed.data.status, updated, failed, leadIds: parsed.data.leadIds.slice(0, 50) } });
   revalidatePath('/');
   revalidatePath('/my-dashboard');
   revalidatePath('/leads');
@@ -442,7 +445,7 @@ export async function addNoteAction(input: z.infer<typeof addNoteSchema>) {
 
   try {
     // The note attaches to a lead — make sure it's one this org owns.
-    await assertLeadAccess(parsed.data.leadId, { userId, organizationId });
+    await assertLeadWrite(parsed.data.leadId, { userId, organizationId });
 
     let occurredAt: Date | undefined;
     if (parsed.data.occurredAt) {
@@ -481,7 +484,7 @@ export async function deleteNoteAction(noteId: string, leadId: string) {
   }
 
   try {
-    await assertLeadAccess(parsed.data.leadId, { userId, organizationId });
+    await assertLeadWrite(parsed.data.leadId, { userId, organizationId });
 
     const deleted = await ActivityService.deleteActivity(parsed.data.noteId, parsed.data.leadId);
     if (!deleted) {
@@ -510,7 +513,7 @@ export async function updateNoteAction(input: z.infer<typeof updateNoteSchema>) 
   }
 
   try {
-    await assertLeadAccess(parsed.data.leadId, { userId, organizationId });
+    await assertLeadWrite(parsed.data.leadId, { userId, organizationId });
 
     const updated = await ActivityService.updateActivity(parsed.data.noteId, parsed.data.leadId, parsed.data.content);
     if (!updated) {
@@ -542,6 +545,7 @@ export const assignLeadAction = async (input: { leadId: string, ownerId: string 
       assignedById: userId,
       organizationId,
     });
+    await AuditService.log({ organizationId, userId, action: "lead.assign", entityType: "lead", entityId: input.leadId, metadata: { ownerId: input.ownerId, teamId: input.teamId ?? null } });
 
     revalidatePath('/');
     revalidatePath('/my-dashboard');
@@ -573,6 +577,7 @@ export const bulkAssignLeadAction = async (input: { leadIds: string[], ownerId: 
       assignedById: userId,
       organizationId,
     });
+    await AuditService.log({ organizationId, userId, action: "lead.bulk_assign", entityType: "lead", entityId: organizationId, metadata: { ownerId: input.ownerId, teamId: input.teamId, count: updatedLeads.length, leadIds: leadIds.slice(0, 50) } });
 
     revalidatePath('/');
     revalidatePath('/my-dashboard');
@@ -652,7 +657,7 @@ export async function updateLeadFollowUpAction(leadId: string, nextFollowUpAt: s
   }
 
   try {
-    await assertLeadAccess(leadId, { userId, organizationId });
+    await assertLeadWrite(leadId, { userId, organizationId });
     const { setLeadNextFollowUp } = await import("@/domains/leads/leadActions");
     const updated = await setLeadNextFollowUp(leadId, followUpDate, userId, organizationId);
     if (!updated) return fail("NOT_FOUND", "This lead no longer exists or was moved.");
@@ -672,7 +677,7 @@ export async function updateLeadFollowUpAction(leadId: string, nextFollowUpAt: s
 export async function updateLeadStageAndValueAction(leadId: string, input: { stageId?: string | null; expectedValue?: string | null }) {
   const { userId, organizationId } = await assertWritable();
   try {
-    await assertLeadAccess(leadId, { userId, organizationId });
+    await assertLeadWrite(leadId, { userId, organizationId });
     const { updateLeadStageAndValue } = await import("@/domains/leads/leadActions");
     const updated = await updateLeadStageAndValue(leadId, input, userId, organizationId);
     if (!updated) return fail("NOT_FOUND", "This lead no longer exists or was moved.");

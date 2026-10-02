@@ -4,6 +4,7 @@ import { handOverFollowUps } from "@/domains/follow-ups/state";
 import { users, roles, teams, leads } from "@/db/schema";
 import { and, count, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
+import { ApiKeyService } from "@/domains/apiKeys/service";
 
 // Thrown when an operation would leave the org with zero active administrators. Actions map this
 // to a friendly validation message (see actionFail).
@@ -59,7 +60,7 @@ export class UserService {
       const [taken] = await db
         .select({ id: users.id })
         .from(users)
-        .where(and(isNull(users.deletedAt), sql`right(regexp_replace(${users.phone}, '\D', '', 'g'), 10) = ${last}`))
+        .where(and(isNull(users.deletedAt), sql`right(regexp_replace(${users.phone}, '\\D', '', 'g'), 10) = ${last}`))
         .limit(1);
       if (taken) throw new UserFacingError("A user with that phone number already exists.");
     }
@@ -69,7 +70,7 @@ export class UserService {
     const [existing] = await db
       .select({ id: users.id, organizationId: users.organizationId, deletedAt: users.deletedAt, firstName: users.firstName, lastName: users.lastName, roleId: users.roleId })
       .from(users)
-      .where(cleanEmail ? eq(users.email, cleanEmail) : sql`right(regexp_replace(${users.phone}, '\D', '', 'g'), 10) = ${phone!.replace(/\D/g, "").slice(-10)}`)
+      .where(cleanEmail ? eq(users.email, cleanEmail) : sql`right(regexp_replace(${users.phone}, '\\D', '', 'g'), 10) = ${phone!.replace(/\D/g, "").slice(-10)}`)
       .limit(1);
 
     // No password = added by phone number: they prove it's theirs with a WhatsApp code (and can set a password later).
@@ -198,6 +199,7 @@ export class UserService {
       // Only block when THIS write took the org from ≥1 admin to 0 (never in an already-adminless org,
       // and never when deactivating a non-admin).
       if (u && before > 0 && (await this.countActiveAdmins(tx, organizationId)) === 0) throw new Error(LAST_ADMIN_ERROR);
+      if (u) await ApiKeyService.revokeCreatedBy(tx, organizationId, id);
       const movedTo = u && reassignTo !== undefined ? await this.reassignLeads(tx, organizationId, id, reassignTo) : {};
       return u && { ...u, movedTo, leadsMoved: Object.values(movedTo).reduce((a, b) => a + b, 0) };
     });
@@ -241,6 +243,7 @@ export class UserService {
         .where(and(eq(users.id, id), eq(users.organizationId, organizationId), isNull(users.deletedAt)))
         .returning(publicCols);
       if (u && before > 0 && (await this.countActiveAdmins(tx, organizationId)) === 0) throw new Error(LAST_ADMIN_ERROR);
+      if (u) await ApiKeyService.revokeCreatedBy(tx, organizationId, id);
       const movedTo = u && reassignTo !== undefined ? await this.reassignLeads(tx, organizationId, id, reassignTo) : {};
       return u && { ...u, movedTo, leadsMoved: Object.values(movedTo).reduce((a, b) => a + b, 0) };
     });

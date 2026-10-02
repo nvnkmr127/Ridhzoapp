@@ -6,6 +6,7 @@ const limitSpy = vi.fn();
 vi.mock("@/db", () => ({
   db: { select: vi.fn(() => ({ from: vi.fn(() => ({ where: vi.fn(() => ({ limit: limitSpy })) })) })) },
 }));
+vi.mock("@/domains/audit/service", () => ({ AuditService: { log: vi.fn() } }));
 vi.mock("next/headers", () => ({ cookies: async () => ({ get: () => undefined, delete: () => {} }) }));
 
 import { authOptions } from "./auth";

@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// Importing the worker pulls in the queue, which would open a real Redis connection (flaky teardown).
+vi.mock("@/lib/jobs/queues/ingestionQueue", () => ({ ingestionQueue: { add: vi.fn() } }));
 import { IframePostMessageWorker } from "./iframePostMessageWorker";
 
 describe("IframePostMessageWorker (Cross-Origin Iframe Integration)", () => {

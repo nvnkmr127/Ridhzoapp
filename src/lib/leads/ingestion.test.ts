@@ -33,6 +33,7 @@ vi.mock('@/db', () => ({
     }),
     // Assignment runs in a locking transaction; the tx finds no rule, so it no-ops.
     transaction: vi.fn(async (cb: any) => cb({
+      execute: vi.fn().mockResolvedValue([]),
       select: vi.fn().mockReturnThis(),
       from: vi.fn().mockReturnThis(),
       where: vi.fn().mockReturnThis(),

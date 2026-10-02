@@ -8,8 +8,15 @@ vi.mock('@/domains/tags/service', () => ({ TagService: { getForLead: async () =>
 // Expose the private method for testing purposes
 const evaluateConditionGroup = (AutomationEngine as any).evaluateConditionGroup.bind(AutomationEngine);
 
-// Queue the two selects evaluateAndExecute runs: conditions (none), then the actions list.
+// evaluateAndExecute first checks the automation and the lead share a workspace (two selects).
+function mockSameOrg() {
+  const org = { from: () => ({ where: () => ({ limit: () => Promise.resolve([{ organizationId: 'o1' }]) }) }) };
+  (db.select as any).mockReturnValueOnce(org).mockReturnValueOnce(org);
+}
+
+// Queue the selects evaluateAndExecute runs: conditions (none), then the actions list.
 function mockActions(actions: any[]) {
+  mockSameOrg();
   (db.select as any)
     .mockReturnValueOnce({ from: () => ({ where: () => Promise.resolve([]) }) })
     .mockReturnValueOnce({ from: () => ({ where: () => ({ orderBy: () => Promise.resolve(actions) }) }) });
@@ -88,6 +95,7 @@ describe('call.logged conditions', () => {
 
   // Queue: the automation's condition, the lead row, then (only if the rule passes) its actions.
   function mockCallRule(condition: any, passes: boolean) {
+    mockSameOrg();
     (db.select as any)
       .mockReturnValueOnce({ from: () => ({ where: () => Promise.resolve([{ config: condition }]) }) })
       .mockReturnValueOnce({ from: () => ({ where: () => ({ limit: () => Promise.resolve([{ id: 'l1', status: 'new' }]) }) }) });
@@ -136,6 +144,7 @@ describe('AutomationEngine — multiple condition rows', () => {
 
   // selects in order: conditions, the lead row, then (if it passes) the actions list
   function mockRun(conds: any[], lead: any) {
+    mockSameOrg();
     (db.select as any)
       .mockReturnValueOnce({ from: () => ({ where: () => Promise.resolve(conds.map((config) => ({ config }))) }) })
       .mockReturnValueOnce({ from: () => ({ where: () => ({ limit: () => Promise.resolve([lead]) }) }) })

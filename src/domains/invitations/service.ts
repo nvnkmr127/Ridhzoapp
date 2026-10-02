@@ -3,7 +3,7 @@ import { invitations, users } from "@/db/schema";
 import { and, eq, gt, isNotNull, isNull } from "drizzle-orm";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
-import { PlanService } from "@/domains/billing/planService";
+import { PlanService, limitLockSql } from "@/domains/billing/planService";
 
 function hash(raw: string) {
   return crypto.createHash("sha256").update(raw).digest("hex");
@@ -39,17 +39,19 @@ export class InvitationService {
       .from(users)
       .where(and(eq(users.email, cleanEmail), eq(users.organizationId, organizationId), isNotNull(users.deletedAt)))
       .limit(1);
-    await PlanService.assertCanAddSeat(organizationId, (open ? 1 : 0) + (tombstoned ? 1 : 0));
 
     // Remove any earlier pending invitations for this email in this org to avoid duplicate seats
     await db.delete(invitations).where(and(eq(invitations.organizationId, organizationId), eq(invitations.email, cleanEmail), isNull(invitations.acceptedAt)));
 
     const raw = crypto.randomBytes(24).toString("hex");
     const expiresAt = new Date(Date.now() + TTL_DAYS * 24 * 60 * 60 * 1000);
-    const [inv] = await db
+    const [inv] = await PlanService.serialized(organizationId, "seats", async () => {
+      await PlanService.assertCanAddSeat(organizationId, (open ? 1 : 0) + (tombstoned ? 1 : 0));
+      return db
       .insert(invitations)
       .values({ organizationId, email: cleanEmail, roleId, invitedById, tokenHash: hash(raw), expiresAt })
       .returning({ id: invitations.id, email: invitations.email, roleId: invitations.roleId, expiresAt: invitations.expiresAt });
+    });
     return { token: raw, invite: inv };
   }
 
@@ -77,6 +79,8 @@ export class InvitationService {
         .for("update");
       if (!inv) throw new Error("This invitation is invalid or has expired");
 
+      // Serialize seat-taking per org: the lock lives as long as this transaction (commit = seat taken).
+      await tx.execute(limitLockSql(inv.organizationId, "seats"));
       // This invite already holds a seat (pending invites count) — don't count it against itself.
       await PlanService.assertCanAddSeat(inv.organizationId, 1);
 

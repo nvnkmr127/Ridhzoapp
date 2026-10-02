@@ -42,8 +42,10 @@ export async function worksOnLead(leadId: string, userId: string) {
 
 // The lead the current user may ACT on, or null. Null = "not found" to the caller, so we never reveal
 // that someone else's lead exists.
-export async function getActionableLead(leadId: string) {
+export async function getActionableLead(leadId: string, opts: { write?: boolean } = {}) {
   const { userId, organizationId } = await assertWritable();
+  // Read-only roles (no leads.edit) may look, not act. Pass { write: false } for read-style uses.
+  if (opts.write !== false && !(await hasPermission("leads.edit"))) return null;
   const lead = await LeadService.getLead(leadId, organizationId);
   if (!lead) return null;
   if (lead.ownerId !== userId && !(await canSeeAllLeads()) && !(await worksOnLead(leadId, userId))) return null;
@@ -72,4 +74,17 @@ export async function filterAccessibleLeadIds(leadIds: string[], ctx: { userId: 
     .from(leads)
     .where(and(inArray(leads.id, leadIds), eq(leads.organizationId, ctx.organizationId), all ? undefined : visibleToUserSql(ctx.userId)));
   return rows.map((r) => r.id);
+}
+
+// assertLeadAccess + the leads.edit permission: for every action that CHANGES a lead or sends to it.
+// (Access alone only says "this is your lead"; a read-only role must not be able to write.)
+export async function assertLeadWrite(leadId: string, ctx: { userId: string; organizationId: string }) {
+  if (!(await hasPermission("leads.edit"))) throw new Error("Forbidden");
+  await assertLeadAccess(leadId, ctx);
+}
+
+// Bulk variant of the write gate: refuses outright without leads.edit, else filters to accessible ids.
+export async function filterWritableLeadIds(leadIds: string[], ctx: { userId: string; organizationId: string }) {
+  if (!(await hasPermission("leads.edit"))) throw new Error("Forbidden");
+  return filterAccessibleLeadIds(leadIds, ctx);
 }

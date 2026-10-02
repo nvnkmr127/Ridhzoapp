@@ -37,6 +37,8 @@ export interface AgentResult {
   outOfCredits?: boolean;
 }
 
+export const MAX_AGENT_WRITES = 3;
+
 interface AgentContext {
   organizationId: string;
   userId: string;
@@ -78,6 +80,18 @@ export async function runLeadAgent(
 
   const org = await loadAiBusiness(ctx.organizationId, { query: message });
   const proposals: AgentProposal[] = [];
+
+  // Hard limits on what one turn may CHANGE, whatever the model decides. The system prompt asks it to
+  // act only on the user's explicit request, but lead notes/messages are untrusted text inside that same
+  // context, so the cap and audit trail are enforced in code: at most MAX_AGENT_WRITES changes per turn,
+  // each recorded in the audit log under the human who asked.
+  let writes = 0;
+  const writeGate = async (tool: string, leadId: string, meta: Record<string, unknown> = {}): Promise<{ error: string } | null> => {
+    if (++writes > MAX_AGENT_WRITES) return { error: `I can change at most ${MAX_AGENT_WRITES} things per message. Ask me again to continue.` };
+    const { AuditService } = await import("@/domains/audit/service");
+    await AuditService.log({ organizationId: ctx.organizationId, userId: ctx.userId, action: `ai_agent.${tool}`, entityType: "lead", entityId: leadId, metadata: meta });
+    return null;
+  };
 
   // Lead-page context: when the assistant is opened on a lead, tell the model which one so
   // "this lead" / "draft a follow-up" resolve without the user naming anyone. Org-scoped lookup,
@@ -156,6 +170,8 @@ export async function runLeadAgent(
       description: "Change a lead's status (reversible). Use one of the workspace's valid status keys listed in the instructions.",
       inputSchema: z.object({ leadId: z.guid(), status: z.string(), reason: z.string().optional() }),
       execute: async ({ leadId, status, reason }) => {
+        const blocked = await writeGate("change_status", leadId, { status });
+        if (blocked) return blocked;
         const r = await changeLeadStatusAction(leadId, status, reason);
         return "ok" in r && r.ok ? { ok: true } : { error: (r as { message?: string }).message ?? "failed" };
       },
@@ -165,6 +181,8 @@ export async function runLeadAgent(
       description: "Add a tag to a lead (reversible).",
       inputSchema: z.object({ leadId: z.guid(), tag: z.string().min(1) }),
       execute: async ({ leadId, tag }) => {
+        const blocked = await writeGate("add_tag", leadId, { tag });
+        if (blocked) return blocked;
         try {
           await addTagAction(leadId, tag);
           return { ok: true };
@@ -178,6 +196,8 @@ export async function runLeadAgent(
       description: "Set a follow-up reminder on a lead. dueAt is an ISO datetime.",
       inputSchema: z.object({ leadId: z.guid(), title: z.string().min(1), dueAt: z.string(), description: z.string().optional() }),
       execute: async ({ leadId, title, dueAt, description }) => {
+        const blocked = await writeGate("set_reminder", leadId, { title, dueAt });
+        if (blocked) return blocked;
         const r = await createFollowUp({ leadId, title, dueAt, description, type: "followup" });
         return "ok" in r && r.ok ? { ok: true } : { error: (r as { message?: string }).message ?? "failed" };
       },
@@ -200,6 +220,8 @@ export async function runLeadAgent(
       }),
       execute: async ({ leadId, mode, startAt, durationMinutes, address, meetingUrl, autoMeet, notes }) => {
         if (!(await canAccess(leadId))) return { error: "Lead not found." };
+        const blocked = await writeGate("schedule_meeting", leadId, { mode, startAt });
+        if (blocked) return blocked;
         const locationId =
           mode === "store_visit" && !address ? (await MeetingService.listLocations(ctx.organizationId))[0]?.id ?? null : null;
         const r = await createMeetingAction(leadId, {
@@ -224,6 +246,8 @@ export async function runLeadAgent(
       description: "Assign/reassign a lead to a user by their id (reversible).",
       inputSchema: z.object({ leadId: z.guid(), ownerId: z.guid() }),
       execute: async ({ leadId, ownerId }) => {
+        const blocked = await writeGate("assign_lead", leadId, { ownerId });
+        if (blocked) return blocked;
         const r = await assignLeadAction({ leadId, ownerId, teamId: null });
         return "ok" in r && r.ok ? { ok: true } : { error: (r as { message?: string }).message ?? "failed" };
       },

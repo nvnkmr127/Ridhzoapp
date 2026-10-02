@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { FollowUpService } from "@/domains/follow-ups/service";
 import { ActivityService } from "@/domains/activities/service";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
-import { assertLeadAccess } from "@/lib/leads/access";
+import { assertLeadAccess, assertLeadWrite } from "@/lib/leads/access";
 import { FOLLOW_UP_TYPES } from "@/lib/followUps/types";
 import { getOrgFormat } from "@/lib/format.server";
 import { zonedParts, zonedTimeToUtc } from "@/lib/tz";
@@ -21,6 +21,8 @@ import { desc, eq } from "drizzle-orm";
 // You may act on a follow-up assigned to you, or on any follow-up of a lead you may act on — the same
 // rule the mobile API uses, so an assignee is never shown a follow-up they can't complete.
 async function assertFollowUpAccess(id: string, ctx: { userId: string; organizationId: string }) {
+  const { hasPermission } = await import("@/lib/rbac");
+  if (!(await hasPermission("leads.edit"))) throw new Error("Forbidden");
   const [row] = await db.select({ leadId: followUps.leadId, userId: followUps.userId }).from(followUps).where(eq(followUps.id, id)).limit(1);
   if (!row) throw new Error("Follow-up not found");
   if (row.userId === ctx.userId) {
@@ -57,7 +59,7 @@ export async function createFollowUp(input: z.input<typeof followUpSchema>) {
   }
   const { leadId, type, title, description, dueAt, userId } = parsed.data;
   try {
-    await assertLeadAccess(leadId, { userId: sessionUserId, organizationId });
+    await assertLeadWrite(leadId, { userId: sessionUserId, organizationId });
     const followUp = await FollowUpService.createFollowUp({
       leadId, type, title, description, dueAt,
       userId: userId === undefined ? sessionUserId : userId,

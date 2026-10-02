@@ -8,19 +8,20 @@ import { z } from "zod";
 import { requireOrg, requirePermission } from "@/lib/rbac";
 import { buildTemplatePayload, type AutomationTemplateId } from "@/lib/automation/templates";
 import { ok, fail, actionFail } from "@/lib/actions/result";
+import { ACTION_TYPES, TRIGGER_TYPES } from "@/lib/automation/schema";
 
 const automationSchema = z.object({
   name: z.string().min(1).max(255),
   isActive: z.boolean().optional(),
   trigger: z.object({
-    type: z.string().min(1),
+    type: z.string().refine((t) => TRIGGER_TYPES.includes(t), "Unknown trigger"),
     config: z.record(z.string(), z.unknown()).optional(),
   }).optional(),
   conditions: z.unknown().optional(),
   actions: z.array(z.object({
-    type: z.string().min(1),
+    type: z.string().refine((t) => (ACTION_TYPES as readonly string[]).includes(t), "Unknown action"),
     config: z.record(z.string(), z.unknown()).optional(),
-  })).optional(),
+  })).max(20).optional(),
 });
 
 export async function createAutomation(data: unknown) {
@@ -35,9 +36,10 @@ export async function createAutomation(data: unknown) {
     const { BillingLifecycleService } = await import("@/domains/billing/lifecycleService");
     await BillingLifecycleService.assertFeatureAccess(organizationId, "Automations");
     const { PlanService } = await import("@/domains/billing/planService");
-    await PlanService.assertCanAdd(organizationId, "automations");
 
-    const newAutomation = await db.transaction(async (tx) => {
+    const newAutomation = await PlanService.serialized(organizationId, "automations", async () => {
+      await PlanService.assertCanAdd(organizationId, "automations");
+      return db.transaction(async (tx) => {
     const [created] = await tx.insert(automations).values({
       organizationId,
       name,
@@ -72,6 +74,7 @@ export async function createAutomation(data: unknown) {
 
     return created;
   });
+    });
 
   revalidatePath("/automations");
   return ok(newAutomation);
@@ -158,6 +161,11 @@ export async function getAutomation(id: string) {
 export async function toggleAutomation(id: string, isActive: boolean) {
   const { organizationId } = await requirePermission("automations.manage");
   try {
+    // Switching one ON is a feature use: a locked/downgraded workspace can't re-enable automations.
+    if (isActive) {
+      const { BillingLifecycleService } = await import("@/domains/billing/lifecycleService");
+      await BillingLifecycleService.assertFeatureAccess(organizationId, "Automations");
+    }
     await db.update(automations).set({ isActive })
       .where(and(eq(automations.id, id), eq(automations.organizationId, organizationId)));
     revalidatePath("/automations");

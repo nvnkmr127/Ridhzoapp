@@ -659,6 +659,34 @@
       "when": 1790959400000,
       "tag": "0093_phone_users_no_email",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1791000000000,
+      "tag": "0094_admin_totp",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1791100000000,
+      "tag": "0095_users_phone_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1791200000000,
+      "tag": "0096_lead_search_trgm",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1791300000000,
+      "tag": "0097_api_key_expiry",
+      "breakpoints": true
     }
   ]
 }

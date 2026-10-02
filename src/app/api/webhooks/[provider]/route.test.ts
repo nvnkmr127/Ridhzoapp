@@ -8,7 +8,7 @@ let source: any;
 const inserted: any[] = [];
 
 vi.mock("@/lib/rate-limit", () => ({ RateLimiter: { checkLimit: async () => ({ success: true, limit: 100, remaining: 99, reset: 0 }) } }));
-vi.mock("@/lib/jobs/workers/ingestionWorker", () => ({ ingestionQueue: { add: vi.fn() } }));
+vi.mock("@/lib/jobs/queues/ingestionQueue", () => ({ ingestionQueue: { add: vi.fn() } }));
 vi.mock("@/domains/leads/sourceService", () => ({ LeadSourceService: { getSource: async () => source } }));
 vi.mock("@/db", () => ({
   db: {

@@ -1,4 +1,5 @@
 import { NextAuthOptions, DefaultSession, DefaultUser } from "next-auth";
+import { ipFromHeaders } from "@/lib/clientIp";
 
 declare module "next-auth" {
   interface Session {
@@ -89,7 +90,10 @@ export async function authorizePhoneOtp(credentials?: Record<string, string>) {
       const { verifyFirebaseIdToken } = await import("@/lib/auth/firebaseTokenVerifier");
       try {
         const res = await verifyFirebaseIdToken(credentials.idToken);
-        if (!res.phoneNumber || res.phoneNumber === phone) verified = true;
+        // The token must PROVE this number: a token with no phone claim (anonymous / email / Google
+        // Firebase users) proves nothing about the number the caller typed.
+        const digits = (v: string) => v.replace(/\D/g, "");
+        if (res.phoneNumber && digits(res.phoneNumber) === digits(phone)) verified = true;
       } catch (err) {
         console.error("[phone-auth] verification failed:", err);
         return null;
@@ -211,8 +215,8 @@ export const authOptions: NextAuthOptions = {
           const { password } = parsed.data;
 
           // Brute-force guard: per account and per client IP, before touching bcrypt.
-          const fwd = (req?.headers as Record<string, string | undefined> | undefined)?.["x-forwarded-for"];
-          const ip = (Array.isArray(fwd) ? fwd[0] : fwd)?.split(",")[0]?.trim() || "unknown";
+          const rh = (req?.headers ?? {}) as Record<string, string | string[] | undefined>;
+          const ip = ipFromHeaders({ get: (n) => { const v = rh[n.toLowerCase()]; return Array.isArray(v) ? v[0] : v ?? null; } });
           const [byEmail, byIp] = await Promise.all([
             RateLimiter.checkLimit(`auth:login:email:${email}`, 8, 15 * 60),
             RateLimiter.checkLimit(`auth:login:ip:${ip}`, 40, 15 * 60),
@@ -225,7 +229,18 @@ export const authOptions: NextAuthOptions = {
           if (!user) return null;
 
           const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
-          if (!isPasswordValid) return null;
+          if (!isPasswordValid) {
+            // Trail for "who is guessing whose password": only for a real account, never the typed password.
+            if (user.organizationId) {
+              keepAlive(
+                import("@/domains/audit/service").then(({ AuditService }) =>
+                  AuditService.log({ organizationId: user.organizationId!, userId: user.id, action: "user.login_failed", entityType: "user", entityId: user.id, metadata: { ip } }),
+                ),
+                "audit login_failed",
+              );
+            }
+            return null;
+          }
           // Only after the password checks out, so these never reveal whether an email is registered.
           if (!user.isActive) throw new Error("ACCOUNT_DISABLED");
 
@@ -255,13 +270,15 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async signIn({ user, account }) {
+    async signIn({ user, account, profile }) {
       if (account?.provider === "google") {
         // Any throw here makes NextAuth redirect to /login?error=<err.message>; a DB error message is
         // multi-line SQL, which is an invalid Location header and 500s the callback. Log it, send a code.
         try {
           const email = user.email?.toLowerCase();
           if (!email) return false;
+          // Only an address Google itself has verified may sign in / link by email.
+          if ((profile as { email_verified?: boolean } | undefined)?.email_verified === false) return false;
 
           let [existingUser] = await db
             .select()
@@ -292,7 +309,9 @@ export const authOptions: NextAuthOptions = {
             }
           }
 
+          let isNewGoogleUser = false;
           if (!existingUser) {
+            isNewGoogleUser = true;
             const { OrgService, slugify } = await import("@/domains/organizations/service");
             const { signupTrial } = await import("@/domains/billing/planService");
             const adminRole = await OrgService.ensureSystemRoles();
@@ -333,7 +352,22 @@ export const authOptions: NextAuthOptions = {
             })(), "google welcome");
           }
 
-          // Google proved this address: mark it verified and Google as a connected login.
+          // Google proved this address. If the existing account never verified it, whoever registered it
+          // with a password may not be the owner (pre-hijack) — drop that password and every session
+          // made with it, so only the Google owner (or a reset link to this inbox) gets in.
+          if (!existingUser.emailVerifiedAt && existingUser.passwordSet && !isNewGoogleUser) {
+            await db
+              .update(users)
+              .set({ passwordHash: await bcrypt.hash(crypto.randomUUID(), 10), passwordSet: false, updatedAt: new Date() })
+              .where(eq(users.id, existingUser.id));
+            try {
+              const { SessionService } = await import("@/domains/platform/sessionService");
+              await SessionService.revokeUserSessions(existingUser.id);
+            } catch (e) {
+              console.warn("[google-auth] session revoke failed", e);
+            }
+          }
+          // Mark it verified and Google as a connected login.
           if (!existingUser.googleLinkedAt || !existingUser.emailVerifiedAt) {
             await db
               .update(users)
@@ -479,6 +513,17 @@ export const authOptions: NextAuthOptions = {
         };
       }
       return session;
+    },
+  },
+  events: {
+    async signOut({ token }) {
+      const orgId = token?.organizationId as string | undefined;
+      const uid = token?.id as string | undefined;
+      if (!orgId || !uid) return;
+      try {
+        const { AuditService } = await import("@/domains/audit/service");
+        await AuditService.log({ organizationId: orgId, userId: uid, action: "user.logout", entityType: "user", entityId: uid });
+      } catch { /* a logout must never fail on the audit trail */ }
     },
   },
   pages: {

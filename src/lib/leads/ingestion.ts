@@ -160,7 +160,9 @@ export class IngestionService {
 
     let newLead;
     try {
-      [newLead] = await db.insert(leads).values({
+      [newLead] = await PlanService.serialized(organizationId, "leads", async () => {
+        await PlanService.assertCanAddLead(organizationId); // re-check under the lock (see serialized)
+        return db.insert(leads).values({
         organizationId,
         name: payload.name,
         email,
@@ -170,6 +172,7 @@ export class IngestionService {
         expectedValue: payload.expectedValue != null ? String(payload.expectedValue) : undefined,
         customData: payload.customData,
       }).returning();
+      });
     } catch (e: any) {
       if (e?.code === "23505") {
         const [raced] = searchConditions.length ? await db.select().from(leads).where(dedupWhere).limit(1) : [];

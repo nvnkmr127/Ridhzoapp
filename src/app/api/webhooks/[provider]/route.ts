@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clientIp } from "@/lib/clientIp";
 import { RateLimiter } from "@/lib/rate-limit";
 import { db } from "@/db";
 import { webhookEvents } from "@/db/schema";
-import { ingestionQueue } from "@/lib/jobs/workers/ingestionWorker";
+import { ingestionQueue } from "@/lib/jobs/queues/ingestionQueue";
 
 import { z } from "zod";
 import { readSecret } from "@/lib/crypto/secret";
@@ -70,7 +71,7 @@ export async function POST(
     }
     const body = parseResult.data;
     
-    const ip = req.headers.get("x-forwarded-for") || "unknown";
+    const ip = clientIp(req);
     const rateLimitKey = `webhook:${provider}:${ip}`;
     const limitResult = await RateLimiter.checkLimit(rateLimitKey, 100, 60);
 
@@ -124,7 +125,10 @@ export async function POST(
     }
 
     // Simple idempotency check based on a header (optional, depends on provider)
-    const idempotencyKey = req.headers.get("x-idempotency-key") || undefined;
+    // Namespaced by workspace: the unique index is (provider, key) across ALL tenants, so a bare client key
+    // would let one tenant pre-claim (and silently drop) another tenant's retries.
+    const rawKey = req.headers.get("x-idempotency-key")?.slice(0, 200);
+    const idempotencyKey = rawKey ? `${source.organizationId}:${rawKey}` : undefined;
 
     if (idempotencyKey) {
       const { eq, and } = await import("drizzle-orm");

@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { apiKeys } from "@/db/schema";
-import { and, desc, eq, isNull, lt, or } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt, or } from "drizzle-orm";
 import crypto from "crypto";
 
 function hash(raw: string) {
@@ -16,19 +16,19 @@ const USAGE_WRITE_THROTTLE_MS = 60_000;
 export class ApiKeyService {
   static async list(organizationId: string) {
     return db
-      .select({ id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix, scope: apiKeys.scope, lastUsedAt: apiKeys.lastUsedAt, revokedAt: apiKeys.revokedAt, createdAt: apiKeys.createdAt })
+      .select({ id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix, scope: apiKeys.scope, lastUsedAt: apiKeys.lastUsedAt, revokedAt: apiKeys.revokedAt, expiresAt: apiKeys.expiresAt, createdAt: apiKeys.createdAt })
       .from(apiKeys)
       .where(eq(apiKeys.organizationId, organizationId))
       .orderBy(desc(apiKeys.createdAt));
   }
 
   // Returns the raw key ONCE — it is never retrievable again (only its hash is stored).
-  static async create(organizationId: string, name: string, createdById: string, scope: ApiKeyScope = "full") {
+  static async create(organizationId: string, name: string, createdById: string, scope: ApiKeyScope = "full", expiresAt: Date | null = null) {
     const raw = `pk_${crypto.randomBytes(24).toString("hex")}`;
     const [row] = await db
       .insert(apiKeys)
-      .values({ organizationId, name, keyHash: hash(raw), prefix: raw.slice(0, 12), createdById, scope })
-      .returning({ id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix, scope: apiKeys.scope });
+      .values({ organizationId, name, keyHash: hash(raw), prefix: raw.slice(0, 12), createdById, scope, expiresAt })
+      .returning({ id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix, scope: apiKeys.scope, expiresAt: apiKeys.expiresAt });
     return { ...row, key: raw };
   }
 
@@ -63,10 +63,19 @@ export class ApiKeyService {
     const [row] = await db
       .select({ id: apiKeys.id, organizationId: apiKeys.organizationId, scope: apiKeys.scope })
       .from(apiKeys)
-      .where(and(eq(apiKeys.keyHash, hash(raw)), isNull(apiKeys.revokedAt)))
+      .where(and(eq(apiKeys.keyHash, hash(raw)), isNull(apiKeys.revokedAt), or(isNull(apiKeys.expiresAt), gt(apiKeys.expiresAt, new Date()))))
       .limit(1);
     if (!row) return null;
     return { id: row.id, organizationId: row.organizationId, scope: (row.scope as ApiKeyScope) ?? "full" };
+  }
+
+  // A person leaving (deactivated or deleted) must not leave their API keys behind: they keep working with
+  // the leaver's reach until someone remembers to revoke them. Runs inside the caller's transaction.
+  static async revokeCreatedBy(tx: { update: typeof db.update }, organizationId: string, userId: string) {
+    await tx
+      .update(apiKeys)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(apiKeys.organizationId, organizationId), eq(apiKeys.createdById, userId), isNull(apiKeys.revokedAt)));
   }
 
   // Best-effort, throttled usage stamp. Fire-and-forget: never awaited on the request's critical

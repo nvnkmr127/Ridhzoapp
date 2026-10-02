@@ -2,7 +2,8 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { assertWritable } from "@/lib/rbac";
+import { assertWritable, requirePermission } from "@/lib/rbac";
+import { filterAccessibleLeadIds } from "@/lib/leads/access";
 import { ActivityService } from "@/domains/activities/service";
 import { ok, fail, actionFail } from "@/lib/actions/result";
 
@@ -15,21 +16,26 @@ const schema = z.object({
 // 24h window in BSP mode, or no phone) is counted, never aborts the batch. In personal mode
 // auto-send isn't possible, so failures fall back to a logged nudge on each lead's timeline.
 export async function sendCampaignAction(input: unknown) {
-  const { userId } = await assertWritable();
+  await assertWritable();
+  const { userId, organizationId } = await requirePermission("leads.edit");
   const parsed = schema.safeParse(input);
   if (!parsed.success) {
     return fail("VALIDATION", "Select up to 500 leads and enter a message (max 2,000 characters).");
   }
-  const { leadIds, body } = parsed.data;
+  const requested = parsed.data;
+  const body = requested.body;
 
   try {
+    // Only leads this user may act on, in THIS workspace (ids come from the client).
+    const leadIds = await filterAccessibleLeadIds(requested.leadIds, { userId, organizationId });
+    if (leadIds.length === 0) return fail("NOT_FOUND", "None of the selected leads are available to you.");
     const { WhatsAppService } = await import("@/lib/messaging/whatsapp/service");
 
     let sent = 0;
     let failed = 0;
     for (const leadId of leadIds) {
       try {
-        await WhatsAppService.send({ leadId, body, userId });
+        await WhatsAppService.send({ leadId, body, userId, organizationId });
         sent++;
       } catch {
         failed++;
@@ -42,7 +48,7 @@ export async function sendCampaignAction(input: unknown) {
       }
     }
     revalidatePath("/leads");
-    return ok({ sent, failed, total: leadIds.length });
+    return ok({ sent, failed, total: requested.leadIds.length });
   } catch (e) {
     return actionFail(e);
   }

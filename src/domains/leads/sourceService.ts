@@ -39,11 +39,10 @@ export class LeadSourceService {
   /** Lead counts per source: total live, unworked "new", recycle-bin (soft-deleted), and when the last one arrived. */
   static async getLeadCounts(
     sourceIds: string[],
-    organizationId?: string,
+    organizationId: string,
   ): Promise<Record<string, { total: number; new: number; deleted: number; lastAt: string | null }>> {
     if (sourceIds.length === 0) return {};
-    const conditions = [inArray(leads.sourceId, sourceIds)];
-    if (organizationId) conditions.push(eq(leads.organizationId, organizationId));
+    const conditions = [inArray(leads.sourceId, sourceIds), eq(leads.organizationId, organizationId)];
     const rows = await db
       .select({
         sourceId: leads.sourceId,
@@ -101,16 +100,18 @@ export class LeadSourceService {
       throw new Error("organizationId is required to create a lead source");
     }
     const { PlanService } = await import("@/domains/billing/planService");
-    await PlanService.assertCanAdd(data.organizationId, "sources");
     const webhookSecret = encryptSecret(crypto.randomBytes(32).toString("hex"));
 
-    const [source] = await db.insert(leadSources).values({
-      name: data.name,
-      type: data.type,
-      organizationId: data.organizationId,
-      config: data.config || {},
-      webhookSecret,
-    }).returning();
+    const [source] = await PlanService.serialized(data.organizationId, "sources", async () => {
+      await PlanService.assertCanAdd(data.organizationId, "sources");
+      return db.insert(leadSources).values({
+        name: data.name,
+        type: data.type,
+        organizationId: data.organizationId,
+        config: data.config || {},
+        webhookSecret,
+      }).returning();
+    });
 
     return source;
   }
@@ -178,11 +179,9 @@ export class LeadSourceService {
   static async updateSource(
     id: string,
     data: { name?: string; isActive?: number; configPatch?: Record<string, unknown> },
-    organizationId?: string,
+    organizationId: string,
   ) {
-    const scope = organizationId
-      ? and(eq(leadSources.id, id), eq(leadSources.organizationId, organizationId))
-      : eq(leadSources.id, id);
+    const scope = and(eq(leadSources.id, id), eq(leadSources.organizationId, organizationId));
     const { configPatch, ...rest } = data;
     const set: Record<string, unknown> = { ...rest };
     if (configPatch) set.config = sql`coalesce(${leadSources.config}, '{}'::jsonb) || ${JSON.stringify(configPatch)}::jsonb`;
@@ -196,8 +195,8 @@ export class LeadSourceService {
 
   /** Flags a source as needing re-auth (dead Meta token) and deactivates it, so ingestion stops
    *  wasting Graph calls and the UI can prompt a reconnect instead of failing silently. */
-  static async markNeedsReconnect(id: string) {
-    await this.updateSource(id, { isActive: 0, configPatch: { needsReconnect: true, webhookSubscribed: false } });
+  static async markNeedsReconnect(id: string, organizationId: string) {
+    await this.updateSource(id, { isActive: 0, configPatch: { needsReconnect: true, webhookSubscribed: false } }, organizationId);
   }
 
   // New webhook/Google key. The old one stops working immediately.

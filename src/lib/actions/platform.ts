@@ -5,7 +5,7 @@ import { canonicalPlan } from "@/domains/billing/planNames";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireSuperAdmin } from "@/lib/rbac";
+import { requireSuperAdmin, requireAuth } from "@/lib/rbac";
 import { PlatformService } from "@/domains/platform/service";
 import { AuditService } from "@/domains/audit/service";
 import { ok, fail, actionFail } from "@/lib/actions/result";
@@ -200,7 +200,9 @@ export async function impersonateOrgAction(organizationId: string, readOnly = fa
 }
 
 export async function stopImpersonationAction() {
-  const session = await requireSuperAdmin();
+  // Leaving a tenant must never be blocked by an expired MFA window, so no step-up check here.
+  const session = await requireAuth();
+  if (!session.user.isSuperAdmin) throw new Error("Forbidden");
   const store = await cookies();
   const current = store.get(IMPERSONATE_COOKIE)?.value;
   store.delete(IMPERSONATE_COOKIE);
@@ -1118,7 +1120,7 @@ export async function replayAuthFailedLeadsAction(organizationId: string, pageId
       return ok({ replayedCount: 0, message: "No failed auth events found for this page." });
     }
 
-    const { ingestionQueue } = await import("@/lib/jobs/workers/ingestionWorker");
+    const { ingestionQueue } = await import("@/lib/jobs/queues/ingestionQueue");
     await db.update(webhookEvents).set({ status: "pending", errorLog: null }).where(inArray(webhookEvents.id, rows.map((r) => r.id)));
     await ingestionQueue.addBulk(rows.map((r) => ({ name: `ingest-fb-replay-${r.id}`, data: { webhookEventId: r.id, provider: "facebook" } })));
 

@@ -1,13 +1,13 @@
-# Droplet stack: Postgres + Redis + the BullMQ worker. Vercel (web) connects to Postgres and
-# Redis over the droplet's PUBLIC IP, so both are password-protected and port-published.
+# Self-hosted stack: Postgres + Redis + the BullMQ worker.
 #
 # Copy deploy/.env.example -> deploy/.env on the droplet and fill in real secrets, then:
 #   docker compose --env-file deploy/.env -f deploy/docker-compose.yml up -d --build
 #
-# ponytail: Postgres/Redis are exposed to the internet with passwords only (no TLS). Vercel's
-# free tier has no static egress IP, so you can't firewall by IP — password + a strong random
-# secret is the floor. Upgrade path when it matters: put Redis behind stunnel/TLS (rediss://)
-# and require SSL on Postgres, or move to a managed DB with a private link.
+# SECURITY: Postgres and Redis are bound to 127.0.0.1 by default and are NOT meant to be reachable from
+# the internet (passwords alone, no TLS, is not a safe public posture). To let a remote web tier reach
+# them, do one of: (a) a private network / VPN / Tailscale, or (b) set DB_BIND / REDIS_BIND to a private
+# interface IP AND terminate TLS in front (stunnel / Postgres ssl=on with certs; rediss://) AND allow-list
+# the web tier's IPs in the host firewall. Production on Railway uses its own managed services instead.
 
 services:
   postgres:
@@ -18,7 +18,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "5432:5432"          # published so Vercel can reach it
+      - "${DB_BIND:-127.0.0.1}:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -34,7 +34,7 @@ services:
     # (noeviction) — never let Redis drop job keys under memory pressure.
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--maxmemory-policy", "noeviction"]
     ports:
-      - "6379:6379"          # published so Vercel can enqueue
+      - "${REDIS_BIND:-127.0.0.1}:6379:6379"
     volumes:
       - redisdata:/data
     healthcheck:

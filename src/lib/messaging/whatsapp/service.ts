@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { leads, whatsappMessages, organizations } from "@/db/schema";
-import { and, desc, eq, gt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import { WatxioClient } from "./client";
 import { renderTemplate, type LeadLike } from "../deeplink";
 import { ActivityService } from "@/domains/activities/service";
@@ -9,6 +9,8 @@ import { markLeadContacted } from "@/domains/follow-ups/state";
 export interface SendWhatsAppInput {
   leadId: string;
   userId?: string; // null when sent by an automation
+  // Tenant of the caller. Always pass it from user-facing paths: the lead must belong to it.
+  organizationId?: string;
   // Free-form text — used only if the lead is inside the 24h window.
   body?: string;
   // Approved template — required outside the window (e.g. first contact with a new lead).
@@ -65,7 +67,9 @@ export const WhatsAppService = {
   },
 
   async send(input: SendWhatsAppInput) {
-    const [lead] = await db.select().from(leads).where(eq(leads.id, input.leadId)).limit(1);
+    const [lead] = await db.select().from(leads)
+      .where(input.organizationId ? and(eq(leads.id, input.leadId), eq(leads.organizationId, input.organizationId)) : eq(leads.id, input.leadId))
+      .limit(1);
     if (!lead) throw new Error(`Lead ${input.leadId} not found`);
     if (!lead.phone) throw new Error(`Lead ${input.leadId} has no phone number`);
 
@@ -151,14 +155,30 @@ export const WhatsAppService = {
     const digits = input.fromPhone.replace(/\D/g, "");
     if (!digits) return { matched: false };
 
-    const conditions = [sql`regexp_replace(${leads.phone}, '\\D', '', 'g') = ${digits}`];
-    if (input.organizationId) {
-      conditions.push(eq(leads.organizationId, input.organizationId));
+    // Providers retry deliveries: the same provider message id is recorded once.
+    if (input.providerMessageId) {
+      const [dupe] = await db
+        .select({ leadId: whatsappMessages.leadId, organizationId: leads.organizationId })
+        .from(whatsappMessages)
+        .innerJoin(leads, eq(leads.id, whatsappMessages.leadId))
+        .where(and(eq(whatsappMessages.providerMessageId, input.providerMessageId), eq(whatsappMessages.direction, "inbound")))
+        .limit(1);
+      if (dupe) return { matched: false, duplicate: true };
     }
 
-    const [lead] = await db.select().from(leads)
-      .where(and(...conditions))
-      .limit(1);
+    // One platform-wide number serves every workspace, so a phone can be a lead in several. The reply
+    // belongs to the workspace we most recently WROTE to on that number; ties/never-contacted fall back
+    // to the most recently touched lead. Soft-deleted leads never receive replies.
+    const lastOut = sql<Date | null>`(select max(m.created_at) from whatsapp_messages m where m.lead_id = ${leads.id} and m.direction = 'outbound')`;
+    const pick = async (phoneCond: ReturnType<typeof sql>) => {
+      const conds = [phoneCond, isNull(leads.deletedAt)];
+      if (input.organizationId) conds.push(eq(leads.organizationId, input.organizationId));
+      const [row] = await db.select().from(leads).where(and(...conds)).orderBy(sql`${lastOut} desc nulls last`, desc(leads.updatedAt)).limit(1);
+      return row;
+    };
+    // Fast path: stored phones are canonical E.164, which the phone index serves. The digit-stripping
+    // scan is only the fallback for legacy-formatted numbers.
+    const lead = (await pick(sql`${leads.phone} in (${"+" + digits}, ${digits})`)) ?? (await pick(sql`regexp_replace(${leads.phone}, '\\D', '', 'g') = ${digits}`));
     if (!lead) return { matched: false };
 
     await db.insert(whatsappMessages).values({

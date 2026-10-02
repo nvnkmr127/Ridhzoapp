@@ -28,7 +28,7 @@ export async function draftLeadReplyAction(
   // A readable message, not a raw Zod error dump, reaches the client.
   if (!parsed.success) throw new Error("Couldn't draft a reply: choose a channel, tone and language and try again.");
   const { leadId, channel, tone, language } = parsed.data;
-  const access = await getActionableLead(leadId);
+  const access = await getActionableLead(leadId, { write: false });
   if (!access) throw new Error("Lead not found");
   return draftReplyForLead(access.lead, access.organizationId, { channel, tone, language });
 }
@@ -39,7 +39,7 @@ export async function summarizeLeadAction(data: unknown): Promise<RecapResult> {
   const parsed = z.object({ leadId: z.guid(), refresh: z.boolean().optional() }).safeParse(data);
   if (!parsed.success) throw new Error("That lead isn't valid.");
   const { leadId, refresh } = parsed.data;
-  const access = await getActionableLead(leadId);
+  const access = await getActionableLead(leadId, { write: false });
   if (!access) throw new Error("Lead not found");
   return recapForLead(access.lead, access.organizationId, refresh);
 }

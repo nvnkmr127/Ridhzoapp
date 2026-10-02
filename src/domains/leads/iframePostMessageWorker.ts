@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { webhookEvents } from "@/db/schema";
-import { ingestionQueue } from "@/lib/jobs/workers/ingestionWorker";
+import { ingestionQueue } from "@/lib/jobs/queues/ingestionQueue";
 
 export interface IframeMessagePayload {
   type: string;

@@ -1,5 +1,6 @@
 import { validateEnv } from "@/lib/env";
 import { startWorkers } from "@/lib/jobs/startWorkers";
+import { closeAllWorkers, createRedis, WORKER_HEARTBEAT_KEY } from "@/lib/jobs/redis";
 
 // Standalone background-worker process. Deploy this ALONGSIDE (not on) a serverless web app: the
 // Vercel web app enqueues jobs, this long-lived process drains them. Run it on any always-on host
@@ -14,14 +15,23 @@ async function main() {
   }
 
   await startWorkers();
+  // Liveness the web tier's /api/health can read: refreshed every 30 s, expires after 90 s of silence.
+  const beat = createRedis();
+  const tick = () => beat.set(WORKER_HEARTBEAT_KEY, String(Date.now()), "EX", 90).catch(() => {});
+  void tick();
+  setInterval(tick, 30_000).unref();
   console.log("[worker] up — draining queues. Ctrl+C to stop.");
   // The BullMQ workers keep the event loop alive; nothing else to do here.
 }
 
+let stopping = false;
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {
-    console.log(`[worker] ${sig} received — shutting down.`);
-    process.exit(0);
+    if (stopping) return;
+    stopping = true;
+    console.log(`[worker] ${sig} received — finishing running jobs, then exiting.`);
+    // Stop taking new jobs, let in-flight ones finish (bounded), then exit.
+    closeAllWorkers().finally(() => process.exit(0));
   });
 }
 

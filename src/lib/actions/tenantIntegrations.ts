@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/rbac";
+import { AuditService } from "@/domains/audit/service";
 import { TenantIntegrationsService, DEFAULT_AUTH_HEADER } from "@/domains/organizations/tenantIntegrationsService";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
 
@@ -43,7 +44,7 @@ async function publicUrlError(url: string): Promise<string | null> {
 }
 
 export async function updateEnrichmentAction(input: z.input<typeof enrichmentSchema>) {
-  const { organizationId } = await requirePermission("settings.manage");
+  const { organizationId, userId } = await requirePermission("settings.manage");
   const parsed = enrichmentSchema.safeParse(input);
   if (!parsed.success) return fail("VALIDATION", "Please fix the highlighted fields.", zodFieldErrors(parsed.error));
   const d = parsed.data;
@@ -58,6 +59,7 @@ export async function updateEnrichmentAction(input: z.input<typeof enrichmentSch
       authValue: d.authValue || undefined,
     });
     revalidatePath(PAGE);
+    await AuditService.log({ organizationId, userId, action: "integration.enrichment_update", entityType: "organization", entityId: organizationId });
     return ok(view);
   } catch (e) {
     return actionFail(e);
@@ -91,10 +93,11 @@ export async function testEnrichmentAction(input: z.input<typeof enrichmentSchem
 }
 
 export async function disconnectEnrichmentAction() {
-  const { organizationId } = await requirePermission("settings.manage");
+  const { organizationId, userId } = await requirePermission("settings.manage");
   try {
     const view = await TenantIntegrationsService.clearEnrichment(organizationId);
     revalidatePath(PAGE);
+    await AuditService.log({ organizationId, userId, action: "integration.enrichment_disconnect", entityType: "organization", entityId: organizationId });
     return ok(view);
   } catch (e) {
     return actionFail(e);
@@ -113,7 +116,7 @@ const capiSchema = z.object({
 });
 
 export async function updateCapiAction(input: z.input<typeof capiSchema>) {
-  const { organizationId } = await requirePermission("settings.manage");
+  const { organizationId, userId } = await requirePermission("settings.manage");
   const parsed = capiSchema.safeParse(input);
   if (!parsed.success) return fail("VALIDATION", "Please fix the highlighted fields.", zodFieldErrors(parsed.error));
   const d = parsed.data;
@@ -138,6 +141,7 @@ export async function updateCapiAction(input: z.input<typeof capiSchema>) {
       testEventCode: d.testEventCode || null,
     });
     revalidatePath(PAGE);
+    await AuditService.log({ organizationId, userId, action: "integration.capi_update", entityType: "organization", entityId: organizationId });
     return ok(view);
   } catch (e) {
     return actionFail(e);
@@ -145,10 +149,11 @@ export async function updateCapiAction(input: z.input<typeof capiSchema>) {
 }
 
 export async function disconnectCapiAction() {
-  const { organizationId } = await requirePermission("settings.manage");
+  const { organizationId, userId } = await requirePermission("settings.manage");
   try {
     const view = await TenantIntegrationsService.clearCapi(organizationId);
     revalidatePath(PAGE);
+    await AuditService.log({ organizationId, userId, action: "integration.capi_disconnect", entityType: "organization", entityId: organizationId });
     return ok(view);
   } catch (e) {
     return actionFail(e);
@@ -159,7 +164,7 @@ const stageMapSchema = z.record(z.string().max(64), z.string().trim().max(100).r
 
 /** Save the tenant's Conversion Leads status → Meta stage-event map. Empty = report no stages. */
 export async function updateCapiStageMapAction(map: Record<string, string>) {
-  const { organizationId } = await requirePermission("settings.manage");
+  const { organizationId, userId } = await requirePermission("settings.manage");
   const parsed = stageMapSchema.safeParse(map);
   if (!parsed.success) return fail("VALIDATION", parsed.error.issues[0]?.message || "Invalid stage mapping.");
   // Only real statuses of this workspace (or a status category, used as a fallback) can be mapped.
@@ -170,6 +175,7 @@ export async function updateCapiStageMapAction(map: Record<string, string>) {
   try {
     const view = await TenantIntegrationsService.upsertCapiStageMap(organizationId, parsed.data);
     revalidatePath(PAGE);
+    await AuditService.log({ organizationId, userId, action: "integration.capi_stage_map", entityType: "organization", entityId: organizationId });
     return ok(view);
   } catch (e) {
     return actionFail(e);
@@ -193,10 +199,11 @@ export async function sendTestCapiEventAction(input: z.input<typeof capiSchema>)
 }
 
 export async function setInboundEmailAction(enabled: boolean) {
-  const { organizationId } = await requirePermission("settings.manage");
+  const { organizationId, userId } = await requirePermission("settings.manage");
   try {
     const view = await TenantIntegrationsService.setInboundEmail(organizationId, Boolean(enabled));
     revalidatePath(PAGE);
+    await AuditService.log({ organizationId, userId, action: "integration.inbound_email_set", entityType: "organization", entityId: organizationId });
     return ok(view);
   } catch (e) {
     return actionFail(e);
@@ -204,10 +211,11 @@ export async function setInboundEmailAction(enabled: boolean) {
 }
 
 export async function rotateInboundTokenAction() {
-  const { organizationId } = await requirePermission("settings.manage");
+  const { organizationId, userId } = await requirePermission("settings.manage");
   try {
     const view = await TenantIntegrationsService.rotateInboundToken(organizationId);
     revalidatePath(PAGE);
+    await AuditService.log({ organizationId, userId, action: "integration.inbound_token_rotate", entityType: "organization", entityId: organizationId });
     return ok(view);
   } catch (e) {
     return actionFail(e);

@@ -1,26 +1,12 @@
-import { Queue, Worker, Job } from "bullmq";
+import { Worker, Job } from "bullmq";
 import { createRedis, quietErrors } from "../redis";
 import { db } from "@/db";
 import { automationRuns } from "@/db/schema";
 import { eq, lt } from "drizzle-orm";
 import { AutomationEngine } from "@/lib/automation/engine";
-import { EventPayload } from "@/lib/events/emitter";
+import { AUTOMATION_QUEUE_NAME, type AutomationJobData } from "../queues/automationQueue";
 
 const connection = createRedis({ maxRetriesPerRequest: null });
-
-export const AUTOMATION_QUEUE_NAME = "automations";
-export const automationQueue = new Queue(AUTOMATION_QUEUE_NAME, {
-  connection,
-  defaultJobOptions: { removeOnComplete: true, removeOnFail: 100 },
-});
-
-export interface AutomationJobData {
-  automationId: string;
-  leadId: string;
-  triggerType: string;
-  idempotencyKey: string;
-  payload: EventPayload;
-}
 
 export const automationWorker = new Worker<AutomationJobData>(
   AUTOMATION_QUEUE_NAME,

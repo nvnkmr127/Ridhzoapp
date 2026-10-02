@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { escapeLike } from "@/lib/utils";
 import { orgDialCode } from "@/lib/leads/orgDialCode";
 import { leads, leadPipelineStages, leadStatusHistory, leadTags, tags, activities, followUps, reminders, leadAttachments, notifications, whatsappMessages, customStatusConfigs } from "@/db/schema";
 import { DEFAULT_SYSTEM_STATUSES } from "./customStatusSchemaService";
@@ -71,11 +72,11 @@ export const phoneDigitsSql = sql`regexp_replace(${leads.phone}, '[^0-9]', '', '
  */
 export function leadSearchCondition(raw: string) {
   const term = raw.trim();
-  const like = `%${term}%`;
+  const like = `%${escapeLike(term)}%`;
   const digits = term.replace(/[^0-9]/g, "");
   const conds = [ilike(leads.name, like), ilike(leads.email, like), ilike(leads.company, like)];
   // Reference numbers: "CRN-2609-0042" (or a fragment of it) and "#1042" / "1042" for the Lead #.
-  if (/^crn-?[0-9-]*$/i.test(term) || /^[0-9]{4}-[0-9]+$/.test(term)) conds.push(ilike(leads.crn, `%${term}%`));
+  if (/^crn-?[0-9-]*$/i.test(term) || /^[0-9]{4}-[0-9]+$/.test(term)) conds.push(ilike(leads.crn, `%${escapeLike(term)}%`));
   const num = /^#?(\d{1,9})$/.exec(term);
   if (num) conds.push(eq(leads.displayId, Number(num[1])));
   conds.push(digits.length >= 3 ? sql`${phoneDigitsSql} ILIKE ${"%" + digits + "%"}` : ilike(leads.phone, like));
@@ -155,7 +156,9 @@ export class LeadService {
 
     let newLead;
     try {
-      [newLead] = await db.insert(leads).values({
+      [newLead] = await PlanService.serialized(organizationId, "leads", async () => {
+        await PlanService.assertCanAddLead(organizationId); // re-check under the lock (see serialized)
+        return db.insert(leads).values({
         organizationId,
         name: data.name.trim(),
         email: cleanEmail || null,
@@ -166,6 +169,7 @@ export class LeadService {
         customData: data.customData ?? {},
         status: "new",
       }).returning();
+      });
     } catch (e: any) {
       // If constraint violation occurs due to a soft-deleted lead, clear it and retry once
       // Drizzle wraps the driver error ("Failed query: …"); the Postgres code lives on e.cause.
@@ -745,24 +749,36 @@ export class LeadService {
   // so we clear them first — otherwise the leads delete hits a foreign-key violation.
   private static async hardDeleteLeads(leadIds: string[]): Promise<number> {
     if (leadIds.length === 0) return 0;
-    await db.delete(activities).where(inArray(activities.leadId, leadIds));
-    // reminders reference follow_ups (a grandchild), so clear them before their follow-ups.
-    const fu = await db.select({ id: followUps.id }).from(followUps).where(inArray(followUps.leadId, leadIds));
-    if (fu.length) await db.delete(reminders).where(inArray(reminders.followUpId, fu.map((f) => f.id)));
-    await db.delete(followUps).where(inArray(followUps.leadId, leadIds));
-    const files = await db.select({ ref: leadAttachments.fileUrl }).from(leadAttachments).where(inArray(leadAttachments.leadId, leadIds));
-    await db.delete(leadAttachments).where(inArray(leadAttachments.leadId, leadIds));
-    // Purge the stored files too (R2/local) — otherwise a purged lead's documents live on in the bucket.
-    if (files.length) {
-      const { deleteAttachment } = await import("@/lib/storage/attachments");
-      await Promise.all(files.map((f) => deleteAttachment(f.ref)));
+    // Chunked (Postgres caps a statement at 65 535 parameters; a tenant can have far more deleted leads)
+    // and one transaction per chunk, so a failure rolls that chunk back whole instead of leaving
+    // half-purged leads. Stored files are deleted only AFTER the rows are gone (a failed delete can then
+    // only orphan a file, never leave a row pointing at a missing one).
+    const CHUNK = 1000;
+    let total = 0;
+    for (let i = 0; i < leadIds.length; i += CHUNK) {
+      const ids = leadIds.slice(i, i + CHUNK);
+      const { removed, refs } = await db.transaction(async (tx) => {
+        await tx.delete(activities).where(inArray(activities.leadId, ids));
+        // reminders reference follow_ups (a grandchild), so clear them before their follow-ups.
+        const fu = await tx.select({ id: followUps.id }).from(followUps).where(inArray(followUps.leadId, ids));
+        if (fu.length) await tx.delete(reminders).where(inArray(reminders.followUpId, fu.map((f) => f.id)));
+        await tx.delete(followUps).where(inArray(followUps.leadId, ids));
+        const files = await tx.select({ ref: leadAttachments.fileUrl }).from(leadAttachments).where(inArray(leadAttachments.leadId, ids));
+        await tx.delete(leadAttachments).where(inArray(leadAttachments.leadId, ids));
+        await tx.delete(leadStatusHistory).where(inArray(leadStatusHistory.leadId, ids));
+        await tx.delete(leadTags).where(inArray(leadTags.leadId, ids));
+        await tx.delete(notifications).where(inArray(notifications.leadId, ids));
+        await tx.delete(whatsappMessages).where(inArray(whatsappMessages.leadId, ids));
+        const deleted = await tx.delete(leads).where(inArray(leads.id, ids)).returning({ id: leads.id });
+        return { removed: deleted.length, refs: files.map((f) => f.ref) };
+      });
+      total += removed;
+      if (refs.length) {
+        const { deleteAttachment } = await import("@/lib/storage/attachments");
+        await Promise.all(refs.map((r) => deleteAttachment(r)));
+      }
     }
-    await db.delete(leadStatusHistory).where(inArray(leadStatusHistory.leadId, leadIds));
-    await db.delete(leadTags).where(inArray(leadTags.leadId, leadIds));
-    await db.delete(notifications).where(inArray(notifications.leadId, leadIds));
-    await db.delete(whatsappMessages).where(inArray(whatsappMessages.leadId, leadIds));
-    const deleted = await db.delete(leads).where(inArray(leads.id, leadIds)).returning({ id: leads.id });
-    return deleted.length;
+    return total;
   }
 
   // Permanent removal — the only path that actually deletes rows. Gate behind leads.purge.
@@ -800,7 +816,7 @@ export class LeadService {
   }
 
   // Delegate to canonical AssignmentService
-  static async assignLead(leadId: string, ownerId: string | null, assignedById?: string, organizationId?: string) {
+  static async assignLead(leadId: string, ownerId: string | null, assignedById: string | undefined, organizationId: string) {
     const { AssignmentService } = await import("./assignmentService");
     return AssignmentService.assignLead({
       leadId,
@@ -810,10 +826,8 @@ export class LeadService {
     });
   }
 
-  static async changeStatus(leadId: string, newStatus: string, changedById?: string | null, organizationId?: string, reason?: string | null, source?: string) {
-    const idWhere = organizationId
-      ? and(eq(leads.id, leadId), eq(leads.organizationId, organizationId))
-      : eq(leads.id, leadId);
+  static async changeStatus(leadId: string, newStatus: string, changedById: string | null | undefined, organizationId: string, reason?: string | null, source?: string) {
+    const idWhere = and(eq(leads.id, leadId), eq(leads.organizationId, organizationId));
 
     const [currentLead] = await db.select({ status: leads.status, organizationId: leads.organizationId }).from(leads).where(idWhere).limit(1);
     if (!currentLead) throw new Error("Lead not found");

@@ -24,7 +24,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   try {
     const { WhatsAppService } = await import("@/lib/messaging/whatsapp/service");
-    const result = await WhatsAppService.send({ leadId: id, ...parsed.data, userId: auth.userId ?? undefined });
+    const result = await WhatsAppService.send({ leadId: id, ...parsed.data, organizationId: auth.organizationId, userId: auth.userId ?? undefined });
     return NextResponse.json({ data: result }, { status: 201 });
   } catch (e: any) {
     // Business-rule failures (outside the 24h window, not configured, no phone) are the rep's to fix.

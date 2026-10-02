@@ -44,12 +44,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return /^https?:\/\//i.test(a.fileUrl) ? NextResponse.redirect(a.fileUrl) : new NextResponse("Not found", { status: 404 });
   }
 
-  // If a public R2 domain is configured, redirect directly to it to save Vercel bandwidth
-  if (process.env.R2_PUBLIC_URL && a.fileUrl.startsWith("r2:")) {
-    const baseUrl = process.env.R2_PUBLIC_URL.replace(/\/$/, "");
-    const objectKey = a.fileUrl.slice(3);
-    return NextResponse.redirect(`${baseUrl}/${objectKey}`);
-  }
+  // Always proxied: the bucket stays PRIVATE and every byte is served only after the access checks
+  // above. (A redirect to a public R2 domain would make the file readable by anyone holding the URL,
+  // forever, without nosniff/sandbox headers — R2_PUBLIC_URL is intentionally ignored.)
 
   const file = await openAttachment(a.fileUrl);
   if (!file) return new NextResponse("File is no longer available", { status: 410 });

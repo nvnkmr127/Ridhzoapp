@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { db } from "@/db";
 import { AuditService } from "@/domains/audit/service";
 
-vi.mock("@/db", () => ({ db: { select: vi.fn(), delete: vi.fn() } }));
+vi.mock("@/db", () => {
+  const db: any = { select: vi.fn(), delete: vi.fn() };
+  db.transaction = (cb: (tx: unknown) => unknown) => cb(db); // the purge runs in a transaction; same mocks inside
+  return { db };
+});
 vi.mock("@/domains/audit/service", () => ({ AuditService: { log: vi.fn() } }));
 
 import { LeadService } from "./service";

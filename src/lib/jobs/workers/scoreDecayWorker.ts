@@ -2,8 +2,8 @@ import { Worker, Queue, Job } from "bullmq";
 import { createRedis, quietErrors } from "../redis";
 import { ScoringService } from "@/domains/leads/scoringService";
 import { db } from "@/db";
-import { automationRuns } from "@/db/schema";
-import { and, lt, inArray } from "drizzle-orm";
+import { automationRuns, webhookEvents } from "@/db/schema";
+import { and, eq, lt, inArray } from "drizzle-orm";
 
 export const SCORE_DECAY_QUEUE_NAME = "score-decay";
 
@@ -18,6 +18,19 @@ export async function pruneOldAutomationRuns(retentionDays = RETENTION_DAYS) {
     .delete(automationRuns)
     .where(and(lt(automationRuns.startedAt, cutoff), inArray(automationRuns.status, ["completed", "skipped", "failed"])))
     .returning({ id: automationRuns.id });
+  return deleted.length;
+}
+
+// webhook_events keeps the full inbound payload (lead PII) of every form/webhook/Facebook delivery. Once
+// processed and past the window it is dead weight and a privacy liability. 'failed' and 'pending' rows
+// are kept: they are replayed after a Facebook reconnect / by the pending sweeper.
+const WEBHOOK_EVENT_RETENTION_DAYS = 30;
+export async function pruneProcessedWebhookEvents(retentionDays = WEBHOOK_EVENT_RETENTION_DAYS) {
+  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+  const deleted = await db
+    .delete(webhookEvents)
+    .where(and(lt(webhookEvents.createdAt, cutoff), eq(webhookEvents.status, "processed")))
+    .returning({ id: webhookEvents.id });
   return deleted.length;
 }
 
@@ -41,8 +54,12 @@ export async function processScoreDecayJob(job: Job<ScoreDecayJobData>) {
     console.error("[SCORE_DECAY_WORKER] automation_runs prune failed:", e);
     return 0;
   });
-  console.log(`[SCORE_DECAY_WORKER] Processed score decay for ${count} leads (Org: ${job.data?.organizationId ?? "all"}); pruned ${prunedRuns} old automation runs`);
-  return { processed: count, prunedRuns };
+  const prunedEvents = await pruneProcessedWebhookEvents().catch((e) => {
+    console.error("[SCORE_DECAY_WORKER] webhook_events prune failed:", e);
+    return 0;
+  });
+  console.log(`[SCORE_DECAY_WORKER] Processed score decay for ${count} leads (Org: ${job.data?.organizationId ?? "all"}); pruned ${prunedRuns} old automation runs, ${prunedEvents} processed webhook events`);
+  return { processed: count, prunedRuns, prunedEvents };
 }
 
 export function createScoreDecayWorker(redisUrl?: string) {

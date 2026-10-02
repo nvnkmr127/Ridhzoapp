@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { submitPublicLeadAction } from "@/lib/actions/publicLead";
+import { BotShield } from "@/components/security/Turnstile";
 import { DEFAULT_FORM_FIELDS, groupIntoSteps, type FormField } from "@/lib/leads/formFields";
 
 export function PublicLeadForm({
@@ -20,6 +21,9 @@ export function PublicLeadForm({
   const [step, setStep] = React.useState(0);
   const [values, setValues] = React.useState<Record<string, string>>({});
   const [saving, setSaving] = React.useState(false);
+  const [shield, setShield] = React.useState({ token: "", hp: "" });
+  const onToken = React.useCallback((token: string) => setShield((s) => ({ ...s, token })), []);
+  const onHoneypot = React.useCallback((hp: string) => setShield((s) => ({ ...s, hp })), []);
   const [done, setDone] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const set = (k: string, v: string) => setValues((s) => ({ ...s, [k]: v }));
@@ -45,7 +49,7 @@ export function PublicLeadForm({
     }
     setSaving(true);
     try {
-      const res = await submitPublicLeadAction(sourceId, values);
+      const res = await submitPublicLeadAction(sourceId, { ...values, _hp: shield.hp, _cf: shield.token });
       if (!res.ok) {
         setError(res.message);
         return;
@@ -161,6 +165,7 @@ export function PublicLeadForm({
         return <Input key={f.key} type={f.type} placeholder={label} value={values[f.key] ?? ""} onChange={(e) => set(f.key, e.target.value)} />;
       })}
 
+      {isLast && <BotShield onToken={onToken} onHoneypot={onHoneypot} />}
       <div className="flex gap-2">
         {step > 0 && (
           <Button type="button" variant="outline" className="flex-1" onClick={() => { setError(null); setStep((s) => s - 1); }} disabled={saving}>

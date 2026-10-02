@@ -157,7 +157,8 @@ export class BillingService {
   // doesn't leave the customer billed twice.
   static async activate(organizationId: string, subscriptionId: string) {
     const sub = await razorpay.fetchSubscription(subscriptionId);
-    if (sub.notes?.organizationId && sub.notes.organizationId !== organizationId) {
+    // Every subscription we create carries its workspace; one without (created elsewhere) can't be claimed.
+    if (sub.notes?.organizationId !== organizationId) {
       throw new Error("This subscription belongs to another workspace.");
     }
     const plan = razorpay.planForPlanId(sub.plan_id);
@@ -196,7 +197,8 @@ export class BillingService {
       );
     }
 
-    if (sub.notes?.couponCode) {
+    // Redeem once per subscription: verify + webhook retries both reach here, and the counter must not move each time.
+    if (sub.notes?.couponCode && before?.subscriptionId !== sub.id) {
       const { CouponService } = await import("./couponService");
       await CouponService.redeem(sub.notes.couponCode).catch(() => {});
     }

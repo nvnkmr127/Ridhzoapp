@@ -1,28 +1,13 @@
-import { Queue, Worker, Job } from "bullmq";
+import { Worker, Job } from "bullmq";
 import { createRedis, quietErrors } from "../redis";
 import { db } from "@/db";
 import { webhookEvents } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { IngestionService } from "@/lib/leads/ingestion";
 
+import { INGESTION_QUEUE_NAME, type IngestionJobData } from "../queues/ingestionQueue";
+
 const connection = createRedis({ maxRetriesPerRequest: null });
-
-export const INGESTION_QUEUE_NAME = "lead-ingestion";
-export const ingestionQueue = new Queue(INGESTION_QUEUE_NAME, {
-  connection,
-  // A Graph fetch inside the worker can fail transiently (rate limits, blips); without retries a
-  // single hiccup would lose the lead. Retry with exponential backoff before giving up.
-  defaultJobOptions: {
-    attempts: 5,
-    backoff: { type: "exponential", delay: 5000 },
-    removeOnComplete: 1000,
-    removeOnFail: 5000,
-  },
-});
-
-export interface IngestionJobData {
-  webhookEventId: string;
-}
 
 export const ingestionWorker = new Worker<IngestionJobData>(
   INGESTION_QUEUE_NAME,

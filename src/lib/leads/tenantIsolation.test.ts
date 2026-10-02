@@ -22,6 +22,7 @@ vi.mock('@/db', () => ({
   db: {
     select: vi.fn().mockReturnThis(),
     from: vi.fn().mockReturnThis(),
+    innerJoin: vi.fn().mockReturnThis(),
     where: vi.fn().mockReturnThis(),
     orderBy: vi.fn().mockReturnThis(),
     limit: vi.fn().mockResolvedValue([]),
@@ -33,6 +34,7 @@ vi.mock('@/db', () => ({
       returning: vi.fn().mockResolvedValue([{ id: 'new-tenant-lead' }])
     }),
     transaction: vi.fn(async (cb: any) => cb({
+      execute: vi.fn().mockResolvedValue([]),
       select: vi.fn().mockReturnThis(),
       from: vi.fn().mockReturnThis(),
       where: vi.fn().mockReturnThis(),
@@ -91,7 +93,7 @@ describe('Tenant Isolation Tests', () => {
 
   it('should scope WhatsApp inbound matching to organization when provided', async () => {
     const { db } = await import('@/db');
-    ((db as any).limit as any).mockResolvedValueOnce([{ id: 'lead-org-A', phone: '+919876543210', organizationId: 'org-A' }]);
+    ((db as any).limit as any).mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 'lead-org-A', phone: '+919876543210', organizationId: 'org-A' }]);
 
     const res = await WhatsAppService.recordInbound({
       fromPhone: '+919876543210',

@@ -1,6 +1,7 @@
 "use server";
 
 import { requirePermission } from "@/lib/rbac";
+import { AuditService } from "@/domains/audit/service";
 import { LeadDistributionService, type DistributionRuleInput } from "@/domains/integrations/leadDistributionService";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -57,11 +58,12 @@ async function parseRule(organizationId: string, input: DistributionRuleInput) {
 }
 
 export async function createDistributionRuleAction(input: DistributionRuleInput) {
-  const { organizationId } = await requirePermission("api.manage");
+  const { organizationId, userId } = await requirePermission("api.manage");
   const parsed = await parseRule(organizationId, input);
   if (!parsed.ok) return parsed;
   try {
     const row = await LeadDistributionService.create(organizationId, parsed.data);
+    await AuditService.log({ organizationId, userId, action: "distribution_rule.create", entityType: "distribution_rule", entityId: (row as { id?: string }).id ?? null });
     revalidatePath("/settings/distribution");
     return ok(row);
   } catch (e) {
@@ -70,12 +72,13 @@ export async function createDistributionRuleAction(input: DistributionRuleInput)
 }
 
 export async function updateDistributionRuleAction(id: string, input: DistributionRuleInput) {
-  const { organizationId } = await requirePermission("api.manage");
+  const { organizationId, userId } = await requirePermission("api.manage");
   const parsed = await parseRule(organizationId, input);
   if (!parsed.ok) return parsed;
   try {
     const row = await LeadDistributionService.update(organizationId, id, parsed.data);
     if (!row) return fail("NOT_FOUND", "This rule no longer exists.");
+    await AuditService.log({ organizationId, userId, action: "distribution_rule.update", entityType: "distribution_rule", entityId: id });
     revalidatePath("/settings/distribution");
     return ok(row);
   } catch (e) {
@@ -96,9 +99,10 @@ export async function toggleDistributionRuleAction(id: string, isActive: boolean
 }
 
 export async function deleteDistributionRuleAction(id: string) {
-  const { organizationId } = await requirePermission("api.manage");
+  const { organizationId, userId } = await requirePermission("api.manage");
   try {
     await LeadDistributionService.remove(organizationId, id);
+    await AuditService.log({ organizationId, userId, action: "distribution_rule.delete", entityType: "distribution_rule", entityId: id });
     revalidatePath("/settings/distribution");
     return ok({ deleted: true });
   } catch (e) {

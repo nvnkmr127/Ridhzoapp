@@ -1,6 +1,7 @@
 "use server";
 
 import { headers } from "next/headers";
+import { ipFromHeaders } from "@/lib/clientIp";
 import { db } from "@/db";
 import { webhookEvents } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -8,12 +9,16 @@ import { LeadSourceService } from "@/domains/leads/sourceService";
 import { RateLimiter } from "@/lib/rate-limit";
 import { ok, fail, actionFail } from "@/lib/actions/result";
 import { resolveFormFields, buildSubmission } from "@/lib/leads/formFields";
+import { verifyTurnstile } from "@/lib/security/botCheck";
 
 // Public (no auth) lead capture from a hosted web form. The sourceId in the URL is the only
 // "credential"; it only lets a visitor create a lead. Fields are whatever the tenant configured
 // for this source — validated server-side against that saved schema, never the client's claim.
 // Rate-limited per source+IP.
-export async function submitPublicLeadAction(sourceId: string, input: Record<string, string>) {
+export async function submitPublicLeadAction(sourceId: string, rawInput: Record<string, string>) {
+  // Bot-check fields ride along with the form values; they are never lead data.
+  const { _hp: honeypot, _cf: captcha, ...input } = rawInput ?? {};
+  if (honeypot) return ok({ submitted: true }); // a bot filled the trap: look successful, store nothing
   const source = await LeadSourceService.getSource(sourceId);
   if (!source || !source.isActive || !source.organizationId) {
     return fail("NOT_FOUND", "This form is no longer active.");
@@ -23,14 +28,18 @@ export async function submitPublicLeadAction(sourceId: string, input: Record<str
   const built = buildSubmission(fields, input ?? {});
   if (!built.ok) return fail("VALIDATION", built.error);
 
-  // x-forwarded-for is a client-controlled list ("client, proxy1, proxy2"); take the leftmost
-  // entry so header reordering can't mint fresh per-IP buckets. Since even the leftmost is
-  // spoofable, ALSO enforce a per-source ceiling that no amount of IP rotation can slip past.
-  const ip = ((await headers()).get("x-forwarded-for") || "unknown").split(",")[0].trim() || "unknown";
+  // ipFromHeaders trusts only what our edge wrote (see lib/clientIp). A per-source ceiling ALSO applies,
+  // so no amount of IP rotation can slip past.
+  const ip = ipFromHeaders(await headers());
   const perIp = await RateLimiter.checkLimit(`public-form:${sourceId}:${ip}`, 10, 60);
   if (!perIp.success) {
     return fail("RATE_LIMIT", "Too many submissions. Please wait a moment and try again.");
   }
+  if (!(await verifyTurnstile(captcha, ip))) return fail("VALIDATION", "Please complete the verification check and try again.");
+  // A per-workspace hourly ceiling too: each accepted submission eats the tenant's lead quota, so a flood
+  // (rotating IPs and source ids) must not be able to fill it.
+  const perOrg = await RateLimiter.checkLimit(`public-form-org:${source.organizationId}`, 300, 60 * 60);
+  if (!perOrg.success) return fail("RATE_LIMIT", "This form is receiving too many submissions right now. Please try again later.");
   const perSource = await RateLimiter.checkLimit(`public-form-src:${sourceId}`, 200, 60);
   if (!perSource.success) {
     return fail("RATE_LIMIT", "This form is receiving too many submissions right now. Please try again shortly.");

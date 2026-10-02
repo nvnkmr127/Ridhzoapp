@@ -72,7 +72,7 @@ describe("FacebookIngestionService.processEvent", () => {
     h.isAuthError.mockReturnValue(true);
     const res = await FacebookIngestionService.processEvent(event({ page_id: "p1", form_id: "f1", leadgen_id: "lg1" }));
     expect(res).toEqual({ status: "failed", reason: "needs_reconnect" });
-    expect(h.markNeedsReconnect).toHaveBeenCalledWith("src-1");
+    expect(h.markNeedsReconnect).toHaveBeenCalledWith("src-1", expect.any(String));
     expect(h.processLead).toHaveBeenCalledTimes(1);
     expect(h.updates.at(-1)).toMatchObject({ status: "failed", errorLog: { reason: "auth_error_needs_reconnect" } });
   });
@@ -108,7 +108,7 @@ describe("FacebookIngestionService.processEvent", () => {
     h.isAuthError.mockReturnValue(true);
     const res = await FacebookIngestionService.processEvent(event({ page_id: "p1", form_id: "f1", leadgen_id: "lg1" }));
     expect(res).toEqual({ status: "failed", reason: "needs_reconnect" });
-    expect(h.markNeedsReconnect).toHaveBeenCalledWith("src-1");
+    expect(h.markNeedsReconnect).toHaveBeenCalledWith("src-1", expect.any(String));
   });
 
   it("fetches, maps and ingests a real lead, marking the event processed", async () => {

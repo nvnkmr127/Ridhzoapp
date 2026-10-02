@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { automationConditions, automationActions, leads, users } from "@/db/schema";
+import { automations, automationConditions, automationActions, leads, users } from "@/db/schema";
 import { eq, asc, and } from "drizzle-orm";
 import { LeadService } from "@/domains/leads/service";
 import { FollowUpService } from "@/domains/follow-ups/service";
@@ -23,6 +23,15 @@ export function resolveDueAt(config: any): Date | null {
 
 export class AutomationEngine {
   static async evaluateAndExecute(automationId: string, leadId: string, payload?: EventPayload) {
+    // Tenancy: an automation may only act on a lead of its own workspace (the dispatcher already filters,
+    // this is the backstop for every other caller).
+    const [[auto], [leadOrg]] = await Promise.all([
+      db.select({ organizationId: automations.organizationId }).from(automations).where(eq(automations.id, automationId)).limit(1),
+      db.select({ organizationId: leads.organizationId }).from(leads).where(eq(leads.id, leadId)).limit(1),
+    ]);
+    if (!auto || !leadOrg || auto.organizationId !== leadOrg.organizationId) {
+      throw new Error("Automation and lead are not in the same workspace");
+    }
     // 1. Evaluate Conditions
     const conditionsData = await db
       .select()
@@ -85,6 +94,12 @@ export class AutomationEngine {
     return evaluateConditionGroup(lead, group);
   }
 
+  private static async leadOrg(leadId: string): Promise<string> {
+    const [l] = await db.select({ organizationId: leads.organizationId }).from(leads).where(eq(leads.id, leadId)).limit(1);
+    if (!l) throw new Error(`Lead ${leadId} not found`);
+    return l.organizationId;
+  }
+
   private static async executeAction(leadId: string, type: string, config: any, payload?: EventPayload) {
     const rawUserId = payload?.userId || payload?.ownerId;
     const isUuid = (str?: string | null): str is string =>
@@ -105,6 +120,7 @@ export class AutomationEngine {
         if (!config.userId) throw new Error("Missing userId for assign_lead");
         await AssignmentService.assignLead({
           leadId,
+          organizationId: await this.leadOrg(leadId),
           ownerId: config.userId,
           assignedById: actorUserId ?? "automation",
           source: "automation",
@@ -127,7 +143,7 @@ export class AutomationEngine {
 
       case 'change_status':
         if (!config.status) throw new Error("Missing status for change_status");
-        await LeadService.changeStatus(leadId, config.status, actorUserId, undefined, undefined, "automation");
+        await LeadService.changeStatus(leadId, config.status, actorUserId, await this.leadOrg(leadId), undefined, "automation");
         break;
 
       case 'create_task':

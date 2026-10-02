@@ -20,13 +20,14 @@ export async function listWebhookEndpointsAction() {
 }
 
 export async function createWebhookEndpointAction(input: { url: string; events: string[] }) {
-  const { organizationId } = await requirePermission("api.manage");
+  const { organizationId, userId } = await requirePermission("api.manage");
   const parsed = createSchema.safeParse(input);
   if (!parsed.success) {
     return fail("VALIDATION", parsed.error.issues[0]?.message ?? "Please provide a valid URL and at least one event.");
   }
   try {
     const row = await WebhookEndpointService.create(organizationId, parsed.data.url, parsed.data.events);
+    await AuditService.log({ organizationId, userId, action: "webhook.create", entityType: "webhook_endpoint", entityId: (row as { id?: string }).id ?? null, metadata: { url: parsed.data.url, events: parsed.data.events } });
     revalidatePath("/settings/webhooks");
     return ok(row);
   } catch (e) {
@@ -35,10 +36,11 @@ export async function createWebhookEndpointAction(input: { url: string; events: 
 }
 
 export async function toggleWebhookEndpointAction(id: string, isActive: boolean) {
-  const { organizationId } = await requirePermission("api.manage");
+  const { organizationId, userId } = await requirePermission("api.manage");
   try {
     const row = await WebhookEndpointService.setActive(organizationId, id, isActive);
     if (!row) return fail("NOT_FOUND", "This webhook no longer exists.");
+    await AuditService.log({ organizationId, userId, action: isActive ? "webhook.activate" : "webhook.pause", entityType: "webhook_endpoint", entityId: id });
     revalidatePath("/settings/webhooks");
     return ok(row);
   } catch (e) {
@@ -47,9 +49,10 @@ export async function toggleWebhookEndpointAction(id: string, isActive: boolean)
 }
 
 export async function deleteWebhookEndpointAction(id: string) {
-  const { organizationId } = await requirePermission("api.manage");
+  const { organizationId, userId } = await requirePermission("api.manage");
   try {
     await WebhookEndpointService.remove(organizationId, id);
+    await AuditService.log({ organizationId, userId, action: "webhook.delete", entityType: "webhook_endpoint", entityId: id });
     revalidatePath("/settings/webhooks");
     return ok({ deleted: true });
   } catch (e) {

@@ -12,6 +12,7 @@
     "db:push": "drizzle-kit push",
     "db:seed": "tsx -r dotenv/config src/db/seed.ts",
     "worker": "tsx -r dotenv/config src/worker.ts",
+    "admin:reset-mfa": "tsx -r dotenv/config src/scripts/reset-admin-mfa.ts",
     "grant:superadmin": "tsx -r dotenv/config src/scripts/grant-super-admin.ts",
     "backfill:enrichment": "tsx -r dotenv/config src/scripts/backfill-enrichment.ts",
     "sync:contacts": "tsx -r dotenv/config src/scripts/sync-resend-contacts.ts",

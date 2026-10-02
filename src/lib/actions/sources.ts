@@ -1,5 +1,6 @@
 "use server";
 
+import { AuditService } from "@/domains/audit/service";
 import { requireOrg, requirePermission } from "@/lib/rbac";
 import { LeadSourceService, toClientSource } from "@/domains/leads/sourceService";
 import { revalidatePath } from "next/cache";
@@ -27,7 +28,7 @@ async function requeueAuthFailedEvents(pageId: string): Promise<number> {
         ),
       );
     if (rows.length === 0) return 0;
-    const { ingestionQueue } = await import("@/lib/jobs/workers/ingestionWorker");
+    const { ingestionQueue } = await import("@/lib/jobs/queues/ingestionQueue");
     for (const r of rows) {
       await db.update(webhookEvents).set({ status: "pending", errorLog: null }).where(eq(webhookEvents.id, r.id));
       await ingestionQueue.add(`ingest-fb-replay-${r.id}`, { webhookEventId: r.id, provider: "facebook" });
@@ -55,11 +56,12 @@ const createSchema = z.object({
 });
 
 export async function createSourceAction(input: z.infer<typeof createSchema>) {
-  const { organizationId } = await requirePermission("sources.manage");
+  const { organizationId, userId } = await requirePermission("sources.manage");
   const parsed = createSchema.safeParse(input);
   if (!parsed.success) return fail("VALIDATION", "Please enter a name and choose a valid source type.");
   try {
     const row = await LeadSourceService.createSource({ ...parsed.data, organizationId });
+    await AuditService.log({ organizationId, userId, action: "source.create", entityType: "lead_source", entityId: row.id, metadata: { name: parsed.data.name, type: parsed.data.type } });
     revalidatePath("/settings/sources");
     return ok(toClientSource(row));
   } catch (e) {
@@ -82,10 +84,11 @@ export async function updateSourceFormAction(id: string, fields: unknown) {
 }
 
 export async function toggleSourceAction(id: string, isActive: boolean) {
-  const { organizationId } = await requirePermission("sources.manage");
+  const { organizationId, userId } = await requirePermission("sources.manage");
   try {
     const row = await LeadSourceService.updateSource(id, { isActive: isActive ? 1 : 0 }, organizationId);
     if (!row) return fail("NOT_FOUND", "This source no longer exists. Refresh the page.");
+    await AuditService.log({ organizationId, userId, action: isActive ? "source.activate" : "source.pause", entityType: "lead_source", entityId: id });
     revalidatePath("/settings/sources");
     return ok({ id, isActive });
   } catch (e) {
@@ -108,10 +111,11 @@ export async function renameSourceAction(id: string, name: string) {
 }
 
 export async function deleteSourceAction(id: string) {
-  const { organizationId } = await requirePermission("sources.manage");
+  const { organizationId, userId } = await requirePermission("sources.manage");
   try {
     const removed = await LeadSourceService.deleteSource(id, organizationId);
     if (!removed) return fail("NOT_FOUND", "This source no longer exists. Refresh the page.");
+    await AuditService.log({ organizationId, userId, action: "source.delete", entityType: "lead_source", entityId: id, metadata: { name: removed.name, type: removed.type } });
     revalidatePath("/settings/sources");
     return ok({ id });
   } catch (e) {
@@ -231,7 +235,7 @@ export async function subscribeFacebookWebhooksAction(sourceId: string) {
     revalidatePath("/settings/sources");
     return ok({ subscribed: true });
   } catch (e) {
-    if (await flagIfAuthError(e, sourceId)) {
+    if (await flagIfAuthError(e, sourceId, organizationId)) {
       return fail("VALIDATION", "Facebook access for this Page has expired. Please reconnect the Page, then try again.");
     }
     return actionFail(e);
@@ -255,7 +259,7 @@ export async function listFacebookFormsAction(sourceId: string) {
     const forms = await MetaTokenRefreshService.listPageLeadForms(config.pageId, readSecret(config.pageAccessToken)!);
     return ok({ forms });
   } catch (e) {
-    if (await flagIfAuthError(e, sourceId)) {
+    if (await flagIfAuthError(e, sourceId, organizationId)) {
       return fail("VALIDATION", "Facebook access for this Page has expired. Please reconnect the Page, then try again.");
     }
     return actionFail(e);
@@ -296,7 +300,7 @@ export async function listFacebookFormFieldsAction(sourceId: string) {
     }
     return ok({ fields: [...byKey.values()] });
   } catch (e) {
-    if (await flagIfAuthError(e, sourceId)) {
+    if (await flagIfAuthError(e, sourceId, organizationId)) {
       return fail("VALIDATION", "Facebook access for this Page has expired. Please reconnect the Page, then try again.");
     }
     return actionFail(e);
@@ -391,10 +395,10 @@ export async function updateSourceAdSpendAction(input: z.infer<typeof adSpendSch
 }
 
 /** If the error is a dead-token error, mark the source as needing reconnect. Returns whether it was. */
-async function flagIfAuthError(e: unknown, sourceId: string): Promise<boolean> {
+async function flagIfAuthError(e: unknown, sourceId: string, organizationId: string): Promise<boolean> {
   const { MetaTokenRefreshService } = await import("@/domains/leads/metaTokenRefreshService");
   if (!MetaTokenRefreshService.isAuthError(e)) return false;
-  await LeadSourceService.markNeedsReconnect(sourceId);
+  await LeadSourceService.markNeedsReconnect(sourceId, organizationId);
   return true;
 }
 
@@ -445,7 +449,7 @@ export async function syncPastFacebookLeadsAction(sourceId: string, range?: { si
         return LeadSourceService.updateSource(sourceId, { configPatch: { syncStatus: "idle" } }, organizationId);
       })
       .catch(() => {});
-    if (await flagIfAuthError(e, sourceId)) {
+    if (await flagIfAuthError(e, sourceId, organizationId)) {
       return fail("VALIDATION", "Facebook access for this Page has expired. Please reconnect the Page, then sync again.");
     }
     return actionFail(e);

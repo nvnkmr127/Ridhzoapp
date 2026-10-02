@@ -1,6 +1,6 @@
 "use server";
 
-import { requireOrg, requirePermission, roleAssignmentError } from "@/lib/rbac";
+import { requireOrg, requirePermission, roleAssignmentError, targetUserError } from "@/lib/rbac";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
@@ -62,8 +62,10 @@ export async function createUserAction(input: z.infer<typeof createUserSchema>) 
   const roleErr = await roleAssignmentError(organizationId, data.roleId);
   if (roleErr) return fail("FORBIDDEN", roleErr);
   try {
-    await PlanService.assertCanAddSeat(organizationId);
-    const user = await UserService.create(organizationId, data);
+    const user = await PlanService.serialized(organizationId, "seats", async () => {
+      await PlanService.assertCanAddSeat(organizationId);
+      return UserService.create(organizationId, data);
+    });
     await AuditService.log({ organizationId, userId, action: "user.create", entityType: "user", entityId: user.id, metadata: { email: data.email, phone: data.phone } });
     revalidatePath("/settings/users");
     revalidateTag("active-users");
@@ -82,6 +84,10 @@ export async function createUserAction(input: z.infer<typeof createUserSchema>) 
 export async function setUserActiveAction(id: string, isActive: boolean, reassignTo?: string | null) {
   const { organizationId, userId } = await requirePermission("users.manage");
   if (id === userId && !isActive) return fail("VALIDATION", "You can't deactivate your own account.");
+  if (!isActive) {
+    const targetErr = await targetUserError(organizationId, id);
+    if (targetErr) return fail("FORBIDDEN", targetErr);
+  }
   try {
     const u = await UserService.setActive(organizationId, id, isActive, isActive ? undefined : reassignTo);
     if (!u) return fail("NOT_FOUND", "That user no longer exists. Refresh the page.");
@@ -113,6 +119,8 @@ export async function setUserRoleAction(id: string, roleId: string) {
   const { organizationId, userId } = await requirePermission("users.manage");
   if (id === userId) return fail("VALIDATION", "You can't change your own role.");
   if (!roleId) return fail("VALIDATION", "Pick a role for this person.");
+  const targetErr = await targetUserError(organizationId, id);
+  if (targetErr) return fail("FORBIDDEN", targetErr);
   const roleErr = await roleAssignmentError(organizationId, roleId);
   if (roleErr) return fail("FORBIDDEN", roleErr);
   try {
@@ -129,6 +137,8 @@ export async function setUserRoleAction(id: string, roleId: string) {
 export async function deleteUserAction(id: string, reassignTo?: string | null) {
   const { organizationId, userId } = await requirePermission("users.manage");
   if (id === userId) return fail("VALIDATION", "You can't delete your own account.");
+  const targetErr = await targetUserError(organizationId, id);
+  if (targetErr) return fail("FORBIDDEN", targetErr);
   try {
     const u = await UserService.remove(organizationId, id, reassignTo);
     if (!u) return fail("NOT_FOUND", "That user no longer exists. Refresh the page.");

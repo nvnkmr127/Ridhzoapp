@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { assertWritable, requirePermission } from "@/lib/rbac";
-import { assertLeadAccess } from "@/lib/leads/access";
+import { assertLeadAccess, assertLeadWrite } from "@/lib/leads/access";
 import { MeetingService } from "@/domains/meetings/service";
 import {
   coordsSchema,
@@ -25,9 +25,11 @@ function revalidate(leadId: string) {
 
 // A meeting is reachable by the person attending it or booking it, or through lead access.
 async function assertMeetingAccess(id: string, ctx: { userId: string; organizationId: string }) {
+  const { hasPermission } = await import("@/lib/rbac");
+  if (!(await hasPermission("leads.edit"))) throw new Error("Forbidden");
   const m = await MeetingService.get(id, ctx.organizationId);
   if (!m) throw new Error("Meeting not found");
-  if (m.assigneeId !== ctx.userId && m.organizerId !== ctx.userId && !m.coAttendeeIds.includes(ctx.userId)) await assertLeadAccess(m.leadId, ctx);
+  if (m.assigneeId !== ctx.userId && m.organizerId !== ctx.userId && !m.coAttendeeIds.includes(ctx.userId)) await assertLeadWrite(m.leadId, ctx);
   return m;
 }
 
@@ -41,7 +43,7 @@ export async function createMeetingAction(leadId: string, input: MeetingForm) {
     return fail("VALIDATION", "That time has already passed. Pick a time in the future.", { startAt: "In the past." });
   }
   try {
-    await assertLeadAccess(leadId, { userId, organizationId });
+    await assertLeadWrite(leadId, { userId, organizationId });
     if (p.data.mode === "online" && p.data.autoMeet && !(await MeetingService.canAutoMeet([p.data.assigneeId, userId]))) {
       return fail("VALIDATION", "Connect Google Calendar (Settings → Integrations) to create Meet links, or paste a link instead.");
     }

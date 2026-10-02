@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { parseWebhook } from "@/lib/messaging/whatsapp/parse";
 import { WhatsAppService } from "@/lib/messaging/whatsapp/service";
 import { verifyMetaSignature } from "@/lib/webhooks/signature";
+import { timingSafeEqual } from "crypto";
 import { InboundIntentService } from "@/domains/leads/inboundIntentService";
 
 // GET: webhook verification handshake. Meta/most BSPs send hub.* params and expect the
@@ -22,13 +23,23 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const rawText = await req.text();
 
-  // Verify the payload signature when a secret is configured. Most BSPs proxy the Meta Cloud API
-  // and sign as `x-hub-signature-256` over the app secret. Unset = skipped (Watxio's scheme
-  // unconfirmed); rely on the verify token + hard-to-guess path until WATXIO_APP_SECRET is set.
+  // Authenticate the delivery. Preferred: HMAC signature (WATXIO_APP_SECRET). If the provider can't sign,
+  // a shared token (WATXIO_VERIFY_TOKEN) as ?token= or x-verify-token. In production a request that
+  // passes neither is refused — an unauthenticated endpoint would let anyone forge lead replies.
   const appSecret = process.env.WATXIO_APP_SECRET;
-  if (appSecret && !verifyMetaSignature(rawText, req.headers.get("x-hub-signature-256"), appSecret)) {
-    return NextResponse.json({ ok: false, error: "invalid signature" }, { status: 401 });
+  const verifyToken = process.env.WATXIO_VERIFY_TOKEN;
+  let authentic = false;
+  if (appSecret) {
+    authentic = verifyMetaSignature(rawText, req.headers.get("x-hub-signature-256"), appSecret);
+  } else if (verifyToken) {
+    const given = req.nextUrl.searchParams.get("token") ?? req.headers.get("x-verify-token") ?? "";
+    authentic = given.length === verifyToken.length && timingSafeEqual(Buffer.from(given), Buffer.from(verifyToken));
+  } else if (process.env.NODE_ENV !== "production") {
+    authentic = true; // local dev only
+  } else {
+    console.error("[whatsapp-webhook] neither WATXIO_APP_SECRET nor WATXIO_VERIFY_TOKEN is set — refusing unauthenticated inbound");
   }
+  if (!authentic) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
 
   let body: any;
   try {

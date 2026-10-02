@@ -53,32 +53,33 @@ export class LeadWebhookEventService {
     const body = JSON.stringify(payload);
     const signature = await this.generateSignature(body, webhookSecret);
 
-    // SSRF guard: refuse private/loopback/link-local/metadata targets before connecting. A blocked
-    // URL is a permanent failure (retrying can't fix a bad URL) — don't burn attempts on it.
+    // SSRF: pinnedPost resolves the host, refuses private/loopback/link-local/metadata addresses and then
+    // connects to THAT validated address (no second DNS lookup, so a rebinding host can't swap in an
+    // internal IP), never follows redirects and caps the response. A blocked URL is a permanent failure
+    // (retrying can't fix it).
     try {
-      const { assertPublicHttpUrl } = await import("@/lib/webhooks/ssrf");
-      await assertPublicHttpUrl(endpointUrl);
-    } catch (e) {
-      return { success: false, statusCode: 0, payload, signature, permanent: true, errorReason: (e as Error).message };
-    }
-
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10_000); // 10s hard timeout
-      const res = await fetch(endpointUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Ridhzo-Signature": signature,
-          "X-Ridhzo-Event": payload.event,
-          "X-Privyr-Signature": signature,
-          "X-Privyr-Event": payload.event,
-        },
-        body,
-        signal: controller.signal,
-        redirect: "manual", // never follow a 3xx into the internal network; a redirect = misconfig
-      });
-      clearTimeout(timeout);
+      const { pinnedPost } = await import("@/lib/webhooks/ssrf");
+      let res: { status: number };
+      try {
+        res = await pinnedPost(endpointUrl, {
+          headers: {
+            "Content-Type": "application/json",
+            "X-Ridhzo-Signature": signature,
+            "X-Ridhzo-Event": payload.event,
+            "X-Privyr-Signature": signature,
+            "X-Privyr-Event": payload.event,
+          },
+          body,
+          timeoutMs: 10_000,
+          maxBytes: 64 * 1024,
+        });
+      } catch (e) {
+        const msg = (e as Error)?.message ?? "";
+        if (/private|reserved|resolve|Invalid/i.test(msg)) {
+          return { success: false, statusCode: 0, payload, signature, permanent: true, errorReason: msg };
+        }
+        throw e;
+      }
       const ok = res.status >= 200 && res.status < 300;
       // Permanent (don't retry): 3xx (we don't follow) and 4xx except 408/429. Retry 408/429/5xx/0.
       const permanent = (res.status >= 300 && res.status < 400) || (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429);

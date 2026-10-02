@@ -36,6 +36,7 @@ vi.mock('@/db', () => ({
     set: vi.fn().mockReturnThis(),
     returning: vi.fn().mockResolvedValue([{ id: 'updated-lead-id' }]),
     transaction: vi.fn(async (cb: any) => cb({
+      execute: vi.fn().mockResolvedValue([]),
       select: vi.fn().mockReturnThis(),
       from: vi.fn().mockReturnThis(),
       where: vi.fn().mockReturnThis(),
@@ -88,7 +89,7 @@ describe('Database Schema & Indexing Integration', () => {
       const { db } = await import('@/db');
 
       // Org 1 lookup for +15559998888 returns Lead A
-      ((db as any).limit as any).mockResolvedValueOnce([{
+      ((db as any).limit as any).mockResolvedValueOnce([]).mockResolvedValueOnce([{
         id: 'lead-org1',
         name: 'Org 1 Contact',
         phone: '+15559998888',
@@ -106,7 +107,7 @@ describe('Database Schema & Indexing Integration', () => {
       expect(res1.leadId).toBe('lead-org1');
 
       // Org 2 lookup for +15559998888 returns Lead B
-      ((db as any).limit as any).mockResolvedValueOnce([{
+      ((db as any).limit as any).mockResolvedValueOnce([]).mockResolvedValueOnce([{
         id: 'lead-org2',
         name: 'Org 2 Contact',
         phone: '+15559998888',

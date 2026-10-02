@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { isSuperAdmin } from "@/lib/rbac";
+import { isSuperAdmin, isSuperAdminVerified } from "@/lib/rbac";
 import { PlatformService } from "@/domains/platform/service";
 import { RevOpsService } from "@/domains/platform/revops";
 import { PlatformConfigService } from "@/domains/platform/configService";
@@ -21,6 +21,11 @@ import { TABS, tabNeeds, type Tab } from "@/components/platform/console/tabData"
 // ?tab=, which re-runs this with the new tab and remounts the console with fresh data.
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
   if (!(await isSuperAdmin())) redirect("/leads");
+  if (!(await isSuperAdminVerified())) {
+    const { adminMfaStatusAction } = await import("@/lib/actions/adminMfa");
+    const { AdminMfaGate } = await import("@/components/platform/AdminMfaGate");
+    return <AdminMfaGate enrolled={(await adminMfaStatusAction()).enrolled} />;
+  }
   const requested = (await searchParams).tab;
   const tab: Tab = (TABS as readonly string[]).includes(requested ?? "") ? (requested as Tab) : "tenants";
   // What each tab loads lives in TAB_PROPS (console/tabData.ts) — add a prop there, not a tab list here.

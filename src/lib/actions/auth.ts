@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { ipFromHeaders } from "@/lib/clientIp";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { db } from "@/db";
@@ -47,7 +48,7 @@ export async function signupAction(input: z.infer<typeof signupSchema>) {
   }
   const data = { ...parsed.data, email: parsed.data.email.trim().toLowerCase() };
   // Throttle workspace creation per client (bots can't mass-create accounts).
-  const ip = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const ip = ipFromHeaders(await headers());
   if (!(await RateLimiter.checkLimit(`auth:signup:ip:${ip}`, 20, 60 * 60)).success) {
     return fail("RATE_LIMIT", "Too many sign-ups from this network. Please try again in an hour.");
   }
@@ -123,7 +124,7 @@ export async function requestPasswordResetAction(input: { email: string }) {
 
   // Same answer whether or not the account exists (no email enumeration), and throttled per email
   // and per IP so the form can't be used to flood someone's inbox.
-  const ip = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const ip = ipFromHeaders(await headers());
   const [byEmail, byIp] = await Promise.all([
     RateLimiter.checkLimit(`auth:reset:email:${email}`, 3, 60 * 60),
     RateLimiter.checkLimit(`auth:reset:ip:${ip}`, 10, 60 * 60),
@@ -216,10 +217,19 @@ export async function sendWhatsAppOtpAction(input: z.infer<typeof sendOtpSchema>
   }
 
   // Per-client cap so one network can't trigger codes to unlimited numbers (WhatsApp cost / harassment).
-  const otpIp = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const otpIp = ipFromHeaders(await headers());
   if (!(await RateLimiter.checkLimit(`auth:otp:send-action:${otpIp}`, 15, 10 * 60)).success) {
     return fail("RATE_LIMIT", "Too many code requests. Please wait a few minutes.");
   }
+
+  // Per-destination and platform-wide ceilings: whatever the source IPs, one number can't be flooded with
+  // codes (harassment) and the WhatsApp bill for OTPs is bounded.
+  const [perNumber, platformWide] = await Promise.all([
+    RateLimiter.checkLimit(`auth:otp:number:${formatted}`, 5, 60 * 60),
+    RateLimiter.checkLimit("auth:otp:global", 3000, 60 * 60),
+  ]);
+  if (!perNumber.success) return fail("RATE_LIMIT", "Too many codes were requested for this number. Please try again in an hour.");
+  if (!platformWide.success) return fail("RATE_LIMIT", "WhatsApp sign-in is busy right now. Please try again shortly or use Google or email.");
 
   // Rate limit: 45s between OTP requests to prevent spamming
   const [recent] = await db

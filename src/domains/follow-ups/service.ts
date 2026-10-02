@@ -7,15 +7,18 @@ import { syncLeadFollowUpState, markLeadContacted } from "@/domains/follow-ups/s
 import { normalizeFollowUpType, CONTACT_TYPES } from "@/lib/followUps/types";
 import { UserFacingError } from "@/lib/actions/result";
 
-// Scope a follow-up id to a tenant via its lead. organizationId omitted = trusted internal caller.
-function scopeById(id: string, organizationId?: string): SQL | undefined {
-  return organizationId
-    ? and(eq(followUps.id, id), inArray(followUps.leadId, orgLeadIds(organizationId)))
-    : eq(followUps.id, id);
+// Scope a follow-up id to a tenant via its lead. organizationId is REQUIRED: a forgotten argument must be a
+// type error, not a silently unscoped query. Trusted system code with no tenant in hand uses SYSTEM_SCOPE.
+export const SYSTEM_SCOPE = { system: true } as const;
+type Scope = string | typeof SYSTEM_SCOPE;
+function scopeById(id: string, organizationId: Scope): SQL | undefined {
+  return typeof organizationId !== "string"
+    ? eq(followUps.id, id)
+    : and(eq(followUps.id, id), inArray(followUps.leadId, orgLeadIds(organizationId)));
 }
 // Only a pending follow-up can be completed, cancelled, snoozed or rescheduled — so a second tab or an
 // API retry can't re-complete one (re-firing automations) or revive a finished one.
-const pendingById = (id: string, organizationId?: string) => and(scopeById(id, organizationId), eq(followUps.status, "pending"));
+const pendingById = (id: string, organizationId: Scope) => and(scopeById(id, organizationId), eq(followUps.status, "pending"));
 
 function assertValidDate(d: Date) {
   if (!(d instanceof Date) || Number.isNaN(d.getTime())) throw new UserFacingError("That date is invalid. Please pick a valid date and time.");
@@ -39,12 +42,13 @@ export class FollowUpService {
     description?: string;
     dueAt: Date;
     userId: string | null; // null = unassigned (e.g. a sequence step on an unowned lead)
-    organizationId?: string;
+    organizationId: Scope;
   }) {
     assertValidDate(input.dueAt);
-    if (input.organizationId) {
-      await assertLeadInOrg(input.leadId, input.organizationId);
-      if (input.userId) await assertAssignable(input.userId, input.organizationId);
+    const org = input.organizationId;
+    if (typeof org === "string") {
+      await assertLeadInOrg(input.leadId, org);
+      if (input.userId) await assertAssignable(input.userId, org);
     }
     const [followUp] = await db.insert(followUps).values({
       leadId: input.leadId,
@@ -75,7 +79,7 @@ export class FollowUpService {
   static async updateFollowUp(
     id: string,
     input: { title: string; description?: string | null; type: string; dueAt: Date },
-    organizationId?: string,
+    organizationId: Scope,
   ) {
     assertValidDate(input.dueAt);
     const [before] = await db.select({ dueAt: followUps.dueAt }).from(followUps).where(pendingById(id, organizationId)).limit(1);
@@ -99,7 +103,7 @@ export class FollowUpService {
     return updated;
   }
 
-  static async completeFollowUp(id: string, organizationId?: string) {
+  static async completeFollowUp(id: string, organizationId: Scope) {
     const [updated] = await db.update(followUps)
       .set({
         status: "completed",
@@ -122,7 +126,7 @@ export class FollowUpService {
   }
 
   // Undo a completion (lead tab "mark as not done"). Doesn't un-record the contact.
-  static async reopenFollowUp(id: string, organizationId?: string) {
+  static async reopenFollowUp(id: string, organizationId: Scope) {
     const [updated] = await db.update(followUps)
       .set({ status: "pending", completedAt: null, updatedAt: new Date() })
       .where(and(scopeById(id, organizationId), eq(followUps.status, "completed")))
@@ -131,7 +135,7 @@ export class FollowUpService {
     return updated;
   }
 
-  static async cancelFollowUp(id: string, organizationId?: string) {
+  static async cancelFollowUp(id: string, organizationId: Scope) {
     const [updated] = await db.update(followUps)
       .set({
         status: "cancelled",
@@ -144,7 +148,7 @@ export class FollowUpService {
     return updated;
   }
 
-  static async snoozeFollowUp(id: string, snoozedUntil: Date, organizationId?: string) {
+  static async snoozeFollowUp(id: string, snoozedUntil: Date, organizationId: Scope) {
     assertValidDate(snoozedUntil);
     // Snooze pushes the due date forward — otherwise the follow-up stays at its old due_at and keeps
     // showing as overdue in every list that groups by due_at. snoozed_until is kept for the record.
@@ -162,7 +166,7 @@ export class FollowUpService {
     return updated;
   }
 
-  static async rescheduleFollowUp(id: string, dueAt: Date, organizationId?: string) {
+  static async rescheduleFollowUp(id: string, dueAt: Date, organizationId: Scope) {
     assertValidDate(dueAt);
     const [updated] = await db.update(followUps)
       .set({
@@ -197,7 +201,7 @@ export class FollowUpService {
 
   // Remove a follow-up for good (internal cleanup only — the UI cancels instead, keeping history).
   // Its sent-reminder rows go first: reminders.follow_up_id has no ON DELETE.
-  static async deleteFollowUp(id: string, organizationId?: string) {
+  static async deleteFollowUp(id: string, organizationId: Scope) {
     const [row] = await db.select({ id: followUps.id, leadId: followUps.leadId }).from(followUps).where(scopeById(id, organizationId)).limit(1);
     if (!row) return undefined;
     await db.delete(reminders).where(eq(reminders.followUpId, id));

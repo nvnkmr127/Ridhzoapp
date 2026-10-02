@@ -3,6 +3,7 @@
 import { assertLeadAccess, filterAccessibleLeadIds } from "@/lib/leads/access";
 
 import { requireOrg, requirePermission } from "@/lib/rbac";
+import { AuditService } from "@/domains/audit/service";
 import { revalidatePath } from "next/cache";
 import { CustomStatusSchemaService, StatusCategory } from "@/domains/leads/customStatusSchemaService";
 import { LeadStatusService } from "@/domains/leads/leadStatusService";
@@ -34,7 +35,7 @@ export async function addOrUpdateStatusAction(input: {
 }) {
   // Editing the org's status taxonomy reshapes every user's pipeline, analytics and won/lost
   // bookkeeping — same trust level as general settings, not a plain member action.
-  const { organizationId } = await requirePermission("settings.manage");
+  const { organizationId, userId: actorId } = await requirePermission("settings.manage");
   const parsed = addStatusSchema.safeParse(input);
   if (!parsed.success) {
     return fail("VALIDATION", "Please provide a key, label, color, and category for the status.", zodFieldErrors(parsed.error));
@@ -42,6 +43,7 @@ export async function addOrUpdateStatusAction(input: {
 
   try {
     const result = await CustomStatusSchemaService.addOrUpdateStatus(organizationId, parsed.data);
+    await AuditService.log({ organizationId, userId: actorId, action: "status.upsert", entityType: "lead_status", entityId: organizationId, metadata: { key: parsed.data.key, label: parsed.data.label, category: parsed.data.category } });
     revalidatePath("/leads");
     return ok(result);
   } catch (e) {
@@ -50,11 +52,12 @@ export async function addOrUpdateStatusAction(input: {
 }
 
 export async function deleteCustomStatusAction(statusKey: string) {
-  const { organizationId } = await requirePermission("settings.manage");
+  const { organizationId, userId: actorId } = await requirePermission("settings.manage");
   if (!statusKey) return fail("VALIDATION", "No status was specified.");
 
   try {
     const success = await CustomStatusSchemaService.deleteCustomStatus(organizationId, statusKey);
+    await AuditService.log({ organizationId, userId: actorId, action: "status.delete", entityType: "lead_status", entityId: organizationId, metadata: { key: statusKey } });
     revalidatePath("/leads");
     return ok({ success });
   } catch (e) {

@@ -1,6 +1,6 @@
 "use server";
 
-import { assertLeadAccess, filterAccessibleLeadIds } from "@/lib/leads/access";
+import { assertLeadAccess, filterAccessibleLeadIds, assertLeadWrite, filterWritableLeadIds } from "@/lib/leads/access";
 import { db } from "@/db";
 import { sequenceEnrollments } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
@@ -50,7 +50,7 @@ export async function enrollLeadsAction(sequenceId: string, requestedLeadIds: st
   if (!sequenceId) return fail("VALIDATION", "Choose a sequence to enroll into.");
   if (!requestedLeadIds?.length) return fail("VALIDATION", "Select at least one lead to enroll.");
   try {
-    const leadIds = await filterAccessibleLeadIds(requestedLeadIds, { userId, organizationId });
+    const leadIds = await filterWritableLeadIds(requestedLeadIds, { userId, organizationId });
     if (leadIds.length === 0) return fail("NOT_FOUND", "None of the selected leads are assigned to you.");
     const res = await SequenceService.enroll(organizationId, sequenceId, leadIds);
     revalidatePath("/sequences");
@@ -118,7 +118,7 @@ async function enrollmentLead(enrollmentId: string, ctx: { userId: string; organ
     .where(and(eq(sequenceEnrollments.id, enrollmentId), eq(sequenceEnrollments.organizationId, ctx.organizationId)))
     .limit(1);
   if (!enr) throw new Error("Enrollment not found");
-  await assertLeadAccess(enr.leadId, ctx);
+  await assertLeadWrite(enr.leadId, ctx);
   return enr.leadId;
 }
 

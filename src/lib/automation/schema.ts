@@ -21,6 +21,14 @@ export const TriggerConfigSchema = z.object({
   ]),
 });
 
+// The ONLY trigger / action types the engine understands. Stored automations are validated against these so
+// a crafted request can't persist arbitrary types or keys the worker would later choke on.
+export const TRIGGER_TYPES = TriggerConfigSchema.shape.type.options as readonly string[];
+export const ACTION_TYPES = [
+  'assign_lead', 'assign_round_robin', 'change_status', 'create_task', 'schedule_follow_up',
+  'add_note', 'enroll_in_sequence', 'send_whatsapp',
+] as const;
+
 export const BaseConditionSchema = z.object({
   field: z.string().min(1),
   operator: z.enum(['equals', 'not_equals', 'contains', 'does_not_contain', 'greater_than', 'less_than']),

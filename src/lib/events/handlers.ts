@@ -2,7 +2,7 @@ import { eventBus, EventPayload } from "./emitter";
 import { db } from "@/db";
 import { automations, automationTriggers, leads, leadSources, users } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
-import { automationQueue } from "@/lib/jobs/workers/automationWorker";
+import { automationQueue } from "@/lib/jobs/queues/automationQueue";
 import { enrichmentQueue } from "@/lib/jobs/workers/enrichmentWorker";
 import { keepAlive } from "@/lib/keepAlive";
 

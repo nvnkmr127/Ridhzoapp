@@ -245,7 +245,6 @@ export class LeadImportService {
 
     if (toInsert.length > 0) {
       // The whole batch must fit the plan, not just the first lead.
-      await PlanService.assertCanAddLead(organizationId, toInsert.length);
       const dialCode = await orgDialCode(organizationId);
 
       // Canonicalize contact keys the same way every other ingestion path does, so imported leads
@@ -258,6 +257,9 @@ export class LeadImportService {
       // Batch in chunks of 250 rows to avoid exceeding Postgres parameter limits. A row that loses a
       // race with a concurrent create (or maps to an existing key differently formatted) is skipped
       // by ON CONFLICT DO NOTHING instead of aborting the chunks already saved; the count is real.
+      const created = await PlanService.serialized(organizationId, "leads", async () => {
+        // The whole batch must fit the plan, checked under the lock (see PlanService.serialized).
+        await PlanService.assertCanAddLead(organizationId, toInsert.length);
       const CHUNK_SIZE = 250;
       const created: { id: string; ownerId: string | null }[] = [];
       for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
@@ -289,6 +291,8 @@ export class LeadImportService {
         created.push(...inserted);
       }
 
+        return created;
+      });
       announceImported(created.map((l) => l.id), userId, config.sourceId);
       return { imported: created.length, skipped: analysis.duplicateCount + analysis.errorCount + (toInsert.length - created.length) };
     }

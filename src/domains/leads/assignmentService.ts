@@ -27,7 +27,7 @@ export interface AssignLeadOptions {
   ownerId: string | null;
   teamId?: string | null;
   assignedById?: string;
-  organizationId?: string;
+  organizationId: string;
   source?: string; // 'automation' → don't let this assignment re-trigger automations
 }
 
@@ -36,7 +36,7 @@ export interface BulkAssignLeadOptions {
   ownerId: string | null;
   teamId?: string | null;
   assignedById?: string;
-  organizationId?: string;
+  organizationId: string;
 }
 
 export class AssignmentService {

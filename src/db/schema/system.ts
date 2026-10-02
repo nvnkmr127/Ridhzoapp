@@ -39,6 +39,8 @@ export const apiKeys = pgTable('api_keys', {
   createdById: uuid('created_by_id').references(() => users.id, { onDelete: 'set null' }),
   lastUsedAt: timestamp('last_used_at'),
   revokedAt: timestamp('revoked_at'),
+  // null = never expires (legacy keys). New keys default to a finite lifetime (see createApiKeyAction).
+  expiresAt: timestamp('expires_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (t) => ({
   orgIdx: index('api_keys_org_idx').on(t.organizationId),

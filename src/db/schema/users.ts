@@ -48,6 +48,9 @@ export const users = pgTable('users', {
   teamId: uuid('team_id').references(() => teams.id),
   isActive: boolean('is_active').default(true).notNull(),
   isSuperAdmin: boolean('is_super_admin').default(false).notNull(), // platform operator — cross-tenant access
+  // Platform-operator TOTP (see lib/auth/adminMfa). Secret is encrypted at rest; enabled_at null = not enrolled.
+  totpSecret: text('totp_secret'),
+  totpEnabledAt: timestamp('totp_enabled_at'),
   deletedAt: timestamp('deleted_at'), // soft delete — hard delete would orphan lead/activity FKs
   emailOptOut: jsonb('email_opt_out').$type<string[]>().default([]).notNull(), // notification types the user muted for email
   lastCallSyncAt: timestamp('last_call_sync_at'),

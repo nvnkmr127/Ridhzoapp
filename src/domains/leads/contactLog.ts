@@ -223,9 +223,10 @@ export async function recordLeadContact(input: {
         ));
 
       if (pending.length > 0) {
-        const { FollowUpService } = await import("@/domains/follow-ups/service");
+        const { FollowUpService, SYSTEM_SCOPE } = await import("@/domains/follow-ups/service");
         for (const f of pending) {
-          await FollowUpService.completeFollowUp(f.id);
+          // `pending` was selected by this lead's id, whose access the caller already checked.
+          await FollowUpService.completeFollowUp(f.id, SYSTEM_SCOPE);
           completedFollowUpIds.push(f.id);
         }
       }
@@ -243,7 +244,7 @@ export async function recordLeadContact(input: {
       .where(and(eq(followUps.leadId, leadId), eq(followUps.type, "call"), eq(followUps.status, "pending"), lt(followUps.dueAt, await endOfDay(new Date()))))
       .limit(1);
     if (!openCallback) {
-      const { FollowUpService } = await import("@/domains/follow-ups/service");
+      const { FollowUpService, SYSTEM_SCOPE } = await import("@/domains/follow-ups/service");
       const [leadRec] = await db.select({ name: leads.name, ownerId: leads.ownerId }).from(leads).where(eq(leads.id, leadId)).limit(1);
       await FollowUpService.createFollowUp({
         leadId,
@@ -251,6 +252,7 @@ export async function recordLeadContact(input: {
         title: leadRec?.name ? `Call back ${leadRec.name}` : "Call back",
         dueAt: at,
         userId: leadRec?.ownerId ?? userId,
+        organizationId: SYSTEM_SCOPE, // internal: the lead id was access-checked by the caller
       });
     }
   }
@@ -266,7 +268,7 @@ export async function recordLeadContact(input: {
       ? await db.select({ id: followUps.id }).from(followUps).where(and(eq(followUps.leadId, leadId), eq(followUps.type, "call"), eq(followUps.status, "pending"))).limit(1)
       : [];
     if (days && !openCall) {
-      const { FollowUpService } = await import("@/domains/follow-ups/service");
+      const { FollowUpService, SYSTEM_SCOPE } = await import("@/domains/follow-ups/service");
       const [leadRec] = await db.select({ name: leads.name, ownerId: leads.ownerId }).from(leads).where(eq(leads.id, leadId)).limit(1);
       await FollowUpService.createFollowUp({
         leadId,
@@ -274,6 +276,7 @@ export async function recordLeadContact(input: {
         title: leadRec?.name ? `Try ${leadRec.name} again (attempt ${unansweredStreak + 1})` : `Try again (attempt ${unansweredStreak + 1})`,
         dueAt: new Date(at.getTime() + days * 86_400_000),
         userId: leadRec?.ownerId ?? userId,
+        organizationId: SYSTEM_SCOPE, // internal: the lead id was access-checked by the caller
       });
     }
   }

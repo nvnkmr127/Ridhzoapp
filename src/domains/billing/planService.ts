@@ -43,7 +43,36 @@ export function limitsFor(plan: string) {
   return PLAN_LIMITS[canonicalPlan(plan)];
 }
 
+// Caps how many callers may hold a lock transaction (= a pooled connection) at once, so a burst of
+// limit-checked writes can't starve the pool of the connection each one needs for its own insert.
+let lockSlots = 6;
+const lockWaiters: (() => void)[] = [];
+async function acquireSlot() {
+  if (lockSlots > 0) { lockSlots--; return; }
+  await new Promise<void>((r) => lockWaiters.push(r));
+}
+const releaseSlot = () => { const next = lockWaiters.shift(); if (next) next(); else lockSlots++; };
+
+// pg_advisory_xact_lock key for one org + one limit bucket ('leads' | 'seats' | a counted resource).
+export const limitLockSql = (organizationId: string, bucket: string) =>
+  sql`select pg_advisory_xact_lock(hashtext(${`limit:${organizationId}:${bucket}`}))`;
+
 export class PlanService {
+  // Runs `fn` (an assertCanAdd… check followed by the INSERT it guards) one-at-a-time per org+bucket, so
+  // two concurrent requests can't both see "under the limit" and both insert. The lock is released
+  // when the insert has committed. ponytail: a Postgres advisory lock — no schema change, no Redis.
+  static async serialized<T>(organizationId: string, bucket: string, fn: () => Promise<T>): Promise<T> {
+    await acquireSlot();
+    try {
+      return await db.transaction(async (tx) => {
+        await tx.execute(limitLockSql(organizationId, bucket));
+        return fn();
+      });
+    } finally {
+      releaseSlot();
+    }
+  }
+
   static async plan(organizationId: string) {
     try {
       const res = await db

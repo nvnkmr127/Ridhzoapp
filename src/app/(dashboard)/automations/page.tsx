@@ -5,12 +5,12 @@ import Link from "next/link";
 import { getAutomations } from "@/lib/actions/automations";
 import { AutomationTemplates } from "@/components/automations/AutomationTemplates";
 import { AutomationCard } from "@/components/automations/AutomationCard";
-import { requireOrg } from "@/lib/rbac";
+import { requireOrg, hasPermission } from "@/lib/rbac";
 import { PlanService } from "@/domains/billing/planService";
 
 export default async function AutomationsPage() {
   const { organizationId } = await requireOrg();
-  const [automations, runnable] = await Promise.all([getAutomations(), PlanService.runnableIds(organizationId, "automations")]);
+  const [automations, runnable, canManage] = await Promise.all([getAutomations(), PlanService.runnableIds(organizationId, "automations"), hasPermission("automations.manage")]);
 
   return (
     <div className="flex-1 space-y-4 p-4 pt-4 sm:p-8 sm:pt-6">
@@ -22,16 +22,18 @@ export default async function AutomationsPage() {
             For a multi-day drip of messages, use <Link href="/sequences" className="underline">Sequences</Link> instead.
           </p>
         </div>
-        <div className="flex items-center space-x-2">
-          <Link href="/automations/create">
-            <Button>
-              <Plus className="mr-2 h-4 w-4" /> Create Automation
-            </Button>
-          </Link>
-        </div>
+        {canManage && (
+          <div className="flex items-center space-x-2">
+            <Link href="/automations/create">
+              <Button>
+                <Plus className="mr-2 h-4 w-4" /> Create Automation
+              </Button>
+            </Link>
+          </div>
+        )}
       </div>
       
-      <AutomationTemplates />
+      {canManage && <AutomationTemplates />}
 
       {automations.length === 0 ? (
         <EmptyState
@@ -48,6 +50,7 @@ export default async function AutomationsPage() {
               name={automation.name}
               isActive={automation.isActive}
               overPlan={!!runnable && !runnable.has(automation.id)}
+              canManage={canManage}
             />
           ))}
         </div>

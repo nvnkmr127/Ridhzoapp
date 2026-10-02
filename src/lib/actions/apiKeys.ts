@@ -12,15 +12,19 @@ export async function listApiKeysAction() {
   return ApiKeyService.list(organizationId);
 }
 
-export async function createApiKeyAction(name: string, scope: "full" | "read_only" = "full") {
+// expiresInDays: null = never (allowed, but not the default). New keys expire after a year unless told otherwise.
+export async function createApiKeyAction(name: string, scope: "full" | "read_only" = "full", expiresInDays: number | null = 365) {
   const { organizationId, userId } = await requirePermission("api.manage");
   const parsed = z.string().trim().min(1).max(255).safeParse(name);
   if (!parsed.success) return fail("VALIDATION", "Please enter a name for this API key.");
   const scopeParsed = z.enum(["full", "read_only"]).safeParse(scope);
   if (!scopeParsed.success) return fail("VALIDATION", "Invalid key scope.");
+  const days = z.union([z.literal(30), z.literal(90), z.literal(365), z.null()]).safeParse(expiresInDays);
+  if (!days.success) return fail("VALIDATION", "Choose 30, 90 or 365 days, or no expiry.");
+  const expiresAt = days.data === null ? null : new Date(Date.now() + days.data * 86_400_000);
   try {
-    const created = await ApiKeyService.create(organizationId, parsed.data, userId, scopeParsed.data);
-    await AuditService.log({ organizationId, userId, action: "api_key.create", entityType: "api_key", entityId: created.id, metadata: { name: parsed.data, scope: scopeParsed.data } });
+    const created = await ApiKeyService.create(organizationId, parsed.data, userId, scopeParsed.data, expiresAt);
+    await AuditService.log({ organizationId, userId, action: "api_key.create", entityType: "api_key", entityId: created.id, metadata: { name: parsed.data, scope: scopeParsed.data, expiresAt: expiresAt?.toISOString() ?? null } });
     revalidatePath("/settings/api");
     return ok(created); // includes the raw key — shown once
   } catch (e) {

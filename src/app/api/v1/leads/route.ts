@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { LeadService, leadSearchCondition } from "@/domains/leads/service";
 import { CustomFieldService, FieldValidationError } from "@/domains/customFields/service";
 import { PlanService } from "@/domains/billing/planService";
 import { authorizeApiRequest, type ApiAuth } from "@/lib/apiAuth";
 import { withIdempotency } from "@/lib/idempotency";
 import { canEditLeads, idOk, readOnly } from "@/lib/meetingsApi";
+import { visibleToUserSql } from "@/lib/leads/access";
 
 const authorize = authorizeApiRequest;
 
@@ -17,7 +18,7 @@ export async function GET(req: NextRequest) {
   if ("error" in auth) return auth.error;
 
   const sp = new URL(req.url).searchParams;
-  const limit = Math.min(Number(sp.get("limit")) || 50, 200);
+  const limit = Math.min(Math.max(Number(sp.get("limit")) || 50, 1), 200);
   const offset = Math.max(Number(sp.get("offset")) || 0, 0);
   const search = (sp.get("search") || "").trim();
   const status = (sp.get("status") || "").trim();
@@ -44,7 +45,8 @@ export async function GET(req: NextRequest) {
     const { hasPermissionForRoleId } = await import("@/lib/rbac");
     const isAdmin = await hasPermissionForRoleId(auth.roleId ?? null, "settings.manage");
     if (!isAdmin) {
-      where.push(eq(leads.ownerId, auth.userId));
+      // Same rule as the web: owner, or working the lead through a meeting / follow-up.
+      where.push(visibleToUserSql(auth.userId));
     }
   }
   if (status) where.push(eq(leads.status, status));
@@ -111,7 +113,7 @@ async function changesFeed(auth: ApiAuth, after: string | null, limit: number) {
   const where = [eq(leads.organizationId, auth.organizationId), sql`${leads.syncAt} < ${horizon}`];
   // A rep's first sync only needs their own leads (nothing to mark gone yet) — don't page through the
   // whole workspace for it. Incremental syncs still see every change so reassigned leads go "gone".
-  if (!after && !all) where.push(eq(leads.ownerId, auth.userId!));
+  if (!after && !all) where.push(visibleToUserSql(auth.userId!));
   if (after) {
     const iso = new Date(afterAt).toISOString().replace("Z", ""); // sync_at is naive UTC
     where.push(sql`(${leads.syncAt}, ${leads.id}) > (${iso}::timestamp, ${afterId}::uuid)`);
@@ -119,8 +121,12 @@ async function changesFeed(auth: ApiAuth, after: string | null, limit: number) {
   const rows = await db.select().from(leads).where(and(...where)).orderBy(leads.syncAt, leads.id).limit(limit);
 
   const hidden = new Set(["_aiRecap", "_enrichment", "_scoreFactors", ...(all ? [] : defs.filter((d) => d.adminOnly).map((d) => d.key))]);
+  // Which of these rows may this rep still open (owner OR meeting attendee OR follow-up assignee)?
+  const visible = all || rows.length === 0
+    ? null
+    : new Set((await db.select({ id: leads.id }).from(leads).where(and(inArray(leads.id, rows.map((r) => r.id)), visibleToUserSql(auth.userId!)))).map((r) => r.id));
   const data = rows.map((l) => {
-    if (l.deletedAt || (!all && l.ownerId !== auth.userId)) return { id: l.id, updatedAt: l.updatedAt, gone: true };
+    if (l.deletedAt || (visible && !visible.has(l.id))) return { id: l.id, updatedAt: l.updatedAt, gone: true };
     const customData = Object.fromEntries(Object.entries((l.customData as Record<string, unknown>) ?? {}).filter(([k]) => !hidden.has(k)));
     return { ...l, customData, gone: false };
   });

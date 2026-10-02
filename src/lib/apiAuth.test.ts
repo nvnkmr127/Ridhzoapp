@@ -8,6 +8,8 @@ import { OrgService } from "@/domains/organizations/service";
 vi.mock("@/domains/apiKeys/service", () => ({
   ApiKeyService: { verify: vi.fn(), touchLastUsed: vi.fn() },
 }));
+const maint = vi.hoisted(() => ({ msg: null as string | null }));
+vi.mock("@/lib/maintenance", () => ({ maintenanceMessage: async () => maint.msg }));
 vi.mock("@/lib/mobileAuth", () => ({ verifyMobileToken: vi.fn() }));
 vi.mock("@/lib/rate-limit", () => ({
   RateLimiter: { checkLimit: vi.fn().mockResolvedValue({ success: true, limit: 600, remaining: 599, reset: Date.now() + 60000 }) },
@@ -42,6 +44,7 @@ const checkLimit = RateLimiter.checkLimit as unknown as ReturnType<typeof vi.fn>
 const isSuspended = OrgService.isSuspended as unknown as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
+  maint.msg = null;
   vi.clearAllMocks();
   clearUserAuthCache();
   mobile.mockReturnValue(null);
@@ -118,5 +121,15 @@ describe("authorizeApiRequest — mobile token", () => {
     const auth = (await authorizeApiRequest(req("GET", "Bearer jwt"))) as { error: Response };
     expect(auth.error.status).toBe(401);
     dbUser.row = { isActive: true, organizationId: "org-1", roleId: null };
+  });
+});
+
+describe("authorizeApiRequest — maintenance mode", () => {
+  it("refuses writes with 503 but lets reads through", async () => {
+    verify.mockResolvedValue({ id: "k1", organizationId: ORG, scope: "full" });
+    maint.msg = "Back soon";
+    const write = await authorizeApiRequest(req("POST", "Bearer pk_valid"));
+    expect("error" in write && write.error.status).toBe(503);
+    expect(await authorizeApiRequest(req("GET", "Bearer pk_valid"))).toEqual({ organizationId: ORG });
   });
 });

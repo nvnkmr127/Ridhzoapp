@@ -53,9 +53,10 @@ export class SequenceService {
     const { BillingLifecycleService } = await import("@/domains/billing/lifecycleService");
     await BillingLifecycleService.assertFeatureAccess(organizationId, "Sequences");
     const { PlanService } = await import("@/domains/billing/planService");
-    await PlanService.assertCanAdd(organizationId, "sequences");
-
-    const [seq] = await db.insert(sequences).values({ organizationId, name, description: description ?? null }).returning();
+    const [seq] = await PlanService.serialized(organizationId, "sequences", async () => {
+      await PlanService.assertCanAdd(organizationId, "sequences");
+      return db.insert(sequences).values({ organizationId, name, description: description ?? null }).returning();
+    });
     if (steps.length) {
       await db.insert(sequenceSteps).values(
         steps.map((s, i) => ({
@@ -472,6 +473,7 @@ export class SequenceService {
             description: waBody,
             dueAt: new Date(),
             userId: lead.ownerId ?? null,
+            organizationId: lead.organizationId,
           });
           await ActivityService.addActivity({ leadId, type: "note", content: "Sequence step ready to send from your WhatsApp — it's in Follow-ups." });
           return { sent: true, permanent: false };

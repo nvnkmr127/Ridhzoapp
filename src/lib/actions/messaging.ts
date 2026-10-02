@@ -89,7 +89,7 @@ export async function sendWhatsAppAction(input: {
     const access = await getActionableLead(input.leadId);
     if (!access) return fail("NOT_FOUND", "This lead no longer exists or isn't assigned to you.");
     const { WhatsAppService } = await import("@/lib/messaging/whatsapp/service");
-    const result = await WhatsAppService.send({ ...input, userId: access.userId });
+    const result = await WhatsAppService.send({ ...input, userId: access.userId, organizationId: access.organizationId });
     revalidatePath(`/leads/${input.leadId}`);
     return ok(result);
   } catch (e) {

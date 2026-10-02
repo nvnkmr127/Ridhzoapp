@@ -1,8 +1,11 @@
 "use server";
 
 import { BookingService } from "@/domains/booking/service";
+import { ipFromHeaders } from "@/lib/clientIp";
 import { RateLimiter } from "@/lib/rate-limit";
 import { z } from "zod";
+import { headers } from "next/headers";
+import { verifyTurnstile } from "@/lib/security/botCheck";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
 
 // Public — no auth. The org slug in the URL is the only "credential"; it only lets a prospect
@@ -17,6 +20,8 @@ const schema = z.object({
   time: z.string().regex(/^\d{2}:\d{2}$/, "Pick a time"),
   message: z.string().trim().max(1000).optional(),
   mode: z.enum(["online", "in_person"]).optional(),
+  hp: z.string().optional(), // honeypot
+  captcha: z.string().optional(), // Turnstile token
 });
 
 export async function requestMeetingAction(input: z.input<typeof schema>) {
@@ -30,6 +35,11 @@ export async function requestMeetingAction(input: z.input<typeof schema>) {
     return fail("VALIDATION", "Please provide at least an email or phone number so we can reach you.");
   }
 
+  if (data.hp) return ok({ requested: true }); // bot trap: look successful, store nothing
+  const ip = ipFromHeaders(await headers());
+  const perIp = await RateLimiter.checkLimit(`booking-ip:${data.slug}:${ip}`, 5, 10 * 60);
+  if (!perIp.success) return fail("RATE_LIMIT", "Too many booking requests. Please wait a few minutes and try again.");
+  if (!(await verifyTurnstile(data.captcha, ip))) return fail("VALIDATION", "Please complete the verification check and try again.");
   const limit = await RateLimiter.checkLimit(`booking:${data.slug}`, 15, 60);
   if (!limit.success) {
     return fail("RATE_LIMIT", "Too many booking requests. Please wait a moment and try again.");

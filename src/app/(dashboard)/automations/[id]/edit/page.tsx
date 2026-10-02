@@ -4,7 +4,8 @@ import { ArrowLeft } from "lucide-react";
 import { getAutomation } from "@/lib/actions/automations";
 import { AutomationBuilder } from "@/components/automations/AutomationBuilder";
 import { Button } from "@/components/ui/button";
-import { requireOrg } from "@/lib/rbac";
+import { requireOrg, hasPermission } from "@/lib/rbac";
+import { redirect } from "next/navigation";
 import { LeadSourceService } from "@/domains/leads/sourceService";
 import { SequenceService } from "@/domains/leads/sequenceService";
 
@@ -13,6 +14,7 @@ export default async function EditAutomationPage({ params }: { params: Promise<{
   const automation = await getAutomation(id);
   if (!automation) notFound();
   const { organizationId } = await requireOrg();
+  if (!(await hasPermission("automations.manage"))) redirect("/automations");
   const [sources, sequences] = await Promise.all([
     LeadSourceService.getSources(organizationId),
     SequenceService.list(organizationId),

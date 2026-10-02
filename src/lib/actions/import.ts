@@ -109,6 +109,8 @@ export async function commitImportAction(input: { rows: ImportRow[]; config: z.i
   }
   try {
     const res = await LeadImportService.commit(organizationId, userId, parsedRows.data, parsedConfig.data, { isAdmin });
+    const { AuditService } = await import("@/domains/audit/service");
+    await AuditService.log({ organizationId, userId, action: "lead.import", entityType: "lead", entityId: organizationId, metadata: { submitted: parsedRows.data.length, imported: (res as { imported?: number }).imported ?? null, sourceId: parsedConfig.data.sourceId ?? null } });
     revalidatePath('/');
     revalidatePath('/my-dashboard');
     revalidatePath("/leads");

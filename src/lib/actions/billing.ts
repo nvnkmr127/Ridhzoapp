@@ -65,12 +65,14 @@ export async function verifySubscriptionAction(input: z.infer<typeof verifySchem
   }
 }
 
-// Testing/admin override: switch plans without payment. Allowed ONLY while billing is unconfigured
-// (no Razorpay keys) — once real billing is wired, this refuses and the checkout flow is used instead,
+// Testing override: switch plans without payment. Allowed ONLY with BILLING_TEST_MODE=1, outside production,
+// and while billing is unconfigured (no Razorpay keys) — once real billing is wired, this refuses and the checkout flow is used instead,
 // so it can never be a free-upgrade path in production.
 export async function setPlanManuallyAction(plan: string) {
   const { organizationId, userId } = await requirePermission("billing.manage");
-  if (isConfigured()) {
+  // Never in production, whatever the env says: a missing/typo'd Razorpay key must not turn this
+  // into a free-upgrade button. Local/test only, and only with billing unconfigured.
+  if (isConfigured() || process.env.NODE_ENV === "production" || process.env.BILLING_TEST_MODE !== "1") {
     return fail("FORBIDDEN", "Billing is configured — use checkout to change plans.");
   }
   if (!(plan in PLAN_LIMITS)) return fail("VALIDATION", "Unknown plan.");

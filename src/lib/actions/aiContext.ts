@@ -180,21 +180,24 @@ export async function importWebsiteAction(input: { url: string }) {
   let url = String(input.url ?? "").trim();
   if (!url) return fail("VALIDATION", "Add your website address first.");
   if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
-  const { assertPublicHttpUrl } = await import("@/lib/webhooks/ssrf");
+  const { pinnedRequest } = await import("@/lib/webhooks/ssrf");
   try {
-    let res: Response | null = null;
+    // Every hop is resolved, validated and connected to by its VALIDATED address (no rebinding window),
+    // redirects are followed by hand, and each body is capped at 1 MB.
+    let res: Awaited<ReturnType<typeof pinnedRequest>> | null = null;
     for (let hop = 0; hop < 4; hop++) {
-      await assertPublicHttpUrl(url);
-      res = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(8000), headers: { "user-agent": "RidhzoBot/1.0 (+business profile import)", accept: "text/html" } });
-      const next = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
+      res = await pinnedRequest(url, { method: "GET", headers: { "user-agent": "RidhzoBot/1.0 (+business profile import)", accept: "text/html" }, timeoutMs: 8000, maxBytes: 1_000_000 });
+      const loc = res.status >= 300 && res.status < 400 ? res.headers.location : null;
+      const next = Array.isArray(loc) ? loc[0] : loc;
       if (!next) break;
       url = new URL(next, url).toString();
       res = null;
     }
     if (!res) return fail("VALIDATION", "That website redirects too many times.");
-    if (!res.ok) return fail("VALIDATION", `The website answered with an error (HTTP ${res.status}).`);
-    if (!(res.headers.get("content-type") ?? "").includes("html")) return fail("VALIDATION", "That address isn't a web page.");
-    const html = (await res.text()).slice(0, 1_000_000);
+    if (res.status < 200 || res.status >= 300) return fail("VALIDATION", `The website answered with an error (HTTP ${res.status}).`);
+    const ctype = res.headers["content-type"];
+    if (!String(Array.isArray(ctype) ? ctype[0] : ctype ?? "").includes("html")) return fail("VALIDATION", "That address isn't a web page.");
+    const html = res.text.slice(0, 1_000_000);
     const text = htmlToText(html).slice(0, NOTES_MAX);
     if (text.length < 40) return fail("VALIDATION", "Couldn't find readable text on that page (it may be built with JavaScript). Paste the text instead.");
     return ok({ text });

@@ -90,7 +90,7 @@ export class FacebookIngestionService {
         // Dead token → flag the source for reconnect and stop (retrying a revoked token is futile).
         if (MetaTokenRefreshService.isAuthError(e)) {
           const { LeadSourceService } = await import("@/domains/leads/sourceService");
-          await LeadSourceService.markNeedsReconnect(matchedSource.id);
+          await LeadSourceService.markNeedsReconnect(matchedSource.id, matchedSource.organizationId!);
           return { status: "failed", reason: "needs_reconnect", mark: { status: "failed", errorLog: { reason: "auth_error_needs_reconnect", message: e.message } } };
         }
         throw e; // transient → caller retries

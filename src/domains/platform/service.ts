@@ -334,8 +334,8 @@ export class PlatformService {
     if (redisConfigured()) {
       try {
         const [{ ingestionQueue }, { automationQueue }, { webhookDeliveryQueue }] = await Promise.all([
-          import("@/lib/jobs/workers/ingestionWorker"),
-          import("@/lib/jobs/workers/automationWorker"),
+          import("@/lib/jobs/queues/ingestionQueue"),
+          import("@/lib/jobs/queues/automationQueue"),
           import("@/lib/jobs/workers/webhookRetryWorker"),
         ]);
 

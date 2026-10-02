@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { requestMeetingAction } from "@/lib/actions/booking";
+import { BotShield } from "@/components/security/Turnstile";
 import { localDate, wallTimeToUtc } from "@/lib/workHours";
 
 export type BookingSchedule = { timezone: string; workDays: number[]; workStartHour: number; workEndHour: number };
@@ -49,6 +50,9 @@ export function BookingForm({ slug, schedule }: { slug: string; schedule: Bookin
   const [date, setDate] = React.useState("");
   const [time, setTime] = React.useState("");
   const [saving, setSaving] = React.useState(false);
+  const [shield, setShield] = React.useState({ token: "", hp: "" });
+  const onToken = React.useCallback((token: string) => setShield((s) => ({ ...s, token })), []);
+  const onHoneypot = React.useCallback((hp: string) => setShield((s) => ({ ...s, hp })), []);
   const [done, setDone] = React.useState<string | null>(null);
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((s) => ({ ...s, [k]: v }));
 
@@ -74,7 +78,7 @@ export function BookingForm({ slug, schedule }: { slug: string; schedule: Bookin
     if (!f.name.trim() || !date || !time || (!f.email && !f.phone)) return;
     setSaving(true);
     try {
-      const res = await requestMeetingAction({ slug, ...f, date, time });
+      const res = await requestMeetingAction({ slug, ...f, date, time, hp: shield.hp, captcha: shield.token });
       if (!res.ok) {
         toast({ variant: "destructive", title: "Could not book", description: res.message });
         return;
@@ -153,6 +157,7 @@ export function BookingForm({ slug, schedule }: { slug: string; schedule: Bookin
           className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
       </div>
       <p className="text-xs text-muted-foreground">Give a phone number or email so we can confirm.</p>
+      <BotShield onToken={onToken} onHoneypot={onHoneypot} />
       <Button type="submit" className="w-full" disabled={saving || !f.name.trim() || !date || !time || (!f.email && !f.phone)}>
         {saving ? "Sending…" : "Request meeting"}
       </Button>

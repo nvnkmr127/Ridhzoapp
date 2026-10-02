@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { toggleAutomation, deleteAutomation } from "@/lib/actions/automations";
 
-export function AutomationCard({ id, name, isActive, overPlan = false }: { id: string; name: string; isActive: boolean; overPlan?: boolean }) {
+export function AutomationCard({ id, name, isActive, overPlan = false, canManage = true }: { id: string; name: string; isActive: boolean; overPlan?: boolean; canManage?: boolean }) {
   const router = useRouter();
   const { toast } = useToast();
   const [busy, setBusy] = React.useState(false);
@@ -59,7 +59,7 @@ export function AutomationCard({ id, name, isActive, overPlan = false }: { id: s
           {overPlan ? "Paused — over your plan limit" : active ? "Active" : "Inactive"}
         </Badge>
       </div>
-      <div className="flex items-center gap-1">
+      {canManage && <div className="flex items-center gap-1">
         <Button variant="ghost" size="sm" onClick={toggle} disabled={busy} className="gap-1.5">
           <Power className={`h-4 w-4 ${active ? "text-emerald-500" : "text-muted-foreground"}`} />
           {active ? "Pause" : "Activate"}
@@ -70,7 +70,7 @@ export function AutomationCard({ id, name, isActive, overPlan = false }: { id: s
         <Button variant="ghost" size="icon" aria-label="Delete automation" onClick={remove} disabled={busy}>
           <Trash2 className="h-4 w-4 text-white" />
         </Button>
-      </div>
+      </div>}
     </div>
   );
 }

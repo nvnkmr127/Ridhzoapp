@@ -14,8 +14,18 @@ export function isBlockedAddress(ip: string): boolean {
     const mapped = addr.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
     if (mapped) return isBlockedAddress(mapped[1]);
     const h = addr.split("%")[0]; // strip zone id
-    if (h.startsWith("fe80")) return true; // link-local
+    // IPv4-mapped in HEX form (::ffff:7f00:1 == 127.0.0.1) and the deprecated IPv4-compatible ::a.b.c.d.
+    const hex = h.match(/^(?:0{0,4}:){0,5}(?:ffff:)?([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+    if (hex && (h.includes("ffff:") || h.startsWith("::"))) {
+      const hi = parseInt(hex[1], 16), lo = parseInt(hex[2], 16);
+      return isBlockedAddress(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`);
+    }
+    if (h.startsWith("fe8") || h.startsWith("fe9") || h.startsWith("fea") || h.startsWith("feb")) return true; // fe80::/10 link-local
+    if (h.startsWith("fec") || h.startsWith("fed") || h.startsWith("fee") || h.startsWith("fef")) return true; // fec0::/10 site-local (deprecated)
     if (h.startsWith("fc") || h.startsWith("fd")) return true; // unique-local fc00::/7
+    if (h.startsWith("64:ff9b:")) return true; // NAT64: can embed any IPv4 incl. private ones
+    if (h.startsWith("2002:")) return true; // 6to4: same
+    if (h.startsWith("2001:db8") || h.startsWith("ff")) return true; // documentation, multicast
     return false;
   }
 
@@ -91,6 +101,15 @@ export async function pinnedPost(
   rawUrl: string,
   opts: { headers: Record<string, string>; body: string; timeoutMs: number; maxBytes: number },
 ): Promise<{ status: number; text: string; tooLarge: boolean }> {
+  const r = await pinnedRequest(rawUrl, { method: "POST", ...opts });
+  return { status: r.status, text: r.text, tooLarge: r.tooLarge };
+}
+
+// Same pinned, size-capped, no-redirect request for any method (GET for website import, POST for webhooks).
+export async function pinnedRequest(
+  rawUrl: string,
+  opts: { method: "GET" | "POST"; headers: Record<string, string>; body?: string; timeoutMs: number; maxBytes: number },
+): Promise<{ status: number; text: string; tooLarge: boolean; headers: Record<string, string | string[] | undefined> }> {
   const u = new URL(rawUrl);
   const address = await resolvePublicHost(u.hostname);
   const family = address.includes(":") ? 6 : 4;
@@ -99,8 +118,8 @@ export async function pinnedPost(
     const req = mod.request(
       u,
       {
-        method: "POST",
-        headers: { ...opts.headers, "content-length": Buffer.byteLength(opts.body) },
+        method: opts.method,
+        headers: { ...opts.headers, ...(opts.body !== undefined ? { "content-length": Buffer.byteLength(opts.body) } : {}) },
         timeout: opts.timeoutMs,
         // Always connect to the validated address (SNI/Host still use the hostname).
         lookup: ((_h: string, o: { all?: boolean }, cb: (...a: unknown[]) => void) =>
@@ -115,12 +134,12 @@ export async function pinnedPost(
           if (size > opts.maxBytes) {
             tooLarge = true;
             res.destroy();
-            resolve({ status: res.statusCode ?? 0, text: "", tooLarge });
+            resolve({ status: res.statusCode ?? 0, text: "", tooLarge, headers: res.headers });
             return;
           }
           chunks.push(c);
         });
-        res.on("end", () => resolve({ status: res.statusCode ?? 0, text: Buffer.concat(chunks).toString("utf8"), tooLarge }));
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, text: Buffer.concat(chunks).toString("utf8"), tooLarge, headers: res.headers }));
         res.on("error", (e) => (tooLarge ? undefined : reject(e)));
       },
     );

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clientIp } from "@/lib/clientIp";
 import { timingSafeEqual } from "crypto";
 import { LeadSourceService } from "@/domains/leads/sourceService";
 import { IngestionService } from "@/lib/leads/ingestion";
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
   // Reject a malformed id before it hits the DB (a uuid cast error would otherwise 500).
   if (!UUID_RE.test(sourceId)) return NextResponse.json({ error: "Invalid sourceId" }, { status: 400 });
 
-  const ip = req.headers.get("x-forwarded-for") || "unknown";
+  const ip = clientIp(req);
   const limit = await RateLimiter.checkLimit(`webhook:google_lead_ads:${sourceId}:${ip}`, 100, 60);
   if (!limit.success) return NextResponse.json({ error: "Too Many Requests" }, { status: 429 });
 

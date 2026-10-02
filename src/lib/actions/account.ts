@@ -49,7 +49,15 @@ export async function linkPhoneAction(input: { phone: string; otp: string }) {
   if (result === "locked") return fail("VALIDATION", "Too many wrong attempts. Tap Resend to get a new code.");
   if (result !== "ok") return fail("VALIDATION", "Invalid or expired OTP. Please try again.");
 
-  await db.update(users).set({ phone, updatedAt: new Date() }).where(eq(users.id, session.user.id));
+  try {
+    await db.update(users).set({ phone, updatedAt: new Date() }).where(eq(users.id, session.user.id));
+  } catch (e) {
+    // Lost a race against another account taking the number (unique index users_phone_live_unique).
+    if ((e as { code?: string; cause?: { code?: string } })?.code === "23505" || (e as { cause?: { code?: string } })?.cause?.code === "23505") {
+      return fail("CONFLICT", "This number is already used by another Ridhzo account.");
+    }
+    throw e;
+  }
   return ok({ phone });
 }
 
@@ -81,6 +89,15 @@ export async function changePasswordAction(input: { currentPassword?: string; ne
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
   await db.update(users).set({ passwordHash, passwordSet: true, updatedAt: new Date() }).where(eq(users.id, session.user.id));
+  // A changed password must end every session made with the old one (a stolen session is the usual
+  // reason for changing it). This includes the current browser, which is asked to sign in again within a
+  // minute — the same behaviour as a reset-by-email.
+  try {
+    const { SessionService } = await import("@/domains/platform/sessionService");
+    await SessionService.revokeUserSessions(session.user.id);
+  } catch (e) {
+    console.warn("[change-password] session revoke failed", e);
+  }
   return ok({ changed: true });
 }
 

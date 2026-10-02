@@ -45,6 +45,19 @@ export function createRedis(opts: RedisOptions = {}, url?: string): Redis {
 
 /** BullMQ Worker/QueueEvents surface connection problems as their own 'error' event; without a
  *  listener Node throws "Unhandled 'error' event". Attach a quiet one (the connection already logs). */
-export function quietErrors(emitter: { on(event: "error", listener: (err: Error) => void): unknown }): void {
+const liveWorkers = new Set<{ close(): Promise<void> }>();
+
+export function quietErrors(emitter: { on(event: "error", listener: (err: Error) => void): unknown; close?: () => Promise<void> }): void {
   emitter.on("error", () => {});
+  // Every consumer passes through here, so this is where they're tracked for a graceful shutdown.
+  if (typeof emitter.close === "function") liveWorkers.add(emitter as { close(): Promise<void> });
 }
+
+/** Stop taking new jobs and let running ones finish (BullMQ `close()`), bounded by `timeoutMs`. Used on SIGTERM
+ *  so a deploy doesn't kill jobs mid-run (which BullMQ would later re-deliver → duplicate side effects). */
+export async function closeAllWorkers(timeoutMs = 25_000): Promise<void> {
+  const done = Promise.allSettled([...liveWorkers].map((w) => w.close()));
+  await Promise.race([done, new Promise((r) => setTimeout(r, timeoutMs))]);
+}
+
+export const WORKER_HEARTBEAT_KEY = "ridhzo:worker:heartbeat";

@@ -1,6 +1,6 @@
 "use server";
 
-import { assertLeadAccess } from "@/lib/leads/access";
+import { assertLeadAccess, assertLeadWrite } from "@/lib/leads/access";
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
@@ -43,7 +43,7 @@ export async function createShareAction(data: unknown) {
   }
 
   try {
-    await assertLeadAccess(leadId, { userId, organizationId });
+    await assertLeadWrite(leadId, { userId, organizationId });
     const share = await ContentSharingService.createShare({
       organizationId,
       leadId,

@@ -40,6 +40,8 @@ export async function authorizeApiRequest(req: NextRequest): Promise<ApiAuth | {
     }
     if (isSuspended) return { error: suspendedResponse() };
     if (limited) return { error: limited };
+    const down = await maintenanceBlock(req);
+    if (down) return { error: down };
     // The live role, not the one baked into the token — a demoted admin loses admin rights at once.
     return { organizationId: mobile.org, userId: mobile.sub, roleId: live.roleId };
   }
@@ -47,6 +49,8 @@ export async function authorizeApiRequest(req: NextRequest): Promise<ApiAuth | {
   const key = await ApiKeyService.verify(raw);
   if (key) {
     if (await suspended(key.organizationId)) return { error: suspendedResponse() };
+    const down = await maintenanceBlock(req);
+    if (down) return { error: down };
     // Read-only keys may only issue safe (GET/HEAD) requests.
     if (key.scope === "read_only" && !isSafeMethod(req.method)) {
       return { error: NextResponse.json({ error: "This API key is read-only." }, { status: 403 }) };
@@ -58,6 +62,14 @@ export async function authorizeApiRequest(req: NextRequest): Promise<ApiAuth | {
   }
 
   return { error: NextResponse.json({ error: "Invalid or missing credentials" }, { status: 401 }) };
+}
+
+// Maintenance: reads keep working, changes are refused with a 503 + Retry-After.
+async function maintenanceBlock(req: NextRequest): Promise<NextResponse | null> {
+  if (isSafeMethod(req.method)) return null;
+  const { maintenanceMessage } = await import("@/lib/maintenance");
+  const msg = await maintenanceMessage();
+  return msg ? NextResponse.json({ error: msg }, { status: 503, headers: { "Retry-After": "300" } }) : null;
 }
 
 function isSafeMethod(method: string): boolean {

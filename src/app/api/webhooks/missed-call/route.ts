@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { clientIp } from "@/lib/clientIp";
 import { timingSafeEqual } from "crypto";
 import { sql, and, eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -12,7 +13,7 @@ import { RateLimiter } from "@/lib/rate-limit";
 // business number is missed. We match the caller to a lead and auto-send a WhatsApp so no
 // missed call goes un-followed-up. Optional shared secret: header x-webhook-secret.
 export async function POST(req: NextRequest) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const ip = clientIp(req);
   const rateLimit = await RateLimiter.checkLimit(`webhook:missed-call:${ip}`, 60, 60);
   if (!rateLimit.success) {
     return NextResponse.json({ ok: false, error: "Too many requests" }, { status: 429 });

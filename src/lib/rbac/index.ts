@@ -77,10 +77,21 @@ export async function getImpersonatedOrgId(): Promise<string | null> {
 }
 
 // Platform operator gate. Throws "Forbidden" unless the caller is a super-admin.
+// Also requires the MFA step-up (lib/auth/adminMfa): a password/session alone never operates the platform.
 export async function requireSuperAdmin() {
   const session = await requireAuth();
   if (!session.user.isSuperAdmin) throw new Error("Forbidden");
+  const { hasAdminMfa } = await import("@/lib/auth/adminMfa");
+  if (!(await hasAdminMfa(session.user.id))) throw new Error("Forbidden: two-factor verification required");
   return session;
+}
+
+// Super-admin AND step-up done — for the /admin pages (which show the verification screen otherwise).
+export async function isSuperAdminVerified(): Promise<boolean> {
+  const session = await getSession();
+  if (!session?.user?.isSuperAdmin) return false;
+  const { hasAdminMfa } = await import("@/lib/auth/adminMfa");
+  return hasAdminMfa(session.user.id);
 }
 
 export async function isSuperAdmin(): Promise<boolean> {
@@ -174,8 +185,18 @@ export async function hasPermissionForRoleId(roleId: string | null, key: Permiss
 // which already refuses non-.view keys under read-only impersonation). Refuses when a super-admin
 // is operating in READ-ONLY impersonation, so no write path can alter tenant data in that mode.
 // A drop-in for requireOrg() in mutating actions: identical return, identical for every normal user.
+// Platform maintenance blocks changes by everyone except super-admins (who are finishing the work).
+async function assertNotInMaintenance() {
+  const session = await getSession();
+  if (session?.user?.isSuperAdmin) return;
+  const { maintenanceMessage } = await import("@/lib/maintenance");
+  const msg = await maintenanceMessage();
+  if (msg) throw new Error(msg);
+}
+
 export async function assertWritable() {
   const ctx = await requireOrg();
+  await assertNotInMaintenance();
   if (ctx.readOnly) {
     throw new Error("This is a read-only session. Exit read-only impersonation to make changes.");
   }
@@ -220,10 +241,29 @@ export async function roleAssignmentError(organizationId: string, roleId: string
   return null;
 }
 
+// May the caller deactivate / delete / re-role this person? Not when the target's role grants something the
+// caller doesn't hold (unless the caller can manage roles): otherwise users.manage alone could lock out or
+// demote the workspace admins. Returns an error message, or null when allowed.
+export async function targetUserError(organizationId: string, targetUserId: string): Promise<string | null> {
+  if (await hasPermission("roles.manage")) return null;
+  const [t] = await db
+    .select({ roleId: users.roleId })
+    .from(users)
+    .where(and(eq(users.id, targetUserId), eq(users.organizationId, organizationId)))
+    .limit(1);
+  if (!t?.roleId) return null;
+  const keys = await permissionsForRoleId(t.roleId);
+  for (const key of keys) {
+    if (!(await hasPermission(key))) return "You can't change someone who has more access than you do.";
+  }
+  return null;
+}
+
 // Throws "Forbidden" unless the caller holds the permission; returns the tenant scope on success.
 export async function requirePermission(key: PermissionKey) {
   const { organizationId, userId } = await requireOrg();
   if (!(await hasPermission(key))) throw new Error("Forbidden");
+  if (!key.endsWith(".view")) await assertNotInMaintenance();
   return { organizationId, userId };
 }
 

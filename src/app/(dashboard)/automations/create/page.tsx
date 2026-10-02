@@ -2,12 +2,14 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AutomationBuilder } from "@/components/automations/AutomationBuilder";
-import { requireOrg } from "@/lib/rbac";
+import { requireOrg, hasPermission } from "@/lib/rbac";
+import { redirect } from "next/navigation";
 import { LeadSourceService } from "@/domains/leads/sourceService";
 import { SequenceService } from "@/domains/leads/sequenceService";
 
 export default async function CreateAutomationPage() {
   const { organizationId } = await requireOrg();
+  if (!(await hasPermission("automations.manage"))) redirect("/automations");
   const [sources, sequences] = await Promise.all([
     LeadSourceService.getSources(organizationId),
     SequenceService.list(organizationId),

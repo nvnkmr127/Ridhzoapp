@@ -41,7 +41,7 @@ vi.mock("@/domains/leads/scoringService", async (orig) => {
 });
 
 const createFollowUp = vi.fn();
-vi.mock("@/domains/follow-ups/service", () => ({ FollowUpService: { createFollowUp: (a: unknown) => createFollowUp(a), completeFollowUp: vi.fn() } }));
+vi.mock("@/domains/follow-ups/service", () => ({ FollowUpService: { createFollowUp: (a: unknown) => createFollowUp(a), completeFollowUp: vi.fn() }, SYSTEM_SCOPE: { system: true } }));
 
 const waSend = vi.fn();
 vi.mock("@/lib/messaging/whatsapp/service", () => ({ WhatsAppService: { send: (i: unknown) => waSend(i) } }));
