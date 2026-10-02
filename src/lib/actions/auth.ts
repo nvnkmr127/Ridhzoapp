@@ -18,6 +18,11 @@ import { headers } from "next/headers";
 import type { StoredAttribution } from "@/lib/tracking/utm";
 import { isPlaceholderEmail } from "@/lib/auth/googleLink";
 
+// Meta rejects website events without client_user_agent, and matches better with the visitor's IP.
+function capiRequestContext(h: Headers, ip: string) {
+  return { userAgent: h.get("user-agent") ?? undefined, ip: ip === "unknown" ? undefined : ip };
+}
+
 const signupSchema = z.object({
   orgName: z.string().max(255).optional(),
   firstName: z.string().max(255).optional(),
@@ -49,7 +54,8 @@ export async function signupAction(input: z.infer<typeof signupSchema>) {
   }
   const data = { ...parsed.data, email: parsed.data.email.trim().toLowerCase() };
   // Throttle workspace creation per client (bots can't mass-create accounts).
-  const ip = ipFromHeaders(await headers());
+  const reqHeaders = await headers();
+  const ip = ipFromHeaders(reqHeaders);
   if (!(await RateLimiter.checkLimit(`auth:signup:ip:${ip}`, 20, 60 * 60)).success) {
     return fail("RATE_LIMIT", "Too many sign-ups from this network. Please try again in an hour.");
   }
@@ -88,6 +94,7 @@ export async function signupAction(input: z.infer<typeof signupSchema>) {
           orgName,
           fbp: data.attribution?.fbp,
           fbc: data.attribution?.fbc,
+          ...capiRequestContext(reqHeaders, ip),
           eventSourceUrl: data.attribution?.landingPage,
         });
       } catch (err) {
@@ -428,6 +435,7 @@ export async function recordSignupAttributionAction(input: StoredAttribution) {
     .limit(1);
   if (!row) return ok({ recorded: false });
 
+  const h = await headers();
   const { PlatformAttributionService } = await import("@/domains/platform/attributionService");
   if (await PlatformAttributionService.getAttribution(organizationId)) return ok({ recorded: false });
   await PlatformAttributionService.recordAttribution(organizationId, attribution);
@@ -442,6 +450,7 @@ export async function recordSignupAttributionAction(input: StoredAttribution) {
       orgName: row.orgName,
       fbp: attribution.fbp,
       fbc: attribution.fbc,
+      ...capiRequestContext(h, ipFromHeaders(h)),
       eventSourceUrl: attribution.landingPage,
     });
   } catch (err) {
