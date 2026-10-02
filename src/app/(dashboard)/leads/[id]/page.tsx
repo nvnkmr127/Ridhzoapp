@@ -146,7 +146,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       .then((r) => (r as unknown as { acts: number; notes: number; calls: number; answered: number; wa: number; wa_in: number }[])[0])
       .catch(() => null),
     CustomStatusSchemaService.getStatusCategory(organizationId, lead.status).catch(() => undefined),
-    WhatsAppService.listForLead(id, 200),
+    WhatsAppService.listForLead(id, organizationId, 200),
     TagService.getForLead(id),
     db
       .select()
@@ -162,10 +162,10 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
       .orderBy(desc(followUps.dueAt))
       .limit(200)
       .catch(() => []),
-    ContentSharingService.listForLead(id).catch(() => []),
+    ContentSharingService.listForLead(id, organizationId).catch(() => []),
     OrgService.getOrganization(organizationId).catch(() => null),
     SequenceService.list(organizationId).catch(() => []),
-    SequenceService.listForLead(id).catch(() => []),
+    SequenceService.listForLead(id, organizationId).catch(() => []),
     db.select({ id: leadPipelineStages.id, name: leadPipelineStages.name })
       .from(leadPipelineStages)
       .where(eq(leadPipelineStages.organizationId, organizationId))

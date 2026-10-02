@@ -21,7 +21,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const parsed = schema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "Note cannot be empty" }, { status: 422 });
 
-    const activity = await ActivityService.addActivity({
+    const activity = await ActivityService.addActivity({ organizationId: auth.organizationId,
       leadId: id,
       userId: auth.userId,
       type: "note",

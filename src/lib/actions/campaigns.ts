@@ -40,7 +40,7 @@ export async function sendCampaignAction(input: unknown) {
         sent++;
       } catch {
         failed++;
-        await ActivityService.addActivity({
+        await ActivityService.addActivity({ organizationId: organizationId,
           leadId,
           userId,
           type: "note",

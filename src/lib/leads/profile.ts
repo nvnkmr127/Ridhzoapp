@@ -75,14 +75,14 @@ export async function buildLeadProfile(lead: Lead, ctx: { userId: string | null;
       // Same cap as GET /api/v1/leads/:id — years-old leads have thousands; stats and the timeline
       // here only need the recent ones.
       ActivityService.getLeadActivities(id, 500),
-      WhatsAppService.listForLead(id).catch(() => []),
+      WhatsAppService.listForLead(id, organizationId).catch(() => []),
       db
         .select()
         .from(leadAttachments)
         .where(and(eq(leadAttachments.leadId, id), eq(leadAttachments.organizationId, organizationId)))
         .orderBy(desc(leadAttachments.createdAt))
         .catch(() => []),
-      ContentSharingService.listForLead(id).catch(() => []),
+      ContentSharingService.listForLead(id, organizationId).catch(() => []),
       OrgService.getOrganization(organizationId).catch(() => null),
       // Active sequences + step counts only. SequenceService.list also counts every enrollment in the
       // workspace (steps × enrollments join) — work the profile throws away.
@@ -96,7 +96,7 @@ export async function buildLeadProfile(lead: Lead, ctx: { userId: string | null;
         .where(and(eq(sequences.organizationId, organizationId), eq(sequences.isActive, true)))
         .orderBy(sequences.createdAt)
         .catch(() => []),
-      SequenceService.listForLead(id).catch(() => []),
+      SequenceService.listForLead(id, organizationId).catch(() => []),
       db
         .select({ id: leadPipelineStages.id, name: leadPipelineStages.name })
         .from(leadPipelineStages)

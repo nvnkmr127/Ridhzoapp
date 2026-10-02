@@ -89,7 +89,7 @@ export class UserService {
             deletedAt: null,
             updatedAt: new Date(),
           })
-          .where(eq(users.id, existing.id))
+          .where(and(eq(users.id, existing.id), eq(users.organizationId, organizationId)))
           .returning(publicCols);
         return restored;
       }

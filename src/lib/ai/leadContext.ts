@@ -106,7 +106,7 @@ export async function loadLeadAiContext(lead: LoadableLead, organizationId: stri
       .where(eq(whatsappMessages.leadId, lead.id))
       .orderBy(desc(whatsappMessages.createdAt))
       .limit(MESSAGE_LIMIT),
-    ContentSharingService.listForLead(lead.id).catch(() => []),
+    ContentSharingService.listForLead(lead.id, organizationId).catch(() => []),
     CustomStatusSchemaService.getTenantStatusSchema(organizationId).catch(() => []),
     CustomFieldService.listCached(organizationId).catch(() => []),
     lead.stageId
@@ -143,7 +143,7 @@ export async function loadLeadAiContext(lead: LoadableLead, organizationId: stri
       .orderBy(desc(followUps.dueAt))
       .limit(15)
       .catch(() => []),
-    SequenceService.listForLead(lead.id).catch(() => []),
+    SequenceService.listForLead(lead.id, organizationId).catch(() => []),
     db
       .select({
         oldStatus: leadStatusHistory.oldStatus,

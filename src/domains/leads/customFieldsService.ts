@@ -52,7 +52,7 @@ export class CustomFieldsService {
     await db
       .update(leads)
       .set({ customData: merged, updatedAt: new Date() })
-      .where(eq(leads.id, leadId));
+      .where(and(eq(leads.id, leadId), eq(leads.organizationId, organizationId)));
 
     const updatedKeys = Object.keys(sanitized).join(", ");
     await ActivityService.addActivity({

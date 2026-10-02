@@ -34,7 +34,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       .insert(leadAttachments)
       .values({ leadId: id, organizationId: auth.organizationId, fileName, fileUrl, fileSize: file.size, fileType: contentType, uploadedById: auth.userId })
       .returning();
-    await ActivityService.addActivity({ leadId: id, userId: auth.userId, type: "attachment", content: `Uploaded file: ${fileName}` });
+    await ActivityService.addActivity({ organizationId: auth.organizationId, leadId: id, userId: auth.userId, type: "attachment", content: `Uploaded file: ${fileName}` });
     return NextResponse.json({ data: { id: attachment.id, fileName, fileType: contentType, fileSize: file.size } }, { status: 201 });
   } catch (e: any) {
     if (e?.code === "VALIDATION") return NextResponse.json({ error: e.message }, { status: 422 });

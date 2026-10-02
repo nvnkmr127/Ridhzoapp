@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { activities } from "@/db/schema/activities";
 import { users } from "@/db/schema/users";
+import { leads } from "@/db/schema/leads";
 import { eq, and, desc, inArray, sql } from "drizzle-orm";
 
 /** How many activities the lead profile loads at a time (initial render and each "Load older"). */
@@ -8,7 +9,14 @@ export const LEAD_ACTIVITY_PAGE = 100;
 
 export class ActivityService {
   // occurredAt: when it actually happened (a note about last week's call); defaults to now.
-  static async addActivity(data: { leadId: string; userId?: string; type: string; content?: string; externalRef?: string; occurredAt?: Date }) {
+  // `organizationId`: pass it from every user-facing path. When given, the lead MUST belong to that workspace
+  // or nothing is written (an id from another tenant can't get rows attached to it). Internal jobs that only
+  // hold a lead id (workers, webhooks) omit it — the lead id there came from a tenant-scoped lookup.
+  static async addActivity(data: { leadId: string; userId?: string; type: string; content?: string; externalRef?: string; occurredAt?: Date; organizationId?: string }) {
+    if (data.organizationId) {
+      const [owned] = await db.select({ id: leads.id }).from(leads).where(and(eq(leads.id, data.leadId), eq(leads.organizationId, data.organizationId))).limit(1);
+      if (!owned) throw new Error("Lead not found");
+    }
     const [activity] = await db.insert(activities).values({
       leadId: data.leadId,
       userId: data.userId,

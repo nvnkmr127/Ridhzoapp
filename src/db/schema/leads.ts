@@ -5,7 +5,7 @@ import { organizations } from './organizations';
 
 export const leadSources = pgTable('lead_sources', {
   id: uuid('id').defaultRandom().primaryKey(),
-  organizationId: uuid('organization_id').references(() => organizations.id),
+  organizationId: uuid('organization_id').references(() => organizations.id).notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   type: varchar('type', { length: 255 }),
   isActive: integer('is_active').default(1).notNull(), // 1=active, 0=inactive
@@ -36,6 +36,8 @@ export const leadPipelineStages = pgTable('lead_pipeline_stages', {
 
 export const assignmentRules = pgTable('assignment_rules', {
   id: uuid('id').defaultRandom().primaryKey(),
+  // Tenant of the rule (was only implied through its source/user/team). Backfilled by migration 0101.
+  organizationId: uuid('organization_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
   sourceId: uuid('source_id').references(() => leadSources.id),
   teamId: uuid('team_id').references(() => teams.id),
   userId: uuid('user_id').references(() => users.id),

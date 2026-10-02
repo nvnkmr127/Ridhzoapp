@@ -123,7 +123,7 @@ export class WebhookDlqService {
     await db
       .update(webhookDeliveries)
       .set({ status: "pending", attempts: 0, errorReason: null, updatedAt: new Date() })
-      .where(eq(webhookDeliveries.id, deliveryId));
+      .where(and(eq(webhookDeliveries.id, deliveryId), eq(webhookDeliveries.organizationId, organizationId)));
 
     const { webhookDeliveryQueue } = await import("@/lib/jobs/workers/webhookRetryWorker");
     const payload = row.payload as WebhookEventPayload;

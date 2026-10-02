@@ -69,7 +69,7 @@ export async function uploadAttachmentAction(formData: FormData) {
       })
       .returning();
 
-    await ActivityService.addActivity({
+    await ActivityService.addActivity({ organizationId: organizationId,
       leadId,
       userId,
       type: "attachment",
@@ -107,7 +107,7 @@ export async function addAttachmentAction(input: z.infer<typeof addAttachmentSch
       })
       .returning();
 
-    await ActivityService.addActivity({
+    await ActivityService.addActivity({ organizationId: organizationId,
       leadId: parsed.data.leadId,
       userId,
       type: "attachment",
@@ -152,7 +152,7 @@ export async function deleteAttachmentAction(attachmentId: string, leadId: strin
 
     await deleteAttachment(deleted.fileUrl);
 
-    await ActivityService.addActivity({
+    await ActivityService.addActivity({ organizationId: organizationId,
       leadId,
       userId,
       type: "attachment_deleted",

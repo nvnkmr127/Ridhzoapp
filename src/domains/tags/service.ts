@@ -39,6 +39,9 @@ export class TagService {
 
   static async removeFromLead(leadId: string, tagId: string, organizationId: string) {
     await assertLeadInOrg(leadId, organizationId);
+    // The tag must be this workspace's too (tags are per-org; an id from elsewhere removes nothing).
+    const [tag] = await db.select({ id: tags.id }).from(tags).where(and(eq(tags.id, tagId), eq(tags.organizationId, organizationId))).limit(1);
+    if (!tag) return;
     await db.delete(leadTags).where(and(eq(leadTags.leadId, leadId), eq(leadTags.tagId, tagId)));
   }
 

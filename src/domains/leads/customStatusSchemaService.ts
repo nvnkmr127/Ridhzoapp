@@ -180,7 +180,7 @@ export class CustomStatusSchemaService {
           category,
           orderIndex: statusItem.orderIndex ?? existing.orderIndex,
         })
-        .where(eq(customStatusConfigs.id, existing.id))
+        .where(and(eq(customStatusConfigs.id, existing.id), eq(customStatusConfigs.organizationId, organizationId)))
         .returning();
 
       return {

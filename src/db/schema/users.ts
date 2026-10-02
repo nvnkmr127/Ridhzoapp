@@ -17,7 +17,7 @@ export const roles = pgTable('roles', {
 
 export const teams = pgTable('teams', {
   id: uuid('id').defaultRandom().primaryKey(),
-  organizationId: uuid('organization_id').references(() => organizations.id), // tenant scope; backfilled
+  organizationId: uuid('organization_id').references(() => organizations.id).notNull(), // tenant scope
   name: varchar('name', { length: 255 }).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),

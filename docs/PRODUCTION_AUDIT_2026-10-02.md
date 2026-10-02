@@ -28,6 +28,8 @@
 
 - **I. Missing business logic:** done — over-cap lead sources are paused on downgrade (their leads are refused and recorded, replayable after upgrade); AI credits renew on the subscription's own billing day; a database error no longer silently demotes a paying workspace to Free (last known plan, logged); unused role-name admin helpers removed and the "admin" permission rules named in one place. Seats and leads over a cap keep working but nothing new can be added, with an over-limit notice in the usage menu.
 
+- **J. Tenant isolation:** done where code can do it — activity writes and the WhatsApp/shared-link/sequence readers are workspace-scoped, ~12 more id-keyed writes now carry an org predicate, `teams`/`lead_sources` tenant columns are NOT NULL and `assignment_rules` has its own tenant column (migration 0101, applies only when data is clean), and a real-Postgres isolation test runs in CI. `users.organization_id` stays nullable on purpose (platform super-admins), `roles.organization_id` null = shared system roles; no row-level security.
+
 ## A. Executive Summary
 
 Ridhzo is a mature, unusually well-commented Next.js 15 / Drizzle / Postgres / BullMQ multi-tenant CRM. Typecheck is clean, 860 tests pass, org scoping in services is consistent, SSRF/webhook-signature/idempotency work has clearly been done with care, and secrets are not committed (`.env*` never appear in git history).

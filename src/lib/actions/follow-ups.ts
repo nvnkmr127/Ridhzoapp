@@ -117,10 +117,10 @@ export async function reopenFollowUp(id: string) {
 
 // Cancelling replaces deleting: the follow-up drops out of every list but stays in the lead's history.
 export async function cancelFollowUp(id: string) {
-  const { userId } = await requireOrg();
+  const { userId, organizationId } = await requireOrg();
   const res = await transition(id, (org) => FollowUpService.cancelFollowUp(id, org));
   if (res.ok) {
-    await ActivityService.addActivity({ leadId: res.data.leadId, userId, type: "note", content: `Follow-up cancelled: ${res.data.title}` }).catch(() => {});
+    await ActivityService.addActivity({ organizationId, leadId: res.data.leadId, userId, type: "note", content: `Follow-up cancelled: ${res.data.title}` }).catch(() => {});
   }
   return res;
 }

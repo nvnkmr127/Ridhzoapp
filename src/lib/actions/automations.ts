@@ -96,7 +96,7 @@ export async function updateAutomation(id: string, data: unknown) {
     const [existing] = await tx.select().from(automations).where(and(eq(automations.id, id), eq(automations.organizationId, organizationId)));
     if (!existing) return true;
 
-    await tx.update(automations).set({ name, isActive: isActive ?? true }).where(eq(automations.id, id));
+    await tx.update(automations).set({ name, isActive: isActive ?? true }).where(and(eq(automations.id, id), eq(automations.organizationId, organizationId)));
 
     // Replace trigger/conditions/actions wholesale — atomically inside transaction.
     await tx.delete(automationTriggers).where(eq(automationTriggers.automationId, id));
@@ -186,7 +186,7 @@ export async function deleteAutomation(id: string) {
     await db.delete(automationTriggers).where(eq(automationTriggers.automationId, id));
     await db.delete(automationConditions).where(eq(automationConditions.automationId, id));
     await db.delete(automationActions).where(eq(automationActions.automationId, id));
-    await db.delete(automations).where(eq(automations.id, id));
+    await db.delete(automations).where(and(eq(automations.id, id), eq(automations.organizationId, organizationId)));
 
     revalidatePath("/automations");
     return ok({ deleted: true });

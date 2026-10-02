@@ -53,17 +53,21 @@ export function chooseSend(
 export const WhatsAppService = {
   // Full thread for a lead, oldest first — drives the conversation view.
   // Oldest → newest. With `limit`, only the most recent `limit` messages (still oldest → newest).
-  async listForLead(leadId: string, limit?: number) {
+  async listForLead(leadId: string, organizationId: string, limit?: number) {
+    // Scoped through the lead's workspace: a lead id from another tenant yields nothing.
+    const inOrg = and(eq(whatsappMessages.leadId, leadId), eq(leads.organizationId, organizationId));
     if (limit == null) {
-      return db.select().from(whatsappMessages)
-        .where(eq(whatsappMessages.leadId, leadId))
-        .orderBy(whatsappMessages.createdAt);
+      return (await db.select({ m: whatsappMessages }).from(whatsappMessages)
+        .innerJoin(leads, eq(leads.id, whatsappMessages.leadId))
+        .where(inOrg)
+        .orderBy(whatsappMessages.createdAt)).map((r) => r.m);
     }
-    const rows = await db.select().from(whatsappMessages)
-      .where(eq(whatsappMessages.leadId, leadId))
+    const rows = await db.select({ m: whatsappMessages }).from(whatsappMessages)
+      .innerJoin(leads, eq(leads.id, whatsappMessages.leadId))
+      .where(inOrg)
       .orderBy(desc(whatsappMessages.createdAt))
       .limit(limit);
-    return rows.reverse();
+    return rows.map((r) => r.m).reverse();
   },
 
   async send(input: SendWhatsAppInput) {

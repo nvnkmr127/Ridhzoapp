@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { leadAttachments } from "@/db/schema";
 import { authorizeApiRequest } from "@/lib/apiAuth";
@@ -34,8 +34,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!a || a.organizationId !== auth.organizationId || !(await leadForApi(auth, a.leadId))) return notFound();
   if (!(await canEditLeads(auth))) return readOnly();
 
-  await db.delete(leadAttachments).where(eq(leadAttachments.id, id));
+  await db.delete(leadAttachments).where(and(eq(leadAttachments.id, id), eq(leadAttachments.organizationId, auth.organizationId)));
   await deleteAttachment(a.fileUrl).catch(() => {});
-  await ActivityService.addActivity({ leadId: a.leadId, userId: auth.userId, type: "attachment_deleted", content: `Removed attachment: ${a.fileName}` });
+  await ActivityService.addActivity({ organizationId: auth.organizationId, leadId: a.leadId, userId: auth.userId, type: "attachment_deleted", content: `Removed attachment: ${a.fileName}` });
   return NextResponse.json({ data: { deleted: true } });
 }

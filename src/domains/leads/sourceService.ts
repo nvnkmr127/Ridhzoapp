@@ -246,8 +246,8 @@ export class LeadSourceService {
       if (a.mode === "none") return;
       await tx.insert(assignmentRules).values(
         a.mode === "user"
-          ? { sourceId, type: "source_direct", userId: a.userId }
-          : { sourceId, type: "source_round_robin", teamId: a.teamId },
+          ? { organizationId, sourceId, type: "source_direct", userId: a.userId }
+          : { organizationId, sourceId, type: "source_round_robin", teamId: a.teamId },
       );
     });
     return a;

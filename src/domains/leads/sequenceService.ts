@@ -158,7 +158,7 @@ export class SequenceService {
   static async update(organizationId: string, sequenceId: string, name: string, steps: SequenceStepInput[], description?: string | null) {
     const [seq] = await db.select({ id: sequences.id }).from(sequences).where(and(eq(sequences.id, sequenceId), eq(sequences.organizationId, organizationId)));
     if (!seq) throw new Error("Sequence not found");
-    await db.update(sequences).set({ name, description: description ?? null }).where(eq(sequences.id, sequenceId));
+    await db.update(sequences).set({ name, description: description ?? null }).where(and(eq(sequences.id, sequenceId), eq(sequences.organizationId, organizationId)));
     await db.delete(sequenceSteps).where(eq(sequenceSteps.sequenceId, sequenceId));
     if (steps.length) {
       await db.insert(sequenceSteps).values(
@@ -184,7 +184,7 @@ export class SequenceService {
     return this.enroll(lead.organizationId, sequenceId, [leadId]);
   }
 
-  static async listForLead(leadId: string) {
+  static async listForLead(leadId: string, organizationId: string) {
     return db
       .select({
         enrollmentId: sequenceEnrollments.id,
@@ -196,7 +196,7 @@ export class SequenceService {
       })
       .from(sequenceEnrollments)
       .innerJoin(sequences, eq(sequenceEnrollments.sequenceId, sequences.id))
-      .where(eq(sequenceEnrollments.leadId, leadId));
+      .where(and(eq(sequenceEnrollments.leadId, leadId), eq(sequenceEnrollments.organizationId, organizationId)));
   }
 
   // Enroll leads at step 0; the first step fires on the next scan (dayOffset 0) or later.

@@ -158,11 +158,11 @@ export class ContentSharingService {
     return { opensInWindow: Number(opens.n), ignoredCount: Number(ignored.n) };
   }
 
-  static async listForLead(leadId: string): Promise<SharedLinkSummary[]> {
+  static async listForLead(leadId: string, organizationId: string): Promise<SharedLinkSummary[]> {
     const rows = await db
       .select()
       .from(sharedLinks)
-      .where(eq(sharedLinks.leadId, leadId))
+      .where(and(eq(sharedLinks.leadId, leadId), eq(sharedLinks.organizationId, organizationId)))
       .orderBy(desc(sharedLinks.createdAt));
     return rows.map((r) => ({
       id: r.id,

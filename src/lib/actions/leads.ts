@@ -455,7 +455,7 @@ export async function addNoteAction(input: z.infer<typeof addNoteSchema>) {
       if (occurredAt.getTime() < now - TEN_YEARS_MS) return fail("VALIDATION", "That date is too far back.", { occurredAt: "Pick a date within the last 10 years." });
     }
 
-    const activity = await ActivityService.addActivity({
+    const activity = await ActivityService.addActivity({ organizationId: organizationId,
       leadId: parsed.data.leadId,
       userId,
       type: 'note',

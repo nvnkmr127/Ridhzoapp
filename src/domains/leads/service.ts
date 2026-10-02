@@ -148,7 +148,7 @@ export class LeadService {
           if (match.email) updates.email = null;
           if (match.phone) updates.phone = null;
           if (Object.keys(updates).length > 0) {
-            await db.update(leads).set(updates).where(eq(leads.id, trashed.id));
+            await db.update(leads).set(updates).where(and(eq(leads.id, trashed.id), eq(leads.organizationId, organizationId)));
           }
         }
       }
@@ -184,7 +184,7 @@ export class LeadService {
               .where(and(eq(leads.organizationId, organizationId), isNotNull(leads.deletedAt), eq(leads.email, cleanEmail)))
               .limit(1);
             if (trashed) {
-              await db.update(leads).set({ email: null }).where(eq(leads.id, trashed.id));
+              await db.update(leads).set({ email: null }).where(and(eq(leads.id, trashed.id), eq(leads.organizationId, organizationId)));
               return this.createLead(data, createdById, organizationId);
             }
           }
@@ -200,7 +200,7 @@ export class LeadService {
               .where(and(eq(leads.organizationId, organizationId), isNotNull(leads.deletedAt), eq(leads.phone, cleanPhone)))
               .limit(1);
             if (trashed) {
-              await db.update(leads).set({ phone: null }).where(eq(leads.id, trashed.id));
+              await db.update(leads).set({ phone: null }).where(and(eq(leads.id, trashed.id), eq(leads.organizationId, organizationId)));
               return this.createLead(data, createdById, organizationId);
             }
           }

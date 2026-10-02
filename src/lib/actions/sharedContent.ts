@@ -64,5 +64,5 @@ export async function listSharesAction(leadId: string) {
   // Was only "logged in" — any user could list another tenant's shares for a lead id.
   const { userId, organizationId } = await requireOrg();
   await assertLeadAccess(leadId, { userId, organizationId });
-  return ContentSharingService.listForLead(leadId);
+  return ContentSharingService.listForLead(leadId, organizationId);
 }
