@@ -208,6 +208,22 @@ export class InvoiceService {
     return inv;
   }
 
+  // Razorpay refund webhook → the GST credit note for the invoice that payment produced. A FULL refund gets
+  // its credit note automatically; a partial one (amount below the invoice total) is only logged, since a
+  // partial credit needs an accountant's decision. Idempotent: an already-credited invoice is left alone.
+  static async handleRefund(paymentId: string, refundedRupees: number): Promise<"credited" | "partial" | "no_invoice" | "already"> {
+    const [row] = await db.select().from(taxInvoices).where(eq(taxInvoices.paymentId, paymentId)).limit(1);
+    if (!row) return "no_invoice";
+    const inv = toInvoice(row);
+    if (inv.type !== "invoice" || inv.status === "refunded" || inv.status === "void") return "already";
+    if (refundedRupees + 0.005 < inv.totalAmount) {
+      await AuditService.log({ organizationId: inv.orgId, action: "billing.partial_refund", entityType: "invoice", entityId: inv.id, metadata: { invoiceNumber: inv.invoiceNumber, refunded: refundedRupees, invoiceTotal: inv.totalAmount, paymentId } });
+      return "partial";
+    }
+    const cn = await this.issueCreditNote(inv.id, "Razorpay refund");
+    return cn ? "credited" : "already";
+  }
+
   // One credit note per invoice, only for a live invoice (not void, not already credited).
   static async issueCreditNote(invoiceId: string, reason?: string, actorId?: string | null): Promise<TaxInvoice | null> {
     const result = await db.transaction(async (tx) => {

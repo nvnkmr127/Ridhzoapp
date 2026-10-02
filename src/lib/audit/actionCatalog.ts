@@ -6,6 +6,11 @@
 // enforced enum — AuditService.log accepts any string, so this list can lag a newly added call
 // site without anything breaking; it just won't be filterable until added here.
 export const AUDIT_ACTIONS: { value: string; label: string }[] = [
+  { value: "integration.whatsapp_connect", label: "WhatsApp account connected" },
+  { value: "integration.whatsapp_disconnect", label: "WhatsApp account disconnected" },
+  { value: "integration.whatsapp_token_rotate", label: "WhatsApp webhook URL rotated" },
+  { value: "billing.payment_attempt_failed", label: "Payment attempt failed" },
+  { value: "billing.partial_refund", label: "Partial refund received" },
   { value: "user.login_failed", label: "Failed sign-in" },
   { value: "user.logout", label: "Signed out" },
   { value: "lead.create", label: "Lead created" },

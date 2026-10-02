@@ -88,6 +88,10 @@ export const WhatsAppService = {
       }
     }
 
+    // The workspace's own WhatsApp account when it connected one; otherwise the platform number.
+    const { WhatsAppSettingsService } = await import("@/domains/organizations/whatsappSettingsService");
+    const creds = lead.organizationId ? (await WhatsAppSettingsService.credsFor(lead.organizationId)) ?? undefined : undefined;
+
     const leadLike: LeadLike = lead;
     const canFreeform = await insideWindow(input.leadId);
 
@@ -111,8 +115,8 @@ export const WhatsAppService = {
 
     try {
       const result = useTemplate
-        ? await WatxioClient.sendTemplate(lead.phone, input.templateName!, renderedVars, input.languageCode, msg.id)
-        : await WatxioClient.sendText(lead.phone, renderedBody!, msg.id);
+        ? await WatxioClient.sendTemplate(lead.phone, input.templateName!, renderedVars, input.languageCode, msg.id, creds)
+        : await WatxioClient.sendText(lead.phone, renderedBody!, msg.id, creds);
 
       await db.update(whatsappMessages)
         .set({ status: result.status, providerMessageId: result.providerMessageId, updatedAt: new Date() })

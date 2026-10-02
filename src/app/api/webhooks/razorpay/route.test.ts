@@ -5,7 +5,9 @@ import { NextRequest } from "next/server";
 const handle = vi.fn();
 const rows = new Map<string, { id: string; status: string }>();
 vi.mock("@/lib/billing/razorpay", () => ({ verifyWebhookSignature: () => true }));
-vi.mock("@/domains/billing/service", () => ({ BillingService: { handleWebhook: (...a: unknown[]) => handle(...a) } }));
+const refund = vi.fn();
+const failed = vi.fn();
+vi.mock("@/domains/billing/service", () => ({ BillingService: { handleWebhook: (...a: unknown[]) => handle(...a), handleRefundWebhook: (...a: unknown[]) => refund(...a), handlePaymentFailedWebhook: (...a: unknown[]) => failed(...a) } }));
 vi.mock("drizzle-orm", () => ({ and: (...a: unknown[]) => a, eq: (_c: unknown, v: unknown) => v }));
 vi.mock("@/db/schema", () => ({ webhookEvents: { provider: "p", idempotencyKey: "k", id: "id", status: "s" } }));
 vi.mock("@/db", () => ({
@@ -22,7 +24,8 @@ vi.mock("@/db", () => ({
 
 import { POST } from "./route";
 
-const call = () => POST(new NextRequest("http://x/api/webhooks/razorpay", { method: "POST", headers: { "x-razorpay-signature": "s", "x-razorpay-event-id": "evt_1" }, body: JSON.stringify({ event: "subscription.charged", payload: { subscription: { entity: { id: "sub_1" } } } }) }));
+const callWith = (body: unknown, id = "evt_1") => POST(new NextRequest("http://x/api/webhooks/razorpay", { method: "POST", headers: { "x-razorpay-signature": "s", "x-razorpay-event-id": id }, body: JSON.stringify(body) }));
+const call = () => callWith({ event: "subscription.charged", payload: { subscription: { entity: { id: "sub_1" } } } });
 
 describe("razorpay webhook ledger", () => {
   beforeEach(() => { rows.clear(); handle.mockReset(); });
@@ -39,5 +42,14 @@ describe("razorpay webhook ledger", () => {
     expect((await call()).status).toBe(500);
     expect((await call()).status).toBe(200);
     expect(handle).toHaveBeenCalledTimes(2);
+  });
+
+  it("routes refund and failed-payment events to their own handlers", async () => {
+    refund.mockReset(); failed.mockReset();
+    await callWith({ event: "refund.processed", payload: { refund: { entity: { payment_id: "pay_1", amount: 11800 } } } }, "evt_r");
+    expect(refund).toHaveBeenCalledWith({ payment_id: "pay_1", amount: 11800 });
+    await callWith({ event: "payment.failed", payload: { payment: { entity: { id: "pay_2", notes: { organizationId: "o1" } } } } }, "evt_f");
+    expect(failed).toHaveBeenCalledWith(expect.objectContaining({ id: "pay_2" }));
+    expect(handle).not.toHaveBeenCalled();
   });
 });

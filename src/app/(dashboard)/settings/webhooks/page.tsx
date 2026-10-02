@@ -6,13 +6,15 @@ import { requireOrg, hasPermission } from "@/lib/rbac";
 import { WebhookEndpointService } from "@/domains/integrations/webhookEndpointService";
 import { WebhookDlqService } from "@/domains/leads/webhookDlqService";
 import { WebhooksManager } from "@/components/settings/WebhooksManager";
+import { WebhookDlqPanel } from "@/components/settings/WebhookDlqPanel";
 
 export default async function WebhooksPage() {
   if (!(await hasPermission("api.manage"))) redirect("/leads");
   const { organizationId } = await requireOrg();
-  const [endpoints, stats] = await Promise.all([
+  const [endpoints, stats, failed] = await Promise.all([
     WebhookEndpointService.list(organizationId),
     WebhookDlqService.getDeliveryStats(organizationId),
+    WebhookDlqService.getFailedDlqJobs(organizationId, 50),
   ]);
 
   return (
@@ -27,6 +29,12 @@ export default async function WebhooksPage() {
         </div>
       </div>
       <WebhooksManager initial={endpoints} dlqCount={stats.failed} stats={stats} />
+      {failed.length > 0 && (
+        <WebhookDlqPanel
+          items={failed.map((f) => ({ id: f.jobId, event: f.event, url: f.endpointUrl, failedAt: f.failedAt, reason: f.errorReason, attempts: f.attemptCount }))}
+          total={stats.failed}
+        />
+      )}
     </div>
   );
 }

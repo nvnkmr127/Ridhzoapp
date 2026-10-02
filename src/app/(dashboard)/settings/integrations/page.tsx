@@ -13,6 +13,10 @@ import { GoogleConnectButton } from "@/components/settings/GoogleConnectButton";
 import { EnablePushButton } from "@/components/layout/EnablePushButton";
 import { TenantIntegrationsService } from "@/domains/organizations/tenantIntegrationsService";
 import { Suspense } from "react";
+import { hasPermission } from "@/lib/rbac";
+import { WhatsAppSettingsService } from "@/domains/organizations/whatsappSettingsService";
+import { WhatsAppConnect } from "@/components/settings/WhatsAppConnect";
+import { appUrl } from "@/lib/mail/mailer";
 import { IntegrationStatusToast } from "@/components/settings/IntegrationStatusToast";
 
 function ManageLink({ href, label = "Manage" }: { href: string; label?: string }) {
@@ -26,6 +30,7 @@ export default async function IntegrationsPage() {
     TenantIntegrationsService.getView(organizationId),
     session?.user?.id ? GoogleCalendarService.isConnected(session.user.id) : Promise.resolve(false),
   ]);
+  const [canManage, waView] = await Promise.all([hasPermission("settings.manage"), WhatsAppSettingsService.getView(organizationId)]);
   const leadIntelOn = leadIntel.enrichmentEnabled || leadIntel.inboundEmailEnabled || leadIntel.capiEnabled;
 
   const facebookConfigured = Boolean(process.env.NEXT_PUBLIC_FACEBOOK_APP_ID);
@@ -47,12 +52,14 @@ export default async function IntegrationsPage() {
         </div>
       </div>
 
+      {canManage && <WhatsAppConnect initial={waView} appUrl={appUrl("/").replace(/\/$/, "")} />}
+
       <div className="grid gap-4 md:grid-cols-2">
         <IntegrationCard
           name="WhatsApp Business API"
           description="Send templates, sequences, and campaigns to leads through the official WhatsApp Business API."
           icon={<MessageCircle className="h-5 w-5 text-emerald-500" />}
-          status={wa ? "configured" : "unconfigured"}
+          status={wa || waView.enabled ? "configured" : "unconfigured"}
           action={<ManageLink href="/settings/sources" />}
           docsHint="Set WATXIO_BASE_URL, WATXIO_API_KEY, WATXIO_PHONE_NUMBER_ID"
         />

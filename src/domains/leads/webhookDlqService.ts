@@ -92,12 +92,13 @@ export class WebhookDlqService {
   }
 
   // Tenant-scoped: only this org's failed deliveries.
-  static async getFailedDlqJobs(organizationId: string): Promise<DlqItem[]> {
+  static async getFailedDlqJobs(organizationId: string, limit = 100): Promise<DlqItem[]> {
     const rows = await db
       .select()
       .from(webhookDeliveries)
       .where(and(eq(webhookDeliveries.organizationId, organizationId), eq(webhookDeliveries.status, "failed")))
-      .orderBy(desc(webhookDeliveries.updatedAt));
+      .orderBy(desc(webhookDeliveries.updatedAt))
+      .limit(limit);
     return rows.map((r) => ({
       jobId: r.id,
       eventId: r.eventId,

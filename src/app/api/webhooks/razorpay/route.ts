@@ -46,7 +46,13 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    await BillingService.handleWebhook(body?.event, subscription, payment);
+    if (body?.event === "refund.processed" || body?.event === "payment.refunded") {
+      await BillingService.handleRefundWebhook(body?.payload?.refund?.entity);
+    } else if (body?.event === "payment.failed") {
+      await BillingService.handlePaymentFailedWebhook(payment);
+    } else {
+      await BillingService.handleWebhook(body?.event, subscription, payment);
+    }
     if (ledgerId) await db.update(webhookEvents).set({ status: "processed", processedAt: new Date() }).where(eq(webhookEvents.id, ledgerId)).catch(() => {});
   } catch (e) {
     console.error("[razorpay] webhook handling failed", e);

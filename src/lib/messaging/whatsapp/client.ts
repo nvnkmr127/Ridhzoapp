@@ -27,9 +27,13 @@ export function isConfigured(): boolean {
   return Boolean(process.env.WATXIO_BASE_URL?.trim() && process.env.WATXIO_API_KEY?.trim());
 }
 
-function config(): WatxioConfig {
+// A tenant's own account: its key (and X-Tenant-ID) replace the platform's; the BASE URL always comes from
+// env, never from a tenant (no tenant-controlled outbound host).
+export interface TenantCreds { apiKey: string; tenantId?: string }
+
+function config(creds?: TenantCreds): WatxioConfig {
   const baseUrl = process.env.WATXIO_BASE_URL?.trim();
-  const rawApiKey = process.env.WATXIO_API_KEY?.trim();
+  const rawApiKey = creds ? creds.apiKey.trim() : process.env.WATXIO_API_KEY?.trim();
   if (!baseUrl || !rawApiKey) {
     throw new Error("Watxio not configured: set WATXIO_BASE_URL and WATXIO_API_KEY");
   }
@@ -40,13 +44,13 @@ function config(): WatxioConfig {
     baseUrl: normalizeBaseUrl(baseUrl),
     apiKey,
     phoneNumberId: process.env.WATXIO_PHONE_NUMBER_ID?.trim(),
-    tenantId: process.env.WATXIO_TENANT_ID?.trim(),
+    tenantId: creds ? creds.tenantId?.trim() : process.env.WATXIO_TENANT_ID?.trim(),
   };
 }
 
 // idempotencyKey → X-Idempotency-Key: a retried send with the same key isn't delivered twice.
-async function post(path: string, body: unknown, idempotencyKey?: string): Promise<any> {
-  const { baseUrl, apiKey, tenantId } = config();
+async function post(path: string, body: unknown, idempotencyKey?: string, creds?: TenantCreds): Promise<any> {
+  const { baseUrl, apiKey, tenantId } = config(creds);
   const url = `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
 
   const res = await fetch(url, {
@@ -97,12 +101,12 @@ function pickResult(json: any): SendResult {
 
 export const WatxioClient = {
   // Standard text message: POST /messages
-  async sendText(phone: string, body: string, idempotencyKey?: string): Promise<SendResult> {
+  async sendText(phone: string, body: string, idempotencyKey?: string, creds?: TenantCreds): Promise<SendResult> {
     const json = await post("/messages", {
       to: toRecipient(phone),
       type: "text",
       text: { body },
-    }, idempotencyKey);
+    }, idempotencyKey, creds);
     return pickResult(json);
   },
 
@@ -113,6 +117,7 @@ export const WatxioClient = {
     variables: string[] = [],
     languageCode = "en_US",
     idempotencyKey?: string,
+    creds?: TenantCreds,
   ): Promise<SendResult> {
     const json = await post("/messages", {
       to: toRecipient(phone),
@@ -124,7 +129,7 @@ export const WatxioClient = {
           ? [{ type: "body", parameters: variables.map((v) => ({ type: "text", text: v })) }]
           : [],
       },
-    }, idempotencyKey);
+    }, idempotencyKey, creds);
     return pickResult(json);
   },
 };

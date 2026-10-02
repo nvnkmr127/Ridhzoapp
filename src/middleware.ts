@@ -38,6 +38,7 @@ export const config = {
     "/invoice/:path*",
     "/follow-ups/:path*",
     "/meetings/:path*",
+    "/calls/:path*",
     "/my-dashboard/:path*",
     "/profile/:path*",
     "/settings/:path*",

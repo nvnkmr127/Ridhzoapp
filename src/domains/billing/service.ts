@@ -230,6 +230,23 @@ export class BillingService {
     return razorpay.listInvoices({ customerId: org.customerId, subscriptionId: org.subscriptionId }).catch(() => []);
   }
 
+  // refund.processed / payment.refunded: books the credit note (full refunds) — see InvoiceService.handleRefund.
+  static async handleRefundWebhook(refund: { payment_id?: string; amount?: number } | undefined) {
+    if (!refund?.payment_id || !refund.amount) return;
+    const { InvoiceService } = await import("./invoiceService");
+    const res = await InvoiceService.handleRefund(refund.payment_id, refund.amount / 100);
+    if (res === "credited") console.log(`[billing] credit note issued for refunded payment ${refund.payment_id}`);
+  }
+
+  // payment.failed: no state change (Razorpay retries the charge and sends subscription.halted if it gives
+  // up) — just a trail, so support can see every failed attempt.
+  static async handlePaymentFailedWebhook(payment: { id?: string; error_description?: string; notes?: Record<string, string> } | undefined) {
+    const orgId = payment?.notes?.organizationId;
+    if (!orgId) return;
+    const { AuditService } = await import("@/domains/audit/service");
+    await AuditService.log({ organizationId: orgId, action: "billing.payment_attempt_failed", entityType: "organization", entityId: orgId, metadata: { paymentId: payment?.id ?? null, reason: payment?.error_description ?? null } });
+  }
+
   // Reconcile from a verified webhook. Razorpay is the source of truth for the subscription state.
   // System-attributed (userId: null): this is the only path that can change billing state with no
   // user in the loop, and previously left no trace at all when it did.

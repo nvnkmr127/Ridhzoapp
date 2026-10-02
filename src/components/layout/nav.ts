@@ -18,6 +18,7 @@ import {
   Radio,
   Database,
   LifeBuoy,
+  Phone,
   type LucideIcon,
 } from "lucide-react";
 
@@ -40,6 +41,7 @@ export const navRoutes: NavRoute[] = [
   { label: "Cold Leads", icon: Snowflake, href: "/leads/cold", group: "CRM" },
   { label: "Follow-ups", icon: CheckSquare, href: "/follow-ups", group: "Productivity" },
   { label: "Meetings", icon: CalendarCheck, href: "/meetings", group: "Productivity" },
+  { label: "Calls", icon: Phone, href: "/calls", group: "Productivity" },
   { label: "Automations", icon: Zap, href: "/automations", group: "Productivity" },
   { label: "Sequences", icon: GitFork, href: "/sequences", group: "Productivity" },
   { label: "Sources", icon: Network, href: "/settings/sources", group: "Settings", permission: "sources.manage" },

@@ -15,7 +15,7 @@ describe("WebhookDlqService (Postgres-backed)", () => {
     const rows = [
       { id: "d1", eventId: "evt_1", event: "lead.created", url: "https://x/y", updatedAt: now, createdAt: now, errorReason: "HTTP 500", attempts: 5, payload: { organizationId: "org-1" } },
     ];
-    (db.select as any).mockReturnValue({ from: () => ({ where: () => ({ orderBy: () => Promise.resolve(rows) }) }) });
+    (db.select as any).mockReturnValue({ from: () => ({ where: () => ({ orderBy: () => ({ limit: () => Promise.resolve(rows) }) }) }) });
 
     const items = await WebhookDlqService.getFailedDlqJobs("org-1");
     expect(items).toHaveLength(1);

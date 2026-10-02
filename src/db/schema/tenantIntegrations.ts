@@ -40,6 +40,14 @@ export const tenantIntegrationSettings = pgTable('tenant_integration_settings', 
   capiLastError: text('capi_last_error'),
   capiLastAt: timestamp('capi_last_at'),
 
+  // WhatsApp (Watxio) — a tenant's OWN account. Off = the platform number (WATXIO_* env) is used, as before.
+  // The API key is encrypted; the inbound token identifies the tenant on /api/webhooks/whatsapp/<token>, so
+  // replies from their number land in the right workspace (the platform webhook can't tell tenants apart).
+  whatsappEnabled: integer('whatsapp_enabled').default(0).notNull(),
+  whatsappApiKeyEnc: text('whatsapp_api_key_enc'),
+  whatsappTenantId: varchar('whatsapp_tenant_id', { length: 64 }), // Watxio X-Tenant-ID, if their account needs it
+  whatsappInboundToken: varchar('whatsapp_inbound_token', { length: 64 }).unique(),
+
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
