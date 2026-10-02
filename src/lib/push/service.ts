@@ -84,6 +84,7 @@ export const PushService = {
           );
         } catch (err: any) {
           // 404/410 => the subscription is dead; drop it so we stop trying.
+          console.error("[PUSH_SERVICE] send failed", err?.statusCode, err?.body || err?.message);
           if (err?.statusCode === 404 || err?.statusCode === 410) {
             await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, s.endpoint));
           }
