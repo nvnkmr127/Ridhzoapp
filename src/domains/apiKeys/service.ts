@@ -16,19 +16,19 @@ const USAGE_WRITE_THROTTLE_MS = 60_000;
 export class ApiKeyService {
   static async list(organizationId: string) {
     return db
-      .select({ id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix, scope: apiKeys.scope, lastUsedAt: apiKeys.lastUsedAt, revokedAt: apiKeys.revokedAt, expiresAt: apiKeys.expiresAt, createdAt: apiKeys.createdAt })
+      .select({ id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix, scope: apiKeys.scope, scopes: apiKeys.scopes, lastUsedAt: apiKeys.lastUsedAt, revokedAt: apiKeys.revokedAt, expiresAt: apiKeys.expiresAt, createdAt: apiKeys.createdAt })
       .from(apiKeys)
       .where(eq(apiKeys.organizationId, organizationId))
       .orderBy(desc(apiKeys.createdAt));
   }
 
   // Returns the raw key ONCE — it is never retrievable again (only its hash is stored).
-  static async create(organizationId: string, name: string, createdById: string, scope: ApiKeyScope = "full", expiresAt: Date | null = null) {
+  static async create(organizationId: string, name: string, createdById: string, scope: ApiKeyScope = "full", expiresAt: Date | null = null, scopes: string[] | null = null) {
     const raw = `pk_${crypto.randomBytes(24).toString("hex")}`;
     const [row] = await db
       .insert(apiKeys)
-      .values({ organizationId, name, keyHash: hash(raw), prefix: raw.slice(0, 12), createdById, scope, expiresAt })
-      .returning({ id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix, scope: apiKeys.scope, expiresAt: apiKeys.expiresAt });
+      .values({ organizationId, name, keyHash: hash(raw), prefix: raw.slice(0, 12), createdById, scope, expiresAt, scopes })
+      .returning({ id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix, scope: apiKeys.scope, scopes: apiKeys.scopes, expiresAt: apiKeys.expiresAt });
     return { ...row, key: raw };
   }
 
@@ -58,15 +58,15 @@ export class ApiKeyService {
   // Does NOT write — the caller records usage via touchLastUsed() only once the request is allowed
   // (so a suspended/read-only-rejected request doesn't show as "used"), and best-effort so a usage
   // write failure never fails an otherwise-valid API call.
-  static async verify(raw: string): Promise<{ id: string; organizationId: string; scope: ApiKeyScope } | null> {
+  static async verify(raw: string): Promise<{ id: string; organizationId: string; scope: ApiKeyScope; scopes: string[] | null } | null> {
     if (!raw?.startsWith("pk_")) return null;
     const [row] = await db
-      .select({ id: apiKeys.id, organizationId: apiKeys.organizationId, scope: apiKeys.scope })
+      .select({ id: apiKeys.id, organizationId: apiKeys.organizationId, scope: apiKeys.scope, scopes: apiKeys.scopes })
       .from(apiKeys)
       .where(and(eq(apiKeys.keyHash, hash(raw)), isNull(apiKeys.revokedAt), or(isNull(apiKeys.expiresAt), gt(apiKeys.expiresAt, new Date()))))
       .limit(1);
     if (!row) return null;
-    return { id: row.id, organizationId: row.organizationId, scope: (row.scope as ApiKeyScope) ?? "full" };
+    return { id: row.id, organizationId: row.organizationId, scope: (row.scope as ApiKeyScope) ?? "full", scopes: row.scopes ?? null };
   }
 
   // A person leaving (deactivated or deleted) must not leave their API keys behind: they keep working with

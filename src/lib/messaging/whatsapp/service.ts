@@ -92,6 +92,19 @@ export const WhatsAppService = {
     const { WhatsAppSettingsService } = await import("@/domains/organizations/whatsappSettingsService");
     const creds = lead.organizationId ? (await WhatsAppSettingsService.credsFor(lead.organizationId)) ?? undefined : undefined;
 
+    // Spend guards (people-initiated sends only for the burst limit — automations legitimately fan out):
+    // a per-person and per-workspace burst ceiling, then the plan's monthly allowance. A workspace on its OWN
+    // WhatsApp account costs the platform nothing, so it isn't metered.
+    if (input.userId && lead.organizationId) {
+      const { RateLimiter } = await import("@/lib/rate-limit");
+      const [perUser, perOrg] = await Promise.all([
+        RateLimiter.checkLimit(`wa-send:user:${input.userId}`, 60, 60),
+        RateLimiter.checkLimit(`wa-send:org:${lead.organizationId}`, 600, 60),
+      ]);
+      if (!perUser.success || !perOrg.success) throw new Error("You're sending messages too quickly. Wait a minute and try again.");
+    }
+    const metered = !creds && !!lead.organizationId;
+
     const leadLike: LeadLike = lead;
     const canFreeform = await insideWindow(input.leadId);
 
@@ -102,6 +115,11 @@ export const WhatsAppService = {
     // Render token placeholders ({{first_name}} etc.) against the lead.
     const renderedBody = input.body ? renderTemplate(input.body, leadLike) : null;
     const renderedVars = (input.variables ?? []).map((v) => renderTemplate(v, leadLike));
+
+    if (metered) {
+      const { UsageService } = await import("@/domains/billing/usageService");
+      await UsageService.consume(lead.organizationId!, "messages");
+    }
 
     // Log first as queued so a crash mid-send still leaves a trace.
     const [msg] = await db.insert(whatsappMessages).values({
@@ -136,6 +154,11 @@ export const WhatsAppService = {
       await db.update(whatsappMessages)
         .set({ status: "failed", error: err.message ?? String(err), updatedAt: new Date() })
         .where(eq(whatsappMessages.id, msg.id));
+      // A message that never left doesn't use up the month's allowance.
+      if (metered) {
+        const { UsageService } = await import("@/domains/billing/usageService");
+        await UsageService.refund(lead.organizationId!, "messages").catch(() => {});
+      }
       throw err;
     }
   },

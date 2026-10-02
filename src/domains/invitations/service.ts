@@ -104,6 +104,7 @@ export class InvitationService {
               lastName: input.lastName || existing.lastName,
               roleId: inv.roleId,
               isActive: true,
+              emailVerifiedAt: new Date(), // they opened a link mailed to this address
               deletedAt: null,
               updatedAt: new Date(),
             })
@@ -124,6 +125,7 @@ export class InvitationService {
             lastName: input.lastName,
             roleId: inv.roleId,
             isActive: true,
+            emailVerifiedAt: new Date(), // they opened a link mailed to this address
           })
           .returning({ id: users.id, email: users.email });
         user = created;

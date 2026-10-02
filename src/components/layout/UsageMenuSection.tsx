@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Users, UserPlus, Zap, Crown, CreditCard, Info, Network, GitFork } from "lucide-react";
+import { Sparkles, Users, UserPlus, Zap, Crown, CreditCard, Info, Network, GitFork, MessageCircle, HardDrive } from "lucide-react";
 import Link from "next/link";
 import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,8 @@ type UsageStats = {
   sources?: { current: number; max: number };
   automations?: { current: number; max: number };
   sequences?: { current: number; max: number };
+  messages?: { current: number; max: number };
+  storage?: { current: number; max: number }; // MB
 };
 
 const formatNumber = (num: number) => {
@@ -111,6 +113,8 @@ export function UsageMenuSection({ usageStats }: { usageStats: UsageStats }) {
           ["Automations", Zap, usageStats.automations],
           ["Sequences", GitFork, usageStats.sequences],
           ["Lead sources", Network, usageStats.sources],
+          ["WhatsApp / month", MessageCircle, usageStats.messages],
+          ["Storage (MB)", HardDrive, usageStats.storage],
         ] as const).map(([label, Icon, u]) =>
           u && u.max !== Infinity ? (
             <div key={label} className="space-y-1">

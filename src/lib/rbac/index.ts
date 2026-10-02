@@ -259,6 +259,23 @@ export async function targetUserError(organizationId: string, targetUserId: stri
   return null;
 }
 
+// Message to show when the caller's email isn't verified yet (null = fine). Actions return it as FORBIDDEN.
+export async function emailVerifiedError(): Promise<string | null> {
+  const session = await getSession();
+  if (!session?.user?.id || session.user.isSuperAdmin) return null;
+  const { emailGate } = await import("@/lib/auth/emailVerify");
+  return emailGate(session.user.id);
+}
+
+// Sensitive actions (outbound messages, exports, API keys, inviting people) need a proven email address.
+export async function assertEmailVerified() {
+  const session = await getSession();
+  if (!session?.user?.id || session.user.isSuperAdmin) return;
+  const { emailGate } = await import("@/lib/auth/emailVerify");
+  const why = await emailGate(session.user.id);
+  if (why) throw new Error(why);
+}
+
 // Throws "Forbidden" unless the caller holds the permission; returns the tenant scope on success.
 export async function requirePermission(key: PermissionKey) {
   const { organizationId, userId } = await requireOrg();

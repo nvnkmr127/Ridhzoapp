@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const requirePermission = vi.fn();
 const filter = vi.fn();
 const send = vi.fn();
-vi.mock("@/lib/rbac", () => ({ assertWritable: async () => ({}), requirePermission: (k: string) => requirePermission(k) }));
+vi.mock("@/lib/rbac", () => ({ assertWritable: async () => ({}), emailVerifiedError: async () => null, requirePermission: (k: string) => requirePermission(k) }));
 vi.mock("@/lib/leads/access", () => ({ filterAccessibleLeadIds: (...a: unknown[]) => filter(...a) }));
 vi.mock("@/lib/messaging/whatsapp/service", () => ({ WhatsAppService: { send: (...a: unknown[]) => send(...a) } }));
 vi.mock("@/domains/activities/service", () => ({ ActivityService: { addActivity: vi.fn() } }));

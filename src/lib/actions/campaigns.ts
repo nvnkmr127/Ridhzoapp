@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { assertWritable, requirePermission } from "@/lib/rbac";
+import { assertWritable, requirePermission, emailVerifiedError } from "@/lib/rbac";
 import { filterAccessibleLeadIds } from "@/lib/leads/access";
 import { ActivityService } from "@/domains/activities/service";
 import { ok, fail, actionFail } from "@/lib/actions/result";
@@ -18,6 +18,7 @@ const schema = z.object({
 export async function sendCampaignAction(input: unknown) {
   await assertWritable();
   const { userId, organizationId } = await requirePermission("leads.edit");
+  { const gate = await emailVerifiedError(); if (gate) return fail("FORBIDDEN", gate); }
   const parsed = schema.safeParse(input);
   if (!parsed.success) {
     return fail("VALIDATION", "Select up to 500 leads and enter a message (max 2,000 characters).");

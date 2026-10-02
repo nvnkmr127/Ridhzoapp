@@ -29,7 +29,7 @@ describe("ApiKeyService.verify", () => {
   it("maps a found row to org + scope and does NOT write on the read path", async () => {
     selectReturns([{ id: "k1", organizationId: "org-a", scope: "read_only" }]);
     const r = await ApiKeyService.verify("pk_good");
-    expect(r).toEqual({ id: "k1", organizationId: "org-a", scope: "read_only" });
+    expect(r).toEqual({ id: "k1", organizationId: "org-a", scope: "read_only", scopes: null });
     expect(update).not.toHaveBeenCalled(); // verify never stamps usage
   });
 

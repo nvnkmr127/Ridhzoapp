@@ -21,7 +21,8 @@ import { db } from "@/db";
 import { users } from "@/db/schema";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { emailVerifications } from "@/db/schema";
-import { setupStatus } from "@/lib/auth/emailVerify";
+import { setupStatus, emailGateFor } from "@/lib/auth/emailVerify";
+import { VerifyEmailBanner } from "@/components/layout/VerifyEmailBanner";
 import { AccountSetupPrompt } from "@/components/layout/AccountSetupPrompt";
 import { BillingLifecycleService } from "@/domains/billing/lifecycleService";
 import { Wrench } from "lucide-react";
@@ -46,7 +47,7 @@ export default async function DashboardLayout({
     hasPermission("settings.manage"),
     hasPermission("sources.manage"),
     getOrgFormat(organizationId),
-    db.select({ language: users.language, firstName: users.firstName, lastName: users.lastName, email: users.email, phone: users.phone, signupMethod: users.signupMethod, emailVerifiedAt: users.emailVerifiedAt, passwordSet: users.passwordSet, googleLinkedAt: users.googleLinkedAt }).from(users).where(eq(users.id, userId)).limit(1),
+    db.select({ language: users.language, firstName: users.firstName, lastName: users.lastName, email: users.email, phone: users.phone, signupMethod: users.signupMethod, emailVerifiedAt: users.emailVerifiedAt, passwordSet: users.passwordSet, googleLinkedAt: users.googleLinkedAt, createdAt: users.createdAt }).from(users).where(eq(users.id, userId)).limit(1),
   ]);
 
   // Maintenance mode: lock the app for everyone except super-admins (who need in to turn it off /
@@ -80,6 +81,7 @@ export default async function DashboardLayout({
 
   // "Complete your account" prompt: only for phone-registered accounts with a login method still missing.
   const setup = me ? setupStatus({ ...me, email: me.email }) : null;
+  const needsEmailVerify = !!me && !superAdmin && !!emailGateFor(me);
   const pendingEmail = setup?.eligible && !setup.email
     ? (await db.select({ email: emailVerifications.email }).from(emailVerifications)
         .where(and(eq(emailVerifications.userId, userId), isNull(emailVerifications.usedAt), gt(emailVerifications.expiresAt, new Date()))).limit(1))[0]?.email ?? null
@@ -113,6 +115,7 @@ export default async function DashboardLayout({
           {children}
         </main>
       </div>
+      {needsEmailVerify && <VerifyEmailBanner email={me!.email} />}
       {setup?.eligible && <AccountSetupPrompt userId={userId} status={{ email: setup.email, password: setup.password, google: setup.google }} pendingEmail={pendingEmail} />}
       <FloatingAssistant storageKey={userId} />
       <SignupAttribution userId={userId} />

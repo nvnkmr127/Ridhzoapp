@@ -151,3 +151,20 @@ export async function requestEmailVerificationAction(input: { email: string }) {
   });
   return ok({ sent: true, email });
 }
+
+// "Resend verification email" for a password sign-up that hasn't confirmed its address yet.
+export async function resendVerificationEmailAction() {
+  const session = await requireAuth();
+  const limit = await RateLimiter.checkLimit(`account:email-reverify:${session.user.id}`, 3, 60 * 60);
+  if (!limit.success) return fail("RATE_LIMIT", "Too many requests. Please try again in an hour.");
+  const [me] = await db
+    .select({ email: users.email, emailVerifiedAt: users.emailVerifiedAt, firstName: users.firstName })
+    .from(users)
+    .where(and(eq(users.id, session.user.id), isNull(users.deletedAt)))
+    .limit(1);
+  if (!me?.email || isPlaceholderEmail(me.email)) return fail("VALIDATION", "This account has no email address to verify.");
+  if (me.emailVerifiedAt) return ok({ alreadyVerified: true });
+  const { issueEmailVerification } = await import("@/lib/auth/emailVerify");
+  await issueEmailVerification(session.user.id, me.email, me.firstName);
+  return ok({ sent: true });
+}

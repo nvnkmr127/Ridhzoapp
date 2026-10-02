@@ -45,6 +45,8 @@ export async function uploadAttachmentAction(formData: FormData) {
   try {
     await assertLeadWrite(leadId, { userId, organizationId });
 
+    const { UsageService } = await import("@/domains/billing/usageService");
+    await UsageService.assertCanStore(organizationId, file.size);
     const contentType = contentTypeFor(file.name);
     if (!contentType) {
       return fail("VALIDATION", `This file type isn't supported. Allowed: ${Object.keys(ALLOWED_TYPES).join(", ")}.`);

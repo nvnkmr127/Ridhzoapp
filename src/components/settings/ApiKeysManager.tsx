@@ -4,34 +4,38 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { API_SCOPES } from "@/lib/apiScopes";
 import { useToast } from "@/hooks/use-toast";
 import { createApiKeyAction, revokeApiKeyAction, deleteApiKeyAction } from "@/lib/actions/apiKeys";
 import { Key, Plus, Copy, Trash2 } from "lucide-react";
 
-type ApiKey = { id: string; name: string; prefix: string; scope?: string; expiresAt?: Date | string | null; lastUsedAt: Date | null; revokedAt: Date | null; createdAt: Date | string };
+type ApiKey = { id: string; name: string; prefix: string; scope?: string; scopes?: string[] | null; expiresAt?: Date | string | null; lastUsedAt: Date | null; revokedAt: Date | null; createdAt: Date | string };
 
 export function ApiKeysManager({ initial }: { initial: ApiKey[] }) {
   const { toast } = useToast();
   const [keys, setKeys] = React.useState<ApiKey[]>(initial);
   const [name, setName] = React.useState("");
   const [readOnly, setReadOnly] = React.useState(false);
+  const [limitScopes, setLimitScopes] = React.useState(false);
+  const [picked, setPicked] = React.useState<string[]>([]);
   const [expiry, setExpiry] = React.useState<"30" | "90" | "365" | "never">("365");
   const [saving, setSaving] = React.useState(false);
   const [newKey, setNewKey] = React.useState<string | null>(null);
 
   async function create() {
     if (!name.trim()) return;
+    if (limitScopes && picked.length === 0) { toast({ variant: "destructive", title: "Pick at least one permission", description: "Or untick “Limit to specific permissions”." }); return; }
     setSaving(true);
     try {
       const scope: "full" | "read_only" = readOnly ? "read_only" : "full";
-      const res = await createApiKeyAction(name.trim(), scope, expiry === "never" ? null : (Number(expiry) as 30 | 90 | 365));
+      const res = await createApiKeyAction(name.trim(), scope, expiry === "never" ? null : (Number(expiry) as 30 | 90 | 365), limitScopes ? picked : null);
       if (!res.ok) {
         toast({ variant: "destructive", title: "Could not create key", description: res.message });
         return;
       }
       const created = res.data;
       setNewKey(created.key);
-      setKeys((prev) => [{ id: created.id, name: created.name, prefix: created.prefix, scope: created.scope ?? scope, expiresAt: created.expiresAt ?? null, lastUsedAt: null, revokedAt: null, createdAt: new Date() }, ...prev]);
+      setKeys((prev) => [{ id: created.id, name: created.name, prefix: created.prefix, scope: created.scope ?? scope, scopes: created.scopes ?? null, expiresAt: created.expiresAt ?? null, lastUsedAt: null, revokedAt: null, createdAt: new Date() }, ...prev]);
       setName("");
       setReadOnly(false);
     } catch {
@@ -90,6 +94,20 @@ export function ApiKeysManager({ initial }: { initial: ApiKey[] }) {
           <input type="checkbox" checked={readOnly} onChange={(e) => setReadOnly(e.target.checked)} className="h-4 w-4" />
           Read-only (GET requests only — can’t create, edit, or delete)
         </label>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground select-none">
+          <input type="checkbox" checked={limitScopes} onChange={(e) => setLimitScopes(e.target.checked)} className="h-4 w-4" />
+          Limit to specific permissions
+        </label>
+        {limitScopes && (
+          <div className="grid gap-1 sm:grid-cols-2">
+            {API_SCOPES.map((s) => (
+              <label key={s.key} className="flex items-center gap-2 text-sm text-muted-foreground select-none">
+                <input type="checkbox" className="h-4 w-4" checked={picked.includes(s.key)} onChange={(e) => setPicked((p) => (e.target.checked ? [...p, s.key] : p.filter((x) => x !== s.key)))} />
+                {s.label}
+              </label>
+            ))}
+          </div>
+        )}
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           Expires
           <select value={expiry} onChange={(e) => setExpiry(e.target.value as typeof expiry)} className="rounded-md border border-input bg-background px-2 py-1 text-sm">
@@ -122,6 +140,7 @@ export function ApiKeysManager({ initial }: { initial: ApiKey[] }) {
               <span className="font-medium">{k.name}</span>
               <code className="text-xs text-muted-foreground">{k.prefix}…</code>
               {k.scope === "read_only" && <Badge variant="outline">Read-only</Badge>}
+              {k.scopes && <Badge variant="outline" title={k.scopes.join(", ")}>{k.scopes.length} permission{k.scopes.length === 1 ? "" : "s"}</Badge>}
               {k.expiresAt && <Badge variant="outline">{new Date(k.expiresAt).getTime() < Date.now() ? "Expired" : `Expires ${new Date(k.expiresAt).toLocaleDateString()}`}</Badge>}
               {k.revokedAt ? <Badge variant="secondary">Revoked</Badge> : <Badge>Active</Badge>}
               {k.lastUsedAt && <span className="text-xs text-muted-foreground">last used {new Date(k.lastUsedAt).toLocaleDateString()}</span>}

@@ -19,7 +19,7 @@ import { PlanService } from "@/domains/billing/planService";
 // honest upgrade prompt there is. ponytail: per-process hourly throttle (a burst of ad leads = one
 // alert); move to a DB-backed throttle if workers scale out.
 const blockedAlertAt = new Map<string, number>();
-async function alertLeadBlocked(organizationId: string, leadName?: string | null) {
+async function alertLeadBlocked(organizationId: string, leadName?: string | null, why: "limit" | "source" = "limit") {
   const last = blockedAlertAt.get(organizationId) ?? 0;
   if (Date.now() - last < 60 * 60 * 1000) return;
   blockedAlertAt.set(organizationId, Date.now());
@@ -28,7 +28,9 @@ async function alertLeadBlocked(organizationId: string, leadName?: string | null
     await NotificationService.notifyOrgAdmins(organizationId, {
       type: "lead_limit_blocked",
       title: "A new lead couldn't be saved",
-      body: `${leadName || "A new lead"} arrived, but your plan's lead limit is full. Upgrade in Settings → Plan & billing to keep receiving leads.`,
+      body: why === "source"
+        ? `${leadName || "A new lead"} arrived through a lead source that is paused because your plan allows fewer sources than you have. Upgrade in Settings → Plan & billing to resume it.`
+        : `${leadName || "A new lead"} arrived, but your plan's lead limit is full. Upgrade in Settings → Plan & billing to keep receiving leads.`,
     });
   } catch (e) {
     console.error("[ingestion] lead-blocked alert failed (non-fatal)", e);
@@ -117,6 +119,19 @@ export class IngestionService {
     // Same-person rule as every other duplicate check (lib/leads/dedupKeys).
     const searchConditions = dedupConditions({ email, phone });
     const dedupWhere = and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt), or(...searchConditions));
+
+    // A workspace downgraded below the number of sources it has keeps only its oldest N RUNNING; leads arriving
+    // through the rest are refused (and recorded as failed, so they can be replayed after an upgrade) rather
+    // than silently ingested past the plan.
+    if (payload.sourceId) {
+      const runnable = await PlanService.runnableIds(organizationId, "sources");
+      if (runnable && !runnable.has(payload.sourceId)) {
+        const reason = "This lead source is paused: your plan allows fewer sources than you have. Upgrade to resume it.";
+        await this.logIngestion(null, payload.sourceId, payload, "failed", reason);
+        await alertLeadBlocked(organizationId, payload.name, "source");
+        throw Object.assign(new Error(reason), { code: "SOURCE_PAUSED" });
+      }
+    }
 
     // 2. Organization-Scoped Deduplication (active leads only)
     const [existingLead] = searchConditions.length

@@ -35,6 +35,8 @@ export const apiKeys = pgTable('api_keys', {
   prefix: varchar('prefix', { length: 16 }).notNull(), // display only, e.g. "pk_live_ab12"
   // 'full' = read+write (default, legacy behavior); 'read_only' = GET-only (enforced in apiAuth).
   scope: varchar('scope', { length: 16 }).notNull().default('full'),
+  // Optional per-area allow-list (see lib/apiScopes). null = no restriction beyond `scope`.
+  scopes: jsonb('scopes').$type<string[]>(),
   // Keys are workspace-owned; null the creator when that user is deleted rather than block it.
   createdById: uuid('created_by_id').references(() => users.id, { onDelete: 'set null' }),
   lastUsedAt: timestamp('last_used_at'),

@@ -57,6 +57,27 @@ export class AuditService {
     }
   }
 
+  // The one way to audit a mutation: run it, and only if it SUCCEEDED write the entry (so a failed or no-op
+  // change leaves no false trail). `entityId` / `metadata` may be functions of the result. Like log(), the
+  // audit write itself is best-effort and never fails the action.
+  //   const row = await AuditService.audited({ organizationId, userId }, { action: "webhook.create", entityType: "webhook_endpoint", entityId: (r) => r.id }, () => svc.create(...));
+  static async audited<T>(
+    ctx: { organizationId: string; userId?: string | null },
+    spec: { action: string; entityType?: string; entityId?: string | null | ((r: T) => string | null | undefined); metadata?: Record<string, unknown> | ((r: T) => Record<string, unknown>) },
+    run: () => Promise<T>,
+  ): Promise<T> {
+    const result = await run();
+    await this.log({
+      organizationId: ctx.organizationId,
+      userId: ctx.userId,
+      action: spec.action,
+      entityType: spec.entityType,
+      entityId: typeof spec.entityId === "function" ? spec.entityId(result) ?? null : spec.entityId,
+      metadata: typeof spec.metadata === "function" ? spec.metadata(result) : spec.metadata,
+    });
+    return result;
+  }
+
   // Keyset-paginated read, newest first. `cursor` is the opaque string a previous page's
   // `nextCursor` returned — pass it to fetch the next page; omit it for the first page.
   // `action` optionally restricts to one action string (exact match).

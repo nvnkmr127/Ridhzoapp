@@ -93,11 +93,22 @@ export async function updateLeadStageAndValue(
 
 // Send an email from the workspace's mailer and log it on the timeline.
 export async function sendLeadEmail(input: { leadId: string; userId: string; organizationId: string; to: string; subject: string; body: string }) {
+  const { RateLimiter } = await import("@/lib/rate-limit");
+  if (!(await RateLimiter.checkLimit(`email-send:user:${input.userId}`, 30, 60)).success) {
+    throw new LeadActionError("You're sending emails too quickly. Wait a minute and try again.");
+  }
+  const { UsageService } = await import("@/domains/billing/usageService");
+  await UsageService.consume(input.organizationId, "emails");
   const { sendEmail } = await import("@/lib/mail/mailer");
-  await sendEmail(
-    { to: input.to, subject: input.subject, html: `<p>${escapeHtml(input.body).replace(/\n/g, "<br/>")}</p>` },
-    input.organizationId,
-  );
+  try {
+    await sendEmail(
+      { to: input.to, subject: input.subject, html: `<p>${escapeHtml(input.body).replace(/\n/g, "<br/>")}</p>` },
+      input.organizationId,
+    );
+  } catch (e) {
+    await UsageService.refund(input.organizationId, "emails").catch(() => {}); // not sent → not counted
+    throw e;
+  }
   await ActivityService.addActivity({ leadId: input.leadId, userId: input.userId, type: "email", content: `[email] ${input.subject}` });
   await markLeadContacted(input.leadId);
 }

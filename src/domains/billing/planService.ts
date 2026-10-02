@@ -12,13 +12,18 @@ import { canonicalPlan, trialExpired } from "./planNames";
 export type PlanLimits = {
   seats: number; leads: number; automations: number; sequences: number; sources: number;
   aiCredits: number; aiAutoTag: boolean; branding: boolean;
+  /** Metered per calendar month (UTC): outbound WhatsApp, outbound email, CSV exports, imported rows, /api/v1 requests. Infinity = unmetered. */
+  messages: number; emails: number; exports: number; importRows: number; apiRequests: number;
+  /** Attachment storage in MB (a gauge, not monthly). */
+  storageMb: number;
   /** yearlyPrice must match the RAZORPAY_PLAN_*_YEARLY plan amount (2 months free = 10× monthly). */
   price: string; yearlyPrice: string | null; description: string;
 };
 export const PLAN_LIMITS: Record<string, PlanLimits> = {
-  free: { seats: 1, leads: 300, automations: 2, sequences: 1, sources: 1, aiCredits: 15, aiAutoTag: false, branding: true, price: "₹0", yearlyPrice: null, description: "For individuals getting started" },
-  starter: { seats: 3, leads: 5_000, automations: 15, sequences: 10, sources: 5, aiCredits: 300, aiAutoTag: true, branding: false, price: "₹249 / mo", yearlyPrice: "₹2,490 / yr", description: "For solo agents & growing teams" },
-  unlimited: { seats: Infinity, leads: Infinity, automations: Infinity, sequences: Infinity, sources: Infinity, aiCredits: 2_000, aiAutoTag: true, branding: false, price: "₹449 / mo", yearlyPrice: "₹4,490 / yr", description: "Unlimited leads, seats & full access" },
+  free: { seats: 1, leads: 300, automations: 2, sequences: 1, sources: 1, aiCredits: 15, aiAutoTag: false, branding: true, messages: 100, emails: 100, exports: 5, importRows: 500, apiRequests: 10_000, storageMb: 100, price: "₹0", yearlyPrice: null, description: "For individuals getting started" },
+  starter: { seats: 3, leads: 5_000, automations: 15, sequences: 10, sources: 5, aiCredits: 300, aiAutoTag: true, branding: false, messages: 3_000, emails: 3_000, exports: 100, importRows: 20_000, apiRequests: 300_000, storageMb: 5_000, price: "₹249 / mo", yearlyPrice: "₹2,490 / yr", description: "For solo agents & growing teams" },
+  // Messages stay finite even here: every WhatsApp send is real money (the platform number is shared).
+  unlimited: { seats: Infinity, leads: Infinity, automations: Infinity, sequences: Infinity, sources: Infinity, aiCredits: 2_000, aiAutoTag: true, branding: false, messages: 30_000, emails: 30_000, exports: Infinity, importRows: Infinity, apiRequests: 3_000_000, storageMb: 100_000, price: "₹449 / mo", yearlyPrice: "₹4,490 / yr", description: "Unlimited leads, seats & full access" },
 };
 
 // New workspaces start on a Starter trial. Limits treat it as Free the moment it ends (trialExpired);
@@ -35,7 +40,7 @@ export const currentPeriod = () => new Date().toISOString().slice(0, 7); // 'YYY
 const COUNTED = {
   automations: { table: automations, org: automations.organizationId, id: automations.id, createdAt: automations.createdAt, label: "automations" },
   sequences: { table: sequences, org: sequences.organizationId, id: sequences.id, createdAt: sequences.createdAt, label: "sequences" },
-  sources: { table: leadSources, org: leadSources.organizationId, label: "lead sources" },
+  sources: { table: leadSources, org: leadSources.organizationId, id: leadSources.id, createdAt: leadSources.createdAt, label: "lead sources" },
 } as const;
 export type CountedResource = keyof typeof COUNTED;
 
@@ -130,13 +135,15 @@ export class PlanService {
     }
 
     // The other plan-capped things, in ONE round trip (this runs on every dashboard render).
-    let counted = { sources: 0, automations: 0, sequences: 0 };
+    let counted = { sources: 0, automations: 0, sequences: 0, messages: 0, storageMb: 0 };
     try {
       const res = (await db.execute(sql`select
         (select count(*)::int from lead_sources where organization_id = ${organizationId}) as sources,
         (select count(*)::int from automations where organization_id = ${organizationId}) as automations,
-        (select count(*)::int from sequences where organization_id = ${organizationId}) as sequences`)) as unknown as { sources: number; automations: number; sequences: number }[];
-      if (res[0]) counted = { sources: Number(res[0].sources), automations: Number(res[0].automations), sequences: Number(res[0].sequences) };
+        (select count(*)::int from sequences where organization_id = ${organizationId}) as sequences,
+        (select coalesce(sum(used), 0)::int from usage_counters where organization_id = ${organizationId} and period = ${currentPeriod()} and metric = 'messages') as messages,
+        (select coalesce(sum(file_size), 0)::float8 / 1048576 from lead_attachments where organization_id = ${organizationId}) as storage_mb`)) as unknown as { sources: number; automations: number; sequences: number; messages: number; storage_mb: number }[];
+      if (res[0]) counted = { sources: Number(res[0].sources), automations: Number(res[0].automations), sequences: Number(res[0].sequences), messages: Number(res[0].messages), storageMb: Math.round(Number(res[0].storage_mb)) };
     } catch {
       // meters show 0 used if the read fails; enforcement doesn't depend on this
     }
@@ -157,6 +164,8 @@ export class PlanService {
       sources: { current: counted.sources, max: caps.sources },
       automations: { current: counted.automations, max: caps.automations },
       sequences: { current: counted.sequences, max: caps.sequences },
+      messages: { current: counted.messages, max: caps.messages },
+      storage: { current: counted.storageMb, max: caps.storageMb }, // MB
     };
   }
 
@@ -254,7 +263,7 @@ export class PlanService {
 
   // A downgraded workspace may hold more than its plan allows. Only the oldest N keep running;
   // the rest pause until the org upgrades. null = no cap (paid plan).
-  static async runnableIds(organizationId: string, resource: "automations" | "sequences"): Promise<Set<string> | null> {
+  static async runnableIds(organizationId: string, resource: "automations" | "sequences" | "sources"): Promise<Set<string> | null> {
     const max = limitsFor(await this.plan(organizationId))[resource];
     if (max === Infinity) return null;
     const { table, org, id, createdAt } = COUNTED[resource];

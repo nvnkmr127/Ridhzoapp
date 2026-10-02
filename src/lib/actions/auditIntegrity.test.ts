@@ -11,6 +11,7 @@ vi.mock("@/lib/rbac", () => ({
   hasPermission: vi.fn().mockResolvedValue(true),
   roleAssignmentError: vi.fn().mockResolvedValue(null),
   targetUserError: vi.fn().mockResolvedValue(null),
+  emailVerifiedError: vi.fn().mockResolvedValue(null),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn(), unstable_cache: (fn: unknown) => fn }));
 vi.mock("@/domains/audit/service", () => ({ AuditService: { log: vi.fn() } }));
@@ -107,7 +108,7 @@ describe("metadata never carries the raw API key", () => {
     await createApiKeyAction("CI", "full", null);
 
     const meta = log.mock.calls[0][0].metadata;
-    expect(meta).toEqual({ name: "CI", scope: "full", expiresAt: null });
+    expect(meta).toEqual({ name: "CI", scope: "full", scopes: null, expiresAt: null });
     expect(JSON.stringify(log.mock.calls[0][0])).not.toContain("SUPERSECRETRAWKEY");
   });
 });

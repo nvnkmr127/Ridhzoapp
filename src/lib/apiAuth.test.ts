@@ -10,6 +10,7 @@ vi.mock("@/domains/apiKeys/service", () => ({
 }));
 const maint = vi.hoisted(() => ({ msg: null as string | null }));
 vi.mock("@/lib/maintenance", () => ({ maintenanceMessage: async () => maint.msg }));
+vi.mock("@/lib/apiQuota", () => ({ withinApiQuota: async () => true, quotaExceededBody: { error: "quota" } }));
 vi.mock("@/lib/mobileAuth", () => ({ verifyMobileToken: vi.fn() }));
 vi.mock("@/lib/rate-limit", () => ({
   RateLimiter: { checkLimit: vi.fn().mockResolvedValue({ success: true, limit: 600, remaining: 599, reset: Date.now() + 60000 }) },
@@ -131,5 +132,16 @@ describe("authorizeApiRequest — maintenance mode", () => {
     const write = await authorizeApiRequest(req("POST", "Bearer pk_valid"));
     expect("error" in write && write.error.status).toBe(503);
     expect(await authorizeApiRequest(req("GET", "Bearer pk_valid"))).toEqual({ organizationId: ORG });
+  });
+});
+
+describe("authorizeApiRequest — key scopes", () => {
+  const scoped = (method: string, path: string) => ({ ...req(method, "Bearer pk_valid"), nextUrl: { pathname: path } });
+  it("refuses an area the key's scope list doesn't name, allows the ones it does", async () => {
+    verify.mockResolvedValue({ id: "k1", organizationId: ORG, scope: "full", scopes: ["leads:write"] });
+    const denied = await authorizeApiRequest(scoped("GET", "/api/v1/leads"));
+    expect("error" in denied && denied.error.status).toBe(403);
+    expect(await authorizeApiRequest(scoped("POST", "/api/v1/leads"))).toEqual({ organizationId: ORG });
+    expect(await authorizeApiRequest(scoped("GET", "/api/v1/me"))).toEqual({ organizationId: ORG });
   });
 });

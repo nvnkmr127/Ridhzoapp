@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { ApiKeyService } from "@/domains/apiKeys/service";
 import { verifyMobileToken } from "@/lib/mobileAuth";
 import { RateLimiter } from "@/lib/rate-limit";
+import { requiredScope } from "@/lib/apiScopes";
+import { withinApiQuota, quotaExceededBody } from "@/lib/apiQuota";
 
 export interface ApiAuth {
   organizationId: string;
@@ -42,6 +44,7 @@ export async function authorizeApiRequest(req: NextRequest): Promise<ApiAuth | {
     if (limited) return { error: limited };
     const down = await maintenanceBlock(req);
     if (down) return { error: down };
+    // (The first-party mobile app is not metered — only third-party API keys are; see apiQuota.)
     // The live role, not the one baked into the token — a demoted admin loses admin rights at once.
     return { organizationId: mobile.org, userId: mobile.sub, roleId: live.roleId };
   }
@@ -55,8 +58,16 @@ export async function authorizeApiRequest(req: NextRequest): Promise<ApiAuth | {
     if (key.scope === "read_only" && !isSafeMethod(req.method)) {
       return { error: NextResponse.json({ error: "This API key is read-only." }, { status: 403 }) };
     }
+    // Per-area scopes (only when the key was created with a list).
+    if (key.scopes) {
+      const need = requiredScope(req.nextUrl?.pathname ?? "", req.method);
+      if (need && !key.scopes.includes(need)) {
+        return { error: NextResponse.json({ error: `This API key doesn't have the "${need}" scope.` }, { status: 403 }) };
+      }
+    }
     const limited = await rateLimited(`apikey:${key.id}`, req, key.organizationId);
     if (limited) return { error: limited };
+    if (!(await withinApiQuota(key.organizationId))) return { error: NextResponse.json(quotaExceededBody, { status: 429 }) };
     ApiKeyService.touchLastUsed(key.id); // best-effort, only once the request is actually allowed
     return { organizationId: key.organizationId };
   }

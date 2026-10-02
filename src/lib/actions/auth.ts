@@ -90,6 +90,17 @@ export async function signupAction(input: z.infer<typeof signupSchema>) {
       }
     }
 
+    // Verification link: unlocks sending / exports / API keys (see emailGate). Best-effort — they can resend.
+    try {
+      const [u] = await db.select({ id: users.id }).from(users).where(eq(users.email, data.email)).limit(1);
+      if (u) {
+        const { issueEmailVerification } = await import("@/lib/auth/emailVerify");
+        await issueEmailVerification(u.id, data.email, data.firstName);
+      }
+    } catch (err) {
+      console.warn("[signupAction] verification email failed", err);
+    }
+
     // Welcome email + newsletter-audience sync — best-effort, never block signup.
     {
       const [{ sendWelcomeEmail }, { upsertContact }] = await Promise.all([import("@/lib/mail/welcome"), import("@/lib/mail/contacts")]);

@@ -1,6 +1,6 @@
 "use server";
 
-import { requirePermission } from "@/lib/rbac";
+import { requirePermission, emailVerifiedError } from "@/lib/rbac";
 import { WebhookEndpointService, WEBHOOK_EVENT_TYPES } from "@/domains/integrations/webhookEndpointService";
 import { WebhookDlqService } from "@/domains/leads/webhookDlqService";
 import { AuditService } from "@/domains/audit/service";
@@ -21,13 +21,17 @@ export async function listWebhookEndpointsAction() {
 
 export async function createWebhookEndpointAction(input: { url: string; events: string[] }) {
   const { organizationId, userId } = await requirePermission("api.manage");
+  { const gate = await emailVerifiedError(); if (gate) return fail("FORBIDDEN", gate); }
   const parsed = createSchema.safeParse(input);
   if (!parsed.success) {
     return fail("VALIDATION", parsed.error.issues[0]?.message ?? "Please provide a valid URL and at least one event.");
   }
   try {
-    const row = await WebhookEndpointService.create(organizationId, parsed.data.url, parsed.data.events);
-    await AuditService.log({ organizationId, userId, action: "webhook.create", entityType: "webhook_endpoint", entityId: (row as { id?: string }).id ?? null, metadata: { url: parsed.data.url, events: parsed.data.events } });
+    const row = await AuditService.audited(
+      { organizationId, userId },
+      { action: "webhook.create", entityType: "webhook_endpoint", entityId: (r) => (r as { id?: string }).id ?? null, metadata: { url: parsed.data.url, events: parsed.data.events } },
+      () => WebhookEndpointService.create(organizationId, parsed.data.url, parsed.data.events),
+    );
     revalidatePath("/settings/webhooks");
     return ok(row);
   } catch (e) {
@@ -51,8 +55,7 @@ export async function toggleWebhookEndpointAction(id: string, isActive: boolean)
 export async function deleteWebhookEndpointAction(id: string) {
   const { organizationId, userId } = await requirePermission("api.manage");
   try {
-    await WebhookEndpointService.remove(organizationId, id);
-    await AuditService.log({ organizationId, userId, action: "webhook.delete", entityType: "webhook_endpoint", entityId: id });
+    await AuditService.audited({ organizationId, userId }, { action: "webhook.delete", entityType: "webhook_endpoint", entityId: id }, () => WebhookEndpointService.remove(organizationId, id));
     revalidatePath("/settings/webhooks");
     return ok({ deleted: true });
   } catch (e) {

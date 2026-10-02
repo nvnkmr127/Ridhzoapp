@@ -19,3 +19,4 @@ export * from './tenantIntegrations';
 export * from './meetings';
 export * from './idempotency';
 export * from './platform';
+export * from './usage';

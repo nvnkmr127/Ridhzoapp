@@ -24,6 +24,8 @@
 
 - **G. Missing frontend:** done — failed-webhook screen, read-only lead/list/board states for roles without `leads.edit`, delete and export permission-aware controls, a new `leads.export` permission, plan meters for automations/sequences/sources, and batched import with a progress bar. Export still shows a plain "Exporting…" state (one server call, no incremental progress).
 
+- **H. Missing backend:** done — monthly metering for WhatsApp messages, emails, exports, imported rows and API-key requests plus an attachment storage cap (atomic, refunded on failure); per-user and per-workspace send rate limits; email-verification gate for new password sign-ups; per-area API-key scopes; central `AuditService.audited` wrapper. **Not done:** Postgres row-level security (needs every query to run inside a transaction that sets the tenant; not retrofittable safely across the codebase).
+
 ## A. Executive Summary
 
 Ridhzo is a mature, unusually well-commented Next.js 15 / Drizzle / Postgres / BullMQ multi-tenant CRM. Typecheck is clean, 860 tests pass, org scoping in services is consistent, SSRF/webhook-signature/idempotency work has clearly been done with care, and secrets are not committed (`.env*` never appear in git history).

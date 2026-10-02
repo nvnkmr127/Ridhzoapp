@@ -4,7 +4,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { users, leadSources, leadPipelineStages } from "@/db/schema";
-import { requireOrg, hasPermission } from "@/lib/rbac";
+import { requireOrg, hasPermission, emailVerifiedError } from "@/lib/rbac";
 import { LeadService } from "@/domains/leads/service";
 import { CustomFieldService } from "@/domains/customFields/service";
 import { CustomStatusSchemaService } from "@/domains/leads/customStatusSchemaService";
@@ -29,6 +29,7 @@ const schema = z.object({
 // admin-only custom fields only for admins. Values are formula-safe (see lib/leads/csv).
 export async function exportLeadsCsvAction(input: z.input<typeof schema>) {
   const { userId, organizationId } = await requireOrg();
+  { const gate = await emailVerifiedError(); if (gate) return fail("FORBIDDEN", gate); }
   // Taking the whole book of contacts out of the app is its own permission (members have it by default).
   if (!(await hasPermission("leads.export"))) return fail("FORBIDDEN", "You don't have permission to export leads. Ask an admin.");
   const parsed = schema.safeParse(input);
@@ -41,6 +42,12 @@ export async function exportLeadsCsvAction(input: z.input<typeof schema>) {
     filters = undefined;
   }
 
+  const { UsageService } = await import("@/domains/billing/usageService");
+  try {
+    await UsageService.consume(organizationId, "exports");
+  } catch (e) {
+    return actionFail(e);
+  }
   try {
     const isAdmin = await hasPermission("settings.manage");
     const { data: rows, total } = await LeadService.listLeads({
@@ -58,7 +65,10 @@ export async function exportLeadsCsvAction(input: z.input<typeof schema>) {
       enforceOwnerId: isAdmin ? undefined : userId,
       ids: q.ids,
     });
-    if (rows.length === 0) return fail("VALIDATION", "No leads to export.");
+    if (rows.length === 0) {
+      await UsageService.refund(organizationId, "exports").catch(() => {});
+      return fail("VALIDATION", "No leads to export.");
+    }
 
     const [statuses, defs, owners, sources, stages] = await Promise.all([
       CustomStatusSchemaService.getTenantStatusSchema(organizationId).catch(() => []),
@@ -110,6 +120,7 @@ export async function exportLeadsCsvAction(input: z.input<typeof schema>) {
 
     return ok({ csv: toCsv(headers, body), count: rows.length, truncated: total > MAX_ROWS, total });
   } catch (e) {
+    await UsageService.refund(organizationId, "exports").catch(() => {});
     return actionFail(e);
   }
 }

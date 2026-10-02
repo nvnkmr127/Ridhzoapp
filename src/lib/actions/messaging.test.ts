@@ -47,7 +47,7 @@ const waSend = vi.fn();
 vi.mock("@/lib/messaging/whatsapp/service", () => ({ WhatsAppService: { send: (i: unknown) => waSend(i) } }));
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/lib/rbac", () => ({ requireOrg: vi.fn(), requirePermission: vi.fn() }));
+vi.mock("@/lib/rbac", () => ({ requireOrg: vi.fn(), requirePermission: vi.fn(), emailVerifiedError: async () => null }));
 
 import { logLeadContactAction, sendWhatsAppAction } from "./messaging";
 import { recordLeadContact } from "@/domains/leads/contactLog";

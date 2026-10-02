@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { UsageService } from "@/domains/billing/usageService";
 import { emailKey, phoneKey } from "@/lib/leads/dedupKeys";
 import { orgDialCode } from "@/lib/leads/orgDialCode";
 import { leads, leadSources, leadStatusHistory, users } from "@/db/schema";
@@ -260,6 +261,7 @@ export class LeadImportService {
       const created = await PlanService.serialized(organizationId, "leads", async () => {
         // The whole batch must fit the plan, checked under the lock (see PlanService.serialized).
         await PlanService.assertCanAddLead(organizationId, toInsert.length);
+      await UsageService.consume(organizationId, "import_rows", toInsert.length);
       const CHUNK_SIZE = 250;
       const created: { id: string; ownerId: string | null }[] = [];
       for (let i = 0; i < toInsert.length; i += CHUNK_SIZE) {
@@ -293,6 +295,8 @@ export class LeadImportService {
 
         return created;
       });
+      // Rows that were skipped (lost a race / conflicted) don't use up the month's import allowance.
+      if (created.length < toInsert.length) await UsageService.refund(organizationId, "import_rows", toInsert.length - created.length).catch(() => {});
       announceImported(created.map((l) => l.id), userId, config.sourceId);
       return { imported: created.length, skipped: analysis.duplicateCount + analysis.errorCount + (toInsert.length - created.length) };
     }

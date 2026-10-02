@@ -1,6 +1,6 @@
 "use server";
 
-import { requireOrg, requirePermission } from "@/lib/rbac";
+import { requireOrg, requirePermission, emailVerifiedError } from "@/lib/rbac";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
@@ -86,6 +86,7 @@ export async function sendWhatsAppAction(input: {
     return fail("VALIDATION", "Enter a message or choose a template to send.");
   }
   try {
+    { const gate = await emailVerifiedError(); if (gate) return fail("FORBIDDEN", gate); }
     const access = await getActionableLead(input.leadId);
     if (!access) return fail("NOT_FOUND", "This lead no longer exists or isn't assigned to you.");
     const { WhatsAppService } = await import("@/lib/messaging/whatsapp/service");
@@ -111,6 +112,7 @@ export async function sendEmailAction(input: z.infer<typeof emailSchema>) {
   const data = parsed.data;
 
   try {
+    { const gate = await emailVerifiedError(); if (gate) return fail("FORBIDDEN", gate); }
     const access = await getActionableLead(data.leadId);
     if (!access) return fail("NOT_FOUND", "This lead no longer exists or isn't assigned to you.");
     const { lead, userId, organizationId } = access;

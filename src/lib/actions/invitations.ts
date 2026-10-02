@@ -1,7 +1,7 @@
 "use server";
 
 import { keepAlive } from "@/lib/keepAlive";
-import { requirePermission, roleAssignmentError } from "@/lib/rbac";
+import { requirePermission, roleAssignmentError, emailVerifiedError } from "@/lib/rbac";
 import { InvitationService } from "@/domains/invitations/service";
 import { OrgService } from "@/domains/organizations/service";
 import { AuditService } from "@/domains/audit/service";
@@ -19,6 +19,7 @@ const inviteSchema = z.object({
 
 export async function inviteUserAction(input: z.infer<typeof inviteSchema>) {
   const { organizationId, userId } = await requirePermission("users.manage");
+  { const gate = await emailVerifiedError(); if (gate) return fail("FORBIDDEN", gate); }
   const parsed = inviteSchema.safeParse(input);
   if (!parsed.success) {
     return fail("VALIDATION", parsed.error.issues[0]?.message ?? "Please enter a valid email address.", zodFieldErrors(parsed.error));
