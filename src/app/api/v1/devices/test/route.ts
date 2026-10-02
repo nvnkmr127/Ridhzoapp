@@ -21,11 +21,12 @@ export async function POST(req: NextRequest) {
   }
   const [u] = await db.select({ language: users.language }).from(users).where(eq(users.id, auth.userId)).limit(1);
   const [{ t }, { MobilePushService }] = await Promise.all([import("@/lib/i18n"), import("@/lib/push/mobile")]);
-  await MobilePushService.sendToUser(auth.userId, {
+  const sent = await MobilePushService.sendToUser(auth.userId, {
     title: t(u?.language, "Notifications are on"),
     body: t(u?.language, "You'll get new leads, follow-up reminders and meeting alerts here."),
     data: { type: "test" },
     channelId: "updates",
   });
-  return NextResponse.json({ data: { devices: devices.length } });
+  // accepted = taken by FCM/Expo; 0 here with devices > 0 means the push service refused it (see [fcm] logs).
+  return NextResponse.json({ data: { devices: devices.length, accepted: sent.accepted } });
 }

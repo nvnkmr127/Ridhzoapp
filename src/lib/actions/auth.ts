@@ -23,6 +23,7 @@ const signupSchema = z.object({
   firstName: z.string().max(255).optional(),
   email: z.string().email("Enter a valid email"),
   password: z.string().min(6, "Password must be at least 6 characters"),
+  plan: z.enum(["starter", "unlimited"]).optional(), // pricing-page button (?plan=)
   attribution: z
     .object({
       utmSource: z.string().optional(),
@@ -60,6 +61,7 @@ export async function signupAction(input: z.infer<typeof signupSchema>) {
       email: data.email,
       password: data.password,
       firstName: data.firstName,
+      plan: data.plan,
     });
 
     // Record Campaign Attribution & Dispatch Server-Side Meta CAPI Event
@@ -72,6 +74,9 @@ export async function signupAction(input: z.infer<typeof signupSchema>) {
           console.warn("[signupAction] failed to record attribution", err);
         }
       }
+
+      const { sendGa4Event } = await import("@/lib/integrations/ga4");
+      keepAlive(sendGa4Event(created.organizationId, "sign_up", { method: "email" }), "ga4 sign_up");
 
       // Meta Conversions API (CAPI) CompleteRegistration
       try {
@@ -105,7 +110,7 @@ export async function signupAction(input: z.infer<typeof signupSchema>) {
     {
       const [{ sendWelcomeEmail }, { upsertContact }] = await Promise.all([import("@/lib/mail/welcome"), import("@/lib/mail/contacts")]);
       await sendWelcomeEmail({ email: data.email, firstName: data.firstName, orgName });
-      keepAlive(upsertContact({ email: data.email, firstName: data.firstName, org: orgName, plan: "starter", planStatus: "active" }), "resend contact");
+      keepAlive(upsertContact({ email: data.email, firstName: data.firstName, org: orgName, plan: data.plan ?? "starter", planStatus: "active" }), "resend contact");
     }
 
     return ok({ created: true });

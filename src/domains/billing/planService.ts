@@ -31,8 +31,10 @@ export const PLAN_LIMITS: Record<string, PlanLimits> = {
 // New workspaces start on a Starter trial. Limits treat it as Free the moment it ends (trialExpired);
 // the hourly trial-downgrade worker then rewrites the row.
 export const SIGNUP_TRIAL_DAYS = 14;
-export function signupTrial() {
-  return { plan: "starter", trialEndsAt: new Date(Date.now() + SIGNUP_TRIAL_DAYS * 86_400_000) };
+// `chosen` = the plan button the visitor clicked on the pricing page; anything but a paid plan → Starter.
+export function signupTrial(chosen?: string | null) {
+  const plan = chosen === "unlimited" ? "unlimited" : "starter";
+  return { plan, trialEndsAt: new Date(Date.now() + SIGNUP_TRIAL_DAYS * 86_400_000) };
 }
 
 export const currentPeriod = () => new Date().toISOString().slice(0, 7); // 'YYYY-MM' (UTC)

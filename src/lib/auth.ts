@@ -31,6 +31,16 @@ import { users, organizations } from "@/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { cookies } from "next/headers";
+
+// Plan picked on the marketing pricing page, remembered by the signup page for sign-up paths that
+// can't carry it as a parameter (Google OAuth, phone OTP).
+async function chosenPlan(): Promise<string | undefined> {
+  try {
+    return (await cookies()).get("ridhzo_plan")?.value;
+  } catch {
+    return undefined; // outside a request
+  }
+}
 import { RateLimiter } from "@/lib/rate-limit";
 import { GOOGLE_LINK_COOKIE, isPlaceholderEmail, readGoogleLinkToken } from "@/lib/auth/googleLink";
 
@@ -120,8 +130,9 @@ export async function authorizePhoneOtp(credentials?: Record<string, string>) {
 
       const [newOrg] = await db
         .insert(organizations)
-        .values({ name: workspaceName, slug, ...signupTrial() })
+        .values({ name: workspaceName, slug, ...signupTrial(await chosenPlan()) })
         .returning();
+      keepAlive(import("@/lib/integrations/ga4").then((m) => m.sendGa4Event(newOrg.id, "sign_up", { method: "phone" })), "ga4 sign_up");
 
       const nameParts = baseName.split(/\s+/);
       const firstName = nameParts[0] || baseName;
@@ -322,8 +333,9 @@ export const authOptions: NextAuthOptions = {
 
             const [newOrg] = await db
               .insert(organizations)
-              .values({ name: orgName, slug, ...signupTrial() })
+              .values({ name: orgName, slug, ...signupTrial(await chosenPlan()) })
               .returning();
+            keepAlive(import("@/lib/integrations/ga4").then((m) => m.sendGa4Event(newOrg.id, "sign_up", { method: "google" })), "ga4 sign_up");
 
             const nameParts = (user.name || "").trim().split(/\s+/);
             const firstName = nameParts[0] || baseName;

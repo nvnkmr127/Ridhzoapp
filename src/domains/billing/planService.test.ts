@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { PlanService } from "./planService";
+import { PlanService, signupTrial } from "./planService";
 import { db } from "@/db";
 
 vi.mock("@/db", () => ({ db: { select: vi.fn(), update: vi.fn() } }));
@@ -177,5 +177,14 @@ describe("PlanService.plan on a database error", () => {
     (db.select as any).mockImplementationOnce(() => { throw new Error("db down"); });
     expect(await PlanService.plan("org-never-seen")).toBe("free");
     err.mockRestore();
+  });
+});
+
+describe("signupTrial", () => {
+  it("starts the plan chosen on the pricing page; anything else is Starter", () => {
+    expect(signupTrial("unlimited").plan).toBe("unlimited");
+    expect(signupTrial("starter").plan).toBe("starter");
+    expect(signupTrial("free").plan).toBe("starter");
+    expect(signupTrial().plan).toBe("starter");
   });
 });

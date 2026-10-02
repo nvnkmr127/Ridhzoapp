@@ -1,3 +1,4 @@
+import { keepAlive } from "@/lib/keepAlive";
 import { trialExpired, canonicalPlan, PLAN_MONTHLY_PRICE } from "./planNames";
 import { db } from "@/db";
 import { PLAN_LIMITS } from "./planService";
@@ -376,6 +377,8 @@ export class BillingLifecycleService {
         const attr = await PlatformAttributionService.getAttribution(orgId);
         const [o] = await db.select({ plan: organizations.plan }).from(organizations).where(eq(organizations.id, orgId)).limit(1);
         const paidValue = PLAN_MONTHLY_PRICE[canonicalPlan(o?.plan)];
+        const { sendGa4Event } = await import("@/lib/integrations/ga4");
+        keepAlive(sendGa4Event(orgId, "purchase", { transaction_id: `first_sub_${orgId}`, value: paidValue, currency: "INR" }), "ga4 purchase");
         await MetaCapiService.sendEvent({
           eventName: "Subscribe",
           orgId,

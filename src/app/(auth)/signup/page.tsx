@@ -40,9 +40,16 @@ export default function SignupPage() {
   const [redirecting, setRedirecting] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
+  // Pricing-page button (?plan=starter|unlimited). Kept in a cookie too, for Google / phone sign-up.
+  const [plan] = useState<"starter" | "unlimited" | undefined>(() => {
+    if (typeof window === "undefined") return undefined;
+    const p = new URLSearchParams(window.location.search).get("plan");
+    return p === "starter" || p === "unlimited" ? p : undefined;
+  });
   useEffect(() => {
     captureAttribution();
-  }, []);
+    if (plan) document.cookie = `ridhzo_plan=${plan}; path=/; max-age=3600; SameSite=Lax`;
+  }, [plan]);
 
   // Phone OTP state
   const [phoneOrgName, setPhoneOrgName] = useState("");
@@ -64,7 +71,7 @@ export default function SignupPage() {
     setError(null);
     try {
       const attribution = getStoredAttribution() ?? undefined;
-      const res = await signupAction({ ...data, attribution });
+      const res = await signupAction({ ...data, plan, attribution });
       if (!res.ok) {
         // Put field-specific problems (e.g. "email already registered") under the field itself too.
         for (const [field, message] of Object.entries(res.fieldErrors ?? {})) {

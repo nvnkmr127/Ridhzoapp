@@ -43,6 +43,7 @@ export class OrgService {
     password: string;
     firstName?: string;
     lastName?: string;
+    plan?: string;
   }) {
     const adminRole = await OrgService.ensureSystemRoles();
     const slug = `${slugify(input.orgName)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -63,7 +64,7 @@ export class OrgService {
       const [existing] = await tx.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
       if (existing) throw new Error("An account with that email already exists");
 
-      const [org] = await tx.insert(organizations).values({ name: input.orgName, slug, ...signupTrial() }).returning();
+      const [org] = await tx.insert(organizations).values({ name: input.orgName, slug, ...signupTrial(input.plan) }).returning();
 
       await tx.insert(users).values({
         organizationId: org.id,

@@ -76,64 +76,107 @@ async function accessToken(sa: ServiceAccount): Promise<string | null> {
   return cachedToken.value;
 }
 
+export interface FcmResult {
+  dead: string[]; // tokens FCM says no longer map to an install — drop them
+  accepted: number; // accepted by FCM (not proof the phone displayed it)
+  failed: number;
+}
+
+// FCM v1 errors carry the reason in details[].errorCode (UNREGISTERED…) or, for a bad token, as an
+// INVALID_ARGUMENT whose fieldViolations point at message.token. An INVALID_ARGUMENT about the
+// payload says nothing about the token and must not delete it.
+function tokenIsDead(httpStatus: number, err: any): boolean {
+  const e = err?.error;
+  const codes = [e?.status, ...(e?.details ?? []).map((d: any) => d?.errorCode)];
+  if (httpStatus === 404 || codes.includes("UNREGISTERED")) return true;
+  return codes.includes("INVALID_ARGUMENT") && JSON.stringify(e?.details ?? []).includes("message.token");
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export const FcmPushService = {
   isConfigured(): boolean {
     return serviceAccount() !== null;
   },
 
-  // Send to many FCM tokens. Returns the tokens that are dead (unregistered) and should be dropped.
-  async sendToTokens(tokens: string[], message: FcmMessage): Promise<string[]> {
-    if (tokens.length === 0) return [];
+  // Send to many FCM tokens. Best-effort; every outcome is logged with the FCM message id so a
+  // "push never arrived" report can be traced (accepted by FCM ≠ displayed on the device).
+  async sendToTokens(tokens: string[], message: FcmMessage): Promise<FcmResult> {
+    const result: FcmResult = { dead: [], accepted: 0, failed: 0 };
+    if (tokens.length === 0) return result;
     const sa = serviceAccount();
     if (!sa) {
       console.warn("[fcm] cannot send pushes: Firebase service account is not configured");
-      return [];
+      result.failed = tokens.length;
+      return result;
     }
-
-    const token = await accessToken(sa);
-    if (!token) return [];
 
     // FCM data values must be strings.
     const data: Record<string, string> = {};
     for (const [k, v] of Object.entries(message.data ?? {})) data[k] = v == null ? "" : String(v);
 
     const url = `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`;
-    const dead: string[] = [];
+    // Time-sensitive channels (leads, reminders, meetings) go high priority so Doze doesn't hold them;
+    // summaries/billing don't need to wake the phone.
+    const priority = message.channelId === "updates" ? "normal" : "high";
+
+    const post = async (t: string, bearer: string) =>
+      fetch(url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${bearer}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: {
+            token: t,
+            notification: { title: message.title, body: message.body ?? "" },
+            data,
+            android: {
+              priority,
+              notification: {
+                sound: "default",
+                ...(message.channelId ? { channel_id: message.channelId } : {}),
+                ...(message.badge !== undefined ? { notification_count: message.badge } : {}),
+              },
+            },
+          },
+        }),
+      });
 
     await Promise.all(
       tokens.map(async (t) => {
+        const started = Date.now();
+        const tail = t.slice(-8);
         try {
-          const res = await fetch(url, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-            body: JSON.stringify({
-              message: {
-                token: t,
-                notification: { title: message.title, body: message.body ?? "" },
-                data,
-                android: {
-                  priority: "high",
-                  notification: {
-                    sound: "default",
-                    ...(message.channelId ? { channel_id: message.channelId } : {}),
-                    ...(message.badge !== undefined ? { notification_count: message.badge } : {}),
-                  },
-                },
-              },
-            }),
-          });
-          if (!res.ok) {
-            const err: any = await res.json().catch(() => null);
-            const status = err?.error?.details?.[0]?.errorCode || err?.error?.status;
-            // The token no longer maps to an install — drop it.
-            if (res.status === 404 || status === "UNREGISTERED" || status === "INVALID_ARGUMENT") dead.push(t);
-            else console.error("[fcm] send failed", res.status, err?.error?.message);
+          let bearer = await accessToken(sa);
+          if (!bearer) return void result.failed++;
+          let res = await post(t, bearer);
+          // Expired/revoked OAuth token: mint a fresh one once. Quota / transient server errors: one
+          // short retry (honouring Retry-After, capped) so a blip doesn't drop a lead alert.
+          if (res.status === 401) {
+            cachedToken = null;
+            bearer = await accessToken(sa);
+            if (bearer) res = await post(t, bearer);
+          } else if (res.status === 429 || res.status >= 500) {
+            await sleep(Math.min(Number(res.headers.get("retry-after")) * 1000 || 1000, 3000));
+            res = await post(t, bearer);
           }
+          const body: any = await res.json().catch(() => null);
+          if (res.ok) {
+            result.accepted++;
+            console.info("[fcm] accepted", { token: tail, id: body?.name, channel: message.channelId, ms: Date.now() - started });
+            return;
+          }
+          result.failed++;
+          const dead = tokenIsDead(res.status, body);
+          if (dead) result.dead.push(t);
+          // SENDER_ID_MISMATCH = this token belongs to another Firebase project (debug/prod mix-up or
+          // wrong service account) — loud, and never treated as a dead token.
+          console.error("[fcm] rejected", { token: tail, http: res.status, status: body?.error?.status, dead, message: body?.error?.message });
         } catch (e) {
-          console.error("[fcm] send error", e);
+          result.failed++;
+          console.error("[fcm] send error", { token: tail }, e);
         }
       }),
     );
-    return dead;
+    return result;
   },
 };

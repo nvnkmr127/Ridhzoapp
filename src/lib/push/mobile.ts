@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { deviceTokens, users } from "@/db/schema";
-import { eq, inArray, lt, sql } from "drizzle-orm";
+import { and, eq, inArray, lt, sql } from "drizzle-orm";
 import { ExpoPushService } from "./expo";
 import { FcmPushService } from "./fcm";
 
@@ -51,28 +51,37 @@ export const MobilePushService = {
     await db.delete(deviceTokens).where(eq(deviceTokens.token, token));
   },
 
+  // Returns how many devices were tried / accepted by the push services (the test endpoint reports it).
   async sendToUser(userId: string, message: MobilePushMessage) {
+    const none = { devices: 0, accepted: 0 };
     // A channel the user muted in the app's notification settings is not pushed (the in-app inbox still has it).
     if (message.channelId) {
       try {
         const [u] = await db.select({ off: users.pushOptOut }).from(users).where(eq(users.id, userId)).limit(1);
-        if (u?.off?.includes(message.channelId)) return;
+        if (u?.off?.includes(message.channelId)) return none;
       } catch (e) {
         console.warn("[mobile-push] failed to check pushOptOut", e);
       }
     }
-    const rows = await db.select({ token: deviceTokens.token }).from(deviceTokens).where(eq(deviceTokens.userId, userId));
-    if (!Array.isArray(rows) || rows.length === 0) return;
+    // Only devices registered under the user's *current* workspace: a token left over from a previous
+    // tenant association never receives this tenant's notification, whatever the app does.
+    const rows = await db
+      .select({ token: deviceTokens.token })
+      .from(deviceTokens)
+      .innerJoin(users, and(eq(users.id, deviceTokens.userId), eq(users.organizationId, deviceTokens.organizationId)))
+      .where(eq(deviceTokens.userId, userId));
+    if (!Array.isArray(rows) || rows.length === 0) return none;
 
     const expoTokens = rows.map((r) => r.token).filter(isExpoToken);
     const fcmTokens = rows.map((r) => r.token).filter((t) => !isExpoToken(t));
 
-    const [deadExpo, deadFcm] = await Promise.all([
+    const [deadExpo, fcm] = await Promise.all([
       ExpoPushService.sendToTokens(expoTokens, message),
       FcmPushService.sendToTokens(fcmTokens, message),
     ]);
 
-    const dead = [...deadExpo, ...deadFcm];
+    const dead = [...deadExpo, ...fcm.dead];
     if (dead.length) await db.delete(deviceTokens).where(inArray(deviceTokens.token, dead));
+    return { devices: rows.length, accepted: fcm.accepted + expoTokens.length - deadExpo.length };
   },
 };
