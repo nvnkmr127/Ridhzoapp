@@ -36,6 +36,7 @@ export default async function LeadsPage({
   const params = await searchParams;
   const { userId, organizationId } = await requireOrg();
   const isAdmin = await hasPermission("settings.manage");
+  const [canEdit, canDelete, canExport] = await Promise.all([hasPermission("leads.edit"), hasPermission("leads.delete"), hasPermission("leads.export")]);
 
   const search = typeof params.search === "string" ? params.search : undefined;
   const status = typeof params.status === "string" ? params.status : undefined;
@@ -149,16 +150,20 @@ export default async function LeadsPage({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <LeadImportWizard>
-            <Button variant="outline">
-              <Upload className="mr-2 h-4 w-4" /> Import Leads
-            </Button>
-          </LeadImportWizard>
-          <QuickAddLeadDrawer organizationId={organizationId}>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" /> Add Lead
-            </Button>
-          </QuickAddLeadDrawer>
+          {canEdit && (
+            <>
+              <LeadImportWizard>
+                <Button variant="outline">
+                  <Upload className="mr-2 h-4 w-4" /> Import Leads
+                </Button>
+              </LeadImportWizard>
+              <QuickAddLeadDrawer organizationId={organizationId}>
+                <Button>
+                  <Plus className="mr-2 h-4 w-4" /> Add Lead
+                </Button>
+              </QuickAddLeadDrawer>
+            </>
+          )}
         </div>
       </div>
 
@@ -231,16 +236,20 @@ export default async function LeadsPage({
                     </Button>
                   </Link>
                 )}
-                <QuickAddLeadDrawer organizationId={organizationId}>
-                  <Button variant="outline">
-                    <Plus className="mr-2 h-4 w-4" /> Add Lead
-                  </Button>
-                </QuickAddLeadDrawer>
-                <LeadImportWizard>
-                  <Button variant="outline">
-                    <Upload className="mr-2 h-4 w-4" /> Import CSV
-                  </Button>
-                </LeadImportWizard>
+                {canEdit && (
+                  <>
+                    <QuickAddLeadDrawer organizationId={organizationId}>
+                      <Button variant="outline">
+                        <Plus className="mr-2 h-4 w-4" /> Add Lead
+                      </Button>
+                    </QuickAddLeadDrawer>
+                    <LeadImportWizard>
+                      <Button variant="outline">
+                        <Upload className="mr-2 h-4 w-4" /> Import CSV
+                      </Button>
+                    </LeadImportWizard>
+                  </>
+                )}
               </div>
             }
           />
@@ -258,6 +267,9 @@ export default async function LeadsPage({
           initialUsers={usersList}
           statuses={statusSchema.map((st) => ({ key: st.key, label: st.label, color: st.color, category: st.category }))}
           nextMeetings={await MeetingService.nextScheduledForLeads(visibleLeads.map((l: { id: string }) => l.id)).catch(() => ({}))}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          canExport={canExport}
         />
       )}
     </div>

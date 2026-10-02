@@ -12,6 +12,7 @@ export const PERMISSIONS = {
   "leads.delete": "Delete leads (to recycle bin)",
   "leads.purge": "Permanently delete leads / empty recycle bin",
   "leads.merge": "Merge duplicate leads",
+  "leads.export": "Export leads to CSV",
   "audit.view": "View the audit log",
   "api.manage": "Manage API keys, webhooks & new-lead alerts",
   "billing.manage": "Manage billing & subscription",
@@ -26,5 +27,5 @@ export const ALL_PERMISSIONS = Object.keys(PERMISSIONS) as PermissionKey[];
 // role created WITHOUT leads.edit; the backend actions now enforce that gate.
 export const SYSTEM_ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
   admin: ALL_PERMISSIONS,
-  member: ["leads.edit"],
+  member: ["leads.edit", "leads.export"],
 };

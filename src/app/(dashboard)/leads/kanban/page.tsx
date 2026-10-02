@@ -10,6 +10,7 @@ export default async function KanbanPage() {
   const { userId, organizationId } = await requireOrg();
   const { hasPermission } = await import("@/lib/rbac");
   const isAdmin = await hasPermission("settings.manage");
+  const canEdit = await hasPermission("leads.edit");
   // Board columns follow the tenant's status schema (incl. custom statuses), not a hardcoded five.
   const schema = await CustomStatusSchemaService.getTenantStatusSchema(organizationId);
   const columns = schema.map((s) => ({ key: s.key, label: s.label }));
@@ -36,7 +37,7 @@ export default async function KanbanPage() {
           </Button>
         </Link>
       </div>
-      <KanbanBoard initialStages={initialStages} columns={columns} />
+      <KanbanBoard initialStages={initialStages} columns={columns} canEdit={canEdit} />
     </div>
   );
 }

@@ -13,7 +13,7 @@ import { LocalTime } from "@/components/LocalTime";
 
 export type SentEmail = { id: string; content: string | null; createdAt: Date | string; userName?: string | null };
 
-export function EmailSendBox({ leadId, email, history = [] }: { leadId: string; email: string | null; history?: SentEmail[] }) {
+export function EmailSendBox({ leadId, email, history = [], readOnly = false }: { leadId: string; email: string | null; history?: SentEmail[]; readOnly?: boolean }) {
   const { toast } = useToast();
   const [subject, setSubject] = React.useState("");
   const [body, setBody] = React.useState("");
@@ -56,14 +56,15 @@ export function EmailSendBox({ leadId, email, history = [] }: { leadId: string; 
           To: <span className="font-medium text-foreground">{email}</span>
         </span>
         {/* Sending from here keeps it on the lead's timeline; this is for reps who prefer their own mail app. */}
-        <a
+        {!readOnly && <a
           href={`mailto:${email}${subject || body ? `?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}` : ""}`}
           onClick={() => logContact({ channel: "email" })}
           className="text-xs underline underline-offset-2 hover:text-foreground"
         >
           Use my email app instead
-        </a>
+        </a>}
       </div>
+      {!readOnly && <>
       <AiDraftControls
         leadId={leadId}
         channel="email"
@@ -83,6 +84,7 @@ export function EmailSendBox({ leadId, email, history = [] }: { leadId: string; 
           <Mail className="h-4 w-4" />{sending ? "Sending…" : "Send email"}
         </Button>
       </div>
+      </>}
       {history.length > 0 && (
         <ul className="space-y-1 border-t pt-3 text-xs text-muted-foreground">
           {history.map((h) => (

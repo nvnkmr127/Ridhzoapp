@@ -19,3 +19,12 @@ describe("roleGrants (who counts as a recipient for billing / settings mail)", (
     expect(roleGrants({ name: "admin", permissions: [], organizationId: "org1" }, "billing.manage")).toBe(false);
   });
 });
+
+describe("leads.export", () => {
+  it("is held by members and admins by default, not by an arbitrary custom role", async () => {
+    const { roleGrants } = await import("./grants");
+    expect(roleGrants({ name: "member", permissions: [], organizationId: null }, "leads.export")).toBe(true);
+    expect(roleGrants({ name: "admin", permissions: [], organizationId: null }, "leads.export")).toBe(true);
+    expect(roleGrants({ name: "Viewer", permissions: ["leads.edit"], organizationId: "o1" }, "leads.export")).toBe(false);
+  });
+});

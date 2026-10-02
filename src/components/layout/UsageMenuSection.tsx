@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Users, UserPlus, Zap, Crown, CreditCard, Info } from "lucide-react";
+import { Sparkles, Users, UserPlus, Zap, Crown, CreditCard, Info, Network, GitFork } from "lucide-react";
 import Link from "next/link";
 import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,9 @@ type UsageStats = {
   seats: { current: number; max: number };
   leads: { current: number; max: number };
   aiCredits: { current: number; max: number };
+  sources?: { current: number; max: number };
+  automations?: { current: number; max: number };
+  sequences?: { current: number; max: number };
 };
 
 const formatNumber = (num: number) => {
@@ -103,6 +106,23 @@ export function UsageMenuSection({ usageStats }: { usageStats: UsageStats }) {
           <ProgressBar current={usageStats.aiCredits.current} max={usageStats.aiCredits.max} />
         </div>
         
+        {/* Plan-capped extras: only shown while the plan actually caps them (unlimited plans hide the rows). */}
+        {([
+          ["Automations", Zap, usageStats.automations],
+          ["Sequences", GitFork, usageStats.sequences],
+          ["Lead sources", Network, usageStats.sources],
+        ] as const).map(([label, Icon, u]) =>
+          u && u.max !== Infinity ? (
+            <div key={label} className="space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-medium flex items-center gap-1.5 text-muted-foreground"><Icon className="h-3.5 w-3.5" />{label}</span>
+                <span className="text-muted-foreground font-medium">{formatNumber(u.current)} / {formatNumber(u.max)}</span>
+              </div>
+              <ProgressBar current={u.current} max={u.max} />
+            </div>
+          ) : null,
+        )}
+
         <div className="pt-2 border-t border-border space-y-2">
           {!isUnlimited ? (
             <Button 

@@ -79,6 +79,9 @@ export function LeadsTable({
   initialUsers,
   nextMeetings = {},
   statuses,
+  canEdit = true,
+  canDelete = true,
+  canExport = true,
 }: {
   leads: Lead[];
   page?: number;
@@ -91,6 +94,10 @@ export function LeadsTable({
   nextMeetings?: Record<string, { startAt: Date | string; durationMinutes: number; label: string }>;
   /** The workspace's statuses, from the server render — badges show their label + colour at once. */
   statuses?: { key: string; label: string; color: string; category?: StatusCategory }[];
+  /** Permission flags from the server (it enforces them too): hide what the role can't do. */
+  canEdit?: boolean;
+  canDelete?: boolean;
+  canExport?: boolean;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -318,6 +325,7 @@ export function LeadsTable({
       {selected.size > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-md border bg-muted p-3">
           <span className="text-sm font-medium">{selected.size} selected</span>
+          {canEdit && <>
           <Select
             disabled={busy}
             onValueChange={(userId) =>
@@ -382,7 +390,8 @@ export function LeadsTable({
             <MessageCircle className="h-4 w-4" />
             Message
           </Button>
-          <Button
+          </>}
+          {canExport && <Button
             variant="secondary"
             size="sm"
             onClick={() => exportCsv(true)}
@@ -391,8 +400,8 @@ export function LeadsTable({
           >
             <Download className="h-4 w-4" />
             {exporting ? "Exporting…" : "Export CSV"}
-          </Button>
-          <Button
+          </Button>}
+          {canDelete && <Button
             variant="outline"
             size="sm"
             disabled={busy}
@@ -401,7 +410,7 @@ export function LeadsTable({
           >
             <Trash className="h-4 w-4" />
             Delete
-          </Button>
+          </Button>}
         </div>
       )}
 
@@ -609,9 +618,9 @@ export function LeadsTable({
             <span className="ml-2 font-medium">
               Showing {startRecord} - {endRecord} of {total} leads
             </span>
-            <Button type="button" variant="ghost" size="sm" className="ml-2 h-7 gap-1 text-xs" disabled={exporting || total === 0} onClick={() => exportCsv(false)} title="Export every lead matching the current search and filters">
+            {canExport && <Button type="button" variant="ghost" size="sm" className="ml-2 h-7 gap-1 text-xs" disabled={exporting || total === 0} onClick={() => exportCsv(false)} title="Export every lead matching the current search and filters">
               <Download className="h-3.5 w-3.5" /> {exporting ? "Exporting…" : `Export all ${total}`}
-            </Button>
+            </Button>}
           </div>
 
           <div className={`flex items-center space-x-1 ${totalPages <= 1 ? "hidden" : ""}`}>

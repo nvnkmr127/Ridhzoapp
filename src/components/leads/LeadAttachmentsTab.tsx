@@ -37,9 +37,10 @@ interface LeadAttachmentsTabProps {
   leadId: string;
   initialAttachments: AttachmentItem[];
   userNames?: Record<string, string>;
+  readOnly?: boolean; // role without leads.edit: download/open only
 }
 
-export function LeadAttachmentsTab({ leadId, initialAttachments, userNames = {} }: LeadAttachmentsTabProps) {
+export function LeadAttachmentsTab({ leadId, initialAttachments, userNames = {}, readOnly = false }: LeadAttachmentsTabProps) {
   const router = useRouter();
   const [confirm, confirmDialog] = useConfirm();
   const [attachments, setAttachments] = useState<AttachmentItem[]>(initialAttachments);
@@ -198,7 +199,7 @@ export function LeadAttachmentsTab({ leadId, initialAttachments, userNames = {} 
           <h4 className="text-sm font-semibold text-foreground">Files</h4>
           <p className="text-xs text-muted-foreground">Quotes, brochures, contracts and links for this lead</p>
         </div>
-        {!showAdd && (
+        {!showAdd && !readOnly && (
           <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
             <Button
               size="sm"
@@ -457,7 +458,7 @@ export function LeadAttachmentsTab({ leadId, initialAttachments, userNames = {} 
                       {isUploaded ? <Download className="h-4 w-4" /> : <ExternalLink className="h-4 w-4" />}
                     </a>
                   </Button>
-                  <Button
+                  {!readOnly && <Button
                     variant="ghost"
                     size="icon"
                     onClick={() => handleDelete(file.id)}
@@ -465,7 +466,7 @@ export function LeadAttachmentsTab({ leadId, initialAttachments, userNames = {} 
                     title="Delete Attachment"
                   >
                     <Trash2 className="h-4 w-4" />
-                  </Button>
+                  </Button>}
                 </div>
               </div>
             );

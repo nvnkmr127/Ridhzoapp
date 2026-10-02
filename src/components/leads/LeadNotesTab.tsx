@@ -33,9 +33,10 @@ const localNow = () => {
 interface LeadNotesTabProps {
   leadId: string;
   initialNotes: NoteItem[];
+  readOnly?: boolean; // role without leads.edit: list only
 }
 
-export function LeadNotesTab({ leadId, initialNotes }: LeadNotesTabProps) {
+export function LeadNotesTab({ leadId, initialNotes, readOnly = false }: LeadNotesTabProps) {
   const router = useRouter();
   const [notes, setNotes] = useState<NoteItem[]>([...initialNotes].sort(byDate));
   const [noteDate, setNoteDate] = useState(""); // optional datetime-local; empty = now
@@ -144,7 +145,7 @@ export function LeadNotesTab({ leadId, initialNotes }: LeadNotesTabProps) {
   return (
     <div className="space-y-6">
       {/* Add Note Form */}
-      <form onSubmit={handleAdd} className="space-y-3">
+      {!readOnly && <form onSubmit={handleAdd} className="space-y-3">
         <Textarea
           placeholder="Type a note here..."
           value={newContent}
@@ -174,7 +175,7 @@ export function LeadNotesTab({ leadId, initialNotes }: LeadNotesTabProps) {
             {adding ? "Saving..." : "Add Note"}
           </Button>
         </div>
-      </form>
+      </form>}
 
       {/* Notes List */}
       <div className="space-y-3">
@@ -185,7 +186,7 @@ export function LeadNotesTab({ leadId, initialNotes }: LeadNotesTabProps) {
         {notes.length === 0 ? (
           <div className="text-center py-8 border rounded-2xl bg-card text-muted-foreground text-xs space-y-1">
             <p className="font-medium text-foreground">No notes added yet</p>
-            <p>Use the form above to add a note to this lead.</p>
+            {!readOnly && <p>Use the form above to add a note to this lead.</p>}
           </div>
         ) : (
           notes.map((note) => {
@@ -239,7 +240,7 @@ export function LeadNotesTab({ leadId, initialNotes }: LeadNotesTabProps) {
                           <span className="opacity-70">· added <LocalTime iso={note.createdAt} mode="datetime" /></span>
                         )}
                       </span>
-                      <div className="flex items-center gap-1">
+                      {!readOnly && <div className="flex items-center gap-1">
                         <Button
                           variant="ghost"
                           size="icon"
@@ -261,7 +262,7 @@ export function LeadNotesTab({ leadId, initialNotes }: LeadNotesTabProps) {
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
-                      </div>
+                      </div>}
                     </div>
                   </>
                 )}

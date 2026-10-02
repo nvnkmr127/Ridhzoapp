@@ -129,6 +129,19 @@ export class PlanService {
       // Return 0 usage if db fails, but limits will still be enforced below if max is hit
     }
 
+    // The other plan-capped things, in ONE round trip (this runs on every dashboard render).
+    let counted = { sources: 0, automations: 0, sequences: 0 };
+    try {
+      const res = (await db.execute(sql`select
+        (select count(*)::int from lead_sources where organization_id = ${organizationId}) as sources,
+        (select count(*)::int from automations where organization_id = ${organizationId}) as automations,
+        (select count(*)::int from sequences where organization_id = ${organizationId}) as sequences`)) as unknown as { sources: number; automations: number; sequences: number }[];
+      if (res[0]) counted = { sources: Number(res[0].sources), automations: Number(res[0].automations), sequences: Number(res[0].sequences) };
+    } catch {
+      // meters show 0 used if the read fails; enforcement doesn't depend on this
+    }
+    const caps = limitsFor(planName);
+
     let aiCredits = { used: 0, max: limitsFor(planName).aiCredits };
     try {
       aiCredits = await this.aiCredits(organizationId, planName);
@@ -141,6 +154,9 @@ export class PlanService {
       seats: { current: userCount + inviteCount, max: maxSeats },
       leads: { current: leadCount, max: maxLeads },
       aiCredits: { current: aiCredits.used, max: aiCredits.max },
+      sources: { current: counted.sources, max: caps.sources },
+      automations: { current: counted.automations, max: caps.automations },
+      sequences: { current: counted.sequences, max: caps.sequences },
     };
   }
 

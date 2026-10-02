@@ -22,6 +22,8 @@
 
 - **F. Incomplete features:** done — webhook DLQ screen, duplicate bulk-status action removed, legacy CSV dialog removed, Razorpay refund (credit note) and failed-payment events, web Calls page, per-tenant WhatsApp accounts with tenant-scoped inbound. **Not built (product decisions):** multi-workspace membership and separate Contacts/Companies entities.
 
+- **G. Missing frontend:** done — failed-webhook screen, read-only lead/list/board states for roles without `leads.edit`, delete and export permission-aware controls, a new `leads.export` permission, plan meters for automations/sequences/sources, and batched import with a progress bar. Export still shows a plain "Exporting…" state (one server call, no incremental progress).
+
 ## A. Executive Summary
 
 Ridhzo is a mature, unusually well-commented Next.js 15 / Drizzle / Postgres / BullMQ multi-tenant CRM. Typecheck is clean, 860 tests pass, org scoping in services is consistent, SSRF/webhook-signature/idempotency work has clearly been done with care, and secrets are not committed (`.env*` never appear in git history).

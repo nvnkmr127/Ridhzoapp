@@ -33,6 +33,7 @@ interface LeadRemindersTabProps {
   userNames?: Record<string, string>;
   leadName?: string;
   leadPhone?: string | null;
+  readOnly?: boolean; // role without leads.edit: view only
 }
 
 const formatForDateTimeLocal = (date: Date | string) => {
@@ -47,7 +48,7 @@ const formatForDateTimeLocal = (date: Date | string) => {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 };
 
-export function LeadRemindersTab({ leadId, initialReminders, userNames = {}, leadName = "", leadPhone = null }: LeadRemindersTabProps) {
+export function LeadRemindersTab({ leadId, initialReminders, userNames = {}, leadName = "", leadPhone = null, readOnly = false }: LeadRemindersTabProps) {
   const router = useRouter();
   const [reminders, setReminders] = useState<ReminderItem[]>(initialReminders);
   const [showAdd, setShowAdd] = useState(false);
@@ -226,7 +227,7 @@ export function LeadRemindersTab({ leadId, initialReminders, userNames = {}, lea
           <h4 className="text-sm font-semibold text-foreground">Follow-ups</h4>
           <p className="text-xs text-muted-foreground">Calls, messages and tasks to do for this lead — book meetings from the Meetings tab</p>
         </div>
-        {!showAdd && (
+        {!showAdd && !readOnly && (
           <Button size="sm" onClick={() => setShowAdd(true)} className="gap-1.5 text-xs">
             <Plus className="h-4 w-4" />
             Add follow-up
@@ -328,6 +329,7 @@ export function LeadRemindersTab({ leadId, initialReminders, userNames = {}, lea
                   <div className="flex items-start gap-3 min-w-0 flex-1">
                     <button
                       onClick={() => handleToggle(reminder.id, reminder.status)}
+                      disabled={readOnly}
                       aria-label="Mark as done"
                       className="-m-2 mt-[-6px] shrink-0 rounded-full p-2 text-muted-foreground transition-colors hover:text-primary"
                     >
@@ -348,7 +350,7 @@ export function LeadRemindersTab({ leadId, initialReminders, userNames = {}, lea
                           {reminder.description}
                         </p>
                       )}
-                      {isSendableFollowUp(reminder) && (
+                      {!readOnly && isSendableFollowUp(reminder) && (
                         <div className="mt-2">
                           <SendFollowUpButton
                             followUpId={reminder.id}
@@ -369,7 +371,7 @@ export function LeadRemindersTab({ leadId, initialReminders, userNames = {}, lea
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
+                  {!readOnly && <div className="flex items-center gap-1 shrink-0">
                     <Button
                       variant="ghost"
                       size="icon"
@@ -389,7 +391,7 @@ export function LeadRemindersTab({ leadId, initialReminders, userNames = {}, lea
                     >
                       <X className="h-4 w-4" />
                     </Button>
-                  </div>
+                  </div>}
                 </div>
               );
             })}
@@ -412,6 +414,7 @@ export function LeadRemindersTab({ leadId, initialReminders, userNames = {}, lea
                 <div className="flex items-center gap-3 min-w-0 flex-1">
                   <button
                     onClick={() => handleToggle(reminder.id, reminder.status)}
+                    disabled={readOnly}
                     aria-label="Mark as not done"
                     className="-m-2 shrink-0 rounded-full p-2 text-emerald-500 transition-colors hover:text-muted-foreground"
                   >

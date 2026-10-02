@@ -76,6 +76,8 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   const { userId, organizationId } = await requireOrg();
 
   // 1. The lead, plus the viewer/workspace lookups that don't depend on it — one round trip.
+  // Roles without leads.edit may read a lead but not change it (the server enforces it; this hides what would fail).
+  const canEdit = await hasPermission("leads.edit");
   const [lead, isFieldAdmin, allCustomDefs, orgFmt, dialCode] = await Promise.all([
     LeadService.getLead(id, organizationId),
     hasPermission("settings.manage"),
@@ -329,6 +331,11 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
 
   return (
     <div className="flex-1 space-y-5 p-3 pt-3 pb-28 sm:space-y-6 sm:p-8 sm:pt-6 sm:pb-24">
+      {!canEdit && (
+        <div role="note" className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          Your role can view this lead but not change it.
+        </div>
+      )}
       <LeadDuplicateBanner count={dupCount} searchQuery={lead.email || lead.phone || undefined} />
 
       {/* Buying signal — a recent content open is a hot moment to reach out. */}
@@ -360,7 +367,11 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             <div className="min-w-0 flex-1 space-y-1.5">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <h2 className="break-words text-xl font-bold tracking-tight sm:text-2xl">{lead.name}</h2>
-              <LeadStatusControl leadId={lead.id} status={lead.status} hasFollowUp={!!lead.nextFollowUpAt} className="h-8 w-auto min-w-[130px] text-xs" />
+              {canEdit ? (
+                <LeadStatusControl leadId={lead.id} status={lead.status} hasFollowUp={!!lead.nextFollowUpAt} className="h-8 w-auto min-w-[130px] text-xs" />
+              ) : (
+                <Badge variant="secondary" className="capitalize">{lead.status.replace(/_/g, " ")}</Badge>
+              )}
               <PreCallBrief brief={brief} />
               <LeadInsightsCard variant="chip"
               score={lead.score}
@@ -460,7 +471,11 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
         <div className="hidden gap-4 rounded-xl border bg-muted/20 p-3 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.4fr)]">
           <div className="min-w-0 space-y-1.5">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Owner</p>
-            <LeadAssignControl leadId={lead.id} ownerId={lead.ownerId} initialUsers={usersList} currentUserId={userId} canSeeAllLeads={isFieldAdmin} />
+            {canEdit ? (
+              <LeadAssignControl leadId={lead.id} ownerId={lead.ownerId} initialUsers={usersList} currentUserId={userId} canSeeAllLeads={isFieldAdmin} />
+            ) : (
+              <p className="text-sm">{usersList.find((u) => u.id === lead.ownerId)?.name ?? "Unassigned"}</p>
+            )}
           </div>
           <div className="min-w-0 space-y-1.5">
             <p
@@ -469,23 +484,31 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             >
               Pipeline stage
             </p>
-            <LeadStageAndValueControl leadId={lead.id} stageId={lead.stageId} stages={stagesList} compact />
+            {canEdit ? (
+              <LeadStageAndValueControl leadId={lead.id} stageId={lead.stageId} stages={stagesList} compact />
+            ) : (
+              <p className="text-sm">{stagesList.find((st: { id: string; name: string }) => st.id === lead.stageId)?.name ?? "—"}</p>
+            )}
           </div>
           <div className="min-w-0 space-y-1.5">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Tags</p>
-            <LeadTags leadId={lead.id} initialTags={leadTags} />
+            {canEdit ? (
+              <LeadTags leadId={lead.id} initialTags={leadTags} />
+            ) : (
+              <div className="flex flex-wrap gap-1">{leadTags.length ? leadTags.map((t: { id: string; name: string }) => <Badge key={t.id} variant="secondary" className="font-normal">{t.name}</Badge>) : <span className="text-sm text-muted-foreground">—</span>}</div>
+            )}
           </div>
         </div>
 
-        <LeadHeaderQuickActions lead={{ ...lead, phone: dialPhone ?? null }} />
-        <MeetingScheduler
+        {canEdit && <LeadHeaderQuickActions lead={{ ...lead, phone: dialPhone ?? null }} />}
+        {canEdit && <MeetingScheduler
           lead={{ id: lead.id, name: lead.name, phone: dialPhone ?? null, email: lead.email }}
           users={usersList}
           locations={meetingLocations.map((l) => ({ id: l.id, name: l.name, address: l.address }))}
           canAutoMeet={calendarConnected}
           canManageLocations={isFieldAdmin}
           defaultAssigneeId={usersList.some((u) => u.id === lead.ownerId) ? lead.ownerId! : userId}
-        />
+        />}
       </div>
 
       <div className="grid grid-cols-1 gap-5 sm:gap-6 lg:grid-cols-3">
@@ -504,7 +527,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                     {contactWindow.days ? ` on ${contactWindow.days}` : ""} · from {contactWindow.count} of {contactWindow.total} replies/answered calls
                   </p>
                 )}
-                <NbaActions action={nba.action} hasPhone={!!lead.phone} hasEmail={!!lead.email} />
+                {canEdit && <NbaActions action={nba.action} hasPhone={!!lead.phone} hasEmail={!!lead.email} />}
                 <LeadAiRecap
                   leadId={lead.id}
                   initial={savedRecap?.text ? { text: savedRecap.text, at: savedRecap.at, plan: visiblePlan(savedRecap.plan, savedRecap.dismissed) } : null}
@@ -532,11 +555,11 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           )}
 
           <div className={m("order-7")}>
-            <ShareContentCard leadId={lead.id} leadPhone={dialPhone} initialShares={shares} />
+            {canEdit && <ShareContentCard leadId={lead.id} leadPhone={dialPhone} initialShares={shares} />}
           </div>
 
           <div className={m("order-8")}>
-            <ReengagementPlanCard leadId={lead.id} organizationId={organizationId} />
+            {canEdit && <ReengagementPlanCard leadId={lead.id} organizationId={organizationId} />}
           </div>
         </div>
 
@@ -557,19 +580,19 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                   content: (
                     <>
                       <WhatsAppThread messages={waMessages} userNames={userNames} />
-                      {whatsappMode === "personal" && dialPhone && <LogReplyBox leadId={lead.id} />}
-                      <WhatsAppSendBox
+                      {canEdit && whatsappMode === "personal" && dialPhone && <LogReplyBox leadId={lead.id} />}
+                      {canEdit && <WhatsAppSendBox
                         leadId={lead.id}
                         hasPhone={!!lead.phone}
                         mode={whatsappMode}
                         phone={dialPhone}
                         leadName={lead.name}
                         company={lead.company}
-                      />
+                      />}
                     </>
                   ),
                 },
-                { value: "notes", label: `Notes (${notesCount})`, content: <LeadNotesTab leadId={lead.id} initialNotes={noteActivities} /> },
+                { value: "notes", label: `Notes (${notesCount})`, content: <LeadNotesTab leadId={lead.id} initialNotes={noteActivities} readOnly={!canEdit} /> },
                 {
                   value: "meetings",
                   label: `Meetings (${leadMeetings.filter((mt) => mt.status === "scheduled").length})`,
@@ -584,16 +607,16 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 {
                   value: "reminders",
                   label: `Follow-ups (${reminders.length})`,
-                  content: <LeadRemindersTab leadId={lead.id} initialReminders={reminders} userNames={userNames} leadName={lead.name} leadPhone={dialPhone} />,
+                  content: <LeadRemindersTab leadId={lead.id} initialReminders={reminders} userNames={userNames} leadName={lead.name} leadPhone={dialPhone} readOnly={!canEdit} />,
                 },
-                { value: "attachments", label: `Files (${attachments.length})`, content: <LeadAttachmentsTab leadId={lead.id} initialAttachments={attachments} userNames={userNames} /> },
-                { value: "emails", label: "Email", content: <EmailSendBox leadId={lead.id} email={lead.email} history={activities.filter((a) => a.type === "email")} /> },
+                { value: "attachments", label: `Files (${attachments.length})`, content: <LeadAttachmentsTab leadId={lead.id} initialAttachments={attachments} userNames={userNames} readOnly={!canEdit} /> },
+                { value: "emails", label: "Email", content: <EmailSendBox leadId={lead.id} email={lead.email} history={activities.filter((a) => a.type === "email")} readOnly={!canEdit} /> },
               ]}
             />
           </div>
 
           <div className={m("order-5")}>
-            <LeadSequencesCard leadId={lead.id} availableSequences={availableSequences} initialEnrolled={enrolledSequences} whatsappMode={whatsappMode} />
+            {canEdit && <LeadSequencesCard leadId={lead.id} availableSequences={availableSequences} initialEnrolled={enrolledSequences} whatsappMode={whatsappMode} />}
           </div>
 
           {/* Reference cards sit under the conversation on desktop, so the left column stays short

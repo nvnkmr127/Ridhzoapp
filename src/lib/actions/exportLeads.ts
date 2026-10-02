@@ -29,6 +29,8 @@ const schema = z.object({
 // admin-only custom fields only for admins. Values are formula-safe (see lib/leads/csv).
 export async function exportLeadsCsvAction(input: z.input<typeof schema>) {
   const { userId, organizationId } = await requireOrg();
+  // Taking the whole book of contacts out of the app is its own permission (members have it by default).
+  if (!(await hasPermission("leads.export"))) return fail("FORBIDDEN", "You don't have permission to export leads. Ask an admin.");
   const parsed = schema.safeParse(input);
   if (!parsed.success) return fail("VALIDATION", "Couldn't read the export options.");
   const q = parsed.data;

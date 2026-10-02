@@ -27,9 +27,11 @@ const DEFAULT_COLUMNS: { key: string; label: string }[] = [
 export function KanbanBoard({
   initialStages,
   columns,
+  canEdit = true,
 }: {
   initialStages: Record<string, { data: Card[]; total: number }>;
   columns?: { key: string; label: string }[];
+  canEdit?: boolean; // false = view only: cards can't be dragged between statuses
 }) {
   const { toast } = useToast();
   const COLUMNS = columns && columns.length ? columns : DEFAULT_COLUMNS;
@@ -155,7 +157,7 @@ export function KanbanBoard({
               setOverCol(col.key);
             }}
             onDragLeave={() => setOverCol((c) => (c === col.key ? null : c))}
-            onDrop={() => drop(col.key)}
+            onDrop={() => canEdit && drop(col.key)}
             className={`flex w-72 shrink-0 flex-col rounded-2xl border bg-muted ${
               overCol === col.key ? "ring-2 ring-ring" : ""
             }`}
@@ -171,7 +173,7 @@ export function KanbanBoard({
               {stage.data.map((c) => (
                 <div
                   key={c.id}
-                  draggable
+                  draggable={canEdit}
                   onDragStart={() => {
                     setDragId(c.id);
                     setDragFromCol(col.key);

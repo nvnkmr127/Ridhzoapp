@@ -172,15 +172,32 @@ export function LeadImportWizard({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Sent in batches so a big file shows real progress (and one slow request can't time out the lot). The
+  // server re-checks duplicates per batch against what earlier batches already saved, so repeats inside the
+  // file are still skipped. A failure part-way keeps what was already imported and says so.
+  const BATCH = 500;
+  const [progress, setProgress] = React.useState<{ done: number; total: number } | null>(null);
+
   async function doImport() {
     setBusy(true);
+    const all = rows.map((r) => toImportRow(r, customKeys));
+    let imported = 0;
+    let skipped = 0;
     try {
-      const res = await commitImportAction({
-        rows: rows.map((r) => toImportRow(r, customKeys)),
-        config: { sourceId: sourceId || null, ownerId: ownerId || null, fallbackStatus },
-      });
-      if (!res.ok) { toast({ variant: "destructive", title: "Import failed", description: res.message }); return; }
-      const { imported, skipped } = res.data;
+      for (let i = 0; i < all.length; i += BATCH) {
+        setProgress({ done: i, total: all.length });
+        const res = await commitImportAction({
+          rows: all.slice(i, i + BATCH),
+          config: { sourceId: sourceId || null, ownerId: ownerId || null, fallbackStatus },
+        });
+        if (!res.ok) {
+          toast({ variant: "destructive", title: imported ? `Import stopped after ${imported} leads` : "Import failed", description: res.message });
+          if (imported) { router.refresh(); }
+          return;
+        }
+        imported += res.data.imported;
+        skipped += res.data.skipped;
+      }
       toast({ title: `Imported ${imported} leads`, description: skipped ? `${skipped} skipped (duplicates or errors).` : undefined });
       setOpen(false); reset();
       router.refresh();
@@ -188,6 +205,7 @@ export function LeadImportWizard({ children }: { children: React.ReactNode }) {
       toast({ variant: "destructive", title: "Import failed", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   }
 
@@ -391,6 +409,12 @@ export function LeadImportWizard({ children }: { children: React.ReactNode }) {
             </div>
 
             {simResult && <p className="rounded-lg bg-muted p-2 text-xs">{simResult}</p>}
+            {progress && (
+              <div className="space-y-1" role="status" aria-live="polite">
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary"><div className="h-full bg-primary transition-all" style={{ width: `${Math.round((progress.done / progress.total) * 100)}%` }} /></div>
+                <p className="text-xs text-muted-foreground">Importing… {Math.min(progress.done + BATCH, progress.total)} of {progress.total} rows</p>
+              </div>
+            )}
 
             {/* 7. Actions */}
             <div className="flex items-center justify-between gap-2 pt-1">
