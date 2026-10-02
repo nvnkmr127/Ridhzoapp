@@ -1224,6 +1224,14 @@ async function sendLeadToRidhzo(leadData) {
 - [`ingestionQueue`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/jobs/workers/ingestionWorker.ts): BullMQ distributed queue executing asynchronous lead normalization.
 - [`LeadSourceService.createSource`](file:///Users/naveenadicharla/Documents/ridhzo/src/domains/leads/sourceService.ts#L41): Creates webhook sources with unique cryptographic secrets.
 
+
+#### Authenticating requests (security notes)
+
+- Prefer the `x-webhook-key` header (or an HMAC signature in `x-hub-signature-256`) over `?key=` in the URL: URLs end up in
+  server, proxy and browser logs, headers do not. `?key=` exists for form tools that can't set headers.
+- Requests over 256 KB are refused with `413`; a lead form should be a few hundred bytes.
+- A source with no key yet is refused (`401`) — regenerate it in Settings → Sources.
+
 ---
 
 ## 6. Lead Capture & Lead Sources

@@ -1,5 +1,7 @@
 # Ridhzo Mobile App — Audit (2026-09-27)
 
+> **Superseded in part by [PRODUCTION_AUDIT_2026-10-02.md](PRODUCTION_AUDIT_2026-10-02.md)** — see its remediation status for what has since been fixed.
+
 **Scope:** the Expo / React Native app at `../ridhzo app` (repo `nvnkmr127/ridhzo-mobile`, commit `ead1cd7`), its native Android module (`modules/call-log`), and the `/api/v1` backend routes it calls in this repo.
 
 **Method:** I read every source file in `app/`, `components/`, `lib/` and `modules/call-log`, then traced each workflow into the backend route it hits. I also ran `tsc --noEmit` (clean) and the five `lib/*.test.ts` files (all pass).

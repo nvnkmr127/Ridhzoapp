@@ -405,17 +405,17 @@ export async function bulkChangeLeadStatusAction(input: z.infer<typeof bulkChang
   let updated = 0;
   let failed = 0;
   const allowed = new Set(await filterAccessibleLeadIds(parsed.data.leadIds, { userId, organizationId }));
-  for (const id of parsed.data.leadIds) {
-    if (!allowed.has(id)) {
-      failed++;
-      continue;
-    }
-    try {
-      const lead = await LeadService.changeStatus(id, parsed.data.status, userId, organizationId);
-      if (lead) updated++;
+  // Each lead goes through the one status engine (history, won/lost bookkeeping, automations), so they can't
+  // be a single UPDATE — but different leads are independent, so run them a few at a time instead of one
+  // round trip after another (500 leads used to be 500 sequential transactions).
+  const ids = parsed.data.leadIds.filter((id) => allowed.has(id));
+  failed += parsed.data.leadIds.length - ids.length;
+  const CONCURRENCY = 5;
+  for (let i = 0; i < ids.length; i += CONCURRENCY) {
+    const results = await Promise.allSettled(ids.slice(i, i + CONCURRENCY).map((id) => LeadService.changeStatus(id, parsed.data.status, userId, organizationId)));
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value) updated++;
       else failed++;
-    } catch {
-      failed++;
     }
   }
 

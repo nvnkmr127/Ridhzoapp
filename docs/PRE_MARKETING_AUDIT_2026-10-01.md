@@ -1,5 +1,7 @@
 # Ridhzo — Pre-Marketing Product Audit (2026-10-01)
 
+> **Superseded in part by [PRODUCTION_AUDIT_2026-10-02.md](PRODUCTION_AUDIT_2026-10-02.md)** — see its remediation status for what has since been fixed.
+
 **Verdict: not ready to start paid acquisition yet.** The core product is solid (signup, login, tenant isolation, RBAC, CRUD and billing logic all held up under test). But there are 4 blockers that would waste ad spend or lose real customers' data on day one: email deliverability, the broken default signup tab, no usable conversion tracking, and lead loss when Redis hiccups. All are fixable in days, not weeks.
 
 **Counts:** 2 Critical · 6 High · 11 Medium · 9 Low (plus items I could not verify, listed at the end).

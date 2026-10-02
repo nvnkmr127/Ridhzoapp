@@ -13,7 +13,28 @@ const SECURITY_HEADERS = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(self)" },
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
+  // allow-popups keeps Google/Facebook sign-in popups working while still isolating the app's browsing context.
+  { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
+  { key: "X-Permitted-Cross-Domain-Policies", value: "none" },
 ];
+
+// Content-Security-Policy in REPORT-ONLY mode: violations show in the browser console (and any report
+// endpoint you add) without blocking anything. Review them on a staging deploy, tighten, then switch the
+// header name to Content-Security-Policy to enforce. ('unsafe-inline' is required by Next's inline bootstrap
+// scripts until nonces are wired in; the policy still blocks foreign script hosts, plugins and <base> hijacks.)
+const CSP_REPORT_ONLY = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://connect.facebook.net https://www.googletagmanager.com https://va.vercel-scripts.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "connect-src 'self' https:",
+  "frame-src https://challenges.cloudflare.com https://www.google.com",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join("; ");
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
@@ -26,7 +47,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/((?!f/|book/|blog).*)",
-        headers: [...SECURITY_HEADERS, { key: "X-Frame-Options", value: "DENY" }, { key: "Content-Security-Policy", value: "frame-ancestors 'none'" }],
+        headers: [...SECURITY_HEADERS, { key: "X-Frame-Options", value: "DENY" }, { key: "Content-Security-Policy", value: "frame-ancestors 'none'" }, { key: "Content-Security-Policy-Report-Only", value: CSP_REPORT_ONLY }],
       },
       { source: "/(f|book|blog)/:path*", headers: SECURITY_HEADERS },
     ];

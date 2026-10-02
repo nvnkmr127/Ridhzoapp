@@ -38,6 +38,9 @@ export function validateEnv(): void {
   }
 
   warnInsecureTransport();
+  if (process.env.NODE_ENV === "production" && process.env.NEXTAUTH_URL && !/^https:\/\//i.test(process.env.NEXTAUTH_URL)) {
+    console.error("[env] SECURITY: NEXTAUTH_URL is not https:// — session cookies won't be marked Secure and OAuth callbacks may break.");
+  }
   if (process.env.AI_GATEWAY_API_KEY && !process.env.AI_AGENT_MODEL?.trim()) {
     console.warn("[env] AI_AGENT_MODEL is not set — the assistant's tool-calling falls back to AI_MODEL / a built-in default. Pick a tool-capable model, and confirm the AI Gateway's data-retention / DPA terms: lead names, notes and messages are sent to it.");
   }

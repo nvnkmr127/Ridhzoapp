@@ -8,7 +8,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { ActivityService } from "@/domains/activities/service";
 import { z } from "zod";
-import { contentTypeFor, deleteAttachment, saveAttachment, ALLOWED_TYPES } from "@/lib/storage/attachments";
+import { contentTypeFor, deleteAttachment, saveAttachment, ALLOWED_TYPES, bytesMatchExtension } from "@/lib/storage/attachments";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25 MB max
@@ -51,7 +51,11 @@ export async function uploadAttachmentAction(formData: FormData) {
     if (!contentType) {
       return fail("VALIDATION", `This file type isn't supported. Allowed: ${Object.keys(ALLOWED_TYPES).join(", ")}.`);
     }
-    const fileUrl = await saveAttachment(organizationId, file.name, Buffer.from(await file.arrayBuffer()), contentType);
+    const bytes = Buffer.from(await file.arrayBuffer());
+    if (!bytesMatchExtension(file.name, bytes.subarray(0, 4100))) {
+      return fail("VALIDATION", "This file's contents don't match its type (for example a program renamed to .pdf), so it was not uploaded.");
+    }
+    const fileUrl = await saveAttachment(organizationId, file.name, bytes, contentType);
     const fileName = (customFileName?.trim() || file.name || "attachment").slice(0, 255);
     const fileSize = file.size;
     const fileType = contentType;

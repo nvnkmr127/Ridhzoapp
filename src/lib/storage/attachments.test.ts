@@ -40,3 +40,23 @@ describe("R2 storage", () => {
     vi.unstubAllEnvs();
   });
 });
+
+describe("bytesMatchExtension", () => {
+  const b = (...n: number[]) => new Uint8Array([...n, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  const s = (str: string) => new Uint8Array([...str].map((c) => c.charCodeAt(0)));
+  it("accepts real signatures", async () => {
+    const { bytesMatchExtension } = await import("./attachments");
+    expect(bytesMatchExtension("a.pdf", s("%PDF-1.7"))).toBe(true);
+    expect(bytesMatchExtension("a.png", b(0x89, 0x50, 0x4e, 0x47))).toBe(true);
+    expect(bytesMatchExtension("a.jpg", b(0xff, 0xd8, 0xff))).toBe(true);
+    expect(bytesMatchExtension("a.docx", b(0x50, 0x4b, 0x03, 0x04))).toBe(true);
+    expect(bytesMatchExtension("a.mp4", new Uint8Array([0, 0, 0, 0x18, ...s("ftyp")]))).toBe(true);
+    expect(bytesMatchExtension("a.txt", s("hello"))).toBe(true);
+  });
+  it("refuses a renamed executable / html / binary-as-text", async () => {
+    const { bytesMatchExtension } = await import("./attachments");
+    expect(bytesMatchExtension("evil.pdf", s("MZ\x90\x00"))).toBe(false);
+    expect(bytesMatchExtension("evil.png", s("<html><script>"))).toBe(false);
+    expect(bytesMatchExtension("evil.txt", b(0x4d, 0x5a, 0x00, 0x03))).toBe(false);
+  });
+});

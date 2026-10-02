@@ -94,6 +94,8 @@ const remember = (organizationId: string, plan: string) => {
   return plan;
 };
 
+const usageStatsCache = new Map<string, { exp: number; data: Awaited<ReturnType<typeof PlanService.computeUsageStats>> }>();
+
 export class PlanService {
   // Runs `fn` (an assertCanAdd… check followed by the INSERT it guards) one-at-a-time per org+bucket, so
   // two concurrent requests can't both see "under the limit" and both insert. The lock is released
@@ -136,8 +138,22 @@ export class PlanService {
     }
   }
 
-  // Computes real-time usage against plan limits.
+  // Usage against plan limits, memoised per workspace for a few seconds: the dashboard layout asks for this on
+  // EVERY render (and every router.refresh), and it is 5 queries. The meters tolerate being ~15 s behind;
+  // anything that must be exact (limit CHECKS) uses the assert* methods, which always read fresh.
   static async getUsageStats(organizationId: string, knownPlan?: string) {
+    if (process.env.NODE_ENV === "test") return this.computeUsageStats(organizationId, knownPlan);
+    const key = `${organizationId}:${knownPlan ?? ""}`;
+    const hit = usageStatsCache.get(key);
+    if (hit && hit.exp > Date.now()) return hit.data;
+    const data = await this.computeUsageStats(organizationId, knownPlan);
+    if (usageStatsCache.size > 2000) usageStatsCache.clear();
+    usageStatsCache.set(key, { exp: Date.now() + 15_000, data });
+    return data;
+  }
+
+  // Computes real-time usage against plan limits.
+  static async computeUsageStats(organizationId: string, knownPlan?: string) {
     let customSeats: number | undefined;
     try {
       const overrides = await PlatformConfigService.get<Record<string, number>>("seat_overrides", {});

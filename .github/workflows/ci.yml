@@ -17,6 +17,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Docs chapters up to date
+        run: npm run docs:consolidate -- --check
       # Secrets must never land in git (history included). Fails the build on a finding.
       - name: Secret scan
         uses: gitleaks/gitleaks-action@v2

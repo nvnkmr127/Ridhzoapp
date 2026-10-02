@@ -46,6 +46,31 @@ export const ALLOWED_TYPES: Record<string, string> = {
 /** Types safe to show inline in the browser (images/PDF); everything else downloads. */
 export const INLINE_TYPES = new Set(["application/pdf", "image/png", "image/jpeg", "image/gif", "image/webp", "audio/mpeg", "audio/mp4", "audio/wav", "audio/amr", "audio/aac", "audio/3gpp", "audio/ogg", "audio/opus"]);
 
+// The extension picks the content type we SERVE, so a file whose bytes disagree with its extension (an .exe or
+// .html renamed to .pdf) is refused at upload instead of being stored and served under a trusted type.
+// Checks the leading signature of every format that has one; formats without a reliable one (amr/aac/opus)
+// pass on extension alone, and text files must simply not be binary.
+export function bytesMatchExtension(fileName: string, head: Uint8Array): boolean {
+  const ext = path.extname(fileName).slice(1).toLowerCase();
+  const at = (off: number, s: string) => s.split("").every((c, i) => head[off + i] === c.charCodeAt(0));
+  const hex = (...b: number[]) => b.every((v, i) => head[i] === v);
+  switch (ext) {
+    case "pdf": return at(0, "%PDF");
+    case "png": return hex(0x89, 0x50, 0x4e, 0x47);
+    case "jpg": case "jpeg": return hex(0xff, 0xd8, 0xff);
+    case "gif": return at(0, "GIF8");
+    case "webp": return at(0, "RIFF") && at(8, "WEBP");
+    case "wav": return at(0, "RIFF") && at(8, "WAVE");
+    case "zip": case "docx": case "xlsx": case "pptx": return hex(0x50, 0x4b, 0x03, 0x04) || hex(0x50, 0x4b, 0x05, 0x06);
+    case "doc": case "xls": case "ppt": return hex(0xd0, 0xcf, 0x11, 0xe0);
+    case "mp3": return at(0, "ID3") || (head[0] === 0xff && (head[1] & 0xe0) === 0xe0);
+    case "ogg": case "opus": return at(0, "OggS");
+    case "mp4": case "mov": case "m4a": case "3gp": case "heic": return at(4, "ftyp");
+    case "txt": case "csv": return !head.slice(0, 4096).includes(0); // text: no NUL bytes
+    default: return true;
+  }
+}
+
 export function contentTypeFor(fileName: string): string | null {
   const ext = path.extname(fileName).slice(1).toLowerCase();
   return ALLOWED_TYPES[ext] ?? null;

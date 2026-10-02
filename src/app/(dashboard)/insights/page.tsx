@@ -39,7 +39,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
   );
 }
 
-import { AnalyticsCoordinator } from "@/domains/leads/analyticsCoordinator";
+import { AnalyticsCoordinator, ANALYTICS_MAX_LEADS } from "@/domains/leads/analyticsCoordinator";
 import { SlaAnalyticsService } from "@/domains/leads/slaAnalyticsService";
 
 // Every report on this page, computed from one tenant snapshot. The reports themselves still run in
@@ -91,6 +91,7 @@ async function computeInsights(organizationId: string) {
     forecast, winLoss, sourceRoi, health, bestTime, qualification, velocity, aging,
     stagnant, cohorts, ltv, geo, channels, team, digest, sourceAnswer,
     capacities, overdue, sla, scorecard,
+    leadsAnalyzed: tenantLeads.length,
   };
 }
 
@@ -114,7 +115,7 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
   const {
     forecast, winLoss, sourceRoi, health, bestTime, qualification, velocity, aging,
     stagnant, cohorts, ltv, geo, channels, team, digest, sourceAnswer,
-    capacities, overdue, scorecard,
+    capacities, overdue, scorecard, leadsAnalyzed,
   } = await snapshot.data;
   const updatedMins = Math.floor((Date.now() - snapshot.at) / 60_000);
 
@@ -129,6 +130,9 @@ export default async function InsightsPage({ searchParams }: { searchParams: Pro
           Updated {updatedMins < 1 ? "just now" : `${updatedMins} min ago`} ·{" "}
           <Link href="/insights?fresh=1" className="underline hover:text-foreground">Refresh</Link>
         </p>
+        {leadsAnalyzed >= ANALYTICS_MAX_LEADS && (
+          <p className="text-xs text-amber-600">Based on your {leadsAnalyzed.toLocaleString()} most recent leads — older ones aren&apos;t included in these reports.</p>
+        )}
       </div>
 
       {/* Pipeline scorecard — composite grade */}

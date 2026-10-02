@@ -16,7 +16,7 @@ export async function register() {
   //   • RUN workers in-process — only valid on a long-lived host, never on Vercel serverless
   //     (workers get frozen/killed between invocations, schedulers re-register on every cold start).
   // So: on Vercel, REDIS_URL is set (to enqueue) but workers run in the standalone src/worker.ts
-  // process on the droplet, not here. Locally / on a single always-on Node server, run them in-process.
+  // process on the worker host (Railway), not here. Locally / on a single always-on Node server, run them in-process.
   // A boot-time hiccup must not crash the web server.
   if (!process.env.VERCEL) {
     try {
@@ -28,8 +28,8 @@ export async function register() {
   }
 
   // Note: the outbound-webhook delivery worker (webhookRetryWorker) IS started, but only via
-  // startWorkers() above — i.e. on the droplet worker / a single always-on Node server, never in the
-  // Vercel web process. The web tier only ENQUEUES (WebhookEndpointService.dispatch); the droplet
+  // startWorkers() above — i.e. on the worker host / a single always-on Node server, never in the
+  // Vercel web process. The web tier only ENQUEUES (WebhookEndpointService.dispatch); the worker host
   // drains the queue and POSTs the deliveries.
 }
 

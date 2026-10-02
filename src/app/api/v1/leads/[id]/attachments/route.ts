@@ -4,7 +4,7 @@ import { leadAttachments } from "@/db/schema";
 import { authorizeApiRequest } from "@/lib/apiAuth";
 import { canEditLeads, leadForApi, leadNotFound, readOnly } from "@/lib/meetingsApi";
 import { ActivityService } from "@/domains/activities/service";
-import { contentTypeFor, saveAttachment, ALLOWED_TYPES } from "@/lib/storage/attachments";
+import { contentTypeFor, saveAttachment, ALLOWED_TYPES, bytesMatchExtension } from "@/lib/storage/attachments";
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
@@ -27,7 +27,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   try {
-    const fileUrl = await saveAttachment(auth.organizationId, file.name, Buffer.from(await file.arrayBuffer()), contentType);
+    // Same upload rules as the web: storage cap, and the bytes must match the extension.
+    const { UsageService, UsageLimitError } = await import("@/domains/billing/usageService");
+    try { await UsageService.assertCanStore(auth.organizationId, file.size); }
+    catch (e) { if (e instanceof UsageLimitError) return NextResponse.json({ error: e.message }, { status: 402 }); throw e; }
+    const bytes = Buffer.from(await file.arrayBuffer());
+    if (!bytesMatchExtension(file.name, bytes.subarray(0, 4100))) {
+      return NextResponse.json({ error: "This file's contents don't match its type, so it was not uploaded." }, { status: 422 });
+    }
+    const fileUrl = await saveAttachment(auth.organizationId, file.name, bytes, contentType);
     const custom = form?.get("fileName");
     const fileName = ((typeof custom === "string" && custom.trim()) || file.name || "attachment").slice(0, 255);
     const [attachment] = await db

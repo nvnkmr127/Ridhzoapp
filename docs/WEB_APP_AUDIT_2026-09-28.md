@@ -1,5 +1,7 @@
 # Ridhzo Web App — Data Loading, Performance & Sync Audit (2026-09-28)
 
+> **Superseded in part by [PRODUCTION_AUDIT_2026-10-02.md](PRODUCTION_AUDIT_2026-10-02.md)** — see its remediation status for what has since been fixed.
+
 **Scope:** the Next.js web app in this repo (`src/app/(dashboard)`, `src/components`, `src/lib/actions`, `src/domains`, `src/app/api/v1`), checked against the problem classes in [MOBILE_APP_AUDIT_2026-09-27.md](MOBILE_APP_AUDIT_2026-09-27.md).
 
 **Method:**

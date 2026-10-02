@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { leads, users } from "@/db/schema";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 
 export interface AnalyticsLeadRecord {
   id: string;
@@ -27,6 +27,11 @@ export interface AnalyticsUserRecord {
   firstName: string | null;
   lastName: string | null;
 }
+
+// Safety ceiling for the in-memory reports: the NEWEST leads up to this many are analysed. A workspace on the
+// unlimited plan could otherwise pull hundreds of thousands of rows (incl. custom_data) into Node on one
+// page view. The insights page tells the reader when the cap applies. Override with ANALYTICS_MAX_LEADS.
+export const ANALYTICS_MAX_LEADS = Math.max(1_000, Number(process.env.ANALYTICS_MAX_LEADS) || 50_000);
 
 export class AnalyticsCoordinator {
   /**
@@ -58,7 +63,9 @@ export class AnalyticsCoordinator {
         nextFollowUpAt: leads.nextFollowUpAt,
       })
       .from(leads)
-      .where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt)));
+      .where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt)))
+      .orderBy(desc(leads.createdAt))
+      .limit(ANALYTICS_MAX_LEADS);
   }
 
   /**
