@@ -53,6 +53,14 @@ describe("bytesMatchExtension", () => {
     expect(bytesMatchExtension("a.mp4", new Uint8Array([0, 0, 0, 0x18, ...s("ftyp")]))).toBe(true);
     expect(bytesMatchExtension("a.txt", s("hello"))).toBe(true);
   });
+  it("accepts a call recording whose extension and container disagree (m4a stream named .mp3)", async () => {
+    const { bytesMatchExtension } = await import("./attachments");
+    const m4a = new Uint8Array([0, 0, 0, 0x18, ...s("ftyp")]);
+    expect(bytesMatchExtension("call.mp3", m4a)).toBe(true);
+    expect(bytesMatchExtension("call.m4a", s("ID3\x04"))).toBe(true);
+    expect(bytesMatchExtension("call.mp3", s("<html><script>"))).toBe(false);
+    expect(bytesMatchExtension("call.3gp", s("MZ\x90\x00"))).toBe(false);
+  });
   it("refuses a renamed executable / html / binary-as-text", async () => {
     const { bytesMatchExtension } = await import("./attachments");
     expect(bytesMatchExtension("evil.pdf", s("MZ\x90\x00"))).toBe(false);

@@ -63,9 +63,11 @@ export function bytesMatchExtension(fileName: string, head: Uint8Array): boolean
     case "wav": return at(0, "RIFF") && at(8, "WAVE");
     case "zip": case "docx": case "xlsx": case "pptx": return hex(0x50, 0x4b, 0x03, 0x04) || hex(0x50, 0x4b, 0x05, 0x06);
     case "doc": case "xls": case "ppt": return hex(0xd0, 0xcf, 0x11, 0xe0);
-    case "mp3": return at(0, "ID3") || (head[0] === 0xff && (head[1] & 0xe0) === 0xe0);
-    case "ogg": case "opus": return at(0, "OggS");
-    case "mp4": case "mov": case "m4a": case "3gp": case "heic": return at(4, "ftyp");
+    // Audio: phone call recorders often name an m4a/3gp/amr stream ".mp3" (or the reverse), so any real audio
+    // container signature is accepted for any audio extension — what matters is that it IS audio, not a script.
+    case "mp3": case "m4a": case "aac": case "ogg": case "opus": case "3gp": case "amr":
+      return at(0, "ID3") || (head[0] === 0xff && (head[1] & 0xe0) === 0xe0) || at(0, "OggS") || at(4, "ftyp") || at(0, "#!AMR") || at(0, "RIFF") || ext === "amr" || ext === "aac" || ext === "opus";
+    case "mp4": case "mov": case "heic": return at(4, "ftyp");
     case "txt": case "csv": return !head.slice(0, 4096).includes(0); // text: no NUL bytes
     default: return true;
   }
