@@ -1,6 +1,6 @@
 import { db } from "@/db";
-import { users, leads, invitations, organizations, automations, sequences, leadSources } from "@/db/schema";
-import { and, asc, count, eq, gt, isNull, sql } from "drizzle-orm";
+import { users, leads, invitations, organizations, automations, sequences, leadSources, apiKeys, webhookEndpoints, customFieldDefs } from "@/db/schema";
+import { and, asc, count, eq, gt, isNull, sql, type SQL } from "drizzle-orm";
 import { PlatformConfigService } from "@/domains/platform/configService";
 import { canonicalPlan, trialExpired } from "./planNames";
 
@@ -16,14 +16,16 @@ export type PlanLimits = {
   messages: number; emails: number; exports: number; importRows: number; apiRequests: number;
   /** Attachment storage in MB (a gauge, not monthly). */
   storageMb: number;
+  /** Live (non-revoked) API keys, outbound webhook endpoints, custom field definitions. */
+  apiKeys: number; webhooks: number; customFields: number;
   /** yearlyPrice must match the RAZORPAY_PLAN_*_YEARLY plan amount (2 months free = 10× monthly). */
   price: string; yearlyPrice: string | null; description: string;
 };
 export const PLAN_LIMITS: Record<string, PlanLimits> = {
-  free: { seats: 1, leads: 300, automations: 2, sequences: 1, sources: 1, aiCredits: 15, aiAutoTag: false, branding: true, messages: 100, emails: 100, exports: 5, importRows: 500, apiRequests: 10_000, storageMb: 100, price: "₹0", yearlyPrice: null, description: "For individuals getting started" },
-  starter: { seats: 3, leads: 5_000, automations: 15, sequences: 10, sources: 5, aiCredits: 300, aiAutoTag: true, branding: false, messages: 3_000, emails: 3_000, exports: 100, importRows: 20_000, apiRequests: 300_000, storageMb: 5_000, price: "₹249 / mo", yearlyPrice: "₹2,490 / yr", description: "For solo agents & growing teams" },
+  free: { seats: 1, leads: 300, automations: 2, sequences: 1, sources: 1, aiCredits: 15, aiAutoTag: false, branding: true, messages: 100, emails: 100, exports: 5, importRows: 500, apiRequests: 10_000, storageMb: 100, apiKeys: 1, webhooks: 1, customFields: 10, price: "₹0", yearlyPrice: null, description: "For individuals getting started" },
+  starter: { seats: 3, leads: 5_000, automations: 15, sequences: 10, sources: 5, aiCredits: 300, aiAutoTag: true, branding: false, messages: 3_000, emails: 3_000, exports: 100, importRows: 20_000, apiRequests: 300_000, storageMb: 5_000, apiKeys: 5, webhooks: 5, customFields: 50, price: "₹249 / mo", yearlyPrice: "₹2,490 / yr", description: "For solo agents & growing teams" },
   // Messages stay finite even here: every WhatsApp send is real money (the platform number is shared).
-  unlimited: { seats: Infinity, leads: Infinity, automations: Infinity, sequences: Infinity, sources: Infinity, aiCredits: 2_000, aiAutoTag: true, branding: false, messages: 30_000, emails: 30_000, exports: Infinity, importRows: Infinity, apiRequests: 3_000_000, storageMb: 100_000, price: "₹449 / mo", yearlyPrice: "₹4,490 / yr", description: "Unlimited leads, seats & full access" },
+  unlimited: { seats: Infinity, leads: Infinity, automations: Infinity, sequences: Infinity, sources: Infinity, aiCredits: 2_000, aiAutoTag: true, branding: false, messages: 30_000, emails: 30_000, exports: Infinity, importRows: Infinity, apiRequests: 3_000_000, storageMb: 100_000, apiKeys: Infinity, webhooks: Infinity, customFields: Infinity, price: "₹449 / mo", yearlyPrice: "₹4,490 / yr", description: "Unlimited leads, seats & full access" },
 };
 
 // New workspaces start on a Starter trial. Limits treat it as Free the moment it ends (trialExpired);
@@ -59,6 +61,10 @@ const COUNTED = {
   automations: { table: automations, org: automations.organizationId, id: automations.id, createdAt: automations.createdAt, label: "automations" },
   sequences: { table: sequences, org: sequences.organizationId, id: sequences.id, createdAt: sequences.createdAt, label: "sequences" },
   sources: { table: leadSources, org: leadSources.organizationId, id: leadSources.id, createdAt: leadSources.createdAt, label: "lead sources" },
+  // Revoked keys don't count — revoking one frees its slot.
+  apiKeys: { table: apiKeys, org: apiKeys.organizationId, label: "API keys", extra: isNull(apiKeys.revokedAt) as SQL | undefined },
+  webhooks: { table: webhookEndpoints, org: webhookEndpoints.organizationId, label: "webhook endpoints", extra: undefined as SQL | undefined },
+  customFields: { table: customFieldDefs, org: customFieldDefs.organizationId, label: "custom fields", extra: undefined as SQL | undefined },
 } as const;
 export type CountedResource = keyof typeof COUNTED;
 
@@ -149,7 +155,8 @@ export class PlanService {
     let leadCount = 0;
 
     try {
-      const resU = await db.select({ n: count() }).from(users).where(and(eq(users.organizationId, organizationId), isNull(users.deletedAt)));
+      // A DEACTIVATED user doesn't hold a seat (reactivating one re-checks the cap — see setUserActiveAction).
+      const resU = await db.select({ n: count() }).from(users).where(and(eq(users.organizationId, organizationId), isNull(users.deletedAt), eq(users.isActive, true)));
       const resI = await db.select({ n: count() }).from(invitations).where(and(eq(invitations.organizationId, organizationId), isNull(invitations.acceptedAt), gt(invitations.expiresAt, new Date())));
       const resL = await db.select({ n: count() }).from(leads).where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt)));
       
@@ -165,15 +172,18 @@ export class PlanService {
     }
 
     // The other plan-capped things, in ONE round trip (this runs on every dashboard render).
-    let counted = { sources: 0, automations: 0, sequences: 0, messages: 0, storageMb: 0 };
+    let counted = { sources: 0, automations: 0, sequences: 0, messages: 0, storageMb: 0, apiKeys: 0, webhooks: 0, customFields: 0 };
     try {
       const res = (await db.execute(sql`select
         (select count(*)::int from lead_sources where organization_id = ${organizationId}) as sources,
         (select count(*)::int from automations where organization_id = ${organizationId}) as automations,
         (select count(*)::int from sequences where organization_id = ${organizationId}) as sequences,
-        (select coalesce(sum(used), 0)::int from usage_counters where organization_id = ${organizationId} and period = ${currentPeriod()} and metric = 'messages') as messages,
-        (select coalesce(sum(file_size), 0)::float8 / 1048576 from lead_attachments where organization_id = ${organizationId}) as storage_mb`)) as unknown as { sources: number; automations: number; sequences: number; messages: number; storage_mb: number }[];
-      if (res[0]) counted = { sources: Number(res[0].sources), automations: Number(res[0].automations), sequences: Number(res[0].sequences), messages: Number(res[0].messages), storageMb: Math.round(Number(res[0].storage_mb)) };
+        (select coalesce(sum(used), 0)::int from usage_counters where organization_id = ${organizationId} and period = ${await this.cyclePeriod(organizationId)} and metric = 'messages') as messages,
+        (select coalesce(sum(file_size), 0)::float8 / 1048576 from lead_attachments where organization_id = ${organizationId}) as storage_mb,
+        (select count(*)::int from api_keys where organization_id = ${organizationId} and revoked_at is null) as api_keys,
+        (select count(*)::int from webhook_endpoints where organization_id = ${organizationId}) as webhooks,
+        (select count(*)::int from custom_field_defs where organization_id = ${organizationId}) as custom_fields`)) as unknown as { sources: number; automations: number; sequences: number; messages: number; storage_mb: number; api_keys: number; webhooks: number; custom_fields: number }[];
+      if (res[0]) counted = { sources: Number(res[0].sources), automations: Number(res[0].automations), sequences: Number(res[0].sequences), messages: Number(res[0].messages), storageMb: Math.round(Number(res[0].storage_mb)), apiKeys: Number(res[0].api_keys), webhooks: Number(res[0].webhooks), customFields: Number(res[0].custom_fields) };
     } catch {
       // meters show 0 used if the read fails; enforcement doesn't depend on this
     }
@@ -196,6 +206,9 @@ export class PlanService {
       sequences: { current: counted.sequences, max: caps.sequences },
       messages: { current: counted.messages, max: caps.messages },
       storage: { current: counted.storageMb, max: caps.storageMb }, // MB
+      apiKeys: { current: counted.apiKeys, max: caps.apiKeys },
+      webhooks: { current: counted.webhooks, max: caps.webhooks },
+      customFields: { current: counted.customFields, max: caps.customFields },
     };
   }
 
@@ -255,7 +268,7 @@ export class PlanService {
   // so concurrent requests can't overdraw. false = out of credits for this month.
   static async consumeAiCredit(organizationId: string): Promise<boolean> {
     const max = limitsFor(await this.plan(organizationId)).aiCredits;
-    const period = await this.aiPeriod(organizationId);
+    const period = await this.cyclePeriod(organizationId);
     const rows = await db
       .update(organizations)
       .set({
@@ -270,7 +283,9 @@ export class PlanService {
     return rows.length > 0;
   }
 
-  private static async aiPeriod(organizationId: string): Promise<string> {
+  // The metering period a workspace is in right now (billing-cycle aware — see creditPeriodKey). AI credits AND
+  // the monthly usage counters (messages, emails, exports, imports) share it, so they all renew together.
+  static async cyclePeriod(organizationId: string): Promise<string> {
     const [r] = await db.select({ end: organizations.currentPeriodEnd }).from(organizations).where(eq(organizations.id, organizationId)).limit(1);
     return creditPeriodKey(r?.end);
   }
@@ -280,7 +295,7 @@ export class PlanService {
     await db
       .update(organizations)
       .set({ aiCreditsUsed: sql`GREATEST(${organizations.aiCreditsUsed} - 1, 0)` })
-      .where(and(eq(organizations.id, organizationId), eq(organizations.aiCreditsPeriod, await this.aiPeriod(organizationId))));
+      .where(and(eq(organizations.id, organizationId), eq(organizations.aiCreditsPeriod, await this.cyclePeriod(organizationId))));
   }
 
   // Message contains "plan" so actionFail maps it to code LIMIT → the UI opens the upgrade dialog.
@@ -289,7 +304,8 @@ export class PlanService {
     const max = limitsFor(plan)[resource];
     if (max === Infinity) return;
     const { table, org, label } = COUNTED[resource];
-    const [row] = await db.select({ n: count() }).from(table).where(eq(org, organizationId));
+    const extra = "extra" in COUNTED[resource] ? (COUNTED[resource] as { extra?: SQL }).extra : undefined;
+    const [row] = await db.select({ n: count() }).from(table).where(and(eq(org, organizationId), extra));
     if (Number(row?.n ?? 0) + adding > max) {
       const next = limitsFor(plan) === PLAN_LIMITS.free ? "Starter or Unlimited" : "Unlimited";
       throw new Error(`Your ${plan === "free" ? "Free" : "current"} plan allows ${max} ${label}. Upgrade to ${next} to add more.`);

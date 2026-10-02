@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Users, UserPlus, Zap, Crown, CreditCard, Info, Network, GitFork, MessageCircle, HardDrive } from "lucide-react";
+import { Sparkles, Users, UserPlus, Zap, Crown, CreditCard, Info, Network, GitFork, MessageCircle, HardDrive, Key, Webhook, ListPlus } from "lucide-react";
 import Link from "next/link";
 import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,9 @@ type UsageStats = {
   sequences?: { current: number; max: number };
   messages?: { current: number; max: number };
   storage?: { current: number; max: number }; // MB
+  apiKeys?: { current: number; max: number };
+  webhooks?: { current: number; max: number };
+  customFields?: { current: number; max: number };
 };
 
 const formatNumber = (num: number) => {
@@ -117,6 +120,9 @@ export function UsageMenuSection({ usageStats }: { usageStats: UsageStats }) {
           ["Lead sources", Network, usageStats.sources],
           ["WhatsApp / month", MessageCircle, usageStats.messages],
           ["Storage (MB)", HardDrive, usageStats.storage],
+          ["API keys", Key, usageStats.apiKeys],
+          ["Webhooks", Webhook, usageStats.webhooks],
+          ["Custom fields", ListPlus, usageStats.customFields],
         ] as const).map(([label, Icon, u]) =>
           u && u.max !== Infinity ? (
             <div key={label} className="space-y-1">

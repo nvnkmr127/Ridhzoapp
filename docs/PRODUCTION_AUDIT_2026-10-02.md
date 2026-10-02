@@ -30,6 +30,8 @@
 
 - **J. Tenant isolation:** done where code can do it — activity writes and the WhatsApp/shared-link/sequence readers are workspace-scoped, ~12 more id-keyed writes now carry an org predicate, `teams`/`lead_sources` tenant columns are NOT NULL and `assignment_rules` has its own tenant column (migration 0101, applies only when data is clean), and a real-Postgres isolation test runs in CI. `users.organization_id` stays nullable on purpose (platform super-admins), `roles.organization_id` null = shared system roles; no row-level security.
 
+- **K. Usage limits:** done — caps (and meters) for API keys, webhook endpoints and custom fields; all monthly counters and AI credits renew on the same billing-cycle period; deactivated users no longer hold a seat (reactivating re-checks the cap); the AI agent refunds a turn that produced no answer. Not capped: meetings, outbound-webhook deliveries, saved views, teams, notifications, enrichment calls (no cost or abuse driver identified).
+
 ## A. Executive Summary
 
 Ridhzo is a mature, unusually well-commented Next.js 15 / Drizzle / Postgres / BullMQ multi-tenant CRM. Typecheck is clean, 860 tests pass, org scoping in services is consistent, SSRF/webhook-signature/idempotency work has clearly been done with care, and secrets are not committed (`.env*` never appear in git history).

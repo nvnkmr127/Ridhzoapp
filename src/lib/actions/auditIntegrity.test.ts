@@ -19,7 +19,7 @@ vi.mock("@/domains/apiKeys/service", () => ({ ApiKeyService: { revoke: vi.fn(), 
 vi.mock("@/domains/roles/service", () => ({ RoleService: { remove: vi.fn(), create: vi.fn() } }));
 vi.mock("@/domains/invitations/service", () => ({ InvitationService: { revoke: vi.fn() } }));
 vi.mock("@/domains/users/service", () => ({ UserService: { remove: vi.fn(), setRole: vi.fn() } }));
-vi.mock("@/domains/billing/planService", () => ({ PlanService: { assertCanAddSeat: vi.fn() }, PLAN_LIMITS: {} }));
+vi.mock("@/domains/billing/planService", () => ({ PlanService: { assertCanAddSeat: vi.fn(), assertCanAdd: vi.fn(), serialized: (_o: string, _b: string, fn: () => unknown) => fn() }, PLAN_LIMITS: {} }));
 vi.mock("@/db", () => ({ db: {} }));
 
 import { revokeApiKeyAction, deleteApiKeyAction } from "./apiKeys";

@@ -35,6 +35,8 @@ export interface AgentResult {
   steps: number;
   enabled: boolean;
   outOfCredits?: boolean;
+  /** The turn produced no real answer (every model call failed): the caller gives the credit back. */
+  failed?: boolean;
 }
 
 export const MAX_AGENT_WRITES = 3;
@@ -292,6 +294,7 @@ export async function runLeadAgent(
       proposals,
       steps: 0,
       enabled: true,
+      ...(plain ? {} : { failed: true }),
     };
   }
 }

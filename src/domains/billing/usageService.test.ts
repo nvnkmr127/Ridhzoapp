@@ -9,7 +9,7 @@ vi.mock("@/db", () => ({
 vi.mock("@/db/schema", () => ({ usageCounters: {}, leadAttachments: {} }));
 vi.mock("drizzle-orm", () => ({ and: () => 0, eq: () => 0, sql: () => 0 }));
 vi.mock("./planService", () => ({
-  PlanService: { plan: async () => "free" },
+  PlanService: { plan: async () => "free", cyclePeriod: async () => "2026-10" },
   limitsFor: () => ({ messages: plan.max, emails: Infinity, exports: 5, importRows: 500, storageMb: 100 }),
   currentPeriod: () => "2026-10",
 }));

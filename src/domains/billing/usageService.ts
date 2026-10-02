@@ -1,7 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { usageCounters, leadAttachments } from "@/db/schema";
-import { PlanService, limitsFor, currentPeriod, type PlanLimits } from "./planService";
+import { PlanService, limitsFor, type PlanLimits } from "./planService";
 
 // Monthly metered usage (outbound messages, emails, exports, imported rows). Every spend is ONE atomic upsert
 // that refuses to pass the plan's cap, so parallel requests can't overshoot it, and failed operations hand
@@ -25,7 +25,7 @@ export class UsageService {
     if (max === Infinity) return; // unmetered: skip the write entirely
     const fail = () => new UsageLimitError(`Your plan allows ${max.toLocaleString("en-IN")} ${LABEL[metric]} a month and this would go over it. Upgrade your plan to continue.`);
     if (n > max) throw fail();
-    const period = currentPeriod();
+    const period = await PlanService.cyclePeriod(organizationId);
     const rows = await db
       .insert(usageCounters)
       .values({ organizationId, period, metric, used: n })
@@ -43,7 +43,7 @@ export class UsageService {
     await db
       .update(usageCounters)
       .set({ used: sql`GREATEST(${usageCounters.used} - ${n}, 0)`, updatedAt: new Date() })
-      .where(and(eq(usageCounters.organizationId, organizationId), eq(usageCounters.period, currentPeriod()), eq(usageCounters.metric, metric)));
+      .where(and(eq(usageCounters.organizationId, organizationId), eq(usageCounters.period, await PlanService.cyclePeriod(organizationId)), eq(usageCounters.metric, metric)));
   }
 
   /** This month's usage for the meters. */
@@ -51,7 +51,7 @@ export class UsageService {
     const rows = await db
       .select({ metric: usageCounters.metric, used: usageCounters.used })
       .from(usageCounters)
-      .where(and(eq(usageCounters.organizationId, organizationId), eq(usageCounters.period, currentPeriod())));
+      .where(and(eq(usageCounters.organizationId, organizationId), eq(usageCounters.period, await PlanService.cyclePeriod(organizationId))));
     const out: Record<Metric, number> = { messages: 0, emails: 0, exports: 0, import_rows: 0 };
     for (const r of rows) if (r.metric in out) out[r.metric as Metric] = r.used;
     return out;

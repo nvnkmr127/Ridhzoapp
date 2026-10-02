@@ -25,5 +25,8 @@ export async function runAgentAction(
   if (!(await PlanService.consumeAiCredit(organizationId))) {
     return { text: "You've used all your AI credits for this month.", proposals: [], steps: 0, enabled: true, outOfCredits: true };
   }
-  return runLeadAgent({ organizationId, userId }, trimmed, capped, leadId);
+  const res = await runLeadAgent({ organizationId, userId }, trimmed, capped, leadId);
+  // No answer at all (AI off, or every model call failed): that turn doesn't cost a credit.
+  if (res.failed || !res.enabled) await PlanService.refundAiCredit(organizationId).catch(() => {});
+  return res;
 }

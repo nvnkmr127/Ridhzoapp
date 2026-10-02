@@ -89,7 +89,13 @@ export async function setUserActiveAction(id: string, isActive: boolean, reassig
     if (targetErr) return fail("FORBIDDEN", targetErr);
   }
   try {
-    const u = await UserService.setActive(organizationId, id, isActive, isActive ? undefined : reassignTo);
+    // Turning someone back ON takes a seat again: it must fit the plan (under the lock, like any seat-taker).
+    const u = isActive
+      ? await PlanService.serialized(organizationId, "seats", async () => {
+          await PlanService.assertCanAddSeat(organizationId);
+          return UserService.setActive(organizationId, id, true);
+        })
+      : await UserService.setActive(organizationId, id, false, reassignTo);
     if (!u) return fail("NOT_FOUND", "That user no longer exists. Refresh the page.");
     const leadsMoved = "leadsMoved" in u ? u.leadsMoved : 0;
     const movedTo = "movedTo" in u ? u.movedTo : {};

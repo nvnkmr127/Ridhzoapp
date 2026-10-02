@@ -7,6 +7,7 @@ import { AuditService } from "@/domains/audit/service";
 import { RateLimiter } from "@/lib/rate-limit";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { PlanService } from "@/domains/billing/planService";
 import { ok, fail, actionFail } from "@/lib/actions/result";
 
 const createSchema = z.object({
@@ -30,7 +31,10 @@ export async function createWebhookEndpointAction(input: { url: string; events: 
     const row = await AuditService.audited(
       { organizationId, userId },
       { action: "webhook.create", entityType: "webhook_endpoint", entityId: (r) => (r as { id?: string }).id ?? null, metadata: { url: parsed.data.url, events: parsed.data.events } },
-      () => WebhookEndpointService.create(organizationId, parsed.data.url, parsed.data.events),
+      () => PlanService.serialized(organizationId, "webhooks", async () => {
+        await PlanService.assertCanAdd(organizationId, "webhooks");
+        return WebhookEndpointService.create(organizationId, parsed.data.url, parsed.data.events);
+      }),
     );
     revalidatePath("/settings/webhooks");
     return ok(row);

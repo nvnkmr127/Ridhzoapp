@@ -6,6 +6,7 @@ import { AuditService } from "@/domains/audit/service";
 import { CUSTOM_FIELD_TYPES } from "@/lib/customFields/types";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { z } from "zod";
+import { PlanService } from "@/domains/billing/planService";
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
 
 // Feeds the lead Add/Edit forms and detail view. Non-admins never receive admin-only defs, so
@@ -46,7 +47,10 @@ export async function createCustomFieldAction(input: z.input<typeof createSchema
     return fail("VALIDATION", Object.values(fieldErrors)[0] ?? "Please check the field.", fieldErrors);
   }
   try {
-    const row = await CustomFieldService.create(organizationId, parsed.data);
+    const row = await PlanService.serialized(organizationId, "customFields", async () => {
+      await PlanService.assertCanAdd(organizationId, "customFields");
+      return CustomFieldService.create(organizationId, parsed.data);
+    });
     await AuditService.log({ organizationId, userId, action: "custom_field.create", entityType: "custom_field", entityId: row.id, metadata: { key: row.key, type: row.type } });
     refresh(organizationId);
     return ok(row);

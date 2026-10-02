@@ -6,6 +6,7 @@ import { AuditService } from "@/domains/audit/service";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { API_SCOPE_KEYS } from "@/lib/apiScopes";
+import { PlanService } from "@/domains/billing/planService";
 import { ok, fail, actionFail } from "@/lib/actions/result";
 
 export async function listApiKeysAction() {
@@ -27,7 +28,10 @@ export async function createApiKeyAction(name: string, scope: "full" | "read_onl
   if (!days.success) return fail("VALIDATION", "Choose 30, 90 or 365 days, or no expiry.");
   const expiresAt = days.data === null ? null : new Date(Date.now() + days.data * 86_400_000);
   try {
-    const created = await ApiKeyService.create(organizationId, parsed.data, userId, scopeParsed.data, expiresAt, scopesParsed.data);
+    const created = await PlanService.serialized(organizationId, "apiKeys", async () => {
+      await PlanService.assertCanAdd(organizationId, "apiKeys");
+      return ApiKeyService.create(organizationId, parsed.data, userId, scopeParsed.data, expiresAt, scopesParsed.data);
+    });
     await AuditService.log({ organizationId, userId, action: "api_key.create", entityType: "api_key", entityId: created.id, metadata: { name: parsed.data, scope: scopeParsed.data, scopes: scopesParsed.data, expiresAt: expiresAt?.toISOString() ?? null } });
     revalidatePath("/settings/api");
     return ok(created); // includes the raw key — shown once
