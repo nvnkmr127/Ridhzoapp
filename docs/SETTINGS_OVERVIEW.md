@@ -30,7 +30,7 @@ Settings Hub (/settings)
  ├── 1. General & Statuses (/settings) ─── Company profile, AI context, quiet hours, pipeline statuses
  ├── 2. Lead Sources (/settings/sources) ─── Meta Ads, Google Ads, Webhooks, Hosted Web Forms
  ├── 3. Message Templates (/settings/templates) ─── WhatsApp, Email, and SMS quick templates
- ├── 4. Users & Roles (/settings/users) ─── Team members, 13-permission RBAC roles, invites
+ ├── 4. Users & Roles (/settings/users) ─── Team members, 15-permission RBAC roles, invites
  ├── 5. Custom Fields (/settings/custom-fields) ─── 10 field types, sections, privacy rules
  ├── 6. API Access (/settings/api) ─── Bearer API tokens (pk_), scopes, rate limits
  ├── 7. Email (SMTP) (/settings/email) ─── Custom SMTP host/port/creds with Resend fallback
@@ -49,15 +49,15 @@ Settings Hub (/settings)
 | **General & Statuses** | `/settings` | [`SETTINGS_GENERAL_AND_STATUSES.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_GENERAL_AND_STATUSES.md) | Company name, AI business context, currency, timezone, quiet hours, status lifecycle taxonomy. |
 | **Lead Sources** | `/settings/sources` | [`SETTINGS_SOURCES.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_SOURCES.md) | Facebook Ads, Google Ads, Website Webhook, Hosted Web Forms, and roadmap channels. |
 | **Message Templates** | `/settings/templates` | [`SETTINGS_MESSAGE_TEMPLATES.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_MESSAGE_TEMPLATES.md) | Reusable WhatsApp/Email/SMS templates with variable interpolation (`{{first_name}}`, `{{company}}`). |
-| **Users & Roles** | `/settings/users` | [`SETTINGS_USERS_AND_ROLES.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_USERS_AND_ROLES.md) | 13-permission RBAC matrix, team grouping, tokenized email invites with copy fallback. |
+| **Users & Roles** | `/settings/users` | [`SETTINGS_USERS_AND_ROLES.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_USERS_AND_ROLES.md) | 15-permission RBAC matrix, team grouping, tokenized email invites with copy fallback. |
 | **Custom Fields** | `/settings/custom-fields` | [`SETTINGS_CUSTOM_FIELDS.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_CUSTOM_FIELDS.md) | 10 data types, tab section/subsection nesting, table column visibility, admin-only privacy. |
-| **API Access** | `/settings/api` | [`SETTINGS_API_ACCESS.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_API_ACCESS.md) | Cryptographic Bearer keys (`pk_`), SHA-256 one-way hashing, read-only vs full scopes, 600 req/min limits. |
+| **API Access** | `/settings/api` | [`SETTINGS_API_ACCESS.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_API_ACCESS.md) | Cryptographic Bearer keys (`pk_`), SHA-256 one-way hashing, fine-grained scopes & expiration, 600 req/min limits. |
 | **Email (SMTP)** | `/settings/email` | [`SETTINGS_EMAIL_SMTP.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_EMAIL_SMTP.md) | Custom SMTP transport, AES-256-GCM encryption, dual-transport mailer with Resend fallback. |
 | **Lead Intelligence** | `/settings/lead-intelligence` | [`SETTINGS_LEAD_INTELLIGENCE.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_LEAD_INTELLIGENCE.md) | Third-party enrichment, inbound email webhook parse, Meta CAPI & Conversion Leads postbacks. |
 | **Outbound Webhooks** | `/settings/webhooks` | [`SETTINGS_OUTBOUND_WEBHOOKS.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_OUTBOUND_WEBHOOKS.md) | Outbound JSON webhook POSTs, SSRF protection, HMAC signing, BullMQ retries, DLQ management. |
 | **New-lead alerts** | `/settings/distribution` | — | Rules (source + conditions) that alert recipients by email, in-app or WhatsApp when a matching lead arrives; "everyone" or taking turns. Alerts only — owner assignment lives on Sources. Requires `api.manage`. |
-| **Audit Log** | `/settings/audit` | *(Planned)* | Immutable record of user actions, auth events, secret reveals, and configuration changes. |
-| **Billing & Plan** | `/settings/billing` | *(Planned)* | Stripe billing portal, seat allocation, subscription tiers. |
+| **Audit Log** | `/settings/audit` | — | Immutable record of user actions, auth events, secret reveals, and configuration changes. |
+| **Billing & Plan** | `/settings/billing` | — | Razorpay billing, seat allocation, subscription tiers. |
 | **Integrations** | `/settings/integrations` | *(Planned)* | Master dashboard for active third-party connections. |
 
 ---

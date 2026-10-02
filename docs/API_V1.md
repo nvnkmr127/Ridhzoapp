@@ -32,7 +32,7 @@ if named: `leads:read|write`, `meetings:read|write`, `followups:read|write`. Are
 - JSON in, JSON out: success `{ "data": … }`, errors `{ "error": "message", "details"?: { field: "message" } }`.
 - Status codes: `200/201` ok · `401` missing/invalid/expired/revoked token · `403` not allowed (role, read-only key, scope) · `404` not found **or not yours** (never reveals other tenants' ids) · `422` validation · `429` throttled · `503` maintenance.
 - IDs are UUIDs; a malformed id is a `404`.
-- **Idempotency:** `POST /leads`, `/leads/{id}/notes`, `/leads/{id}/follow-ups`, `/leads/{id}/contact`, `/leads/{id}/reply` accept an `Idempotency-Key` header (8–100 chars `[A-Za-z0-9-]`). A repeat with the same key and route returns the first result (`Idempotent-Replayed: true`); keys are kept 35 days.
+- **Idempotency:** `POST /leads`, `/leads/bulk`, `/leads/{id}/notes`, `/leads/{id}/follow-ups`, `/leads/{id}/contact`, `/leads/{id}/reply` accept an `Idempotency-Key` header (8–100 chars `[A-Za-z0-9-]`). A repeat with the same key and route returns the first result (`Idempotent-Replayed: true`); keys are kept 35 days.
 - **Visibility:** an API key sees the whole workspace. A user token sees leads they own, leads they attend a meeting for or have a follow-up on, and (with `settings.manage`) all leads.
 - **Writes** need `leads.edit` for user tokens ("Viewer" roles are read-only here, as on the web).
 
@@ -54,11 +54,14 @@ rows the caller can no longer see (deleted, reassigned away) come back as `{ id,
 | POST | `/auth/google/exchange` · GET `/auth/google/finish` | Google sign-in hand-off (PKCE-style code) |
 | POST | `/auth/refresh` · `/auth/logout` | **user** — rotate / revoke the token |
 | GET | `/me` | **user** — profile, workspace, permissions, plan |
+| DELETE | `/me` | **user** — delete account (`{ confirm: "DELETE" }`; unassigns leads, revokes tokens) |
 
 ### Leads
 | Method | Path | Notes |
 |---|---|---|
 | GET / POST | `/leads` | list (see Pagination) / create (`name` required; duplicate email/phone → `422` naming the existing lead) |
+| POST | `/leads/bulk` | batch operations up to 100 leads (`action: "status" \| "assign" \| "delete" \| "create"`; idempotent) |
+| POST | `/leads/export` | **user** — CSV export of caller's leads (`leads.export` permission) |
 | GET | `/leads/cold` | going-cold list |
 | GET / PATCH / DELETE | `/leads/{id}` | read / edit fields, status, stage / move to recycle bin |
 | GET | `/leads/{id}/profile` | the whole lead screen in one call (timeline, follow-ups, meetings, …) |
@@ -68,7 +71,7 @@ rows the caller can no longer see (deleted, reassigned away) come back as `{ id,
 | POST | `/leads/{id}/follow-ups` | **user** |
 | POST | `/leads/{id}/contact` · `/leads/{id}/reply` | **user** — log an outreach / paste a reply |
 | POST | `/leads/{id}/whatsapp` · `/leads/{id}/email` | send (Business-API mode / workspace mailer); email is **user** |
-| POST | `/leads/{id}/attachments` | **user** — multipart `file` (≤ 25 MB, allow-listed types, content must match the extension) |
+| POST | `/leads/{id}/attachments` | **user** — multipart `file` (≤ 25 MB, allow-listed types; audio files accept standard containers even with mismatched extensions) |
 | POST | `/leads/{id}/shares` | **user** — branded share link |
 | POST | `/leads/{id}/sequences` | enrol in a sequence |
 | GET | `/leads/{id}/ai/recap` · POST `/ai/draft` · POST `/ai/suggestions/{id}` | AI features (consume AI credits) |
@@ -86,7 +89,8 @@ rows the caller can no longer see (deleted, reassigned away) come back as `{ id,
 
 ### Reference data & misc
 `GET /statuses` · `/custom-fields` · `/templates` · `/users` · `/dashboard` · `/badges` ·
-`GET/PATCH /notifications` · `POST/DELETE /devices` (push tokens, **user**) · `POST /devices/test` (**user**).
+`GET/PATCH /notifications` · `GET/PUT /notification-prefs` (**user** — mute/unmute push channels) ·
+`POST/DELETE /devices` (push tokens, **user**) · `POST /devices/test` (**user**).
 
 ## Webhooks (outbound)
 See [`OUTBOUND_WEBHOOK_EVENTS.md`](OUTBOUND_WEBHOOK_EVENTS.md). Inbound lead capture endpoints (`/api/webhooks/*`) are documented in

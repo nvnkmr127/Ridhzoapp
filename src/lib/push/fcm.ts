@@ -83,8 +83,12 @@ export const FcmPushService = {
 
   // Send to many FCM tokens. Returns the tokens that are dead (unregistered) and should be dropped.
   async sendToTokens(tokens: string[], message: FcmMessage): Promise<string[]> {
+    if (tokens.length === 0) return [];
     const sa = serviceAccount();
-    if (!sa || tokens.length === 0) return [];
+    if (!sa) {
+      console.warn("[fcm] cannot send pushes: Firebase service account is not configured");
+      return [];
+    }
 
     const token = await accessToken(sa);
     if (!token) return [];

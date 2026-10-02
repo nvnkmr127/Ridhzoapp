@@ -19,8 +19,8 @@ The Ridhzo Mobile App is built to empower sales reps and business owners to mana
 ---
 
 ## 2. Platforms & Technology Stack
-- **Native Android App (APK):** Built with React Native and Expo (`nvnkmr127/ridhzo-mobile`), custom native Android call log module (`modules/call-log`), and Android notification channels.
-- **Progressive Web App (PWA):** Works seamlessly on iOS and Android browsers with "Add to Home Screen" support.
+- **Native Android App (APK):** Built with React Native and Expo (`nvnkmr127/ridhzo-mobile`), custom native Android call log module (`modules/call-log`), Keystore AES-GCM encrypted caller ID directory, and Android notification channels.
+- **iOS Readiness:** Native iOS support in preparation (there is no PWA build).
 - **State Management & Caching:** TanStack React Query with encrypted SQLite offline cache and token revocation.
 - **Backend APIs:** Dedicated high-performance `/api/v1/*` endpoints with session caching and Redis-backed device deduplication.
 
@@ -35,6 +35,7 @@ Ridhzo supports three fast login methods on mobile:
 ### Session Security & Device Management
 - **Token Revocation:** User sessions and device JWTs can be revoked instantly (`/api/v1/auth/logout`) from web settings or upon sign-out.
 - **Redis Device Registration Deduplication:** Rapid device registration requests during network reconnection are deduplicated via Redis, pruning stale push tokens and preventing duplicate delivery.
+- **In-App Account Deletion (`DELETE /api/v1/me`):** Stores require in-app account deletion. Users can permanently delete their account with explicit confirmation (`{ confirm: "DELETE" }`), soft-deleting user details, reassigning open leads, ending active sessions, and removing device push tokens.
 
 ---
 
@@ -44,6 +45,7 @@ Ridhzo supports three fast login methods on mobile:
 - **Module:** Native Android module (`modules/call-log`) detects phone calls and batches logs to `/api/v1/calls/sync`.
 - **Captured Data:** Call direction (Incoming, Outgoing, Missed), caller phone number, timestamp, and talk duration in seconds.
 - **Trigram Matching:** The backend leverages PostgreSQL trigram indexing (`pg_trgm`) to match phone numbers instantly across any international or local format (`+91 98765 43210`, `9876543210`).
+- **Call Recording Uploads:** Call recording uploads (`/api/v1/leads/{id}/attachments`) support standard audio containers (MP3, M4A, AAC, 3GP, WAV) even when hardware recorders save streams with mismatched file extensions.
 
 ### Smart Follow-up Auto-Completion
 - **Answered calls:** When an outgoing or incoming call is completed, Ridhzo automatically marks any pending follow-up reminder for that lead as **Completed**.
@@ -54,13 +56,16 @@ Ridhzo supports three fast login methods on mobile:
 
 ## 5. Smart Caller ID Directory
 - **Pre-downloading Phone Keys:** The app fetches active lead phone keys via `/api/v1/calls/numbers` and `/api/v1/calls/caller-id`.
+- **Encrypted Local Storage:** Caller-ID lookup keys and records are encrypted on device via Android Keystore AES-GCM with hashed lookup keys.
 - **Incoming Call Overlay:** When a lead rings the rep's personal or business phone, the phone displays the lead's name, deal stage, and requirements before answering.
 
 ---
 
-## 6. Mobile Lead Profile & 1-Click AI Suggestions
+## 6. Mobile Lead Profile, Bulk Actions & AI Suggestions
 - **Clean Mobile Header:** Displays lead name, phone, email, priority, lead score, and an organized row for Owner, Stage, and Tags.
 - **Live Next Best Action:** Streams the optimal next step in real time.
+- **Bulk Actions (`/api/v1/leads/bulk`):** Multi-select leads for batch status transitions, reassignments, deletion, or contact creation (up to 100 leads per request, with idempotency).
+- **Lead CSV Export (`/api/v1/leads/export`):** Mobile users with `leads.export` permission can export their assigned leads to CSV.
 - **Mobile AI Suggestions (`/api/v1/leads/[id]/ai/suggestions/[suggestionId]`):**
   - **1-Click Field Auto-fill:** Extracts budget, location, and requirements from call notes with 1-click apply.
   - **1-Click Status Transitions:** Advances lead stage based on qualification milestones.
@@ -83,8 +88,9 @@ Ridhzo supports three fast login methods on mobile:
 
 ---
 
-## 9. Notification Channels & UI Customization
+## 9. Notification Channels & Preferences
 - **High-Priority Push Channels:** Dedicated Android channels for New Leads (loud alert sound), Calls, and Reminders.
+- **Channel Opt-Out Preferences (`/api/v1/notification-prefs`):** Users can customize which push channels notify them (`leads`, `reminders`, `meetings`, `updates`), backed by `users.push_opt_out`.
 - **Direct Tap Routing:** Tapping alerts deep-links straight into the relevant lead profile.
 - **Languages:** English, हिन्दी (Hindi), and తెలుగు (Telugu).
 - **Currencies:** Formatted in workspace currency (default INR / ₹ with Lakhs and Crores formatting).

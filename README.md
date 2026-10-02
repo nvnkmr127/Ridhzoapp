@@ -64,5 +64,4 @@ settings. Every variable the code reads is listed in `.env.example`.
   `/api/health` as the uptime probe (set `HEALTH_REQUIRE_WORKER=1` to include the worker heartbeat).
 - **Deploy:** web on Vercel; worker via `railway.json` → `deploy/Dockerfile.worker` (see `deploy/railway-setup.md`,
   which also covers backups and recovery). CI: `.github/workflows/ci.yml` (typecheck, lint, tests, empty-DB migrate + build).
-- **Docs:** feature specs are in `docs/` (`docs-consolidated/` is a consolidated copy — edit `docs/` first). The latest
-  engineering audit is `docs/PRODUCTION_AUDIT_2026-10-02.md`.
+- **Docs:** see [`docs/README.md`](docs/README.md) for the master documentation directory and topic index; consolidated chapters live in [`docs-consolidated/`](docs-consolidated/) (regenerate via `npm run docs:consolidate`). The latest engineering audit is [`docs/PRODUCTION_AUDIT_2026-10-02.md`](docs/PRODUCTION_AUDIT_2026-10-02.md).

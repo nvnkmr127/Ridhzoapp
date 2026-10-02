@@ -8,7 +8,7 @@ The **Users & Roles Hub** is Ridhzo's identity and access management command cen
 
 In high-velocity multi-rep sales environments, granular permission controls protect pipeline data while streamlining collaboration:
 
-1. **Granular RBAC Security**: Replaces crude "all-or-nothing" access with a 13-permission capability matrix. Sales managers can restrict lead deletion, purge rights, API key access, or audit visibility to specific roles.
+1. **Granular RBAC Security**: Replaces crude "all-or-nothing" access with a 15-permission capability matrix. Sales managers can restrict lead deletion, purge rights, API key access, or audit visibility to specific roles.
 2. **Zero-Trust Self-Protection**: Admins cannot accidentally lock themselves out—system-level protections block self-deactivation, self-deletion, and self-role demotion.
 3. **Frictionless Onboarding (Email, WhatsApp & Direct Links)**: Supports tokenized email invitations, direct WhatsApp invitation sharing, manual copyable invite links, and direct administrator provisioning for immediate call center onboarding.
 4. **Guided Profile Completion (`ProfileGapsBanner`)**: A persistent contextual banner alerts team members when essential contact data (phone number, WhatsApp contact, operational timezone) is missing, ensuring automated call logs and outbound WhatsApp templates work seamlessly.
@@ -39,7 +39,7 @@ In high-velocity multi-rep sales environments, granular permission controls prot
 |  Component: UsersManager.tsx                  |   |  Component: RolesManager.tsx                  |
 |                                               |   |                                               |
 |  * Team Creation & Badges (createTeamAction)  |   |  * Custom Role Creation (createRoleAction)    |
-|  * Email Inviter (inviteUserAction + SHA-256) |   |  * 13-Permission Checkbox Grid (PERMISSIONS)  |
+|  * Email Inviter (inviteUserAction + SHA-256) |   |  * 15-Permission Checkbox Grid (PERMISSIONS)  |
 |  * Direct Member Provisioning (createUser)    |   |  * Dynamic Permission Updates (updateRole)    |
 |  * Pending Invites (with Copy Link fallback)  |   |  * System Role Lock (admin & member immune)   |
 |  * Searchable Members List & Inline Assigners |   |  * Audit Log Recording (added / removed diffs)|
@@ -99,13 +99,13 @@ The Users & Roles interface is structured into cohesive cards with high visual c
 ### G. Custom Roles & Permissions Grid (`RolesManager.tsx`)
 - Appears if the administrator has `roles.manage` permissions.
 - Allows creating custom roles (e.g., *Sales Lead*, *Junior SDR*, *External Auditor*).
-- Displays a 2-column checkbox grid of all 13 system permissions.
+- Displays a 2-column checkbox grid of all 15 system permissions.
 
 ---
 
 ## 4. Granular RBAC Permissions Catalog
 
-Ridhzo's security architecture defines 13 granular permission keys in [`src/lib/permissions.ts`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/permissions.ts#L3):
+Ridhzo's security architecture defines 15 granular permission keys in [`src/lib/permissions.ts`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/permissions.ts#L3):
 
 ```
 +---------------------+-------------------------------------------------------+----------------------+
@@ -117,26 +117,28 @@ Ridhzo's security architecture defines 13 granular permission keys in [`src/lib/
 | sources.manage      | Connect Meta Lead Ads, Google Ads, generate webhooks  | Admin only           |
 | templates.manage    | Author, edit, and delete canned message templates     | Admin only           |
 | automations.manage  | Create, activate, and delete automated drip workflows  | Admin only           |
+| sequences.manage    | Create, edit & delete follow-up sequences             | Admin only           |
 | leads.edit          | Create, edit, assign, and advance lead pipeline stages| Admin, Member        |
 | leads.delete        | Soft-delete leads to the tenant recycle bin           | Admin only           |
 | leads.purge         | Permanently purge leads / empty the recycle bin       | Admin only           |
 | leads.merge         | Merge duplicate leads into a single master contact    | Admin only           |
+| leads.export        | Export leads to CSV                                   | Admin, Member        |
 | audit.view          | Inspect system audit logs, user actions, and diffs    | Admin only           |
-| api.manage          | Generate and revoke programmatic REST API keys        | Admin only           |
-| billing.manage      | Manage Stripe subscriptions, invoices, and seat tiers | Admin only           |
+| api.manage          | Manage API keys, webhooks & new-lead alerts           | Admin only           |
+| billing.manage      | Manage billing, invoices, and subscription plans      | Admin only           |
 +---------------------+-------------------------------------------------------+----------------------+
 ```
 
 ### System Roles vs. Custom Roles
 1. **System Admin (`admin`)**:
    - Built-in shared system role (`organization_id = NULL`).
-   - Implicitly possesses all 13 permissions. Cannot be edited or deleted.
+   - Implicitly possesses all 15 permissions. Cannot be edited or deleted.
 2. **System Member (`member`)**:
    - Baseline working sales rep role.
-   - Pre-configured with `leads.edit` only. Members can triage, contact, and move leads through the pipeline, but cannot delete records, view audit trails, or alter company settings.
+   - Pre-configured with `leads.edit` and `leads.export`. Members can triage, contact, and move leads through the pipeline and export their assigned leads, but cannot delete records, view audit trails, or alter company settings.
 3. **Custom Tenant Roles**:
    - Created with `organization_id = :orgId`.
-   - Administrators toggle any combination of the 13 checkboxes.
+   - Administrators toggle any combination of the 15 checkboxes.
    - *Example: A "View-Only Auditor" role is created by granting `audit.view` while leaving `leads.edit` unchecked.*
 
 ---

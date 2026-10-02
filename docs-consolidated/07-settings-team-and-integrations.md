@@ -57,7 +57,7 @@ Settings Hub (/settings)
  ├── 1. General & Statuses (/settings) ─── Company profile, AI context, quiet hours, pipeline statuses
  ├── 2. Lead Sources (/settings/sources) ─── Meta Ads, Google Ads, Webhooks, Hosted Web Forms
  ├── 3. Message Templates (/settings/templates) ─── WhatsApp, Email, and SMS quick templates
- ├── 4. Users & Roles (/settings/users) ─── Team members, 13-permission RBAC roles, invites
+ ├── 4. Users & Roles (/settings/users) ─── Team members, 15-permission RBAC roles, invites
  ├── 5. Custom Fields (/settings/custom-fields) ─── 10 field types, sections, privacy rules
  ├── 6. API Access (/settings/api) ─── Bearer API tokens (pk_), scopes, rate limits
  ├── 7. Email (SMTP) (/settings/email) ─── Custom SMTP host/port/creds with Resend fallback
@@ -76,15 +76,15 @@ Settings Hub (/settings)
 | **General & Statuses** | `/settings` | [`SETTINGS_GENERAL_AND_STATUSES.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_GENERAL_AND_STATUSES.md) | Company name, AI business context, currency, timezone, quiet hours, status lifecycle taxonomy. |
 | **Lead Sources** | `/settings/sources` | [`SETTINGS_SOURCES.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_SOURCES.md) | Facebook Ads, Google Ads, Website Webhook, Hosted Web Forms, and roadmap channels. |
 | **Message Templates** | `/settings/templates` | [`SETTINGS_MESSAGE_TEMPLATES.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_MESSAGE_TEMPLATES.md) | Reusable WhatsApp/Email/SMS templates with variable interpolation (`{{first_name}}`, `{{company}}`). |
-| **Users & Roles** | `/settings/users` | [`SETTINGS_USERS_AND_ROLES.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_USERS_AND_ROLES.md) | 13-permission RBAC matrix, team grouping, tokenized email invites with copy fallback. |
+| **Users & Roles** | `/settings/users` | [`SETTINGS_USERS_AND_ROLES.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_USERS_AND_ROLES.md) | 15-permission RBAC matrix, team grouping, tokenized email invites with copy fallback. |
 | **Custom Fields** | `/settings/custom-fields` | [`SETTINGS_CUSTOM_FIELDS.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_CUSTOM_FIELDS.md) | 10 data types, tab section/subsection nesting, table column visibility, admin-only privacy. |
-| **API Access** | `/settings/api` | [`SETTINGS_API_ACCESS.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_API_ACCESS.md) | Cryptographic Bearer keys (`pk_`), SHA-256 one-way hashing, read-only vs full scopes, 600 req/min limits. |
+| **API Access** | `/settings/api` | [`SETTINGS_API_ACCESS.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_API_ACCESS.md) | Cryptographic Bearer keys (`pk_`), SHA-256 one-way hashing, fine-grained scopes & expiration, 600 req/min limits. |
 | **Email (SMTP)** | `/settings/email` | [`SETTINGS_EMAIL_SMTP.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_EMAIL_SMTP.md) | Custom SMTP transport, AES-256-GCM encryption, dual-transport mailer with Resend fallback. |
 | **Lead Intelligence** | `/settings/lead-intelligence` | [`SETTINGS_LEAD_INTELLIGENCE.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_LEAD_INTELLIGENCE.md) | Third-party enrichment, inbound email webhook parse, Meta CAPI & Conversion Leads postbacks. |
 | **Outbound Webhooks** | `/settings/webhooks` | [`SETTINGS_OUTBOUND_WEBHOOKS.md`](file:///Users/naveenadicharla/Documents/ridhzo/docs/SETTINGS_OUTBOUND_WEBHOOKS.md) | Outbound JSON webhook POSTs, SSRF protection, HMAC signing, BullMQ retries, DLQ management. |
 | **New-lead alerts** | `/settings/distribution` | — | Rules (source + conditions) that alert recipients by email, in-app or WhatsApp when a matching lead arrives; "everyone" or taking turns. Alerts only — owner assignment lives on Sources. Requires `api.manage`. |
-| **Audit Log** | `/settings/audit` | *(Planned)* | Immutable record of user actions, auth events, secret reveals, and configuration changes. |
-| **Billing & Plan** | `/settings/billing` | *(Planned)* | Stripe billing portal, seat allocation, subscription tiers. |
+| **Audit Log** | `/settings/audit` | — | Immutable record of user actions, auth events, secret reveals, and configuration changes. |
+| **Billing & Plan** | `/settings/billing` | — | Razorpay billing, seat allocation, subscription tiers. |
 | **Integrations** | `/settings/integrations` | *(Planned)* | Master dashboard for active third-party connections. |
 
 ---
@@ -435,7 +435,7 @@ The **Users & Roles Hub** is Ridhzo's identity and access management command cen
 
 In high-velocity multi-rep sales environments, granular permission controls protect pipeline data while streamlining collaboration:
 
-1. **Granular RBAC Security**: Replaces crude "all-or-nothing" access with a 13-permission capability matrix. Sales managers can restrict lead deletion, purge rights, API key access, or audit visibility to specific roles.
+1. **Granular RBAC Security**: Replaces crude "all-or-nothing" access with a 15-permission capability matrix. Sales managers can restrict lead deletion, purge rights, API key access, or audit visibility to specific roles.
 2. **Zero-Trust Self-Protection**: Admins cannot accidentally lock themselves out—system-level protections block self-deactivation, self-deletion, and self-role demotion.
 3. **Frictionless Onboarding (Email, WhatsApp & Direct Links)**: Supports tokenized email invitations, direct WhatsApp invitation sharing, manual copyable invite links, and direct administrator provisioning for immediate call center onboarding.
 4. **Guided Profile Completion (`ProfileGapsBanner`)**: A persistent contextual banner alerts team members when essential contact data (phone number, WhatsApp contact, operational timezone) is missing, ensuring automated call logs and outbound WhatsApp templates work seamlessly.
@@ -466,7 +466,7 @@ In high-velocity multi-rep sales environments, granular permission controls prot
 |  Component: UsersManager.tsx                  |   |  Component: RolesManager.tsx                  |
 |                                               |   |                                               |
 |  * Team Creation & Badges (createTeamAction)  |   |  * Custom Role Creation (createRoleAction)    |
-|  * Email Inviter (inviteUserAction + SHA-256) |   |  * 13-Permission Checkbox Grid (PERMISSIONS)  |
+|  * Email Inviter (inviteUserAction + SHA-256) |   |  * 15-Permission Checkbox Grid (PERMISSIONS)  |
 |  * Direct Member Provisioning (createUser)    |   |  * Dynamic Permission Updates (updateRole)    |
 |  * Pending Invites (with Copy Link fallback)  |   |  * System Role Lock (admin & member immune)   |
 |  * Searchable Members List & Inline Assigners |   |  * Audit Log Recording (added / removed diffs)|
@@ -526,13 +526,13 @@ The Users & Roles interface is structured into cohesive cards with high visual c
 ##### G. Custom Roles & Permissions Grid (`RolesManager.tsx`)
 - Appears if the administrator has `roles.manage` permissions.
 - Allows creating custom roles (e.g., *Sales Lead*, *Junior SDR*, *External Auditor*).
-- Displays a 2-column checkbox grid of all 13 system permissions.
+- Displays a 2-column checkbox grid of all 15 system permissions.
 
 ---
 
 #### 4. Granular RBAC Permissions Catalog
 
-Ridhzo's security architecture defines 13 granular permission keys in [`src/lib/permissions.ts`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/permissions.ts#L3):
+Ridhzo's security architecture defines 15 granular permission keys in [`src/lib/permissions.ts`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/permissions.ts#L3):
 
 ```
 +---------------------+-------------------------------------------------------+----------------------+
@@ -544,26 +544,28 @@ Ridhzo's security architecture defines 13 granular permission keys in [`src/lib/
 | sources.manage      | Connect Meta Lead Ads, Google Ads, generate webhooks  | Admin only           |
 | templates.manage    | Author, edit, and delete canned message templates     | Admin only           |
 | automations.manage  | Create, activate, and delete automated drip workflows  | Admin only           |
+| sequences.manage    | Create, edit & delete follow-up sequences             | Admin only           |
 | leads.edit          | Create, edit, assign, and advance lead pipeline stages| Admin, Member        |
 | leads.delete        | Soft-delete leads to the tenant recycle bin           | Admin only           |
 | leads.purge         | Permanently purge leads / empty the recycle bin       | Admin only           |
 | leads.merge         | Merge duplicate leads into a single master contact    | Admin only           |
+| leads.export        | Export leads to CSV                                   | Admin, Member        |
 | audit.view          | Inspect system audit logs, user actions, and diffs    | Admin only           |
-| api.manage          | Generate and revoke programmatic REST API keys        | Admin only           |
-| billing.manage      | Manage Stripe subscriptions, invoices, and seat tiers | Admin only           |
+| api.manage          | Manage API keys, webhooks & new-lead alerts           | Admin only           |
+| billing.manage      | Manage billing, invoices, and subscription plans      | Admin only           |
 +---------------------+-------------------------------------------------------+----------------------+
 ```
 
 ##### System Roles vs. Custom Roles
 1. **System Admin (`admin`)**:
    - Built-in shared system role (`organization_id = NULL`).
-   - Implicitly possesses all 13 permissions. Cannot be edited or deleted.
+   - Implicitly possesses all 15 permissions. Cannot be edited or deleted.
 2. **System Member (`member`)**:
    - Baseline working sales rep role.
-   - Pre-configured with `leads.edit` only. Members can triage, contact, and move leads through the pipeline, but cannot delete records, view audit trails, or alter company settings.
+   - Pre-configured with `leads.edit` and `leads.export`. Members can triage, contact, and move leads through the pipeline and export their assigned leads, but cannot delete records, view audit trails, or alter company settings.
 3. **Custom Tenant Roles**:
    - Created with `organization_id = :orgId`.
-   - Administrators toggle any combination of the 13 checkboxes.
+   - Administrators toggle any combination of the 15 checkboxes.
    - *Example: A "View-Only Auditor" role is created by granting `audit.view` while leaving `leads.edit` unchecked.*
 
 ---
@@ -1294,14 +1296,16 @@ Ridhzo follows industry-standard API security patterns (modeled after Stripe and
 ```typescript
 export const apiKeys = pgTable('api_keys', {
   id: uuid('id').defaultRandom().primaryKey(),
-  organizationId: uuid('organization_id').references(() => organizations.id).notNull(),
+  organizationId: uuid('organization_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   keyHash: varchar('key_hash', { length: 64 }).notNull().unique(), // sha256 hex
   prefix: varchar('prefix', { length: 16 }).notNull(), // pk_xxxx for identification
-  scope: varchar('scope', { length: 20 }).notNull().default('full'), // full, read_only
-  createdById: uuid('created_by_id').references(() => users.id),
+  scope: varchar('scope', { length: 16 }).notNull().default('full'), // full, read_only
+  scopes: jsonb('scopes').$type<string[]>(), // optional fine-grained area allow-list
+  createdById: uuid('created_by_id').references(() => users.id, { onDelete: 'set null' }),
   lastUsedAt: timestamp('last_used_at'),
   revokedAt: timestamp('revoked_at'),
+  expiresAt: timestamp('expires_at'), // null = never expires; or 30/90/365 days
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 ```
@@ -1310,44 +1314,53 @@ Because only `keyHash` is persisted, a database compromise never exposes usable 
 
 ---
 
-#### 5. Scope Enforcement: Full vs. Read-Only
+#### 5. Scope Enforcement, Key Lifecycles & Security Constraints
 
-API keys support two access tiers:
+##### Access Control & Scopes
+1. **Creation Prerequisite (Verified Email):** Creating an API key requires a verified account email (`emailVerifiedAt`). Unverified accounts cannot provision API keys.
+2. **Key Expiry:** Optional expiration lifespans (30, 90, 365 days, or never). Expired keys return HTTP 401.
+3. **Read-Only vs. Full Access:**
+   - `full`: Allows GET, POST, PATCH, DELETE operations.
+   - `read_only`: Restricted to GET and HEAD requests only (mutations rejected with HTTP 403).
+4. **Fine-Grained Area Scopes (`scopes`):**
+   When created with a specific scope list, only explicitly allowed areas may be accessed:
+   - `leads:read` / `leads:write`: Read or create/edit leads.
+   - `meetings:read` / `meetings:write`: Read or schedule/edit meetings.
+   - `followups:read` / `followups:write`: Read or create/edit follow-ups.
+   - Areas outside these (such as `/me`, `/statuses`, `/templates`) are not scope-guarded. Missing required scope returns HTTP 403.
 
-```
-+----------------------------------------------------------------------------------------------------+
-|                                      SCOPE CAPABILITY MATRIX                                       |
-+-------------------+--------------------+------------------------+----------------------------------+
-| Scope Identifier  | Permitted Methods  | Allowed Endpoints      | Blocked Operations               |
-+-------------------+--------------------+------------------------+----------------------------------+
-| full              | GET, POST, PATCH,  | All /api/v1/ endpoints | None (governed by plan limits)   |
-|                   | DELETE, HEAD       |                        |                                  |
-| read_only         | GET, HEAD          | Querying leads/data    | POST, PATCH, DELETE rejected 403 |
-+-------------------+--------------------+------------------------+----------------------------------+
-```
-
-##### Server-Side Method Guard ([`src/lib/apiAuth.ts#L40`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/apiAuth.ts#L40))
-When an API request arrives with a read-only key, [`authorizeApiRequest`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/apiAuth.ts) rejects mutating HTTP verbs immediately:
+##### Server-Side Method & Scope Guard ([`src/lib/apiAuth.ts`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/apiAuth.ts))
+When an API request arrives, [`authorizeApiRequest`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/apiAuth.ts) checks:
 ```typescript
+// Read-only key check
 if (key.scope === "read_only" && !isSafeMethod(req.method)) {
   return { error: NextResponse.json({ error: "This API key is read-only." }, { status: 403 }) };
 }
+// Fine-grained area scope check
+if (key.scopes) {
+  const need = requiredScope(req.nextUrl?.pathname ?? "", req.method);
+  if (need && !key.scopes.includes(need)) {
+    return { error: NextResponse.json({ error: `This API key doesn't have the "${need}" scope.` }, { status: 403 }) };
+  }
+}
 ```
-This protects production pipelines from accidental mutations or deletions by external reporting tools.
 
 ---
 
-#### 6. High-Throughput Rate Limiting & Usage Telemetry
+#### 6. High-Throughput Rate Limiting & Monthly Quotas
 
 ##### Sliding-Window Rate Limiting
-To ensure multi-tenant quality of service and prevent abuse:
 - Budget: **600 requests per 60 seconds per API key**.
 - Evaluated via [`RateLimiter.checkLimit(`apiv1:apikey:${key.id}`, 600, 60)`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/rate-limit.ts).
-- If exhausted, Ridhzo returns HTTP 429 Too Many Requests with standard RFC headers:
-  - `X-RateLimit-Limit: 600`
-  - `X-RateLimit-Remaining: 0`
-  - `X-RateLimit-Reset: <timestamp>`
-  - `Retry-After: <seconds>`
+- If exhausted, returns HTTP 429 Too Many Requests with standard rate limit headers.
+
+##### Monthly Plan Quotas
+In addition to the per-minute rate limit, API keys are metered against the workspace's monthly plan quota:
+- **Free:** 10,000 requests/month
+- **Starter:** 300,000 requests/month
+- **Unlimited:** 3,000,000 requests/month
+- First-party mobile app requests are exempt from monthly quota counting.
+- Once exceeded, requests return HTTP 429 (`code: "api_quota_exceeded"`).
 
 ##### Lock-Free Telemetry Throttling ([`ApiKeyService.touchLastUsed`](file:///Users/naveenadicharla/Documents/ridhzo/src/domains/apiKeys/service.ts#L74))
 Writing `lastUsedAt = NOW()` to PostgreSQL on every single API request causes severe database row lock contention and write amplification under heavy throughput.
@@ -1669,7 +1682,11 @@ The **User Profile** page (`/profile`) manages personal identity, authentication
 
 Key features include:
 - **Authentication & Identity Verification:** Displays verified user details (Name, Email, Phone) derived directly from the authenticated session.
-- **Granular Email Notification Preferences:** Controls which in-app notification events trigger outbound email alerts to the user's personal inbox, backed by an opt-out storage model.
+- **Login Methods & Linked Accounts:** Manage linked Google single-sign-on and primary email/phone login credentials.
+- **Password Setup & Management:** Set an account password for phone/Google signups (`passwordSet = false`) or change an existing password.
+- **Granular Email & Push Preferences:** Controls which in-app notification events trigger outbound email alerts (backed by `users.email_opt_out`), plus mobile push channel preferences.
+- **Interface Language Selection:** Choose display language across English, Hindi (हिन्दी), and Telugu (తెలుగు) stored in `users.language`.
+- **Alert Chime Customization:** Choose and preview the audio chime played on new lead assignments and reminders.
 - **Secure Sign-Out:** Session invalidation and cache teardown via NextAuth.
 
 ---
@@ -1679,7 +1696,11 @@ Key features include:
 | Purpose | File Path |
 | :--- | :--- |
 | **Page Route** | [`src/app/(dashboard)/profile/page.tsx`](file:///Users/naveenadicharla/Documents/ridhzo/src/app/(dashboard)/profile/page.tsx) |
+| **Login Methods & Social Link** | [`src/components/settings/LoginMethods.tsx`](file:///Users/naveenadicharla/Documents/ridhzo/src/components/settings/LoginMethods.tsx) |
+| **Password Setup / Change** | [`src/components/settings/PasswordForm.tsx`](file:///Users/naveenadicharla/Documents/ridhzo/src/components/settings/PasswordForm.tsx) |
 | **Notification Preferences Component** | [`src/components/settings/NotificationPreferences.tsx`](file:///Users/naveenadicharla/Documents/ridhzo/src/components/settings/NotificationPreferences.tsx) |
+| **Language Selection Component** | [`src/components/settings/LanguagePicker.tsx`](file:///Users/naveenadicharla/Documents/ridhzo/src/components/settings/LanguagePicker.tsx) |
+| **Audio Alert Sound Picker** | [`src/components/settings/AlertSoundPicker.tsx`](file:///Users/naveenadicharla/Documents/ridhzo/src/components/settings/AlertSoundPicker.tsx) |
 | **Notification Actions** | [`src/lib/actions/notificationPrefs.ts`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/actions/notificationPrefs.ts) |
 | **Email Notification Categories** | [`src/lib/notifications/emailTypes.ts`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/notifications/emailTypes.ts) |
 | **Header User Menu Integration** | [`src/components/layout/Header.tsx:71-91`](file:///Users/naveenadicharla/Documents/ridhzo/src/components/layout/Header.tsx#L71-L91) |
@@ -1708,13 +1729,27 @@ The user identity card presents the verified session attributes:
 
 ---
 
-#### 4. Granular Email Notification Preferences
+#### 4. Authentication & Credentials Management
+
+##### 4.1 Linked Login Methods (`LoginMethods.tsx`)
+- Displays current primary email and phone login methods.
+- Allows connecting or disconnecting Google OAuth for single-sign-on.
+- Handles cross-tenant collision detection (alerting if a Google account is already registered in another workspace).
+
+##### 4.2 Password Setup & Modification (`PasswordForm.tsx`)
+- Users who signed up via phone OTP or Google OAuth initially have `passwordSet: false`.
+- The form allows first-time password creation without requiring an existing password.
+- Existing password users can change their password after verifying their current password.
+
+---
+
+#### 5. Granular Email Notification Preferences
 
 Ridhzo maintains a distinction between **In-App Bell Alerts** and **Inbox Emails**:
 - **In-App Notification Bell (`NotificationBell.tsx`):** Receives 100% of lead assignments, reminders, and alerts in real-time.
 - **Email Notifications (`NotificationPreferences.tsx`):** Users can customize which events also generate email messages delivered via the tenant's configured SMTP or Resend mailer.
 
-##### 4.1 Supported Notification Events (`EMAIL_NOTIFICATION_TYPES`)
+##### 5.1 Supported Notification Events (`EMAIL_NOTIFICATION_TYPES`)
 
 | Notification Type | Label in UI | Description |
 | :--- | :--- | :--- |
@@ -1724,7 +1759,7 @@ Ridhzo maintains a distinction between **In-App Bell Alerts** and **Inbox Emails
 | `follow_up_overdue` | **Follow-up overdue** | Dispatched when a reminder passes its due date without completion. |
 | `sla_escalation` | **SLA escalation (unactioned lead)** | Dispatched when a new lead remains uncontacted past the 15-minute SLA. |
 
-##### 4.2 Opt-Out Architecture & Data Persistence
+##### 5.2 Opt-Out Architecture & Data Persistence
 To avoid missing critical leads by default, Ridhzo employs an **opt-out model**:
 - All notification types default to active (`emailOn = true`).
 - Checking an option keeps it active; unchecking adds the event key to the user's `email_opt_out` array in the database.
@@ -1732,7 +1767,14 @@ To avoid missing critical leads by default, Ridhzo employs an **opt-out model**:
 
 ---
 
-#### 5. Session Termination & Sign-Out
+#### 6. Personalization: Languages & Audio Alerts
+
+- **Language Preference (`LanguagePicker.tsx`):** Switch between English (`en`), Hindi (`hi`), and Telugu (`te`), updating `users.language`.
+- **Alert Sounds (`AlertSoundPicker.tsx`):** Select and preview in-browser audible chime alerts for incoming leads.
+
+---
+
+#### 7. Session Termination & Sign-Out
 
 The sign-out button triggers a direct POST to `/api/auth/signout` or client-side `signOut({ callbackUrl: "/login" })`:
 - Destroys active session cookies and JWT tokens.
@@ -1934,7 +1976,7 @@ if named: `leads:read|write`, `meetings:read|write`, `followups:read|write`. Are
 - JSON in, JSON out: success `{ "data": … }`, errors `{ "error": "message", "details"?: { field: "message" } }`.
 - Status codes: `200/201` ok · `401` missing/invalid/expired/revoked token · `403` not allowed (role, read-only key, scope) · `404` not found **or not yours** (never reveals other tenants' ids) · `422` validation · `429` throttled · `503` maintenance.
 - IDs are UUIDs; a malformed id is a `404`.
-- **Idempotency:** `POST /leads`, `/leads/{id}/notes`, `/leads/{id}/follow-ups`, `/leads/{id}/contact`, `/leads/{id}/reply` accept an `Idempotency-Key` header (8–100 chars `[A-Za-z0-9-]`). A repeat with the same key and route returns the first result (`Idempotent-Replayed: true`); keys are kept 35 days.
+- **Idempotency:** `POST /leads`, `/leads/bulk`, `/leads/{id}/notes`, `/leads/{id}/follow-ups`, `/leads/{id}/contact`, `/leads/{id}/reply` accept an `Idempotency-Key` header (8–100 chars `[A-Za-z0-9-]`). A repeat with the same key and route returns the first result (`Idempotent-Replayed: true`); keys are kept 35 days.
 - **Visibility:** an API key sees the whole workspace. A user token sees leads they own, leads they attend a meeting for or have a follow-up on, and (with `settings.manage`) all leads.
 - **Writes** need `leads.edit` for user tokens ("Viewer" roles are read-only here, as on the web).
 
@@ -1956,11 +1998,14 @@ rows the caller can no longer see (deleted, reassigned away) come back as `{ id,
 | POST | `/auth/google/exchange` · GET `/auth/google/finish` | Google sign-in hand-off (PKCE-style code) |
 | POST | `/auth/refresh` · `/auth/logout` | **user** — rotate / revoke the token |
 | GET | `/me` | **user** — profile, workspace, permissions, plan |
+| DELETE | `/me` | **user** — delete account (`{ confirm: "DELETE" }`; unassigns leads, revokes tokens) |
 
 ##### Leads
 | Method | Path | Notes |
 |---|---|---|
 | GET / POST | `/leads` | list (see Pagination) / create (`name` required; duplicate email/phone → `422` naming the existing lead) |
+| POST | `/leads/bulk` | batch operations up to 100 leads (`action: "status" \| "assign" \| "delete" \| "create"`; idempotent) |
+| POST | `/leads/export` | **user** — CSV export of caller's leads (`leads.export` permission) |
 | GET | `/leads/cold` | going-cold list |
 | GET / PATCH / DELETE | `/leads/{id}` | read / edit fields, status, stage / move to recycle bin |
 | GET | `/leads/{id}/profile` | the whole lead screen in one call (timeline, follow-ups, meetings, …) |
@@ -1970,7 +2015,7 @@ rows the caller can no longer see (deleted, reassigned away) come back as `{ id,
 | POST | `/leads/{id}/follow-ups` | **user** |
 | POST | `/leads/{id}/contact` · `/leads/{id}/reply` | **user** — log an outreach / paste a reply |
 | POST | `/leads/{id}/whatsapp` · `/leads/{id}/email` | send (Business-API mode / workspace mailer); email is **user** |
-| POST | `/leads/{id}/attachments` | **user** — multipart `file` (≤ 25 MB, allow-listed types, content must match the extension) |
+| POST | `/leads/{id}/attachments` | **user** — multipart `file` (≤ 25 MB, allow-listed types; audio files accept standard containers even with mismatched extensions) |
 | POST | `/leads/{id}/shares` | **user** — branded share link |
 | POST | `/leads/{id}/sequences` | enrol in a sequence |
 | GET | `/leads/{id}/ai/recap` · POST `/ai/draft` · POST `/ai/suggestions/{id}` | AI features (consume AI credits) |
@@ -1988,7 +2033,8 @@ rows the caller can no longer see (deleted, reassigned away) come back as `{ id,
 
 ##### Reference data & misc
 `GET /statuses` · `/custom-fields` · `/templates` · `/users` · `/dashboard` · `/badges` ·
-`GET/PATCH /notifications` · `POST/DELETE /devices` (push tokens, **user**) · `POST /devices/test` (**user**).
+`GET/PATCH /notifications` · `GET/PUT /notification-prefs` (**user** — mute/unmute push channels) ·
+`POST/DELETE /devices` (push tokens, **user**) · `POST /devices/test` (**user**).
 
 #### Webhooks (outbound)
 See [`OUTBOUND_WEBHOOK_EVENTS.md`](OUTBOUND_WEBHOOK_EVENTS.md). Inbound lead capture endpoints (`/api/webhooks/*`) are documented in

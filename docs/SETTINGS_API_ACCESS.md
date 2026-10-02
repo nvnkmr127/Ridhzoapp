@@ -136,14 +136,16 @@ Ridhzo follows industry-standard API security patterns (modeled after Stripe and
 ```typescript
 export const apiKeys = pgTable('api_keys', {
   id: uuid('id').defaultRandom().primaryKey(),
-  organizationId: uuid('organization_id').references(() => organizations.id).notNull(),
+  organizationId: uuid('organization_id').references(() => organizations.id, { onDelete: 'cascade' }).notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   keyHash: varchar('key_hash', { length: 64 }).notNull().unique(), // sha256 hex
   prefix: varchar('prefix', { length: 16 }).notNull(), // pk_xxxx for identification
-  scope: varchar('scope', { length: 20 }).notNull().default('full'), // full, read_only
-  createdById: uuid('created_by_id').references(() => users.id),
+  scope: varchar('scope', { length: 16 }).notNull().default('full'), // full, read_only
+  scopes: jsonb('scopes').$type<string[]>(), // optional fine-grained area allow-list
+  createdById: uuid('created_by_id').references(() => users.id, { onDelete: 'set null' }),
   lastUsedAt: timestamp('last_used_at'),
   revokedAt: timestamp('revoked_at'),
+  expiresAt: timestamp('expires_at'), // null = never expires; or 30/90/365 days
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 ```
@@ -152,44 +154,53 @@ Because only `keyHash` is persisted, a database compromise never exposes usable 
 
 ---
 
-## 5. Scope Enforcement: Full vs. Read-Only
+## 5. Scope Enforcement, Key Lifecycles & Security Constraints
 
-API keys support two access tiers:
+### Access Control & Scopes
+1. **Creation Prerequisite (Verified Email):** Creating an API key requires a verified account email (`emailVerifiedAt`). Unverified accounts cannot provision API keys.
+2. **Key Expiry:** Optional expiration lifespans (30, 90, 365 days, or never). Expired keys return HTTP 401.
+3. **Read-Only vs. Full Access:**
+   - `full`: Allows GET, POST, PATCH, DELETE operations.
+   - `read_only`: Restricted to GET and HEAD requests only (mutations rejected with HTTP 403).
+4. **Fine-Grained Area Scopes (`scopes`):**
+   When created with a specific scope list, only explicitly allowed areas may be accessed:
+   - `leads:read` / `leads:write`: Read or create/edit leads.
+   - `meetings:read` / `meetings:write`: Read or schedule/edit meetings.
+   - `followups:read` / `followups:write`: Read or create/edit follow-ups.
+   - Areas outside these (such as `/me`, `/statuses`, `/templates`) are not scope-guarded. Missing required scope returns HTTP 403.
 
-```
-+----------------------------------------------------------------------------------------------------+
-|                                      SCOPE CAPABILITY MATRIX                                       |
-+-------------------+--------------------+------------------------+----------------------------------+
-| Scope Identifier  | Permitted Methods  | Allowed Endpoints      | Blocked Operations               |
-+-------------------+--------------------+------------------------+----------------------------------+
-| full              | GET, POST, PATCH,  | All /api/v1/ endpoints | None (governed by plan limits)   |
-|                   | DELETE, HEAD       |                        |                                  |
-| read_only         | GET, HEAD          | Querying leads/data    | POST, PATCH, DELETE rejected 403 |
-+-------------------+--------------------+------------------------+----------------------------------+
-```
-
-### Server-Side Method Guard ([`src/lib/apiAuth.ts#L40`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/apiAuth.ts#L40))
-When an API request arrives with a read-only key, [`authorizeApiRequest`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/apiAuth.ts) rejects mutating HTTP verbs immediately:
+### Server-Side Method & Scope Guard ([`src/lib/apiAuth.ts`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/apiAuth.ts))
+When an API request arrives, [`authorizeApiRequest`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/apiAuth.ts) checks:
 ```typescript
+// Read-only key check
 if (key.scope === "read_only" && !isSafeMethod(req.method)) {
   return { error: NextResponse.json({ error: "This API key is read-only." }, { status: 403 }) };
 }
+// Fine-grained area scope check
+if (key.scopes) {
+  const need = requiredScope(req.nextUrl?.pathname ?? "", req.method);
+  if (need && !key.scopes.includes(need)) {
+    return { error: NextResponse.json({ error: `This API key doesn't have the "${need}" scope.` }, { status: 403 }) };
+  }
+}
 ```
-This protects production pipelines from accidental mutations or deletions by external reporting tools.
 
 ---
 
-## 6. High-Throughput Rate Limiting & Usage Telemetry
+## 6. High-Throughput Rate Limiting & Monthly Quotas
 
 ### Sliding-Window Rate Limiting
-To ensure multi-tenant quality of service and prevent abuse:
 - Budget: **600 requests per 60 seconds per API key**.
 - Evaluated via [`RateLimiter.checkLimit(`apiv1:apikey:${key.id}`, 600, 60)`](file:///Users/naveenadicharla/Documents/ridhzo/src/lib/rate-limit.ts).
-- If exhausted, Ridhzo returns HTTP 429 Too Many Requests with standard RFC headers:
-  - `X-RateLimit-Limit: 600`
-  - `X-RateLimit-Remaining: 0`
-  - `X-RateLimit-Reset: <timestamp>`
-  - `Retry-After: <seconds>`
+- If exhausted, returns HTTP 429 Too Many Requests with standard rate limit headers.
+
+### Monthly Plan Quotas
+In addition to the per-minute rate limit, API keys are metered against the workspace's monthly plan quota:
+- **Free:** 10,000 requests/month
+- **Starter:** 300,000 requests/month
+- **Unlimited:** 3,000,000 requests/month
+- First-party mobile app requests are exempt from monthly quota counting.
+- Once exceeded, requests return HTTP 429 (`code: "api_quota_exceeded"`).
 
 ### Lock-Free Telemetry Throttling ([`ApiKeyService.touchLastUsed`](file:///Users/naveenadicharla/Documents/ridhzo/src/domains/apiKeys/service.ts#L74))
 Writing `lastUsedAt = NOW()` to PostgreSQL on every single API request causes severe database row lock contention and write amplification under heavy throughput.
