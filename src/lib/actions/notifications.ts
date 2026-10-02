@@ -28,3 +28,9 @@ export async function markNotificationsReadAction(ids: string[]) {
   if (!parsed.success || parsed.data.length === 0) return;
   await NotificationService.markRead(session.user.id, parsed.data);
 }
+
+// "Mark all as read": every unread notification of the signed-in user.
+export async function markAllNotificationsReadAction() {
+  const session = await requireAuth();
+  await NotificationService.markRead(session.user.id);
+}

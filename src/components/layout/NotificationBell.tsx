@@ -8,8 +8,9 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { listNotificationsAction, unreadCountAction, markNotificationsReadAction } from "@/lib/actions/notifications"
+import { listNotificationsAction, unreadCountAction, markNotificationsReadAction, markAllNotificationsReadAction } from "@/lib/actions/notifications"
 import { playAlertSound } from "@/lib/alertSound"
+import { EnablePushButton } from "@/components/layout/EnablePushButton"
 
 type Notif = { id: string; title: string; body: string | null; leadId: string | null; readAt: Date | null };
 
@@ -78,27 +79,28 @@ export function NotificationBell() {
     };
   }, [router, publish]);
 
-  // Mark exactly what was shown as read, and drop the badge by that many.
-  async function markShown(rows: Notif[]) {
-    const unread = rows.filter((n) => !n.readAt).map((n) => n.id);
-    if (unread.length === 0) return;
-    await markNotificationsReadAction(unread).catch(() => {});
-    publish(Math.max(0, (last.current ?? 0) - unread.length));
+  // Read state is explicit: clicking a notification marks it read; "Mark all read" clears the rest.
+  async function markOne(n: Notif) {
+    if (n.readAt) return;
+    setItems((xs) => xs.map((x) => (x.id === n.id ? { ...x, readAt: new Date() } : x)));
+    publish(Math.max(0, (last.current ?? 0) - 1));
+    await markNotificationsReadAction([n.id]).catch(() => {});
+  }
+
+  async function markAll() {
+    setItems((xs) => xs.map((x) => (x.readAt ? x : { ...x, readAt: new Date() })));
+    publish(0);
+    await markAllNotificationsReadAction().catch(() => {});
   }
 
   async function onOpen(open: boolean) {
-    if (!open) {
-      // Rows shown this time now render as read next time.
-      setItems((xs) => xs.map((n) => (n.readAt ? n : { ...n, readAt: new Date() })));
-      return;
-    }
+    if (!open) return;
     setState("loading");
     try {
       const res = await listNotificationsAction();
       setItems(res.items as Notif[]);
       setHasMore(res.hasMore);
       setState("idle");
-      await markShown(res.items as Notif[]);
     } catch {
       setState("error");
     }
@@ -112,7 +114,6 @@ export function NotificationBell() {
       const res = await listNotificationsAction({ cursor });
       setItems((xs) => [...xs, ...(res.items as Notif[])]);
       setHasMore(res.hasMore);
-      await markShown(res.items as Notif[]);
     } catch {
       setState("error");
     } finally {
@@ -134,7 +135,17 @@ export function NotificationBell() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80 max-h-[70vh] overflow-y-auto">
-        <DropdownMenuLabel>Notifications</DropdownMenuLabel>
+        <div className="flex items-center justify-between pr-1">
+          <DropdownMenuLabel>Notifications</DropdownMenuLabel>
+          <div className="flex items-center gap-1">
+            <EnablePushButton mode="icon" />
+            {count > 0 && (
+              <button type="button" onClick={() => void markAll()} className="rounded px-2 py-1 text-xs font-medium text-primary hover:bg-accent">
+                Mark all read
+              </button>
+            )}
+          </div>
+        </div>
         <DropdownMenuSeparator />
         {state === "loading" && items.length === 0 ? (
           <div className="px-3 py-6 text-center text-sm text-muted-foreground">Loading…</div>
@@ -152,8 +163,8 @@ export function NotificationBell() {
                 </div>
               );
               return n.leadId
-                ? <Link key={n.id} href={`/leads/${n.leadId}`} className="block hover:bg-accent">{inner}</Link>
-                : <div key={n.id}>{inner}</div>;
+                ? <Link key={n.id} href={`/leads/${n.leadId}`} onClick={() => void markOne(n)} className="block hover:bg-accent">{inner}</Link>
+                : <div key={n.id} onClick={() => void markOne(n)} className="cursor-pointer hover:bg-accent">{inner}</div>;
             })}
             {hasMore && (
               <button
