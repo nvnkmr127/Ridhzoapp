@@ -17,7 +17,19 @@ import { sql } from 'drizzle-orm';
 const ORG_ID = '00000000-0000-0000-0000-000000000002';
 const USER_ID = '00000000-0000-0000-0000-000000000001';
 
+// The seed creates a known admin (admin@acme.com / password123). Refuse to run it against anything but a
+// local database unless explicitly told to — a laptop `.env` often points at a shared/remote DB.
+function assertLocalDatabase() {
+  const url = process.env.DATABASE_URL ?? "";
+  const local = /@(localhost|127\.0\.0\.1|\[::1\]|postgres)(:|\/|$)/.test(url);
+  if (!local && process.env.ALLOW_REMOTE_SEED !== "1") {
+    console.error("Refusing to seed a non-local database (it creates admin@acme.com / password123). Set ALLOW_REMOTE_SEED=1 if you really mean it.");
+    process.exit(1);
+  }
+}
+
 async function seed() {
+  assertLocalDatabase();
   console.log('Seeding database with dummy data...');
 
   // 1. Organization

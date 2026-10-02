@@ -168,7 +168,7 @@ export function LeadImportWizard({ children }: { children: React.ReactNode }) {
         setSimResult(`${analysis.newCount} will import · ${analysis.duplicateCount} duplicates skipped · ${analysis.errorCount} rows with errors.`);
       }
     } catch {
-      toast({ variant: "destructive", title: "Simulation failed", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Simulation failed", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     }
   }
 
@@ -185,7 +185,7 @@ export function LeadImportWizard({ children }: { children: React.ReactNode }) {
       setOpen(false); reset();
       router.refresh();
     } catch {
-      toast({ variant: "destructive", title: "Import failed", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Import failed", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusy(false);
     }

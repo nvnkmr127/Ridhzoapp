@@ -38,6 +38,9 @@ export function validateEnv(): void {
   }
 
   warnInsecureTransport();
+  if (process.env.AI_GATEWAY_API_KEY && !process.env.AI_AGENT_MODEL?.trim()) {
+    console.warn("[env] AI_AGENT_MODEL is not set — the assistant's tool-calling falls back to AI_MODEL / a built-in default. Pick a tool-capable model, and confirm the AI Gateway's data-retention / DPA terms: lead names, notes and messages are sent to it.");
+  }
   if (process.env.NODE_ENV === "production" && !process.env.EMAIL_SECRET_KEY?.trim()) {
     console.error("[env] SECURITY: EMAIL_SECRET_KEY is not set — stored secrets (SMTP, Meta tokens, webhook secrets) are encrypted with NEXTAUTH_SECRET, so rotating the session secret would destroy them. Set a separate EMAIL_SECRET_KEY.");
   }

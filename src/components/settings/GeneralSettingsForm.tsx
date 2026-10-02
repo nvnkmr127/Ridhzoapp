@@ -345,7 +345,7 @@ export function GeneralSettingsForm({
       setDirty(false);
       toast({ title: "Settings saved" });
     } catch {
-      toast({ variant: "destructive", title: "Failed to save settings", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Failed to save settings", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setSaving(false);
     }

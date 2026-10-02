@@ -39,7 +39,7 @@ export function RolesManager({ initialRoles, memberCounts }: { initialRoles: Rol
       setName("");
       toast({ title: "Role created", description: "Now tick what people with this role can do." });
     } catch {
-      toast({ variant: "destructive", title: "Could not create role", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not create role", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setSaving(false);
     }
@@ -56,7 +56,7 @@ export function RolesManager({ initialRoles, memberCounts }: { initialRoles: Rol
       setRoles((prev) => prev.map((r) => (r.id === renaming.id ? { ...r, name: (res.data as Role).name } : r)));
       setRenaming(null);
     } catch {
-      toast({ variant: "destructive", title: "Could not rename role", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not rename role", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     }
   }
 
@@ -75,7 +75,7 @@ export function RolesManager({ initialRoles, memberCounts }: { initialRoles: Rol
       }
     } catch {
       setRoles((prev) => prev.map((r) => (r.id === role.id ? role : r)));
-      toast({ variant: "destructive", title: "Could not update permissions", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not update permissions", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusyFor(role.id, false);
     }
@@ -92,7 +92,7 @@ export function RolesManager({ initialRoles, memberCounts }: { initialRoles: Rol
       setRoles((p) => p.filter((r) => r.id !== role.id));
       toast({ title: "Role deleted" });
     } catch {
-      toast({ variant: "destructive", title: "Could not delete role", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not delete role", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     }
   }
 

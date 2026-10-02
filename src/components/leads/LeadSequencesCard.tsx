@@ -80,7 +80,7 @@ export function LeadSequencesCard({ leadId, availableSequences = [], initialEnro
       });
       router.refresh();
     } catch {
-      toast({ variant: "destructive", title: `Couldn't ${kind} the sequence`, description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: `Couldn't ${kind} the sequence`, description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setPending(null);
     }
@@ -104,7 +104,7 @@ export function LeadSequencesCard({ leadId, availableSequences = [], initialEnro
       }
       setOpen(false);
     } catch {
-      toast({ variant: "destructive", title: "Couldn't enroll", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Couldn't enroll", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setPending(null);
     }

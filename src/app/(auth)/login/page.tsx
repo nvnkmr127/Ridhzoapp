@@ -22,8 +22,10 @@ import { COUNTRY_CODES } from "@/lib/countryCodes";
 import { captureAttribution } from "@/lib/tracking/utm";
 
 const DEV = process.env.NODE_ENV === "development";
-const DEV_EMAIL = process.env.NEXT_PUBLIC_DEV_LOGIN_EMAIL || "admin@acme.com";
-const DEV_PASSWORD = process.env.NEXT_PUBLIC_DEV_LOGIN_PASSWORD || "password123";
+// Dev-only convenience (the seeded demo user). Gated on DEV so the literals are dead-code-eliminated from
+// production bundles instead of shipping a known credential to every visitor.
+const DEV_EMAIL = DEV ? process.env.NEXT_PUBLIC_DEV_LOGIN_EMAIL || "admin@acme.com" : "";
+const DEV_PASSWORD = DEV ? process.env.NEXT_PUBLIC_DEV_LOGIN_PASSWORD || "password123" : "";
 
 const loginSchema = z.object({
   email: z.string().trim().min(3, "Enter your email or phone number"),

@@ -83,7 +83,7 @@ export function WhatsAppSendBox({
       setBody("");
       router.refresh();
     } catch {
-      toast({ variant: "destructive", title: "Not sent", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Not sent", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setSending(false);
     }

@@ -4,8 +4,8 @@ import { and, asc, count, eq, gt, isNull, sql } from "drizzle-orm";
 import { PlatformConfigService } from "@/domains/platform/configService";
 import { canonicalPlan, trialExpired } from "./planNames";
 
-// Per-plan ceilings. Infinity = unlimited. Enforcement lives here; charging (Stripe) is separate
-// and needs external keys — the plan column is set by that flow, which isn't wired yet.
+// Per-plan ceilings. Infinity = unlimited. Enforcement lives here; charging is Razorpay
+// (domains/billing/service + the /api/webhooks/razorpay route), which sets the org's plan column.
 // aiCredits = AI generations per calendar month (draft, recap, assistant turn, sequence, improve).
 // aiAutoTag = background AI tagging of inbound replies (paid only — it would silently burn credits).
 // branding = "Powered by Ridhzo" on hosted web forms.

@@ -108,7 +108,7 @@ export function LeadRemindersTab({ leadId, initialReminders, userNames = {}, lea
     } catch {
       toast({
         title: "Couldn't update the follow-up",
-        description: "We couldn't reach the server. Please try again.",
+        description: "Something went wrong. Check your connection, or you may not have permission for this, then try again.",
         variant: "destructive",
       });
     } finally {
@@ -146,7 +146,7 @@ export function LeadRemindersTab({ leadId, initialReminders, userNames = {}, lea
     } catch {
       toast({
         title: "Couldn't add the follow-up",
-        description: "We couldn't reach the server. Please try again.",
+        description: "Something went wrong. Check your connection, or you may not have permission for this, then try again.",
         variant: "destructive",
       });
     } finally {
@@ -172,7 +172,7 @@ export function LeadRemindersTab({ leadId, initialReminders, userNames = {}, lea
     } catch {
       toast({
         title: "Failed to update status",
-        description: "We couldn't reach the server. Please try again.",
+        description: "Something went wrong. Check your connection, or you may not have permission for this, then try again.",
         variant: "destructive",
       });
     }
@@ -193,7 +193,7 @@ export function LeadRemindersTab({ leadId, initialReminders, userNames = {}, lea
     } catch {
       toast({
         title: "Couldn't cancel the follow-up",
-        description: "We couldn't reach the server. Please try again.",
+        description: "Something went wrong. Check your connection, or you may not have permission for this, then try again.",
         variant: "destructive",
       });
     }

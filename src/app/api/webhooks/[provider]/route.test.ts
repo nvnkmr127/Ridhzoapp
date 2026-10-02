@@ -34,6 +34,13 @@ describe("generic lead webhook", () => {
     inserted.length = 0;
   });
 
+  it("refuses a source that has no webhook key (legacy rows) instead of accepting anyone", async () => {
+    source.webhookSecret = null;
+    const res = await call("generic_webhook", { body: JSON.stringify({ name: "Ada" }), type: "application/json" });
+    expect(res.status).toBe(401);
+    expect(inserted).toHaveLength(0);
+  });
+
   it("accepts a form-encoded post authenticated by ?key= (WordPress/Elementor style)", async () => {
     const res = await call("generic_webhook", { body: "Name=Ada&Email=ada%40x.com&Message=", type: "application/x-www-form-urlencoded", query: `&key=${SECRET}` });
     expect(res.status).toBe(202);

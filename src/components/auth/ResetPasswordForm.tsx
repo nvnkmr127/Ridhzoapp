@@ -46,7 +46,7 @@ export function ResetPasswordForm({ token, email }: { token: string; email: stri
       setMobile(onPhone);
       if (!onPhone) setTimeout(() => router.push("/login?notice=password-reset"), 2500);
     } catch {
-      setError("We couldn't reach the server. Please try again.");
+      setError("Something went wrong. Check your connection, or you may not have permission for this, then try again.");
     } finally {
       setSaving(false);
     }

@@ -179,7 +179,7 @@ export function LeadsTable({
       setSelected(new Set());
       router.refresh();
     } catch {
-      toast({ variant: "destructive", title: "Bulk action failed", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Bulk action failed", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusy(false);
     }
@@ -233,7 +233,7 @@ export function LeadsTable({
       toast({ title: `${lead.name} → ${statusMap.get(status)?.label ?? status}` });
       router.refresh();
     } catch {
-      toast({ variant: "destructive", title: "Couldn't change status", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Couldn't change status", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setSavingStatus(null);
     }
@@ -277,7 +277,7 @@ export function LeadsTable({
         description: res.data.truncated ? `Limited to the first ${res.data.count} of ${res.data.total}. Narrow the filters to export the rest.` : undefined,
       });
     } catch {
-      toast({ variant: "destructive", title: "Export failed", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Export failed", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setExporting(false);
     }
@@ -304,7 +304,7 @@ export function LeadsTable({
       setMsgBody(""); setMsgOpen(false); setSelected(new Set());
       router.refresh();
     } catch {
-      toast({ variant: "destructive", title: "Couldn't send", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Couldn't send", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setMsgSending(false);
     }

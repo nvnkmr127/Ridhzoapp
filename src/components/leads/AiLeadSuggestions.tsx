@@ -40,7 +40,7 @@ export function AiLeadSuggestions({ leadId, plan, onChange }: { leadId: string; 
       drop(id);
       router.refresh();
     } catch {
-      toast({ variant: "destructive", title: "Couldn't apply that", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Couldn't apply that", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusy(null);
     }

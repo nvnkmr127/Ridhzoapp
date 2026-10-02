@@ -43,7 +43,7 @@ export function EmailSendBox({ leadId, email, history = [] }: { leadId: string; 
       setSubject(""); setBody("");
       toast({ title: "Email sent", description: `Sent to ${email}` });
     } catch {
-      toast({ variant: "destructive", title: "Could not send", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not send", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setSending(false);
     }

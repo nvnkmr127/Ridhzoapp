@@ -30,7 +30,7 @@ export function LogReplyBox({ leadId }: { leadId: string }) {
       setOpen(false);
       router.refresh();
     } catch {
-      toast({ variant: "destructive", title: "Reply not saved", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Reply not saved", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setSaving(false);
     }

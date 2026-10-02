@@ -43,7 +43,7 @@ export function SupportTickets({ initial, prefill }: { initial: Ticket[]; prefil
       setSubject(""); setBody(""); setCategory("technical");
       toast({ title: "Ticket sent", description: "We'll reply here and notify you." });
     } catch {
-      setStatus({ kind: "error", text: "We couldn't reach the server. Please try again." });
+      setStatus({ kind: "error", text: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusy(false);
     }
@@ -57,7 +57,7 @@ export function SupportTickets({ initial, prefill }: { initial: Ticket[]; prefil
       setTickets((t) => t.map((x) => (x.id === id ? res.data : x)));
       setReply("");
     } catch {
-      toast({ variant: "destructive", title: "Couldn't send", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Couldn't send", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusy(false);
     }

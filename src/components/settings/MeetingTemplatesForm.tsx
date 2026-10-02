@@ -39,7 +39,7 @@ export function MeetingTemplatesForm({
       const res = await saveMeetingTemplatesAction(f);
       toast(res.ok ? { title: "Templates saved" } : { variant: "destructive", title: "Not saved", description: res.message });
     } catch {
-      toast({ variant: "destructive", title: "Not saved", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Not saved", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setSaving(false);
     }

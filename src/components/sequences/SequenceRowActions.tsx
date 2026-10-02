@@ -44,7 +44,7 @@ export function SequenceRowActions({ id, name, isActive = true }: { id: string; 
       toast({ title: "Sequence deleted" });
       router.refresh();
     } catch {
-      toast({ variant: "destructive", title: "Couldn't delete", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Couldn't delete", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
       setBusy(false);
     }
   }

@@ -1,4 +1,5 @@
 "use client"
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import * as React from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -21,6 +22,7 @@ const CHANNELS = ["whatsapp", "sms", "email"] as const;
 
 export function TemplatesManager({ initialTemplates }: { initialTemplates: Template[] }) {
   const { toast } = useToast();
+  const [confirm, confirmDialog] = useConfirm();
   const [templates, setTemplates] = React.useState<Template[]>(initialTemplates);
   const [name, setName] = React.useState("");
   const [channel, setChannel] = React.useState<(typeof CHANNELS)[number]>("whatsapp");
@@ -63,13 +65,14 @@ export function TemplatesManager({ initialTemplates }: { initialTemplates: Templ
       }
       resetForm();
     } catch {
-      toast({ variant: "destructive", title: "Could not save template", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not save template", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setSaving(false);
     }
   }
 
   async function remove(id: string) {
+    if (!(await confirm({ title: "Delete this template?", description: "Automations and sequences that use it will no longer find it.", confirmLabel: "Delete", destructive: true }))) return;
     const prev = templates;
     setTemplates((t) => t.filter((x) => x.id !== id));
     try {
@@ -80,12 +83,13 @@ export function TemplatesManager({ initialTemplates }: { initialTemplates: Templ
       }
     } catch {
       setTemplates(prev);
-      toast({ variant: "destructive", title: "Could not delete template", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not delete template", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     }
   }
 
   return (
     <div className="space-y-6">
+      {confirmDialog}
       <div className="border rounded-2xl p-6 bg-card space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="font-semibold">{editingId ? "Edit template" : "New template"}</h3>

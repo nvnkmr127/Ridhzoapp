@@ -55,7 +55,7 @@ export function SaveViewDialog({
       onOpenChange(false);
       onSaved?.(res.data.id);
     } catch {
-      toast({ variant: "destructive", title: "Failed to save view", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Failed to save view", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusy(false);
     }

@@ -43,7 +43,7 @@ export function AccountSetupPrompt({ userId, status, pendingEmail }: { userId: s
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
     setMsg(null);
-    try { await fn(); } catch { setMsg({ kind: "error", text: "We couldn't reach the server. Please try again." }); } finally { setBusy(false); }
+    try { await fn(); } catch { setMsg({ kind: "error", text: "Something went wrong. Check your connection, or you may not have permission for this, then try again." }); } finally { setBusy(false); }
   };
 
   const sendEmail = () => run(async () => {

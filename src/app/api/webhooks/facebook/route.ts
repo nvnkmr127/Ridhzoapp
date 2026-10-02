@@ -18,7 +18,8 @@ async function hasSourceForPage(pageId?: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-const FB_VERIFY_TOKEN = process.env.FACEBOOK_VERIFY_TOKEN || "ridhzo_fb_webhook_secret";
+// No built-in default: a token that lives in the repo is no secret. Unset = the handshake is refused.
+const FB_VERIFY_TOKEN = process.env.FACEBOOK_VERIFY_TOKEN ?? "";
 
 export async function GET(req: NextRequest) {
   const searchParams = req.nextUrl.searchParams;
@@ -26,6 +27,10 @@ export async function GET(req: NextRequest) {
   const hubVerifyToken = searchParams.get("hub.verify_token");
   const hubChallenge = searchParams.get("hub.challenge");
 
+  if (!FB_VERIFY_TOKEN) {
+    console.error("[FACEBOOK_WEBHOOK] FACEBOOK_VERIFY_TOKEN is not set — refusing the verification handshake");
+    return NextResponse.json({ success: false, error: "Webhook verification not configured" }, { status: 503 });
+  }
   const { verified, challenge } = FacebookLeadMappingService.verifyFacebookWebhook(
     hubMode,
     hubVerifyToken,

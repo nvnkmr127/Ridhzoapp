@@ -38,7 +38,7 @@ export function MeetingLocationsManager({ initial }: { initial: Loc[] }) {
       setEditingId(null);
       router.refresh();
     } catch {
-      toast({ variant: "destructive", title: "Location not saved", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Location not saved", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusy(false);
     }

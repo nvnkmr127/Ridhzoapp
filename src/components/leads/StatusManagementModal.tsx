@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import * as React from "react";
 import { LossReasonsEditor } from "@/components/settings/LossReasonsEditor";
 import { StatusPlaybooksEditor } from "@/components/settings/StatusPlaybooksEditor";
@@ -40,6 +41,7 @@ export function StatusManagementModal({
   onOpenChange: (open: boolean) => void;
 }) {
   const { toast } = useToast();
+  const [confirm, confirmDialog] = useConfirm();
   const [statuses, setStatuses] = React.useState<CustomStatusItem[]>([]);
   const [metrics, setMetrics] = React.useState<StatusDurationMetric[]>([]);
   const [loading, setLoading] = React.useState(false);
@@ -96,7 +98,7 @@ export function StatusManagementModal({
       setNewLabel("");
       loadData();
     } catch {
-      toast({ variant: "destructive", title: "Could not save custom status", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not save custom status", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setSaving(false);
     }
@@ -117,6 +119,7 @@ export function StatusManagementModal({
   }
 
   async function handleDelete(key: string) {
+    if (!(await confirm({ title: "Delete this status?", description: "Leads already on it keep the key but lose its label and colour.", confirmLabel: "Delete", destructive: true }))) return;
     try {
       const res = await deleteCustomStatusAction(key);
       if (!res.ok) {
@@ -126,13 +129,14 @@ export function StatusManagementModal({
       toast({ title: "Status deleted" });
       loadData();
     } catch {
-      toast({ variant: "destructive", title: "Failed to delete status", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Failed to delete status", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     }
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+      {confirmDialog}
         <DialogHeader>
           <DialogTitle className="text-xl font-bold">Lead Status Schema & Analytics</DialogTitle>
           <DialogDescription>

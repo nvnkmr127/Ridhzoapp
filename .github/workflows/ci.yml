@@ -10,11 +10,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so the secret scan covers past commits too
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
+      # Secrets must never land in git (history included). Fails the build on a finding.
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Known-vulnerable production dependencies. Reported on every run; promote to a hard gate (remove
+      # continue-on-error) once the current backlog is cleared.
+      - name: Dependency audit
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true
       # The real correctness gates. Build is skipped here because it needs a live DB/Redis;
       # run it in a deploy job with those services provisioned.
       - name: Typecheck
@@ -40,7 +52,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       # Catches a migration that only works on a database that already has older rows/columns.

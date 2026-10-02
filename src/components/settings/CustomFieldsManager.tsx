@@ -72,7 +72,7 @@ function FieldDialog({ field, fields, onClose, onSaved }: { field: Field | "new"
       }
       onSaved(res.data as Field);
     } catch {
-      setStatus({ kind: "error", text: "We couldn't reach the server. Please try again." });
+      setStatus({ kind: "error", text: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setSaving(false);
     }
@@ -178,7 +178,7 @@ function DeleteDialog({ field, onClose, onDeleted, onHidden }: { field: Field; o
   React.useEffect(() => {
     customFieldUsageAction(field.id)
       .then((r) => (r.ok ? setUsage(r.data) : setStatus({ kind: "error", text: r.message })))
-      .catch(() => setStatus({ kind: "error", text: "We couldn't reach the server. Please try again." }));
+      .catch(() => setStatus({ kind: "error", text: "Something went wrong. Check your connection, or you may not have permission for this, then try again." }));
   }, [field.id]);
 
   async function act(kind: "delete" | "hide") {
@@ -188,7 +188,7 @@ function DeleteDialog({ field, onClose, onDeleted, onHidden }: { field: Field; o
       if (!res.ok) return setStatus({ kind: "error", text: res.message });
       if (kind === "delete") onDeleted(); else onHidden(res.data as Field);
     } catch {
-      setStatus({ kind: "error", text: "We couldn't reach the server. Please try again." });
+      setStatus({ kind: "error", text: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusy(false);
     }
@@ -249,7 +249,7 @@ export function CustomFieldsManager({ initial }: { initial: Field[] }) {
       }
     } catch {
       setFields(prev);
-      toast({ variant: "destructive", title: "Could not reorder", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not reorder", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setReordering(false);
     }

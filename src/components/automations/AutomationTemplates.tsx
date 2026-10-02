@@ -27,7 +27,7 @@ export function AutomationTemplates() {
       toast({ title: "Automation created", description: "Review and activate it below." });
       router.refresh();
     } catch {
-      toast({ variant: "destructive", title: "Couldn't create automation", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Couldn't create automation", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setPending(null);
     }

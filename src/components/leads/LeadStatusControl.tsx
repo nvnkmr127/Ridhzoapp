@@ -84,7 +84,7 @@ export function LeadStatusControl({ leadId, status, className, hasFollowUp = tru
       router.refresh();
     } catch {
       setValue(prev);
-      toast({ variant: "destructive", title: "Could not change status", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not change status", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusy(false);
     }

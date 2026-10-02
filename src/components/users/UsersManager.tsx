@@ -105,7 +105,7 @@ export function UsersManager({
         toast({ title: "Invite created — email not sent", description: "Use “Copy link” on the invite to share it yourself." });
       }
     } catch {
-      toast({ variant: "destructive", title: "Could not send invite", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not send invite", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setInviting(false);
     }
@@ -124,7 +124,7 @@ export function UsersManager({
       setTeamName("");
       toast({ title: "Team created" });
     } catch {
-      toast({ variant: "destructive", title: "Could not create team", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not create team", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setCreatingTeam(false);
     }
@@ -141,7 +141,7 @@ export function UsersManager({
       setTeams((prev) => prev.map((t) => (t.id === editingTeam.id ? (res.data as Team) : t)));
       setEditingTeam(null);
     } catch {
-      toast({ variant: "destructive", title: "Could not rename team", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not rename team", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     }
   }
 
@@ -158,7 +158,7 @@ export function UsersManager({
       setUsers((prev) => prev.map((u) => (u.teamId === t.id ? { ...u, teamId: null } : u)));
       toast({ title: "Team deleted" });
     } catch {
-      toast({ variant: "destructive", title: "Could not delete team", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not delete team", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     }
   }
 
@@ -173,7 +173,7 @@ export function UsersManager({
       }
     } catch {
       setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, teamId: u.teamId } : x)));
-      toast({ variant: "destructive", title: "Could not update team", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not update team", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     }
   }
 
@@ -189,7 +189,7 @@ export function UsersManager({
       toast({ title: "Role updated", description: `${fullName(u) || u.email} is now ${roleName(roleId) ?? "updated"}.` });
     } catch {
       setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, roleId: u.roleId } : x)));
-      toast({ variant: "destructive", title: "Could not update role", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not update role", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     }
   }
 
@@ -235,7 +235,7 @@ export function UsersManager({
         description: way === "phone" ? "They can sign in with their mobile number and the WhatsApp code." : "Share the password with them securely; they can change it after signing in.",
       });
     } catch {
-      toast({ variant: "destructive", title: "Could not add member", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not add member", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setSaving(false);
     }
@@ -254,7 +254,7 @@ export function UsersManager({
       toast({ title: "Invitation revoked" });
     } catch {
       setInvites(prev);
-      toast({ variant: "destructive", title: "Could not revoke invite", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not revoke invite", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     }
   }
 
@@ -268,7 +268,7 @@ export function UsersManager({
       }
     } catch {
       setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, isActive: false } : x)));
-      toast({ variant: "destructive", title: "Could not activate", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not activate", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     }
   }
 
@@ -306,7 +306,7 @@ export function UsersManager({
       });
       setPending(null);
     } catch {
-      toast({ variant: "destructive", title: "Something went wrong", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Something went wrong", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setConfirming(false);
     }

@@ -110,7 +110,7 @@ export function LeadHeaderQuickActions({ lead }: LeadHeaderQuickActionsProps) {
       setCustomDate("");
       router.refresh();
     } catch {
-      toast({ title: "Failed to update follow-up", description: "We couldn't reach the server. Please try again.", variant: "destructive" });
+      toast({ title: "Failed to update follow-up", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again.", variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -162,7 +162,7 @@ export function LeadHeaderQuickActions({ lead }: LeadHeaderQuickActionsProps) {
       if (outcome === "interested") setReminderOpen(true); // interested → plan the next step now
       router.refresh();
     } catch {
-      toast({ variant: "destructive", title: "Status not changed", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Status not changed", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setSavingCall(false);
     }

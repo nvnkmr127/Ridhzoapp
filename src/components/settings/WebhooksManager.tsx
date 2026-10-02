@@ -62,7 +62,7 @@ export function WebhooksManager({ initial, dlqCount, stats }: { initial: Endpoin
       setEvents(["lead.created"]);
       toast({ title: "Webhook added", description: "We'll POST a signed payload on the selected events." });
     } catch {
-      toast({ variant: "destructive", title: "Couldn't add webhook", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Couldn't add webhook", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setSaving(false);
     }

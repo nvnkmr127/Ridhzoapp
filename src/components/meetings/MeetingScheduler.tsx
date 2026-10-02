@@ -202,7 +202,7 @@ export function MeetingScheduler({
       }
       setDone({ ...res.data.notice, moved });
     } catch {
-      toast({ variant: "destructive", title: "Meeting not saved", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Meeting not saved", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setSaving(false);
     }

@@ -18,14 +18,20 @@ const LABELS: Record<string, string> = {
 export const unsubscribeLabel = (category: string) => LABELS[category] ?? "emails like this";
 
 const secret = () => process.env.NEXTAUTH_SECRET || process.env.EMAIL_SECRET_KEY || "";
-export const unsubscribeToken = (email: string, category: string) =>
-  createHmac("sha256", secret()).update(`${email.trim().toLowerCase()}|${category}`).digest("base64url");
+// New links are signed with a key derived for THIS purpose, so the session secret is never used raw to sign
+// anything an attacker can see output of. Links already sitting in inboxes (signed with the raw secret)
+// keep working: verification accepts both. (They deliberately never expire — an unsubscribe must work.)
+const sign = (key: string, email: string, category: string) =>
+  createHmac("sha256", key).update(`${email.trim().toLowerCase()}|${category}`).digest("base64url");
+export const unsubscribeToken = (email: string, category: string) => sign(`${secret()}:unsubscribe`, email, category);
 
 export function verifyUnsubscribe(email: string, category: string, token: string) {
   if (!secret() || !email || !category || !token) return false;
-  const a = Buffer.from(unsubscribeToken(email, category));
   const b = Buffer.from(token);
-  return a.length === b.length && timingSafeEqual(a, b);
+  return [unsubscribeToken(email, category), sign(secret(), email, category)].some((good) => {
+    const a = Buffer.from(good);
+    return a.length === b.length && timingSafeEqual(a, b);
+  });
 }
 
 export async function applyUnsubscribe(email: string, category: string) {

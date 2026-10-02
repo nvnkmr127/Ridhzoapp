@@ -170,7 +170,7 @@ export function LeadsFilterBar({
                       applyParams({ viewId: null, filters: null });
                       router.refresh();
                     } catch {
-                      toast({ variant: "destructive", title: "View not deleted", description: "We couldn't reach the server. Please try again." });
+                      toast({ variant: "destructive", title: "View not deleted", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
                     }
                   }}
                 >
@@ -270,7 +270,7 @@ export function LeadsFilterBar({
                   toast({ title: "View updated" });
                   router.refresh();
                 } catch {
-                  toast({ variant: "destructive", title: "View not updated", description: "We couldn't reach the server. Please try again." });
+                  toast({ variant: "destructive", title: "View not updated", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
                 }
               }}
             >

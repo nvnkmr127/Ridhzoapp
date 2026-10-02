@@ -73,7 +73,7 @@ export function LeadAssignControl({
       router.refresh();
     } catch {
       setValue(prev);
-      toast({ variant: "destructive", title: "Could not reassign", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not reassign", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusy(false);
       setConfirmFor(null);

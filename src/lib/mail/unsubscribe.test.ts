@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
+import { createHmac } from "crypto";
 import { unsubscribeToken, verifyUnsubscribe, unsubscribeLabel } from "./unsubscribe";
 import { invoicePdf } from "@/domains/billing/invoicePdf";
 
@@ -15,6 +16,10 @@ describe("unsubscribe links", () => {
     expect(verifyUnsubscribe("a@x.com", "newsletter", t)).toBe(false);
     expect(verifyUnsubscribe("a@x.com", "daily_summary", "forged")).toBe(false);
     expect(verifyUnsubscribe("a@x.com", "daily_summary", "")).toBe(false);
+  });
+  it("still accepts links signed the old way (already sitting in inboxes)", () => {
+    const legacy = createHmac("sha256", "test-secret").update("a@x.com|newsletter").digest("base64url");
+    expect(verifyUnsubscribe("a@x.com", "newsletter", legacy)).toBe(true);
   });
   it("labels unknown categories generically", () => {
     expect(unsubscribeLabel("nope")).toBe("emails like this");

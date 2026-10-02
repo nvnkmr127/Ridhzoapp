@@ -27,7 +27,7 @@ export function AutomationCard({ id, name, isActive, overPlan = false, canManage
       toast({ title: !active ? "Automation activated" : "Automation paused" });
       router.refresh();
     } catch {
-      toast({ variant: "destructive", title: "Couldn't update", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Couldn't update", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusy(false);
     }
@@ -46,7 +46,7 @@ export function AutomationCard({ id, name, isActive, overPlan = false, canManage
       toast({ title: "Automation deleted" });
       router.refresh();
     } catch {
-      toast({ variant: "destructive", title: "Couldn't delete", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Couldn't delete", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
       setBusy(false);
     }
   }

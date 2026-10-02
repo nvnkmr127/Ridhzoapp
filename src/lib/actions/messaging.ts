@@ -33,7 +33,7 @@ export async function createTemplateAction(input: z.infer<typeof createSchema>) 
   if (!parsed.success) return fail("VALIDATION", "Please provide a name, channel, and message body.");
   try {
     const [row] = await db.insert(messageTemplates).values({ ...parsed.data, organizationId }).returning();
-    revalidatePath("/templates");
+    revalidatePath("/settings/templates");
     return ok(row);
   } catch (e) {
     return actionFail(e);
@@ -54,7 +54,7 @@ export async function updateTemplateAction(input: z.infer<typeof updateSchema>) 
       .where(and(eq(messageTemplates.id, id), eq(messageTemplates.organizationId, organizationId)))
       .returning();
     if (!row) return fail("NOT_FOUND", "This template no longer exists.");
-    revalidatePath("/templates");
+    revalidatePath("/settings/templates");
     return ok(row);
   } catch (e) {
     return actionFail(e);
@@ -67,7 +67,7 @@ export async function deleteTemplateAction(id: string) {
     await db
       .delete(messageTemplates)
       .where(and(eq(messageTemplates.id, id), eq(messageTemplates.organizationId, organizationId)));
-    revalidatePath("/templates");
+    revalidatePath("/settings/templates");
     return ok({ deleted: true });
   } catch (e) {
     return actionFail(e);

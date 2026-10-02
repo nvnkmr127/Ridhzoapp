@@ -92,7 +92,7 @@ export function EmailSettingsManager({ initial, timezone = "Asia/Kolkata" }: { i
       applyView(res.data.view);
       toast({ title: success(res.data) });
     } catch {
-      setStatus({ kind: "error", text: "We couldn't reach the server. Please try again." });
+      setStatus({ kind: "error", text: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusy(null);
     }

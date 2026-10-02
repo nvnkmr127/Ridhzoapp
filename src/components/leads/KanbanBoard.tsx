@@ -107,7 +107,7 @@ export function KanbanBoard({
       const res = await changeLeadStatusAction(id, targetStatus);
       if (!res.ok) revert(res.message);
     } catch {
-      revert("We couldn't reach the server. Please try again.");
+      revert("Something went wrong. Check your connection, or you may not have permission for this, then try again.");
     }
   }
 

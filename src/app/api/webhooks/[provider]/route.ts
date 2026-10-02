@@ -106,7 +106,12 @@ export async function POST(
     // Authentication, either way: (a) the secret itself as `?key=` / `x-webhook-key` — for form tools
     // that can't compute signatures — or (b) an HMAC SHA-256 signature of the raw body.
     const secret = readSecret(source.webhookSecret); // stored encrypted; legacy rows are plaintext
-    if (secret) {
+    // A source with NO secret (very old rows) used to be open to anyone who knew its id. Refuse instead:
+    // the owner regenerates the key in Settings → Sources, which creates one.
+    if (!secret) {
+      return NextResponse.json({ success: false, error: "This source has no webhook key yet. Regenerate it in Settings → Sources." }, { status: 401 });
+    }
+    {
       const key = req.nextUrl.searchParams.get("key") ?? req.headers.get("x-webhook-key");
       const signature = req.headers.get("x-hub-signature-256");
       if (key) {

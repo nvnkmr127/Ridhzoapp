@@ -25,7 +25,7 @@ export function useLogContact(leadId: string) {
         router.refresh();
         return true;
       } catch {
-        toast({ variant: "destructive", title: "Contact not logged", description: "We couldn't reach the server. Please try again." });
+        toast({ variant: "destructive", title: "Contact not logged", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
         return false;
       }
     },

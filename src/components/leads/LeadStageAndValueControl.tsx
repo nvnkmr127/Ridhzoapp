@@ -44,7 +44,7 @@ export function LeadStageAndValueControl({
       }
       toast({ title: "Lead stage updated" });
     } catch {
-      toast({ title: "Failed to update stage", description: "We couldn't reach the server. Please try again.", variant: "destructive" });
+      toast({ title: "Failed to update stage", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again.", variant: "destructive" });
     } finally {
       setLoading(false);
     }

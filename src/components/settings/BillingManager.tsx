@@ -115,7 +115,7 @@ export function BillingManager({
       toast({ title: "Plan switched", description: `You're now on ${NAMES[target] ?? target} (testing mode — no payment taken).` });
       router.refresh();
     } catch {
-      toast({ variant: "destructive", title: "Could not switch plan", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not switch plan", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusy(null);
     }
@@ -196,7 +196,7 @@ export function BillingManager({
       });
       router.refresh();
     } catch {
-      toast({ variant: "destructive", title: "Could not cancel", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not cancel", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusy(null);
     }

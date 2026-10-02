@@ -50,7 +50,7 @@ export function FollowUpActions({
       router.refresh();
       return true;
     } catch {
-      toast({ variant: "destructive", title: "Action failed", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Action failed", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
       return false;
     } finally {
       setBusy(false);

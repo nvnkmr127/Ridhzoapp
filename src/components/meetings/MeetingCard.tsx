@@ -73,7 +73,7 @@ export function MeetingCard({
       router.refresh();
       return true;
     } catch {
-      toast({ variant: "destructive", title: "Couldn't update the meeting", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Couldn't update the meeting", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
       return false;
     } finally {
       setBusy(false);
@@ -115,7 +115,7 @@ export function MeetingCard({
       });
       router.refresh();
     } catch {
-      toast({ variant: "destructive", title: "Couldn't send the confirmation", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Couldn't send the confirmation", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusy(false);
     }
@@ -281,7 +281,7 @@ function OutcomeDialog({
       if (notice && notify && !notice.whatsappSent && lead.phone) setCancelText(notice.whatsappText);
       else onClose();
     } catch {
-      toast({ variant: "destructive", title: "Couldn't save", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Couldn't save", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setSaving(false);
     }

@@ -61,7 +61,7 @@ export function LeadCustomFields({ leadId, initialData, initialDefs }: { leadId:
       toast({ title: "Details saved" });
       router.refresh();
     } catch {
-      toast({ variant: "destructive", title: "Could not save details", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not save details", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setSaving(false);
     }

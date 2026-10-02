@@ -18,6 +18,8 @@
 - **Critical C1–C2, High H1–H5, H7–H11:** fixed in code (see git history). **H6 was a false finding** — a fresh database migrates cleanly (the table is created by `0018_shared_content`); the orphan duplicate file was removed.
 - **Medium M1–M21:** fixed in code, except where noted: M3 makes tenant arguments required in the follow-up, lead-assignment, status and source services but does **not** add Postgres row-level security; M15 adds key expiry and auto-revoke on user removal but not per-key scope lists or plan gating; M16 adds a 3-write cap and audit trail but not a human-confirm step; M17's audit writes remain best-effort; M13 needs `pg_trgm` available on the database (migration 0096 skips the indexes with a notice otherwise).
 
+- **Low L1–L16:** fixed except L14 (signup email enumeration, kept as a deliberate UX trade-off), L16 (`timestamp` → `timestamptz` is a large migration, deferred) and L13 (already handled in code — link-preview bots and the sender are excluded from view counts). The CI dependency audit is report-only for now.
+
 ## A. Executive Summary
 
 Ridhzo is a mature, unusually well-commented Next.js 15 / Drizzle / Postgres / BullMQ multi-tenant CRM. Typecheck is clean, 860 tests pass, org scoping in services is consistent, SSRF/webhook-signature/idempotency work has clearly been done with care, and secrets are not committed (`.env*` never appear in git history).

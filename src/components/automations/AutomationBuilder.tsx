@@ -153,7 +153,7 @@ export function AutomationBuilder({
       router.push("/automations");
     } catch (e) {
       console.error(e);
-      alert("We couldn't reach the server. Please try again.");
+      alert("Something went wrong. Check your connection, or you may not have permission for this, then try again.");
     } finally {
       setLoading(false);
     }

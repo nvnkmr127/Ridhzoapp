@@ -27,7 +27,7 @@ export function LossReasonsEditor() {
       setText(res.data.join("\n"));
       toast({ title: "Loss reasons saved" });
     } catch {
-      toast({ variant: "destructive", title: "Reasons not saved", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Reasons not saved", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setSaving(false);
     }

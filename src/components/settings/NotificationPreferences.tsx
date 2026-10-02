@@ -21,7 +21,7 @@ export function NotificationPreferences({ initialOptOut }: { initialOptOut: stri
       }
     } catch {
       setOptOut(prev);
-      toast({ variant: "destructive", title: "Could not save", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not save", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     }
   }
 

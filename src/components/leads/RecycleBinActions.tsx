@@ -23,7 +23,7 @@ export function RecycleBinRowActions({ leadId, canPurge }: { leadId: string; can
       toast({ title: "Lead restored" });
       router.refresh();
     } catch {
-      toast({ variant: "destructive", title: "Couldn't restore", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Couldn't restore", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusy(false);
     }
@@ -45,7 +45,7 @@ export function RecycleBinRowActions({ leadId, canPurge }: { leadId: string; can
       toast({ title: "Lead permanently deleted" });
       router.refresh();
     } catch {
-      toast({ variant: "destructive", title: "Couldn't delete", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Couldn't delete", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusy(false);
     }
@@ -87,7 +87,7 @@ export function EmptyBinButton() {
       toast({ title: `Emptied recycle bin`, description: `${purgedCount} lead${purgedCount === 1 ? "" : "s"} permanently deleted.` });
       router.refresh();
     } catch {
-      toast({ variant: "destructive", title: "Couldn't empty bin", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Couldn't empty bin", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusy(false);
     }

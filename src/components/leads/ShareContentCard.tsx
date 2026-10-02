@@ -57,7 +57,7 @@ export function ShareContentCard({
       setFormOpen(false);
       toast({ title: "Share link ready", description: "Copy it into WhatsApp — you'll be alerted when they open it." });
     } catch {
-      toast({ variant: "destructive", title: "Couldn't create link", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Couldn't create link", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusy(false);
     }

@@ -105,7 +105,7 @@ export function LeadIntelligenceManager({ initial, webhookBase, statuses }: { in
       }
       return res.data;
     } catch {
-      toast({ variant: "destructive", title: failTitle, description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: failTitle, description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
       return null;
     }
   }

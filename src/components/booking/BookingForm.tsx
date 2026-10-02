@@ -86,7 +86,7 @@ export function BookingForm({ slug, schedule }: { slug: string; schedule: Bookin
       const d = days.find((x) => x.date === date)?.label ?? date;
       setDone(`${d} at ${label12(Number(time.slice(0, 2)) * 60 + Number(time.slice(3)))}`);
     } catch {
-      toast({ variant: "destructive", title: "Could not book", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not book", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setSaving(false);
     }

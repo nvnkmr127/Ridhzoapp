@@ -19,7 +19,7 @@ export function GoogleConnectButton({ connected, configured }: { connected: bool
       setConnected(false);
       toast({ title: "Google Calendar disconnected" });
     } catch {
-      toast({ variant: "destructive", title: "Could not disconnect", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not disconnect", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     }
   }
 

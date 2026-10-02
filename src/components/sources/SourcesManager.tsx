@@ -509,7 +509,7 @@ export function SourcesManager({
         });
       }
     } catch {
-      toast({ variant: "destructive", title: `Failed to connect ${platform.name}`, description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: `Failed to connect ${platform.name}`, description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setConnectingId(null);
     }
@@ -528,7 +528,7 @@ export function SourcesManager({
       }
     } catch {
       setSources((prev) => prev.map((x) => (x.id === s.id ? { ...x, isActive: s.isActive } : x)));
-      toast({ variant: "destructive", title: "Could not update source", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not update source", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     }
   }, [toast]);
   const resume = React.useCallback((s: Source) => setActive(s, true), [setActive]);
@@ -547,7 +547,7 @@ export function SourcesManager({
       toast({ title: a.mode === "none" ? "New leads will stay unassigned" : "Assignment saved", description: a.mode === "none" ? undefined : "Applies to leads that arrive from now on." });
     } catch {
       setAssignments(prev);
-      toast({ variant: "destructive", title: "Could not save assignment", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not save assignment", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     }
   }, [toast]);
 
@@ -594,7 +594,7 @@ export function SourcesManager({
       }
       setAsk(null);
     } catch {
-      toast({ variant: "destructive", title: "Something went wrong", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Something went wrong", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setAskBusy(false);
     }

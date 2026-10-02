@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -40,6 +41,7 @@ interface LeadAttachmentsTabProps {
 
 export function LeadAttachmentsTab({ leadId, initialAttachments, userNames = {} }: LeadAttachmentsTabProps) {
   const router = useRouter();
+  const [confirm, confirmDialog] = useConfirm();
   const [attachments, setAttachments] = useState<AttachmentItem[]>(initialAttachments);
   const [showAdd, setShowAdd] = useState(false);
   const [attachMode, setAttachMode] = useState<"upload" | "link">("upload");
@@ -92,7 +94,7 @@ export function LeadAttachmentsTab({ leadId, initialAttachments, userNames = {} 
     } catch {
       toast({
         title: "Failed to upload file",
-        description: "We couldn't reach the server. Please try again.",
+        description: "Something went wrong. Check your connection, or you may not have permission for this, then try again.",
         variant: "destructive",
       });
     } finally {
@@ -129,7 +131,7 @@ export function LeadAttachmentsTab({ leadId, initialAttachments, userNames = {} 
     } catch {
       toast({
         title: "Failed to add attachment",
-        description: "We couldn't reach the server. Please try again.",
+        description: "Something went wrong. Check your connection, or you may not have permission for this, then try again.",
         variant: "destructive",
       });
     } finally {
@@ -138,6 +140,7 @@ export function LeadAttachmentsTab({ leadId, initialAttachments, userNames = {} 
   };
 
   const handleDelete = async (id: string) => {
+    if (!(await confirm({ title: "Remove this attachment?", description: "The file is permanently deleted from this lead.", confirmLabel: "Remove", destructive: true }))) return;
     try {
       const res = await deleteAttachmentAction(id, leadId);
       if (!res.ok) {
@@ -150,7 +153,7 @@ export function LeadAttachmentsTab({ leadId, initialAttachments, userNames = {} 
     } catch {
       toast({
         title: "Failed to delete attachment",
-        description: "We couldn't reach the server. Please try again.",
+        description: "Something went wrong. Check your connection, or you may not have permission for this, then try again.",
         variant: "destructive",
       });
     }
@@ -187,6 +190,7 @@ export function LeadAttachmentsTab({ leadId, initialAttachments, userNames = {} 
 
   return (
     <div className="space-y-6">
+      {confirmDialog}
       {/* Header Bar */}
       {/* Stacks on phones: the title used to wrap one word per line and push "Attach Link" off-screen. */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

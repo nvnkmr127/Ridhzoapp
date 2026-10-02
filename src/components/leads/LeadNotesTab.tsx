@@ -72,7 +72,7 @@ export function LeadNotesTab({ leadId, initialNotes }: LeadNotesTabProps) {
       toast({
         variant: "destructive",
         title: "Connection problem",
-        description: "We couldn't reach the server. Please try again.",
+        description: "Something went wrong. Check your connection, or you may not have permission for this, then try again.",
       });
     } finally {
       setAdding(false);
@@ -111,7 +111,7 @@ export function LeadNotesTab({ leadId, initialNotes }: LeadNotesTabProps) {
       toast({
         variant: "destructive",
         title: "Connection problem",
-        description: "We couldn't reach the server. Please try again.",
+        description: "Something went wrong. Check your connection, or you may not have permission for this, then try again.",
       });
     } finally {
       setSavingEdit(false);
@@ -134,7 +134,7 @@ export function LeadNotesTab({ leadId, initialNotes }: LeadNotesTabProps) {
       toast({
         variant: "destructive",
         title: "Connection problem",
-        description: "We couldn't reach the server. Please try again.",
+        description: "Something went wrong. Check your connection, or you may not have permission for this, then try again.",
       });
     } finally {
       setDeletingId(null);

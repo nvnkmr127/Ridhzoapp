@@ -35,7 +35,7 @@ export function ApiKeysManager({ initial }: { initial: ApiKey[] }) {
       setName("");
       setReadOnly(false);
     } catch {
-      toast({ variant: "destructive", title: "Could not create key", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not create key", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setSaving(false);
     }
@@ -51,7 +51,7 @@ export function ApiKeysManager({ initial }: { initial: ApiKey[] }) {
       }
       setKeys((prev) => prev.map((x) => (x.id === k.id ? { ...x, revokedAt: new Date() } : x)));
     } catch {
-      toast({ variant: "destructive", title: "Could not revoke", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not revoke", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     }
   }
 
@@ -69,7 +69,7 @@ export function ApiKeysManager({ initial }: { initial: ApiKey[] }) {
       toast({ title: "API key deleted" });
     } catch {
       setKeys(prev);
-      toast({ variant: "destructive", title: "Could not delete", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Could not delete", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     }
   }
 

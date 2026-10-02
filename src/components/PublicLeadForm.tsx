@@ -56,7 +56,7 @@ export function PublicLeadForm({
       }
       setDone(true);
     } catch {
-      setError("We couldn't reach the server. Please try again.");
+      setError("Something went wrong. Check your connection, or you may not have permission for this, then try again.");
     } finally {
       setSaving(false);
     }

@@ -193,7 +193,7 @@ export function LeadDistributionManager({
       setFormOpen(false);
       toast({ title: editing ? "Rule saved" : "Rule created" });
     } catch {
-      toast({ variant: "destructive", title: "Something went wrong", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Something went wrong", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setSaving(false);
     }

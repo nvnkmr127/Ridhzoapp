@@ -1,5 +1,6 @@
 "use client";
 
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -11,10 +12,12 @@ type Group = { key: string; match?: "email" | "phone" | "name"; leads: Lead[] };
 
 export function DuplicatesManager({ initial }: { initial: Group[] }) {
   const { toast } = useToast();
+  const [confirm, confirmDialog] = useConfirm();
   const [groups, setGroups] = React.useState<Group[]>(initial);
   const [busy, setBusy] = React.useState<string | null>(null);
 
   async function merge(group: Group, primaryId: string, duplicateId: string) {
+    if (!(await confirm({ title: "Merge these leads?", description: "The duplicate is merged into the older lead and permanently removed. This can't be undone.", confirmLabel: "Merge", destructive: true }))) return;
     setBusy(duplicateId);
     try {
       const res = await mergeLeadsAction({ primaryId, duplicateId });
@@ -30,7 +33,7 @@ export function DuplicatesManager({ initial }: { initial: Group[] }) {
       );
       toast({ title: "Leads merged" });
     } catch {
-      toast({ variant: "destructive", title: "Merge failed", description: "We couldn't reach the server. Please try again." });
+      toast({ variant: "destructive", title: "Merge failed", description: "Something went wrong. Check your connection, or you may not have permission for this, then try again." });
     } finally {
       setBusy(null);
     }
@@ -42,6 +45,7 @@ export function DuplicatesManager({ initial }: { initial: Group[] }) {
 
   return (
     <div className="space-y-4">
+      {confirmDialog}
       {groups.map((group) => {
         const primary = group.leads[0];
         return (
