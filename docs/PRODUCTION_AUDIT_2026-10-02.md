@@ -32,6 +32,8 @@
 
 - **K. Usage limits:** done — caps (and meters) for API keys, webhook endpoints and custom fields; all monthly counters and AI credits renew on the same billing-cycle period; deactivated users no longer hold a seat (reactivating re-checks the cap); the AI agent refunds a turn that produced no answer. Not capped: meetings, outbound-webhook deliveries, saved views, teams, notifications, enrichment calls (no cost or abuse driver identified).
 
+- **L. API & integrations:** done — timeouts on Google, Meta, Watxio and the AI gateway; Razorpay and Meta Graph responses validated at the boundary; dead Google grants are dropped (UI shows "not connected"), and a user's Google grant is deleted when they are deactivated/deleted; generic webhook body capped at 256 KB; `SECRETS_STRICT` plus an extended `encrypt:source-secrets` (webhook secrets, Facebook page tokens, Google tokens) to retire plaintext. Not changed: `?key=` remains supported (documented, header preferred); Watxio's response is still read tolerantly because its envelope isn't documented.
+
 ## A. Executive Summary
 
 Ridhzo is a mature, unusually well-commented Next.js 15 / Drizzle / Postgres / BullMQ multi-tenant CRM. Typecheck is clean, 860 tests pass, org scoping in services is consistent, SSRF/webhook-signature/idempotency work has clearly been done with care, and secrets are not committed (`.env*` never appear in git history).

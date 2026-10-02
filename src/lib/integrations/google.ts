@@ -39,8 +39,15 @@ export function getAuthUrl(userId: string) {
 
 type TokenResp = { access_token: string; refresh_token?: string; expires_in: number };
 
+// Every Google call is bounded: a hung Google must not hold a request/worker open indefinitely.
+const gfetch = (url: string, init: RequestInit = {}) => fetch(url, { ...init, signal: AbortSignal.timeout(10_000) });
+
+// The refresh token is dead (revoked, expired, password changed): reconnecting is the only fix, so the caller
+// drops the stored credentials and the settings screen shows "not connected" instead of failing silently forever.
+export class GoogleAuthError extends Error {}
+
 export async function exchangeCode(code: string): Promise<TokenResp> {
-  const res = await fetch("https://oauth2.googleapis.com/token", {
+  const res = await gfetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
@@ -52,14 +59,18 @@ export async function exchangeCode(code: string): Promise<TokenResp> {
 }
 
 export async function refreshAccessToken(refreshToken: string): Promise<TokenResp> {
-  const res = await fetch("https://oauth2.googleapis.com/token", {
+  const res = await gfetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       refresh_token: refreshToken, client_id: CLIENT_ID!, client_secret: CLIENT_SECRET!, grant_type: "refresh_token",
     }),
   });
-  if (!res.ok) throw new Error(`Google token refresh failed (${res.status}): ${await res.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    if ((res.status === 400 || res.status === 401) && /invalid_grant|unauthorized_client/i.test(body)) throw new GoogleAuthError(`Google refresh token rejected: ${body}`);
+    throw new Error(`Google token refresh failed (${res.status}): ${body}`);
+  }
   return res.json();
 }
 
@@ -99,7 +110,7 @@ function eventsUrl(calendarId: string, eventId?: string) {
 }
 
 export async function insertEvent(accessToken: string, calendarId: string, event: CalendarEventInput): Promise<{ id: string; hangoutLink?: string }> {
-  const res = await fetch(`${eventsUrl(calendarId)}?conferenceDataVersion=1`, {
+  const res = await gfetch(`${eventsUrl(calendarId)}?conferenceDataVersion=1`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
     body: JSON.stringify(eventBody(event)),
@@ -110,7 +121,7 @@ export async function insertEvent(accessToken: string, calendarId: string, event
 
 // Partial update — only the fields given are sent (Meet is never re-requested on update).
 export async function patchEvent(accessToken: string, calendarId: string, eventId: string, event: CalendarEventInput) {
-  const res = await fetch(eventsUrl(calendarId, eventId), {
+  const res = await gfetch(eventsUrl(calendarId, eventId), {
     method: "PATCH",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
     body: JSON.stringify(eventBody({ ...event, withMeet: false })),
@@ -120,7 +131,7 @@ export async function patchEvent(accessToken: string, calendarId: string, eventI
 }
 
 export async function deleteEvent(accessToken: string, calendarId: string, eventId: string) {
-  const res = await fetch(eventsUrl(calendarId, eventId), {
+  const res = await gfetch(eventsUrl(calendarId, eventId), {
     method: "DELETE",
     headers: { Authorization: `Bearer ${accessToken}` },
   });

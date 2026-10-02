@@ -279,6 +279,7 @@ export async function runLeadAgent(
       messages: [...history, { role: "user", content: message }],
       tools,
       stopWhen: stepCountIs(6), // bound the loop → caps cost and runaway tool calls
+      abortSignal: AbortSignal.timeout(60_000), // and bounds wall-clock time across those steps
     });
     return { text: text.trim(), proposals, steps: steps.length, enabled: true };
   } catch (e) {

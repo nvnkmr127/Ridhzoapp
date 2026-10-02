@@ -60,4 +60,15 @@ describe("secret encryption (AES-256-GCM)", () => {
       expect(decryptSecret(legacy)).toBe("legacy");
     });
   });
+
+  describe("SECRETS_STRICT", () => {
+    it("serves legacy plaintext by default, refuses it when strict", () => {
+      delete process.env.SECRETS_STRICT;
+      expect(readSecret("EAAB-legacy")).toBe("EAAB-legacy");
+      process.env.SECRETS_STRICT = "1";
+      expect(readSecret("EAAB-legacy")).toBeNull();
+      expect(readSecret(encryptSecret("fine"))).toBe("fine"); // real ciphertext still works
+      delete process.env.SECRETS_STRICT;
+    });
+  });
 });

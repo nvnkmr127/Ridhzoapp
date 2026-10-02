@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { z } from "zod";
 
 // Thin Razorpay client over fetch — no SDK (ponytail: it's Basic-auth REST + an HMAC).
 // Configure with RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET, and a plan_id
@@ -45,6 +46,30 @@ function authHeader() {
   return "Basic " + Buffer.from(`${KEY_ID}:${KEY_SECRET}`).toString("base64");
 }
 
+// Responses are validated at the boundary: a changed or hostile payload fails loudly here instead of
+// flowing undefined ids and plans into billing state.
+const num = z.number().nullish();
+const SubscriptionSchema = z.object({
+  id: z.string().min(1),
+  plan_id: z.string().min(1),
+  status: z.string().min(1),
+  current_end: num, charge_at: num, start_at: num,
+  short_url: z.string().nullish(),
+  notes: z.union([z.record(z.string(), z.string()), z.array(z.unknown())]).nullish(), // Razorpay sends [] for empty notes
+}).passthrough();
+const CustomerSchema = z.object({ id: z.string().min(1) }).passthrough();
+
+function parseResponse<T>(schema: z.ZodType<T>, json: unknown, what: string): T {
+  const r = schema.safeParse(json);
+  if (!r.success) throw new Error(`Razorpay ${what} response was not in the expected shape: ${r.error.issues[0]?.message ?? "invalid"}`);
+  return r.data;
+}
+
+// Razorpay returns `notes: []` when there are none; our code reads it as a record.
+function normalizeSub(r: z.infer<typeof SubscriptionSchema>): RazorpaySubscription {
+  return { ...r, notes: Array.isArray(r.notes) ? {} : (r.notes ?? undefined) } as unknown as RazorpaySubscription;
+}
+
 export type RazorpaySubscription = {
   id: string;
   plan_id: string;
@@ -82,7 +107,7 @@ export async function upsertCustomer(input: { name: string; email?: string; cont
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`Razorpay customer failed (${res.status}): ${await res.text()}`);
-  return (await res.json()) as { id: string };
+  return parseResponse(CustomerSchema, await res.json(), "customer") as { id: string };
 }
 
 export async function updateCustomerGstin(customerId: string, input: { name: string; gstin: string | null }) {
@@ -121,14 +146,14 @@ export async function createSubscription(
     }),
   });
   if (!res.ok) throw new Error(`Razorpay subscription failed (${res.status}): ${await res.text()}`);
-  return (await res.json()) as RazorpaySubscription;
+  return normalizeSub(parseResponse(SubscriptionSchema, await res.json(), "subscription"));
 }
 
 export async function fetchSubscription(subscriptionId: string) {
   if (!isConfigured()) throw new Error("Billing is not configured");
   const res = await fetch(`${API}/subscriptions/${encodeURIComponent(subscriptionId)}`, { headers: { Authorization: authHeader() } });
   if (!res.ok) throw new Error(`Razorpay fetch failed (${res.status}): ${await res.text()}`);
-  return (await res.json()) as RazorpaySubscription;
+  return normalizeSub(parseResponse(SubscriptionSchema, await res.json(), "subscription"));
 }
 
 // atCycleEnd: keep the paid plan until the period the customer already paid for ends.

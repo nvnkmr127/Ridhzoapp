@@ -19,6 +19,9 @@ const webhookPayloadSchema = z.object({
 // facebook_lead_ads stays for anyone who wired a relay (e.g. Zapier) to the URL older cards showed.
 const ROUTE_PROVIDERS = new Set(["generic_webhook", "webform", "facebook_lead_ads"]);
 
+const MAX_BODY_BYTES = 256 * 1024;
+class PayloadTooLarge extends Error {}
+
 // Constant-time string compare (secrets / signatures).
 function safeEqual(a: string, b: string) {
   const x = Buffer.from(a, "utf8");
@@ -38,6 +41,7 @@ async function readBody(req: NextRequest): Promise<{ rawText: string | null; bod
     body = Object.fromEntries([...form.entries()].filter(([, v]) => typeof v === "string"));
   } else {
     rawText = await req.text();
+    if (rawText.length > MAX_BODY_BYTES) throw new PayloadTooLarge(); // chunked bodies have no content-length
     if (type.includes("application/x-www-form-urlencoded")) {
       body = Object.fromEntries(new URLSearchParams(rawText));
     } else {
@@ -59,6 +63,10 @@ export async function POST(
 ) {
   try {
     const { provider } = await params;
+    // Lead forms are tiny. Refuse anything big up front (before reading it) — the body is stored in jsonb.
+    if (Number(req.headers.get("content-length") ?? 0) > MAX_BODY_BYTES) {
+      return NextResponse.json({ success: false, error: "Payload too large" }, { status: 413 });
+    }
     const { rawText, body: rawBody } = await readBody(req);
     if (!rawBody) {
       return NextResponse.json({ success: false, error: "Send the lead as JSON or as form fields" }, { status: 400 });
@@ -197,6 +205,7 @@ export async function POST(
     return NextResponse.json({ success: true, eventId: event.id }, { status: 202 });
 
   } catch (error: any) {
+    if (error instanceof PayloadTooLarge) return NextResponse.json({ success: false, error: "Payload too large" }, { status: 413 });
     console.error("Webhook receiver error:", error);
     return NextResponse.json({ success: false, error: "Internal Server Error" }, { status: 500 });
   }

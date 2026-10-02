@@ -47,7 +47,18 @@ export class GoogleCalendarService {
     if (stillValid) return { accessToken, calendarId: cred.calendarId };
 
     if (!refreshToken) return { accessToken, calendarId: cred.calendarId };
-    const refreshed = await google.refreshAccessToken(refreshToken);
+    let refreshed;
+    try {
+      refreshed = await google.refreshAccessToken(refreshToken);
+    } catch (e) {
+      if (e instanceof google.GoogleAuthError) {
+        // Dead grant: forget it so the UI shows "Connect Google" again (and we stop retrying every event).
+        console.warn(`[google-calendar] refresh token rejected for user ${userId}; disconnecting`);
+        await db.delete(googleCredentials).where(eq(googleCredentials.userId, userId));
+        return null;
+      }
+      throw e;
+    }
     await db.update(googleCredentials)
       .set({ accessToken: encryptSecret(refreshed.access_token), expiryDate: new Date(Date.now() + refreshed.expires_in * 1000), updatedAt: new Date() })
       .where(eq(googleCredentials.userId, userId));

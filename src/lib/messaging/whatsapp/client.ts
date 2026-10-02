@@ -63,6 +63,9 @@ async function post(path: string, body: unknown, idempotencyKey?: string, creds?
       ...(idempotencyKey ? { "X-Idempotency-Key": idempotencyKey } : {}),
     },
     body: JSON.stringify(body),
+    // A hung provider must not hold the request / worker open; a timed-out send is reported as a failure
+    // (the idempotency key makes a retry safe).
+    signal: AbortSignal.timeout(15_000),
   });
 
   const json = await res.json().catch(() => ({}));

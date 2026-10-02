@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { UserFacingError } from "@/lib/actions/result";
 import { handOverFollowUps } from "@/domains/follow-ups/state";
-import { users, roles, teams, leads } from "@/db/schema";
+import { users, roles, teams, leads, googleCredentials } from "@/db/schema";
 import { and, count, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { ApiKeyService } from "@/domains/apiKeys/service";
@@ -200,6 +200,7 @@ export class UserService {
       // and never when deactivating a non-admin).
       if (u && before > 0 && (await this.countActiveAdmins(tx, organizationId)) === 0) throw new Error(LAST_ADMIN_ERROR);
       if (u) await ApiKeyService.revokeCreatedBy(tx, organizationId, id);
+      if (u) await tx.delete(googleCredentials).where(eq(googleCredentials.userId, id)); // a deactivated person's calendar grant must not outlive their access
       const movedTo = u && reassignTo !== undefined ? await this.reassignLeads(tx, organizationId, id, reassignTo) : {};
       return u && { ...u, movedTo, leadsMoved: Object.values(movedTo).reduce((a, b) => a + b, 0) };
     });
@@ -244,6 +245,7 @@ export class UserService {
         .returning(publicCols);
       if (u && before > 0 && (await this.countActiveAdmins(tx, organizationId)) === 0) throw new Error(LAST_ADMIN_ERROR);
       if (u) await ApiKeyService.revokeCreatedBy(tx, organizationId, id);
+      if (u) await tx.delete(googleCredentials).where(eq(googleCredentials.userId, id)); // deleted: drop their calendar grant too
       const movedTo = u && reassignTo !== undefined ? await this.reassignLeads(tx, organizationId, id, reassignTo) : {};
       return u && { ...u, movedTo, leadsMoved: Object.values(movedTo).reduce((a, b) => a + b, 0) };
     });

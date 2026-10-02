@@ -74,7 +74,18 @@ export function needsReencrypt(payload: string): boolean {
 // before encryption was added). GCM's auth tag makes a false "decrypt" of real plaintext
 // cryptographically impossible, so anything that fails to decrypt is returned as-is. This lets a
 // token store migrate lazily — each row becomes ciphertext on its next write — without a backfill.
+let warnedPlaintext = false;
 export function readSecret(value: string | null | undefined): string | null {
   if (!value) return null;
-  return decryptSecret(value) ?? value;
+  const plain = decryptSecret(value);
+  if (plain !== null) return plain;
+  // Not ciphertext we can read: either legacy plaintext (tolerated for the migration window) or garbage from
+  // a rotated key. SECRETS_STRICT=1 (set it after `npm run encrypt:source-secrets` has run in production)
+  // stops serving plaintext, so a stray unencrypted token can't hide behind the tolerant path.
+  if (process.env.SECRETS_STRICT === "1") return null;
+  if (!warnedPlaintext && process.env.NODE_ENV === "production") {
+    warnedPlaintext = true;
+    console.warn("[secrets] a stored secret is not encrypted (legacy plaintext). Run `npm run encrypt:source-secrets`, then set SECRETS_STRICT=1.");
+  }
+  return value;
 }

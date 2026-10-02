@@ -31,8 +31,11 @@ function isConfigured(): boolean {
 const RATE_LIMIT_CODES = new Set([4, 17, 32, 613]);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// Every Graph call is time-bounded: a stalled Meta must not hang a webhook handler or the sync loop.
+const graphFetch = (url: string, init: RequestInit = {}) => fetch(url, { ...init, signal: AbortSignal.timeout(15_000) });
+
 async function graphGet(url: string, attempt = 0): Promise<any> {
-  const res = await fetch(url);
+  const res = await graphFetch(url);
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     const code = json?.error?.code;
@@ -107,7 +110,7 @@ export class MetaTokenRefreshService {
   /** Stops Meta sending this Page's leads to this app (used when its source is deleted). */
   static async unsubscribePageFromLeadgen(pageId: string, pageAccessToken: string): Promise<void> {
     const url = `${GRAPH}/${encodeURIComponent(pageId)}/subscribed_apps?access_token=${encodeURIComponent(pageAccessToken)}`;
-    const res = await fetch(url, { method: "DELETE" });
+    const res = await graphFetch(url, { method: "DELETE" });
     if (!res.ok) {
       const json = await res.json().catch(() => ({}));
       throw new Error(json?.error?.message || `Meta unsubscribe failed (${res.status})`);
@@ -119,7 +122,7 @@ export class MetaTokenRefreshService {
     const url =
       `${GRAPH}/${encodeURIComponent(pageId)}/subscribed_apps` +
       `?subscribed_fields=leadgen&access_token=${encodeURIComponent(pageAccessToken)}`;
-    const res = await fetch(url, { method: "POST" });
+    const res = await graphFetch(url, { method: "POST" });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
       const msg = json?.error?.message || `Meta subscribe failed (${res.status})`;
@@ -202,7 +205,14 @@ export class MetaTokenRefreshService {
       throw new Error("leadgenId and pageAccessToken are required to fetch lead details");
     }
     const url = `${GRAPH}/${encodeURIComponent(leadgenId)}?fields=${this.LEAD_FIELDS}&access_token=${encodeURIComponent(pageAccessToken)}`;
-    return graphGet(url);
+    const json = await graphGet(url);
+    // Boundary check: a lead is an object, and `field_data` — when present — an array of {name, values[]}.
+    // Anything else is a changed/garbled response; fail (the event is retried) rather than map garbage.
+    if (!json || typeof json !== "object") throw new Error("Meta returned an unexpected lead payload");
+    if (json.field_data !== undefined && !(Array.isArray(json.field_data) && json.field_data.every((f: unknown) => f && typeof f === "object" && typeof (f as { name?: unknown }).name === "string"))) {
+      throw new Error("Meta returned lead field_data in an unexpected shape");
+    }
+    return json;
   }
 
   /**
