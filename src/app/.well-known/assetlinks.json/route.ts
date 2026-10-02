@@ -1,6 +1,7 @@
 // Android App Links: proves app.ridhzo.com belongs to com.ridhzo.app. Set ANDROID_CERT_SHA256 to the
 // Play App Signing SHA-256 (Play Console → Setup → App signing); comma-separate to add the upload key.
-export const dynamic = "force-static";
+// Dynamic: the fingerprint / Team ID come from env at request time, not frozen at build.
+export const dynamic = "force-dynamic";
 
 export function GET() {
   const fingerprints = (process.env.ANDROID_CERT_SHA256 ?? "").split(",").map((s) => s.trim()).filter(Boolean);

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeApiRequest } from "@/lib/apiAuth";
+import { withIdempotency } from "@/lib/idempotency";
 import { MeetingService } from "@/domains/meetings/service";
 import { parseMeetingInput } from "@/domains/meetings/validation";
 import { idOk, invalid, leadForApi, serializeMeeting, serverError } from "@/lib/meetingsApi";
@@ -31,10 +32,12 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   if (p.data.mode === "online" && p.data.autoMeet && !(await MeetingService.canAutoMeet([p.data.assigneeId, auth.userId]))) {
     return NextResponse.json({ error: "No connected Google Calendar to create a Meet link — send meetingUrl instead." }, { status: 422 });
   }
+  return withIdempotency(req, auth, `meeting:${id}`, async () => {
   try {
     const res = await MeetingService.create({ ...p.data, leadId: id }, { userId: auth.userId ?? null, organizationId: auth.organizationId });
     return NextResponse.json({ data: serializeMeeting(res.meeting), notice: res.notice }, { status: 201 });
   } catch (e) {
     return serverError("api/v1/leads/[id]/meetings POST", e);
   }
+  });
 }

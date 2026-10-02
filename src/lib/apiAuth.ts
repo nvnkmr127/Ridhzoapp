@@ -44,6 +44,9 @@ export async function authorizeApiRequest(req: NextRequest): Promise<ApiAuth | {
     if (limited) return { error: limited };
     const down = await maintenanceBlock(req);
     if (down) return { error: down };
+    const { outdatedWriteBlock } = await import("@/lib/appVersion");
+    const tooOld = await outdatedWriteBlock(req.headers, req.method);
+    if (tooOld) return { error: NextResponse.json({ error: tooOld, code: "upgrade_required" }, { status: 426 }) };
     // (The first-party mobile app is not metered — only third-party API keys are; see apiQuota.)
     // The live role, not the one baked into the token — a demoted admin loses admin rights at once.
     return { organizationId: mobile.org, userId: mobile.sub, roleId: live.roleId };
@@ -90,7 +93,7 @@ function isSafeMethod(method: string): boolean {
 // One structured line per rejection, so a Vercel log search answers "who, which tenant, which
 // endpoint, why" (the request line alone carries only path and status). Ids only, no personal data.
 function logRejection(req: NextRequest, status: number, reason: string, principal: string, org: string) {
-  console.warn(`[api-auth] ${JSON.stringify({ status, reason, method: req.method, path: req.nextUrl?.pathname, principal, org })}`);
+  console.warn(`[api-auth] ${JSON.stringify({ status, reason, method: req.method, path: req.nextUrl?.pathname, principal, org, app: req.headers.get("x-app-version") ?? undefined, platform: req.headers.get("x-platform") ?? undefined })}`);
 }
 
 // 429s: logged once per principal per window — a runaway client would otherwise log every request.
@@ -147,7 +150,7 @@ async function liveUser(userId: string, organizationId: string): Promise<{ roleI
   const { getMirroredSession, mirrorSession } = await import("@/lib/sessionCache");
   const mirrored = await getMirroredSession(userId, organizationId);
   if (mirrored !== undefined) {
-    userCache.set(cacheKey, mirrored ? { roleId: mirrored.roleId, exp: now + 60_000 } : null);
+    userCache.set(cacheKey, mirrored ? { roleId: mirrored.roleId, exp: now + 20_000 } : null);
     return mirrored;
   }
 
@@ -161,7 +164,7 @@ async function liveUser(userId: string, organizationId: string): Promise<{ roleI
     .limit(1);
 
   const val = u && u.isActive !== false && u.organizationId === organizationId ? { roleId: u.roleId } : null;
-  userCache.set(cacheKey, val ? { roleId: val.roleId, exp: now + 60_000 } : null);
+  userCache.set(cacheKey, val ? { roleId: val.roleId, exp: now + 20_000 } : null);
   void mirrorSession(userId, organizationId, val);
   return val;
 }

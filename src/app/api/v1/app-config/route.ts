@@ -10,10 +10,12 @@ type MinVersions = Partial<Record<Platform, string>>;
 export async function GET(req: NextRequest) {
   const platform = req.nextUrl.searchParams.get("platform") === "ios" ? "ios" : "android";
   const min = await PlatformConfigService.get<MinVersions>("mobile.minVersion", {});
+  // Optional update: "mobile.recommendedVersion" {"android":"1.1.0"} shows a dismissable prompt.
+  const rec = await PlatformConfigService.get<MinVersions>("mobile.recommendedVersion", {});
   const storeUrl =
     platform === "ios" ? process.env.IOS_STORE_URL : "https://play.google.com/store/apps/details?id=com.ridhzo.app";
   return NextResponse.json(
-    { minVersion: min?.[platform] ?? null, storeUrl: storeUrl ?? null },
+    { minVersion: min?.[platform] ?? null, recommendedVersion: rec?.[platform] ?? null, storeUrl: storeUrl ?? null },
     { headers: { "Cache-Control": "public, max-age=60" } },
   );
 }

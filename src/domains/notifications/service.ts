@@ -53,7 +53,7 @@ export class NotificationService {
       await MobilePushService.sendToUser(data.userId, {
         title: data.title,
         body: data.body,
-        data: { type: data.type, notificationId: row.id, ...(data.leadId ? { leadId: data.leadId } : {}) },
+        data: { type: data.type, notificationId: row.id, userId: data.userId, ...(data.leadId ? { leadId: data.leadId } : {}) },
         channelId: pushChannelFor(data.type),
         badge,
       });

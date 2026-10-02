@@ -709,7 +709,7 @@ export class LeadService {
     return rows.map((r) => r.id);
   }
 
-  static async listDeletedLeads(organizationId: string) {
+  static async listDeletedLeads(organizationId: string, ownerId?: string) {
     // Only the fields the recycle bin renders (the route maps to these nine), and bounded — this
     // used to be an unbounded SELECT * of every soft-deleted lead, customData blobs included.
     const rows = await db
@@ -724,7 +724,7 @@ export class LeadService {
         deletedAt: leads.deletedAt,
       })
       .from(leads)
-      .where(and(eq(leads.organizationId, organizationId), isNotNull(leads.deletedAt)))
+      .where(and(eq(leads.organizationId, organizationId), isNotNull(leads.deletedAt), ...(ownerId ? [eq(leads.ownerId, ownerId)] : [])))
       .orderBy(desc(leads.deletedAt))
       .limit(500);
     const PURGE_DAYS = 30;
@@ -735,11 +735,11 @@ export class LeadService {
     });
   }
 
-  static async restoreLead(leadId: string, organizationId: string) {
+  static async restoreLead(leadId: string, organizationId: string, ownerId?: string) {
     await PlanService.assertCanAddLead(organizationId);
     const [restored] = await db.update(leads)
       .set({ deletedAt: null, deletedBy: null, updatedAt: new Date() })
-      .where(and(eq(leads.id, leadId), eq(leads.organizationId, organizationId), isNotNull(leads.deletedAt)))
+      .where(and(eq(leads.id, leadId), eq(leads.organizationId, organizationId), isNotNull(leads.deletedAt), ...(ownerId ? [eq(leads.ownerId, ownerId)] : [])))
       .returning();
     return restored;
   }

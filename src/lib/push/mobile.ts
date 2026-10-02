@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { deviceTokens } from "@/db/schema";
+import { deviceTokens, users } from "@/db/schema";
 import { eq, inArray, lt, sql } from "drizzle-orm";
 import { ExpoPushService } from "./expo";
 import { FcmPushService } from "./fcm";
@@ -52,6 +52,11 @@ export const MobilePushService = {
   },
 
   async sendToUser(userId: string, message: MobilePushMessage) {
+    // A channel the user muted in the app's notification settings is not pushed (the in-app inbox still has it).
+    if (message.channelId) {
+      const [u] = await db.select({ off: users.pushOptOut }).from(users).where(eq(users.id, userId)).limit(1);
+      if (u?.off?.includes(message.channelId)) return;
+    }
     const rows = await db.select({ token: deviceTokens.token }).from(deviceTokens).where(eq(deviceTokens.userId, userId));
     if (!Array.isArray(rows) || rows.length === 0) return;
 

@@ -1,5 +1,7 @@
 # Ridhzo Mobile App Guide
 
+> Endpoints below were corrected to the real `/api/v1/*` routes (2026-10-02). The mobile client lives in the separate `ridhzo-mobile` repo; there is no PWA build and iOS is not yet shipped.
+
 This document is the complete product and architectural reference for the **Ridhzo Mobile App** (Android & iOS).
 
 ---
@@ -20,18 +22,18 @@ The Ridhzo Mobile App is built to empower sales reps and business owners to mana
 - **Native Android App (APK):** Built with React Native and Expo (`nvnkmr127/ridhzo-mobile`), custom native Android call log module (`modules/call-log`), and Android notification channels.
 - **Progressive Web App (PWA):** Works seamlessly on iOS and Android browsers with "Add to Home Screen" support.
 - **State Management & Caching:** TanStack React Query with encrypted SQLite offline cache and token revocation.
-- **Backend APIs:** Dedicated high-performance `/api/mobile/*` endpoints with session caching and Redis-backed device deduplication.
+- **Backend APIs:** Dedicated high-performance `/api/v1/*` endpoints with session caching and Redis-backed device deduplication.
 
 ---
 
 ## 3. Mobile Authentication & Onboarding
 Ridhzo supports three fast login methods on mobile:
-1. **Mobile Phone + OTP:** SMS/Watxio OTP verification via `/api/mobile/auth/send-otp` and `/api/mobile/auth/verify-otp`.
+1. **Mobile Phone + OTP:** SMS/Watxio OTP verification via `/api/v1/auth/otp/send` and `/api/v1/auth/otp/verify`.
 2. **Google OAuth:** Fast single-sign-on.
 3. **Email & Password:** Standard credentials with secure JWT issuance.
 
 ### Session Security & Device Management
-- **Token Revocation:** User sessions and device JWTs can be revoked instantly (`/api/mobile/auth/token-revoke`) from web settings or upon sign-out.
+- **Token Revocation:** User sessions and device JWTs can be revoked instantly (`/api/v1/auth/logout`) from web settings or upon sign-out.
 - **Redis Device Registration Deduplication:** Rapid device registration requests during network reconnection are deduplicated via Redis, pruning stale push tokens and preventing duplicate delivery.
 
 ---
@@ -39,7 +41,7 @@ Ridhzo supports three fast login methods on mobile:
 ## 4. Automatic Android Call Sync & Follow-up Completion
 
 ### Background Call Sync
-- **Module:** Native Android module (`modules/call-log`) detects phone calls and batches logs to `/api/mobile/calls/sync`.
+- **Module:** Native Android module (`modules/call-log`) detects phone calls and batches logs to `/api/v1/calls/sync`.
 - **Captured Data:** Call direction (Incoming, Outgoing, Missed), caller phone number, timestamp, and talk duration in seconds.
 - **Trigram Matching:** The backend leverages PostgreSQL trigram indexing (`pg_trgm`) to match phone numbers instantly across any international or local format (`+91 98765 43210`, `9876543210`).
 
@@ -51,7 +53,7 @@ Ridhzo supports three fast login methods on mobile:
 ---
 
 ## 5. Smart Caller ID Directory
-- **Pre-downloading Phone Keys:** The app fetches active lead phone keys via `/api/mobile/calls/phone-keys` and `/api/mobile/caller-id`.
+- **Pre-downloading Phone Keys:** The app fetches active lead phone keys via `/api/v1/calls/numbers` and `/api/v1/calls/caller-id`.
 - **Incoming Call Overlay:** When a lead rings the rep's personal or business phone, the phone displays the lead's name, deal stage, and requirements before answering.
 
 ---
@@ -59,7 +61,7 @@ Ridhzo supports three fast login methods on mobile:
 ## 6. Mobile Lead Profile & 1-Click AI Suggestions
 - **Clean Mobile Header:** Displays lead name, phone, email, priority, lead score, and an organized row for Owner, Stage, and Tags.
 - **Live Next Best Action:** Streams the optimal next step in real time.
-- **Mobile AI Suggestions (`/api/mobile/leads/[id]/ai-suggestions`):**
+- **Mobile AI Suggestions (`/api/v1/leads/[id]/ai/suggestions/[suggestionId]`):**
   - **1-Click Field Auto-fill:** Extracts budget, location, and requirements from call notes with 1-click apply.
   - **1-Click Status Transitions:** Advances lead stage based on qualification milestones.
   - **Status Playbooks:** Guides reps with stage-specific qualifying questions and objection-handling scripts.
@@ -68,7 +70,7 @@ Ridhzo supports three fast login methods on mobile:
 
 ## 7. Offline Mode & Conflict Resolution
 - **Offline Lead Capture:** New leads created via Quick Add are saved locally with unique client IDs.
-- **Incremental Sync (`/api/mobile/leads/sync`):** When connectivity returns, the app syncs only leads modified since the last `sync_at` timestamp.
+- **Incremental Sync (`/api/v1/leads?sync=1`):** When connectivity returns, the app syncs only leads modified since the last `sync_at` timestamp.
 - **Conflict Detection:** If a lead was edited concurrently on web and mobile, Ridhzo flags the conflict and prevents silent data overwrites.
 - **Mobile Idempotency (`Idempotency-Key`):** Mobile mutations include unique idempotency headers to ensure flaky cellular connections never produce duplicate records.
 

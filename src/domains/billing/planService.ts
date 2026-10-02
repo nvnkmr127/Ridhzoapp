@@ -257,6 +257,16 @@ export class PlanService {
     }
   }
 
+  // assertCanAddLead is count-then-insert, so two creates at the cap-1 mark can both pass it. Called right after
+  // an insert: if the workspace is now over its cap, the caller undoes its own lead. When two race, both undo —
+  // the safe side of the cap — and the person simply retries.
+  static async isOverLeadCap(organizationId: string): Promise<boolean> {
+    const max = limitsFor(await this.plan(organizationId)).leads;
+    if (max === Infinity) return false;
+    const [row] = await db.select({ n: count() }).from(leads).where(and(eq(leads.organizationId, organizationId), isNull(leads.deletedAt)));
+    return Number(row?.n ?? 0) > max;
+  }
+
   // Background AI (inbound reply tagging) — paid plans only.
   static async aiAutoTagAllowed(organizationId: string) {
     return limitsFor(await this.plan(organizationId)).aiAutoTag;

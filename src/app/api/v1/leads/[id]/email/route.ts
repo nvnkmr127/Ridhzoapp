@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeApiRequest } from "@/lib/apiAuth";
 import { canEditLeads, leadForApi, leadNotFound, readOnly } from "@/lib/meetingsApi";
+import { withIdempotency } from "@/lib/idempotency";
 import { sendLeadEmail } from "@/domains/leads/leadActions";
 
 const schema = z.object({ subject: z.string().trim().min(1).max(255), body: z.string().trim().min(1).max(20000) });
@@ -19,12 +20,18 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Please add a subject and a message." }, { status: 422 });
 
+  const userId = auth.userId;
+  const to = lead.email;
+  return withIdempotency(req, auth, `email:${id}`, async () => {
   try {
-    await sendLeadEmail({ leadId: id, userId: auth.userId, organizationId: auth.organizationId, to: lead.email, ...parsed.data });
+    await sendLeadEmail({ leadId: id, userId, organizationId: auth.organizationId, to, ...parsed.data });
     return NextResponse.json({ data: { sent: true } }, { status: 201 });
   } catch (e) {
+    const { UsageLimitError } = await import("@/domains/billing/usageService");
+    if (e instanceof UsageLimitError) return NextResponse.json({ error: e.message, code: "limit" }, { status: 402 });
     const { logError } = await import("@/lib/log");
     const ref = logError("api/v1/leads/[id]/email", e, { leadId: id });
     return NextResponse.json({ error: "Could not send the email. Check the workspace's email settings.", ref }, { status: 500 });
   }
+  });
 }

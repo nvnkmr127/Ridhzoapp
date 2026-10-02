@@ -50,6 +50,8 @@ const nextConfig: NextConfig = {
         headers: [...SECURITY_HEADERS, { key: "X-Frame-Options", value: "DENY" }, { key: "Content-Security-Policy", value: "frame-ancestors 'none'" }, { key: "Content-Security-Policy-Report-Only", value: CSP_REPORT_ONLY }],
       },
       { source: "/(f|book|blog)/:path*", headers: SECURITY_HEADERS },
+      // The mobile API contract version (bumped on a breaking change), so clients and logs can tell what they hit.
+      { source: "/api/v1/:path*", headers: [{ key: "X-API-Version", value: "1" }] },
     ];
   },
 

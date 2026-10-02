@@ -8,6 +8,15 @@ import { ApiKeyService } from "@/domains/apiKeys/service";
 
 // Thrown when an operation would leave the org with zero active administrators. Actions map this
 // to a friendly validation message (see actionFail).
+// A mobile token is re-validated against a short in-memory + Redis cache (see lib/apiAuth). Changing who a user
+// is or what they may do must drop it now, so a deactivated, removed or demoted user loses access at once
+// instead of after the cache expires.
+async function evictAuth(userId: string, organizationId: string) {
+  const [{ clearUserAuthCache }, { evictMirroredSession }] = await Promise.all([import("@/lib/apiAuth"), import("@/lib/sessionCache")]);
+  clearUserAuthCache(userId);
+  await evictMirroredSession(userId, organizationId);
+}
+
 export const LAST_ADMIN_ERROR = "Cannot remove the last active administrator of this organization.";
 
 // A user counts as an admin (for lockout protection) if their role can manage users: it holds the
@@ -187,9 +196,10 @@ export class UserService {
         .set({ isActive, updatedAt: new Date() })
         .where(and(eq(users.id, id), eq(users.organizationId, organizationId), isNull(users.deletedAt)))
         .returning(publicCols);
+      await evictAuth(id, organizationId);
       return u;
     }
-    return db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       const before = await this.countActiveAdmins(tx, organizationId);
       const [u] = await tx
         .update(users)
@@ -204,6 +214,8 @@ export class UserService {
       const movedTo = u && reassignTo !== undefined ? await this.reassignLeads(tx, organizationId, id, reassignTo) : {};
       return u && { ...u, movedTo, leadsMoved: Object.values(movedTo).reduce((a, b) => a + b, 0) };
     });
+    await evictAuth(id, organizationId);
+    return result;
   }
 
   static async setTeam(organizationId: string, id: string, teamId: string | null) {
@@ -220,7 +232,7 @@ export class UserService {
   }
 
   static async setRole(organizationId: string, id: string, roleId: string) {
-    return db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       const before = await this.countActiveAdmins(tx, organizationId);
       const [u] = await tx
         .update(users)
@@ -231,12 +243,14 @@ export class UserService {
       if (u && before > 0 && (await this.countActiveAdmins(tx, organizationId)) === 0) throw new Error(LAST_ADMIN_ERROR);
       return u;
     });
+    await evictAuth(id, organizationId);
+    return result;
   }
 
   // Soft delete — hard delete would orphan leads/activities/notifications that FK to this user.
   // Returns the affected row (undefined if already gone) so the caller can report NOT_FOUND.
   static async remove(organizationId: string, id: string, reassignTo?: string | null) {
-    return db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       const before = await this.countActiveAdmins(tx, organizationId);
       const [u] = await tx
         .update(users)
@@ -249,5 +263,7 @@ export class UserService {
       const movedTo = u && reassignTo !== undefined ? await this.reassignLeads(tx, organizationId, id, reassignTo) : {};
       return u && { ...u, movedTo, leadsMoved: Object.values(movedTo).reduce((a, b) => a + b, 0) };
     });
+    await evictAuth(id, organizationId);
+    return result;
   }
 }

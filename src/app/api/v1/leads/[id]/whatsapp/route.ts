@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeApiRequest } from "@/lib/apiAuth";
+import { withIdempotency } from "@/lib/idempotency";
 import { canEditLeads, leadForApi, leadNotFound, readOnly } from "@/lib/meetingsApi";
 
 const schema = z
@@ -22,16 +23,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid message" }, { status: 422 });
 
+  return withIdempotency(req, auth, `whatsapp:${id}`, async () => {
   try {
     const { WhatsAppService } = await import("@/lib/messaging/whatsapp/service");
     const result = await WhatsAppService.send({ leadId: id, ...parsed.data, organizationId: auth.organizationId, userId: auth.userId ?? undefined });
     return NextResponse.json({ data: result }, { status: 201 });
   } catch (e: any) {
     // Business-rule failures (outside the 24h window, not configured, no phone) are the rep's to fix.
+    const { UsageLimitError } = await import("@/domains/billing/usageService");
+    if (e instanceof UsageLimitError) return NextResponse.json({ error: e.message, code: "limit" }, { status: 402 });
     const msg = String(e?.message ?? "");
     if (/window|template|configured|phone|mode/i.test(msg)) return NextResponse.json({ error: msg }, { status: 422 });
     const { logError } = await import("@/lib/log");
     const ref = logError("api/v1/leads/[id]/whatsapp", e, { leadId: id });
     return NextResponse.json({ error: "Could not send the WhatsApp message.", ref }, { status: 500 });
   }
+  });
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { authorizeApiRequest } from "@/lib/apiAuth";
+import { withIdempotency } from "@/lib/idempotency";
 import { canEditLeads, leadForApi, leadNotFound, readOnly } from "@/lib/meetingsApi";
 import { ContentSharingService } from "@/domains/leads/contentSharingService";
 
@@ -26,6 +27,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const link = targetUrl ? ContentSharingService.normalizeUrl(targetUrl) : null;
   if (targetUrl && !link) return NextResponse.json({ error: "Enter a valid web link (http:// or https://)." }, { status: 422 });
 
+  return withIdempotency(req, auth, `shares:${id}`, async () => {
   const share = await ContentSharingService.createShare({
     organizationId: auth.organizationId,
     leadId: id,
@@ -36,4 +38,5 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     imageUrl: null,
   });
   return NextResponse.json({ data: { ...share, url: `${req.nextUrl.origin}/s/${share.slug}` } }, { status: 201 });
+  });
 }

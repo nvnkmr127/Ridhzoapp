@@ -53,6 +53,7 @@ export const users = pgTable('users', {
   totpEnabledAt: timestamp('totp_enabled_at'),
   deletedAt: timestamp('deleted_at'), // soft delete — hard delete would orphan lead/activity FKs
   emailOptOut: jsonb('email_opt_out').$type<string[]>().default([]).notNull(), // notification types the user muted for email
+  pushOptOut: jsonb('push_opt_out').$type<string[]>().default([]).notNull(), // mobile push channels the user muted in the app
   lastCallSyncAt: timestamp('last_call_sync_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),

@@ -67,3 +67,48 @@ export async function GET(req: NextRequest) {
     },
   });
 }
+
+// "Delete my account" from the app (store policy: in-app deletion). Soft-deletes the user (leads and
+// history keep their foreign keys), unassigns their leads so the team can pick them up, scrubs their
+// personal details, ends every session and stops pushes. The sole admin of a workspace can't delete
+// themselves — they must hand over the workspace first.
+export async function DELETE(req: NextRequest) {
+  const auth = await authorizeApiRequest(req);
+  if ("error" in auth) return auth.error;
+  if (!auth.userId) return NextResponse.json({ error: "A user session is required" }, { status: 403 });
+  const body = await req.json().catch(() => null);
+  if (body?.confirm !== "DELETE") return NextResponse.json({ error: 'Type DELETE to confirm.' }, { status: 422 });
+
+  const { UserService, LAST_ADMIN_ERROR } = await import("@/domains/users/service");
+  let removed;
+  try {
+    removed = await UserService.remove(auth.organizationId, auth.userId, null);
+  } catch (e) {
+    if ((e as Error)?.message === LAST_ADMIN_ERROR) {
+      return NextResponse.json({ error: "You're the only admin of this workspace. Make someone else an admin first, or delete the workspace from the web app." }, { status: 409 });
+    }
+    throw e;
+  }
+  if (!removed) return NextResponse.json({ error: "Account not found." }, { status: 404 });
+
+  const crypto = await import("crypto");
+  const { deviceTokens } = await import("@/db/schema");
+  await Promise.all([
+    db.update(users).set({
+      email: `deleted-${auth.userId}@deleted.invalid`, phone: null, firstName: "Deleted", lastName: "user",
+      passwordHash: crypto.randomBytes(32).toString("hex"), totpSecret: null, totpEnabledAt: null, updatedAt: new Date(),
+    }).where(eq(users.id, auth.userId)),
+    db.delete(deviceTokens).where(eq(deviceTokens.userId, auth.userId)),
+  ]);
+  try {
+    const { SessionService } = await import("@/domains/platform/sessionService");
+    await SessionService.revokeUserSessions(auth.userId);
+  } catch {}
+  const { verifyMobileToken } = await import("@/lib/mobileAuth");
+  const { revokeMobileToken } = await import("@/lib/mobileRevocation");
+  const t = verifyMobileToken((req.headers.get("authorization") ?? "").replace(/^Bearer /, ""));
+  if (t) await revokeMobileToken(t);
+  const { AuditService } = await import("@/domains/audit/service");
+  await AuditService.log({ organizationId: auth.organizationId, userId: auth.userId, action: "user.self_delete", entityType: "user", entityId: auth.userId, metadata: { via: "mobile" } }).catch(() => {});
+  return NextResponse.json({ data: { deleted: true } });
+}

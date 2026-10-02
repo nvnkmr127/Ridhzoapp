@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { leadAttachments } from "@/db/schema";
 import { authorizeApiRequest } from "@/lib/apiAuth";
+import { withIdempotency } from "@/lib/idempotency";
 import { canEditLeads, leadForApi, leadNotFound, readOnly } from "@/lib/meetingsApi";
 import { ActivityService } from "@/domains/activities/service";
 import { contentTypeFor, saveAttachment, ALLOWED_TYPES, bytesMatchExtension } from "@/lib/storage/attachments";
@@ -17,6 +18,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!(await leadForApi(auth, id))) return leadNotFound();
   if (!(await canEditLeads(auth))) return readOnly();
 
+  // The app's offline queue retries uploads: the same Idempotency-Key stores the file once.
+  return withIdempotency(req, auth, `attachment:${id}`, async () => {
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File) || file.size === 0) return NextResponse.json({ error: "Please choose a file to upload." }, { status: 422 });
@@ -50,4 +53,5 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const ref = logError("api/v1/leads/[id]/attachments", e, { leadId: id });
     return NextResponse.json({ error: "Could not upload the file.", ref }, { status: 500 });
   }
+  });
 }

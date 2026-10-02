@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { leadAttachments, users } from "@/db/schema";
+import { leadAttachments, leads, users } from "@/db/schema";
 import { verifyAttachmentLink } from "@/lib/mobileAuth";
 import { requireOrg } from "@/lib/rbac";
 import { assertLeadAccess } from "@/lib/leads/access";
@@ -22,8 +22,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const signer = q.get("u") ?? "";
     if (!verifyAttachmentLink(id, signer, q.get("exp") ?? "", q.get("sig") ?? "")) return new NextResponse("Link expired", { status: 403 });
     [a] = await db.select().from(leadAttachments).where(eq(leadAttachments.id, id)).limit(1);
-    const [u] = await db.select({ organizationId: users.organizationId, isActive: users.isActive }).from(users).where(eq(users.id, signer)).limit(1);
+    const [u] = await db.select({ organizationId: users.organizationId, isActive: users.isActive, roleId: users.roleId }).from(users).where(eq(users.id, signer)).limit(1);
     if (!a || !u || u.isActive === false || u.organizationId !== a.organizationId) return new NextResponse("Not found", { status: 404 });
+    // Access can change within the link's 10 minutes (lead reassigned, role demoted): re-check it now.
+    const [lead] = await db.select({ ownerId: leads.ownerId }).from(leads).where(and(eq(leads.id, a.leadId), eq(leads.organizationId, a.organizationId as string))).limit(1);
+    const { hasPermissionForRoleId } = await import("@/lib/rbac");
+    const { worksOnLead } = await import("@/lib/leads/access");
+    if (!lead || (lead.ownerId !== signer && !(await hasPermissionForRoleId(u.roleId ?? null, "settings.manage")) && !(await worksOnLead(a.leadId, signer)))) {
+      return new NextResponse("Not found", { status: 404 });
+    }
   } else {
     const { userId, organizationId } = await requireOrg();
     [a] = await db

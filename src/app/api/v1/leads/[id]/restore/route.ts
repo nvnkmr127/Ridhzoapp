@@ -19,7 +19,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   try {
-    const restored = await LeadService.restoreLead(id, auth.organizationId);
+    const admin = !auth.userId || (await hasPermissionForRoleId(auth.roleId ?? null, "settings.manage"));
+    const restored = await LeadService.restoreLead(id, auth.organizationId, admin ? undefined : auth.userId);
     if (!restored) return NextResponse.json({ error: "This lead is no longer in the recycle bin." }, { status: 404 });
     await AuditService.log({ organizationId: auth.organizationId, userId: auth.userId ?? null, action: "lead.restore", entityType: "lead", entityId: id, metadata: { via: "api" } });
     return NextResponse.json({ data: { restored: true } });
