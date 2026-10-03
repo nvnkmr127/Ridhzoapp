@@ -23,6 +23,22 @@ const ATTRIBUTION_CONFIG_KEY = "tenant_attributions";
 
 const PLAN_MRR = PLAN_MONTHLY_PRICE;
 
+const SEARCH_HOST = /(^|\.)(google|bing|duckduckgo|yahoo|baidu|ecosia|yandex)\./;
+
+// Where an untagged visitor came from, from the referrer host the marketing site carried over.
+// Our own domain is not a source (it's just the website → app hop).
+export function referrerSource(referrer?: string): { source: string; medium: string } | null {
+  if (!referrer) return null;
+  let host: string;
+  try {
+    host = new URL(referrer.includes("://") ? referrer : `https://${referrer}`).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+  if (!host || /(^|\.)ridhzo\.com$/.test(host)) return null;
+  return { source: host, medium: SEARCH_HOST.test(host) ? "organic" : "referral" };
+}
+
 export class PlatformAttributionService {
   static async recordAttribution(
     organizationId: string,
@@ -81,10 +97,11 @@ export class PlatformAttributionService {
       const planPrice = isPaid ? PLAN_MRR[plan] ?? 0 : 0; // trials / free-for-clients bring no revenue
 
       const campaignName = attr?.utmCampaign || (attr?.utmSource ? `${attr.utmSource}_direct` : "Direct / Organic");
-      const source = attr?.utmSource || "Direct";
-      const medium = attr?.utmMedium || (attr?.fbclid ? "cpc_meta" : attr?.gclid ? "cpc_google" : "none");
+      const ref = attr?.utmSource ? null : referrerSource(attr?.referrer);
+      const source = attr?.utmSource || ref?.source || "Direct";
+      const medium = attr?.utmMedium || (attr?.fbclid ? "cpc_meta" : attr?.gclid ? "cpc_google" : ref?.medium ?? "none");
 
-      if (attr && (attr.utmCampaign || attr.utmSource || attr.fbclid || attr.gclid)) {
+      if (attr && (attr.utmCampaign || attr.utmSource || attr.fbclid || attr.gclid || ref)) {
         attributedSignups++;
         attributedMrr += planPrice;
       }

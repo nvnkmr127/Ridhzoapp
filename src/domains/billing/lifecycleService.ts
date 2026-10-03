@@ -1,3 +1,4 @@
+import { isPlaceholderEmail } from "@/lib/auth/googleLink";
 import { keepAlive } from "@/lib/keepAlive";
 import { trialExpired, canonicalPlan, PLAN_MONTHLY_PRICE } from "./planNames";
 import { db } from "@/db";
@@ -377,11 +378,16 @@ export class BillingLifecycleService {
         const attr = await PlatformAttributionService.getAttribution(orgId);
         const [o] = await db.select({ plan: organizations.plan }).from(organizations).where(eq(organizations.id, orgId)).limit(1);
         const paidValue = PLAN_MONTHLY_PRICE[canonicalPlan(o?.plan)];
+        // Match on the workspace owner too: fbp/fbc alone is empty for Google/phone signups on another browser.
+        const [owner] = await db.select({ email: users.email, phone: users.phone }).from(users)
+          .where(eq(users.organizationId, orgId)).orderBy(users.createdAt).limit(1);
         const { sendGa4Event } = await import("@/lib/integrations/ga4");
         keepAlive(sendGa4Event(orgId, "purchase", { transaction_id: `first_sub_${orgId}`, value: paidValue, currency: "INR" }), "ga4 purchase");
         await MetaCapiService.sendEvent({
           eventName: "Subscribe",
           orgId,
+          email: owner?.email && !isPlaceholderEmail(owner.email) ? owner.email : undefined,
+          phone: owner?.phone ?? undefined,
           value: paidValue,
           currency: "INR",
           fbp: attr?.fbp,

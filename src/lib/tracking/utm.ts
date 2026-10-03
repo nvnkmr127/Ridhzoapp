@@ -35,9 +35,10 @@ export function captureAttribution(): StoredAttribution | null {
     const utmTerm = params.get("utm_term") || undefined;
     const fbclid = params.get("fbclid") || undefined;
     const gclid = params.get("gclid") || undefined;
+    const ref = params.get("ref") || undefined; // original external referrer host, added by the marketing site
 
     // Check if new attribution params exist on the current URL
-    const hasParams = utmSource || utmCampaign || fbclid || gclid;
+    const hasParams = utmSource || utmCampaign || fbclid || gclid || ref;
 
     const existingStr = sessionStorage.getItem(STORAGE_KEY) || localStorage.getItem(STORAGE_KEY);
     let existing: StoredAttribution = {};
@@ -67,7 +68,7 @@ export function captureAttribution(): StoredAttribution | null {
         gclid: gclid ?? existing.gclid,
         fbp: fbp ?? existing.fbp,
         fbc: fbc ?? existing.fbc,
-        referrer: document.referrer || existing.referrer,
+        referrer: ref ?? existing.referrer ?? (document.referrer || undefined),
         landingPage: window.location.href,
         capturedAt: new Date().toISOString(),
       };

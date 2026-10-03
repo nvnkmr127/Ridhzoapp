@@ -129,7 +129,9 @@ export class MetaCapiService {
       event_name: input.eventName,
       event_time: Math.floor(Date.now() / 1000),
       event_source_url: input.eventSourceUrl || "https://ridhzo.com/signup",
-      action_source: "website",
+      // Meta requires client_user_agent for website events; a webhook-originated one (first payment) has
+      // none, and system_generated is the documented source for exactly that.
+      action_source: input.userAgent ? "website" : "system_generated",
       user_data: userData,
     };
 
