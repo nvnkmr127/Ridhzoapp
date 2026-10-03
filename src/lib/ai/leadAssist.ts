@@ -131,6 +131,8 @@ export type RecapResult = {
 // owner, fields…), so opening it again costs no AI call but it's never stale.
 // cachedOnly (the mobile app on opening a lead): never spend a credit — return the saved recap even if
 // it's out of date (stale, without its suggestions), or `pending` when there is none yet.
+export const RECAP_TTL_MS = 3 * 60 * 60 * 1000; // 3 hours
+
 export async function recapForLead(lead: Lead, organizationId: string, refresh = false, opts: { cachedOnly?: boolean } = {}): Promise<RecapResult> {
   const leadId = lead.id;
   const [{ activities, extras, text: context, signature: leadSig, fieldDefs, statuses }, org] = await Promise.all([
@@ -147,7 +149,8 @@ export async function recapForLead(lead: Lead, organizationId: string, refresh =
   const sig = `${leadSig}:${bsig}`;
 
   const cached = (lead.customData as { _aiRecap?: RecapCache } | null)?._aiRecap;
-  if (!refresh && cached?.sig === sig) {
+  const isFresh = cached?.at && Date.now() - new Date(cached.at).getTime() < RECAP_TTL_MS;
+  if (!refresh && cached?.sig === sig && isFresh) {
     return { summary: cached.text, ai: true, generatedAt: cached.at, cached: true, plan: visiblePlan(cached.plan, cached.dismissed) };
   }
   if (!refresh && opts.cachedOnly && aiEnabled() && hasAiWorthyContext(activities, extras)) {

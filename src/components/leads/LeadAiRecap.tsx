@@ -68,9 +68,16 @@ export function LeadAiRecap({
     [leadId, openUpgrade],
   );
 
-  // Free workspaces don't auto-spend credits on page open — they tap "AI recap" when they want one.
+  // Auto-generate on open: if no recap yet, or if existing recap is older than 3 hours (e.g. morning open).
+  const ranOnMount = React.useRef(false);
   React.useEffect(() => {
-    if (autoRun && !initial && paid) run(false, true);
+    if (ranOnMount.current || !paid) return;
+    const RECAP_TTL_MS = 3 * 60 * 60 * 1000;
+    const isStale = !initial?.at || Date.now() - new Date(initial.at).getTime() >= RECAP_TTL_MS;
+    if (!initial || isStale || autoRun) {
+      ranOnMount.current = true;
+      run(isStale && !!initial, true);
+    }
   }, [autoRun, initial, paid, run]);
 
   // Lead changed while open: refresh a recap that's already showing (paid workspaces only, quietly).

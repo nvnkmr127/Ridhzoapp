@@ -67,6 +67,10 @@ export async function startWorkers(): Promise<void> {
   createSupportSlaWorker();
   await scheduleSupportSlaScan();
 
+  const { createLeadAiPrewarmWorker, scheduleLeadAiPrewarmScan } = await import("@/lib/jobs/workers/leadAiPrewarmWorker");
+  createLeadAiPrewarmWorker();
+  await scheduleLeadAiPrewarmScan();
+
   // Consumers with an external producer (event bus).
   const { createWebhookRetryWorker } = await import("@/lib/jobs/workers/webhookRetryWorker");
   createWebhookRetryWorker();
