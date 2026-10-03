@@ -1,8 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const inserted: unknown[] = [];
+const sentEmails: any[] = [];
+vi.mock("@/lib/mail/mailer", () => ({
+  sendEmail: vi.fn(async (m: unknown) => { sentEmails.push(m); }),
+  appUrl: (path: string) => `https://app.ridhzo.com${path}`,
+}));
 vi.mock("@/db", () => {
-  const rows = async () => [{ language: "en", count: 0 }];
+  const rows = async () => [{ language: "en", count: 0, email: "user@example.com", name: "Priya Sharma" }];
   const chain = { from: () => chain, where: () => chain, limit: rows, then: (r: (v: unknown) => unknown) => rows().then(r) };
   return {
     db: {
@@ -20,13 +25,14 @@ vi.mock("@/lib/push/channels", () => ({ pushChannelFor: () => "leads" }));
 
 import { NotificationService } from "./service";
 
-const flush = () => new Promise((r) => setTimeout(r, 0));
+const flush = () => new Promise((r) => setTimeout(r, 10));
 const missed = { userId: "u1", type: "missed_call", title: "Missed call from {name}", titleVars: { name: "Ravi" }, leadId: "l1" };
 
 describe("NotificationService.create", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     inserted.length = 0;
+    sentEmails.length = 0;
   });
 
   it("stores the notification and pushes it to the phone", async () => {
@@ -42,5 +48,19 @@ describe("NotificationService.create", () => {
     expect(inserted).toHaveLength(1);
     expect(inserted[0]).not.toHaveProperty("mobilePush"); // not a column
     expect(mobilePush).not.toHaveBeenCalled();
+  });
+
+  it("sends notification email with client name when leadId is present", async () => {
+    await NotificationService.create({
+      userId: "u1",
+      type: "follow_up_overdue",
+      title: "Overdue follow-up",
+      leadId: "l1",
+    });
+    await flush();
+    expect(sentEmails).toHaveLength(1);
+    expect(sentEmails[0].subject).toBe("Overdue follow-up: Priya Sharma");
+    expect(sentEmails[0].preheader).toContain("Priya Sharma");
+    expect(sentEmails[0].html).toContain("Priya Sharma");
   });
 });

@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { notifications, users, roles } from "@/db/schema";
+import { notifications, users, roles, leads } from "@/db/schema";
 import { and, desc, eq, isNull, inArray, lt, sql } from "drizzle-orm";
 import { keepAlive } from "@/lib/keepAlive";
 import { escapeHtml } from "@/lib/utils";
@@ -89,17 +89,22 @@ export class NotificationService {
       const { t } = await import("@/lib/i18n");
       const look = EMAIL_LOOK[data.type] ?? { tag: "Notification", tone: "info" as const, cta: "Open in Ridhzo", glyph: "•" };
       const link = appUrl(data.leadId ? `/leads/${data.leadId}` : "/");
-      // Lead-related mail carries no lead details (name, phone, email…) — those stay in the app. The
-      // recipient gets what happened and a deep link.
-      const generic = !!data.leadId;
-      const heading = generic ? t(user.language, look.tag) : data.title;
-      const detail = generic ? "Open Ridhzo to see the lead's details and next steps." : data.body;
+      let clientName: string | undefined;
+      if (data.leadId) {
+        const [lead] = await db.select({ name: leads.name }).from(leads).where(eq(leads.id, data.leadId)).limit(1);
+        if (lead?.name?.trim()) clientName = lead.name.trim();
+      }
+      const tag = t(user.language, look.tag);
+      const subject = clientName ? `${tag}: ${clientName}` : (data.leadId ? tag : data.title);
+      const headline = clientName || (data.leadId ? tag : data.title);
+      const detail = data.leadId
+        ? (clientName ? `Open Ridhzo to see ${clientName}'s details and next steps.` : "Open Ridhzo to see the lead's details and next steps.")
+        : data.body;
       await sendEmail({ from: "notifications", unsubscribe: data.type,
         to: user.email,
-        subject: heading,
-        // Non-lead titles/bodies can still carry public-form/webhook text — escape before it becomes HTML.
-        preheader: generic ? undefined : detail ? escapeHtml(detail).slice(0, 110) : undefined,
-        html: mping(look.glyph, t(user.language, look.tag), escapeHtml(heading)) + (detail ? mp(escapeHtml(detail)) : "") + mbtn(t(user.language, look.cta), escapeHtml(link)) + mfine(t(user.language, "The sooner you follow up, the better the chance of winning the lead.")),
+        subject,
+        preheader: detail ? escapeHtml(detail).slice(0, 110) : undefined,
+        html: mping(look.glyph, tag, escapeHtml(headline)) + (detail ? mp(escapeHtml(detail)) : "") + mbtn(t(user.language, look.cta), escapeHtml(link)) + mfine(t(user.language, "The sooner you follow up, the better the chance of winning the lead.")),
       });
     } catch (e) {
       console.error("[notifications] email failed", e);
