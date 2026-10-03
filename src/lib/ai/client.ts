@@ -3,7 +3,7 @@ import { generateText as gatewayGenerate } from "ai";
 
 // AI is optional infrastructure, like the mailer: real generation needs AI_GATEWAY_API_KEY
 // (Vercel AI Gateway), otherwise callers fall back gracefully. Never throws for a missing key.
-export const AI_TIMEOUT_MS = 30_000;
+export const AI_TIMEOUT_MS = Number(process.env.AI_TIMEOUT_MS) || 45_000;
 
 export function aiEnabled(): boolean {
   const key = process.env.AI_GATEWAY_API_KEY?.trim();
@@ -24,11 +24,16 @@ export async function generateText(system: string, prompt: string, maxTokens = 1
       system,
       prompt,
       maxOutputTokens: maxTokens,
-      abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS), // a stuck gateway can't hold a request (and a credit) open
+      maxRetries: 1,
+      abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     });
     return text.trim() || null;
-  } catch (e) {
-    console.error("[ai] generateText failed", e);
+  } catch (e: any) {
+    if (e?.name === "AbortError" || e?.name === "TimeoutError") {
+      console.warn(`[ai] generateText timed out after ${AI_TIMEOUT_MS}ms`);
+    } else {
+      console.error("[ai] generateText failed", e);
+    }
     return null;
   }
 }
