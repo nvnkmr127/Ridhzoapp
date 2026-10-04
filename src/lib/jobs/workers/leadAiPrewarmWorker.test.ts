@@ -34,7 +34,7 @@ vi.mock("@/domains/billing/planNames", () => ({
 vi.mock("../redis", () => ({ createRedis: vi.fn(), quietErrors: vi.fn() }));
 vi.mock("bullmq", () => ({ Worker: vi.fn(), Queue: vi.fn() }));
 
-import { processLeadAiPrewarm, scheduleLeadAiPrewarmScan } from "./leadAiPrewarmWorker";
+import { processLeadAiPrewarm, scheduleLeadAiPrewarmScan, MAX_PER_ORG_PER_RUN } from "./leadAiPrewarmWorker";
 import { Queue } from "bullmq";
 
 describe("leadAiPrewarmWorker", () => {
@@ -55,7 +55,48 @@ describe("leadAiPrewarmWorker", () => {
 
     const res = await processLeadAiPrewarm(10);
     expect(res.warmed).toBe(1);
-    expect(recapFn).toHaveBeenCalledWith(candidates[0].lead, "org1", true);
+    expect(recapFn).toHaveBeenCalledWith(candidates[0].lead, "org1", true, { billable: false });
+  });
+
+  it("never bills the workspace — prewarm is not a credit-consuming action", async () => {
+    candidates = [{ lead: { id: "l1", organizationId: "org1", name: "Ravi" }, plan: "starter", trialEndsAt: null }];
+    recapFn.mockResolvedValueOnce({ ai: true, summary: "Active enquiry" });
+
+    await processLeadAiPrewarm(10);
+    // billable:false must reach recapForLead, which is what skips consumeAiCredit/refundAiCredit.
+    expect(recapFn.mock.calls[0][3]).toEqual({ billable: false });
+  });
+
+  it("skips free plans with no trial at all", async () => {
+    candidates = [{ lead: { id: "l3", organizationId: "org3", name: "Anita" }, plan: "free", trialEndsAt: null }];
+
+    const res = await processLeadAiPrewarm(10);
+    expect(res.warmed).toBe(0);
+    expect(res.skipped).toBe(1);
+    expect(recapFn).not.toHaveBeenCalled();
+  });
+
+  it("prewarms free plans on an active trial", async () => {
+    candidates = [
+      { lead: { id: "l4", organizationId: "org4", name: "Sunil" }, plan: "free", trialEndsAt: new Date(Date.now() + 86_400_000) },
+    ];
+    recapFn.mockResolvedValueOnce({ ai: true, summary: "Trial lead" });
+
+    const res = await processLeadAiPrewarm(10);
+    expect(res.warmed).toBe(1);
+  });
+
+  it("caps how many leads one org can take in a single run", async () => {
+    candidates = Array.from({ length: 12 }, (_, i) => ({
+      lead: { id: `l${i}`, organizationId: "org1", name: `Lead ${i}` },
+      plan: "starter",
+      trialEndsAt: null,
+    }));
+    recapFn.mockResolvedValue({ ai: true, summary: "ok" });
+
+    const res = await processLeadAiPrewarm(50);
+    expect(res.warmed).toBe(MAX_PER_ORG_PER_RUN);
+    expect(recapFn).toHaveBeenCalledTimes(MAX_PER_ORG_PER_RUN);
   });
 
   it("skips expired free plans", async () => {

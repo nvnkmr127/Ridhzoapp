@@ -15,8 +15,9 @@ const EMAIL_LOOK: Record<string, { tag: string; tone: "info" | "warn" | "danger"
   sla_escalation: { tag: "Needs attention", tone: "danger", cta: "Contact lead", glyph: "!!" },
   meeting_scheduled: { tag: "Meeting scheduled", tone: "info", cta: "View meeting", glyph: "□" },
   meeting_reminder: { tag: "Meeting reminder", tone: "warn", cta: "View meeting", glyph: "◔" },
+  ai_urgency: { tag: "Time-sensitive", tone: "danger", cta: "Open lead", glyph: "!!" },
 };
-const EMAIL_TYPES = new Set(["new_lead", "lead_assigned", "follow_up_due", "follow_up_overdue", "sla_escalation", "meeting_scheduled", "meeting_reminder"]);
+const EMAIL_TYPES = new Set(["new_lead", "lead_assigned", "follow_up_due", "follow_up_overdue", "sla_escalation", "meeting_scheduled", "meeting_reminder", "ai_urgency"]);
 
 type Vars = Record<string, string | number>;
 

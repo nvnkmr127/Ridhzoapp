@@ -11,6 +11,8 @@ export type PushChannel = (typeof PUSH_CHANNELS)[keyof typeof PUSH_CHANNELS];
 export function pushChannelFor(type: string): PushChannel {
   if (type.startsWith("follow_up")) return "reminders";
   if (type.startsWith("meeting")) return "meetings";
-  if (["new_lead", "lead_assigned", "lead_received", "content_viewed", "sla_escalation", "missed_call"].includes(type)) return "leads";
+  // The AI-urgency alert is about a lead, not about the account, and a rep who mutes "reminders"
+  // shouldn't lose it. It fires rarely and always with a reason, so it stays in the leads channel.
+  if (["new_lead", "lead_assigned", "lead_received", "content_viewed", "sla_escalation", "missed_call", "ai_urgency"].includes(type)) return "leads";
   return "updates";
 }

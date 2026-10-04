@@ -8,7 +8,7 @@ import { formAnswers } from "@/lib/leads/formAnswers";
 import { CONFIGURABLE_LEAD_FIELDS, getLeadFieldValue, resolveLeadFieldConfig } from "@/lib/leads/fieldConfig";
 import { normalizePhone } from "@/lib/leads/normalize";
 import { orgDialCode } from "@/lib/leads/orgDialCode";
-import { NbaActions } from "@/components/leads/NbaActions";
+import { NextActionCard } from "@/components/leads/NextActionCard";
 import { LeadWorkspaceTabs } from "@/components/leads/LeadWorkspaceTabs";
 import { LogReplyBox } from "@/components/leads/LogReplyBox";
 import { LeadService } from "@/domains/leads/service";
@@ -44,7 +44,9 @@ import { LeadStageAndValueControl } from "@/components/leads/LeadStageAndValueCo
 import { LeadSequencesCard } from "@/components/leads/LeadSequencesCard";
 import { LeadAiRecap } from "@/components/leads/LeadAiRecap";
 import type { RecapCache } from "@/lib/ai/leadAssist";
+import { recapIsStale } from "@/lib/ai/recapCache";
 import { visiblePlan } from "@/lib/ai/leadPlan";
+import { dismissAiSuggestionAction } from "@/lib/actions/ai";
 import { PreCallBrief } from "@/components/leads/PreCallBrief";
 import { preCallBrief } from "@/lib/leads/preCallBrief";
 import { LeadInsightsCard } from "@/components/leads/LeadInsightsCard";
@@ -287,6 +289,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     statusCategory,
     unansweredStreak: callStats.unansweredStreak,
     meeting: nextMeeting,
+    bestContactWindow: contactWindow?.label ?? null,
   });
   // "Brief me": last conversation, what's still unknown, what to do next — from what's already loaded.
   const aiNext = savedRecap?.plan?.next && !savedRecap.dismissed?.includes(savedRecap.plan.next.id) ? savedRecap.plan.next : null;
@@ -518,19 +521,36 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
             <LiveNextBestAction leadId={lead.id} fingerprint={liveFingerprint}>
               <SectionCard icon={Sparkles} title="Next Best Action" className={nbaAccent}>
               <div className="space-y-2">
-                <p className="text-base font-semibold leading-snug">{nba.label}</p>
-                <p className="text-sm text-muted-foreground">{nba.reason}</p>
-                {contactWindow && nba.action !== "wait" && (
+                {/* One card, one action. The model's reads as primary when there is one — it carries
+                    evidence and the wording — and the rule's shows on its own otherwise. */}
+                <NextActionCard
+                  action={aiNext ?? nba.nextAction}
+                  leadId={lead.id}
+                  canEdit={canEdit}
+                  hasPhone={!!lead.phone}
+                  hasEmail={!!lead.email}
+                  {...(aiNext ? { onDismiss: async () => { await dismissAiSuggestionAction({ leadId: lead.id, id: aiNext.id }); } } : {})}
+                />
+                {contactWindow && (aiNext ?? nba.nextAction).urgency !== "this_week" && (
                   <p className="text-xs text-muted-foreground">
                     <Clock className="mr-1 inline h-3.5 w-3.5 align-[-2px]" />
                     Best time to reach them: <span className="font-medium text-foreground">{contactWindow.label.toLowerCase()}</span>
                     {contactWindow.days ? ` on ${contactWindow.days}` : ""} · from {contactWindow.count} of {contactWindow.total} replies/answered calls
                   </p>
                 )}
-                {canEdit && <NbaActions action={nba.action} hasPhone={!!lead.phone} hasEmail={!!lead.email} />}
                 <LeadAiRecap
                   leadId={lead.id}
-                  initial={savedRecap?.text ? { text: savedRecap.text, at: savedRecap.at, plan: visiblePlan(savedRecap.plan, savedRecap.dismissed) } : null}
+                  initial={savedRecap?.text
+                    ? {
+                        text: savedRecap.text,
+                        at: savedRecap.at,
+                        plan: visiblePlan(savedRecap.plan, savedRecap.dismissed),
+                        cached: true,
+                        // Older than the TTL: the lead has moved since this was written, and the
+                        // server would have called it out of date rather than handing it back silently.
+                        stale: recapIsStale(savedRecap.at),
+                      }
+                    : null}
                   autoRun={answers.length > 0 && activities.length === 0}
                   changeKey={liveFingerprint}
                 />

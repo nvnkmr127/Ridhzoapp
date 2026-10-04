@@ -64,3 +64,38 @@ describe("knowledge snippets", () => {
     expect(parts.join("").replace(/\s/g, "")).toBe(text.replace(/\s/g, ""));
   });
 });
+
+describe("pickKnowledge — relevance, not just overlap", () => {
+  it("prefers the rare matching term over the common one", () => {
+    // "course" appears in every chunk and so is worth almost nothing; "installment" appears once and
+    // is the actual question. The old overlap count ranked these by raw hits and got it backwards.
+    const docs = [
+      { title: "General", content: "course course course course course course course course\n\nEverything else about courses." },
+      { title: "Payments", content: "Can I pay in installment? Yes, 2 installment plans are available." },
+    ];
+    expect(pickKnowledge(docs, "do you offer an installment plan?", 1)).toContain("[Payments]");
+  });
+
+  it("counts a term once per chunk however often it repeats", () => {
+    const docs = [
+      { title: "Shouty", content: "refund refund refund refund refund refund refund refund refund\n\nrefund refund refund refund" },
+      { title: "Refunds", content: "A refund is processed within 7 working days to the original card." },
+    ];
+    // Repetition must not let the shouting chunk outrank the one that actually answers the question.
+    expect(pickKnowledge(docs, "how long does a refund take?", 1)).toContain("[Refunds]");
+  });
+
+  it("breaks ties towards the more recently updated doc", () => {
+    // Identical content, different age — callers pass docs newest-first.
+    const docs = [
+      { title: "New", content: "Office is open 9 to 5 on weekdays." },
+      { title: "Old", content: "Office is open 9 to 5 on weekdays." },
+    ];
+    expect(pickKnowledge(docs, "office timings", 1)).toContain("[New]");
+  });
+
+  it("still finds a match in a doc with no matching title", () => {
+    const docs = [{ title: "FAQ", content: "Yes, we do home pickup across Vijayawada." }];
+    expect(pickKnowledge(docs, "do you do home pickup?", 1)).toContain("home pickup");
+  });
+});

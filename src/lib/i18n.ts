@@ -48,6 +48,7 @@ const HI: Record<string, string> = {
   "{name} has been waiting over {hours}h. Reply now before they go cold.": "{name} {hours} घंटे से इंतज़ार कर रहे हैं। अभी जवाब दें।",
   "Unassigned lead not contacted": "लीड किसी को सौंपी नहीं गई",
   "{name} has been waiting over {hours}h and nobody owns it. Assign it now.": "{name} {hours} घंटे से इंतज़ार कर रहे हैं और लीड किसी को सौंपी नहीं गई। अभी सौंपें।",
+  "Act now on {name}": "{name} पर अभी काम करें",
   "☀️ Good morning": "☀️ सुप्रभात",
   "☀️ Good morning, {name}": "☀️ सुप्रभात, {name}",
   // Email chrome
@@ -58,6 +59,7 @@ const HI: Record<string, string> = {
   "Needs attention": "ध्यान दें",
   "Meeting scheduled": "मीटिंग तय हुई",
   "Meeting reminder": "मीटिंग रिमाइंडर",
+  "Time-sensitive": "समय-संवेदनशील",
   "Open lead": "लीड खोलें",
   "Open follow-up": "फॉलो-अप खोलें",
   "Follow up now": "अभी फॉलो-अप करें",
@@ -106,6 +108,7 @@ const TE: Record<string, string> = {
   "{name} has been waiting over {hours}h. Reply now before they go cold.": "{name} {hours} గంటలుగా ఎదురుచూస్తున్నారు. ఇప్పుడే జవాబు ఇవ్వండి.",
   "Unassigned lead not contacted": "లీడ్ ఎవరికీ కేటాయించలేదు",
   "{name} has been waiting over {hours}h and nobody owns it. Assign it now.": "{name} {hours} గంటలుగా ఎదురుచూస్తున్నారు, ఎవరికీ కేటాయించలేదు. ఇప్పుడే కేటాయించండి.",
+  "Act now on {name}": "{name} పై ఇప్పుడే చర్యా తీసుకోండి",
   "☀️ Good morning": "☀️ శుభోదయం",
   "☀️ Good morning, {name}": "☀️ శుభోదయం, {name}",
   // Email chrome
@@ -116,6 +119,7 @@ const TE: Record<string, string> = {
   "Needs attention": "శ్రద్ధ అవసరం",
   "Meeting scheduled": "మీటింగ్ షెడ్యూల్ అయింది",
   "Meeting reminder": "మీటింగ్ రిమైండర్",
+  "Time-sensitive": "సమయ-సంవेदనశీల",
   "Open lead": "లీడ్ తెరవండి",
   "Open follow-up": "ఫాలో-అప్ తెరవండి",
   "Follow up now": "ఇప్పుడే ఫాలో-అప్ చేయండి",

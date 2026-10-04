@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { requireOrg, requirePermission, hasPermission } from "@/lib/rbac";
-import { generateText, aiEnabled } from "@/lib/ai/client";
+import { generateText, aiEnabled, AI_TEMPERATURE } from "@/lib/ai/client";
 import { businessPreamble } from "@/lib/ai/leadBrief";
 import { getActionableLead } from "@/lib/leads/access";
 import { draftReplyForLead, markAiSuggestionDone, recapForLead, type RecapResult } from "@/lib/ai/leadAssist";
@@ -149,7 +149,7 @@ export async function generateSequenceAction(goal: string): Promise<{ steps: Gen
 
   try {
     const org = await loadAiBusiness(organizationId, { query: clean });
-    const raw = await generateText(`${businessPreamble(org)}\n\n${SEQ_SYSTEM}`, `Goal: ${clean}\nAudience: sales leads.`, 800);
+    const raw = await generateText(`${businessPreamble(org)}\n\n${SEQ_SYSTEM}`, `Goal: ${clean}\nAudience: sales leads.`, 800, AI_TEMPERATURE.write);
     if (!raw) {
       await PlanService.refundAiCredit(organizationId);
       return { steps: contextual, ai: false };

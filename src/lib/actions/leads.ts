@@ -231,6 +231,8 @@ export async function updateLeadAction(input: z.infer<typeof updateLeadSchema>) 
       await LeadService.updateCustomData(id, updatedCustom, organizationId);
     }
 
+    revalidatePath('/');
+    revalidatePath('/my-dashboard');
     revalidatePath('/leads');
     revalidatePath(`/leads/${id}`);
     return ok(lead);
@@ -260,6 +262,9 @@ export async function updateCustomDataAction(leadId: string, data: Record<string
     }
     const updated = await LeadService.updateCustomData(leadId, result, organizationId);
     if (!updated) return fail("NOT_FOUND", "This lead no longer exists or was moved.");
+    revalidatePath('/');
+    revalidatePath('/my-dashboard');
+    revalidatePath('/leads');
     revalidatePath(`/leads/${leadId}`);
     return ok(updated);
   } catch (e) {
@@ -463,6 +468,8 @@ export async function addNoteAction(input: z.infer<typeof addNoteSchema>) {
       occurredAt,
     });
 
+    revalidatePath('/');
+    revalidatePath('/my-dashboard');
     revalidatePath(`/leads/${parsed.data.leadId}`);
     return ok(activity);
   } catch (e) {
@@ -681,6 +688,8 @@ export async function updateLeadStageAndValueAction(leadId: string, input: { sta
     const { updateLeadStageAndValue } = await import("@/domains/leads/leadActions");
     const updated = await updateLeadStageAndValue(leadId, input, userId, organizationId);
     if (!updated) return fail("NOT_FOUND", "This lead no longer exists or was moved.");
+    revalidatePath('/');
+    revalidatePath('/my-dashboard');
     revalidatePath(`/leads/${leadId}`);
     revalidatePath('/leads');
     return ok(updated);
@@ -703,6 +712,8 @@ export async function quickDispositionAction(leadId: string, outcome: "intereste
     if (!target) return fail("VALIDATION", `Your workspace has no ${outcome === "interested" ? "in-progress" : "lost"} status to move this lead to.`);
     const lead = await LeadService.changeStatus(leadId, target.key, userId, organizationId, outcome === "not_interested" ? "Not interested" : undefined);
     if (!lead) return fail("NOT_FOUND", "This lead no longer exists or was moved.");
+    revalidatePath('/');
+    revalidatePath('/my-dashboard');
     revalidatePath(`/leads/${leadId}`);
     revalidatePath("/leads");
     return ok({ status: target.key, label: target.label });

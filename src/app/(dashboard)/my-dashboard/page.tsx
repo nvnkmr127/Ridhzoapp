@@ -3,8 +3,12 @@ import { MetricsCards } from "@/components/dashboard/MetricsCards";
 import { LeadsByStageChart } from "@/components/dashboard/ChartsLazy";
 import { RecentActivityFeed } from "@/components/dashboard/RecentActivityFeed";
 import { MyDayCard } from "@/components/dashboard/DailySummaryCard";
+import { LeadsAutoRefresh } from "@/components/leads/LeadsAutoRefresh";
+import { leadsChangeTokenAction } from "@/lib/actions/leads";
 import { requireOrg } from "@/lib/rbac";
 import { AnalyticsService, AnalyticsFilters } from "@/lib/analytics/service";
+
+export const dynamic = "force-dynamic";
 
 export default async function SalesRepDashboardPage() {
   const { userId, organizationId } = await requireOrg();
@@ -12,13 +16,15 @@ export default async function SalesRepDashboardPage() {
   // Scope every metric/chart to the signed-in rep's own leads.
   const filters: AnalyticsFilters = { organizationId, ownerId: userId };
 
-  const [pipelineDistribution, recentActivity] = await Promise.all([
+  const [changeToken, pipelineDistribution, recentActivity] = await Promise.all([
+    leadsChangeTokenAction(),
     AnalyticsService.getPipelineDistribution(filters),
     AnalyticsService.getRecentActivity(filters),
   ]);
 
   return (
     <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6">
+      <LeadsAutoRefresh initialToken={changeToken} intervalMs={10_000} />
       <div>
         <h2 className="text-3xl font-bold tracking-tight">My Sales Dashboard</h2>
         <p className="text-sm text-muted-foreground">Your personal pipeline and recent activity.</p>

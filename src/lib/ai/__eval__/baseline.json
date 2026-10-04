@@ -1,0 +1,12 @@
+{
+  "_comment": "Golden-set baseline, recorded against the parser as it stood before the schema-enforced-output refactor. Update deliberately (and read the diff) — never as a way to make a red test green. `npm run eval:ai -- --update-baseline` rewrites this file and prints what moved.",
+  "recordedAt": "2026-10-03",
+  "cases": 16,
+  "usableAccuracy": 1,
+  "fieldPrecision": 1,
+  "fieldRecall": 1,
+  "rejectRate": 1,
+  "statusAccuracy": 1,
+  "nextKindAccuracy": 1,
+  "overall": 100
+}

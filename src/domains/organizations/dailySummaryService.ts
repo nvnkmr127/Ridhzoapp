@@ -3,6 +3,7 @@ import { activities, dailySummarySnapshots, followUps, leads, meetings, organiza
 import { and, count, eq, gte, isNull, lt, or, sql, sum } from "drizzle-orm";
 import { callCounts } from "@/domains/leads/callStats";
 import { formatCallDuration } from "@/domains/leads/contactLog";
+import { generateText, AI_TEMPERATURE } from "@/lib/ai/client";
 import { appUrl, sendEmail } from "@/lib/mail/mailer";
 import { mh, mp, mbtn, mfine, mtag, mtable, mhero, mcount } from "@/lib/mail/layout";
 import { HabitService, recapLine, type Recap } from "@/domains/organizations/habitService";
@@ -124,8 +125,53 @@ export function summarySubject(orgName: string, s: DailySummaryStats) {
 
 const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
-/** Pure: the email body. */
-export function renderSummaryHtml(orgName: string, s: DailySummaryStats) {
+// ── The narrative ──────────────────────────────────────────────────────────────────────────────
+// A one-or-two sentence read of the numbers, on top of the table. Deliberately the cheapest
+// proactive AI in the product: counts only (no lead names, no lead-authored text ever reaches the
+// gateway from here), one call per org per day, and it spends no AI credit — the rep never asked
+// for it, so it isn't theirs to pay for.
+
+const NARRATIVE_SYSTEM = [
+  "You write the one-line read that sits above a sales team's morning numbers.",
+  "You are given counts only. Write 1-2 plain sentences, at most 320 characters, no lists, no markdown, no greeting, no sign-off.",
+  "Lead with the single thing that matters most today, then name the runner-up if there is one.",
+  "Only ever refer to numbers you were given. Never invent a lead, a name, a reason, or a metric.",
+  "If the numbers are flat, say so plainly — 'A quiet one today' is a useful sentence, not a failure.",
+  "Never instruct, shame, or speculate about why something slipped. State the day, don't grade it.",
+].join(" ");
+
+/** Pure: the counts-only prompt. Only non-zero counts go in, so the model can't narrate an absence. */
+export function summaryNarrativePrompt(s: DailySummaryStats): string {
+  const counts = [
+    s.overdueFollowUps && `overdue follow-ups: ${s.overdueFollowUps}`,
+    s.meetingsNeedOutcome && `meetings without a recorded outcome: ${s.meetingsNeedOutcome}`,
+    s.meetingsToday && `meetings today: ${s.meetingsToday}`,
+    s.newLeads && `new leads in the last 24 hours: ${s.newLeads}`,
+    s.uncontactedLeads && `new leads still uncontacted after 24 hours: ${s.uncontactedLeads}`,
+    s.unassignedLeads && `leads with no owner: ${s.unassignedLeads}`,
+  ].filter(Boolean);
+  return [
+    "Today's counts for one sales team:",
+    ...counts.map((c) => `- ${c}`),
+    "",
+    "Write the morning read.",
+  ].join("\n");
+}
+
+/**
+ * Pure: the model's sentence, made safe to drop into an email. Model output is escaped again at
+ * render time, but a stray markup or a runaway paragraph shouldn't get that far — and an empty or
+ * unusable answer means the email falls back to the plain table rather than reading as broken.
+ */
+export function narrativeLine(raw: string | null): string | null {
+  if (!raw) return null;
+  const flat = raw.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  if (flat.length < 12) return null; // "Looks fine." — nothing a reader can act on
+  return flat.length > 320 ? `${flat.slice(0, 317).replace(/\s+\S*$/, "")}…` : flat;
+}
+
+/** Pure: the email body. `narrative` is the optional AI read above the numbers. */
+export function renderSummaryHtml(orgName: string, s: DailySummaryStats, narrative?: string | null) {
   const rows = ([
     ["Overdue follow-ups", s.overdueFollowUps, "/follow-ups", "#dc2626"],
     ["Meetings without an outcome", s.meetingsNeedOutcome, "/meetings", "#f59e0b"],
@@ -145,6 +191,7 @@ export function renderSummaryHtml(orgName: string, s: DailySummaryStats) {
     mtag("Daily summary") +
     mh(`Good morning, ${esc(orgName)}.`) +
     (s.overdueFollowUps > 0 ? mhero(String(s.overdueFollowUps), s.overdueFollowUps === 1 ? "overdue follow-up" : "overdue follow-ups") : mp("Nothing overdue — a clean start.")) +
+    (narrative ? `<p style="margin:0 0 16px;font-size:17px;line-height:1.6;">${esc(narrative)}</p>` : "") +
     mtable(["What needs attention", "Count"], rows) +
     (reps ? `<p style="margin:0 0 8px;font-weight:700;">By team member</p>${list(reps)}` : "") +
     (s.calls.length ? `<p style="margin:0 0 8px;font-weight:700;">Calls in the last 24 hours</p>${list(s.calls.map((r) => `<li>${esc(r.name)}: ${callsLine(r)}</li>`).join(""))}` : "") +
@@ -288,6 +335,17 @@ export class DailySummaryService {
     return people.map((u) => u.email);
   }
 
+  /**
+   * The AI read on today's numbers. Free by policy (nobody asked for it), once per org per day
+   * because `runDue` only reaches here inside the `dailySummarySentOn` claim. Never throws and
+   * never spends credit: `generateText` returns null when AI is off, and the email below still
+   * goes out with the plain table.
+   */
+  private static async narrative(stats: DailySummaryStats): Promise<string | null> {
+    const text = await generateText(NARRATIVE_SYSTEM, summaryNarrativePrompt(stats), 200, AI_TEMPERATURE.write);
+    return narrativeLine(text);
+  }
+
   /** Hourly: send to every org that's in its morning window and hasn't had today's summary. */
   static async runDue(now = new Date()) {
     const orgs = await db
@@ -322,7 +380,7 @@ export class DailySummaryService {
         const stats = await this.stats(org.id, now, org.timezone);
         if (!isActionable(stats)) continue;
         await this.nudgePeople(stats.people, today);
-        const html = renderSummaryHtml(org.name, stats);
+        const html = renderSummaryHtml(org.name, stats, await this.narrative(stats));
         for (const to of await this.adminEmails(org.id)) {
           await sendEmail({ from: "notifications", unsubscribe: "daily_summary", to, subject: summarySubject(org.name, stats), html }, org.id);
           sent++;

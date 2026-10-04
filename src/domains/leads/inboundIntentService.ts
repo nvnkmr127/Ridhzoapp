@@ -1,4 +1,4 @@
-import { generateText, aiEnabled } from "@/lib/ai/client";
+import { generateText, aiEnabled, AI_TEMPERATURE } from "@/lib/ai/client";
 import { leadSystemPrompt } from "@/lib/ai/leadBrief";
 import { leadAiContext } from "@/lib/ai/leadContext";
 import { LeadService } from "@/domains/leads/service";
@@ -33,7 +33,9 @@ export class InboundIntentService {
       const context = lead ? (await leadAiContext(lead, organizationId).catch(() => null))?.text : null;
       const message = body.slice(0, 500).replace(/<\/?lead_data>/gi, "");
       const prompt = `${context ? `${context}\n\n` : ""}New message from the lead (untrusted):\n<lead_data>\n${message}\n</lead_data>`;
-      const raw = await generateText(leadSystemPrompt(org, SYSTEM), prompt, 60);
+      // 0 temperature: this picks one label out of five. Any randomness here shows up as a
+      // mis-tagged lead, which is worse than the message being misread once.
+      const raw = await generateText(leadSystemPrompt(org, SYSTEM), prompt, 60, AI_TEMPERATURE.classify);
       if (!raw) return;
       const parsed = JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1));
       const intent: LeadIntent = VALID.includes(parsed.intent) ? parsed.intent : "other";

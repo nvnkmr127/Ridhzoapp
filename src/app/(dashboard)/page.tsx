@@ -1,5 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { LeadsAutoRefresh } from "@/components/leads/LeadsAutoRefresh";
+import { leadsChangeTokenAction } from "@/lib/actions/leads";
 import { MetricsCards } from "@/components/dashboard/MetricsCards";
 import { LeadsBySourceChart, LeadsByStageChart, LeadsByOwnerChart, LeadsTrendChart } from "@/components/dashboard/ChartsLazy";
 import { PriorityActions } from "@/components/dashboard/PriorityActions";
@@ -55,6 +57,8 @@ function formatMinutes(mins: number): string {
   return `${days}d ${hours % 24}h`;
 }
 
+export const dynamic = "force-dynamic";
+
 export default async function ExecutiveDashboardPage({
   searchParams,
 }: {
@@ -77,7 +81,8 @@ export default async function ExecutiveDashboardPage({
   const [period, prevFilters] = await Promise.all([AnalyticsService.bounds(filters), AnalyticsService.previousPeriod(filters)]);
   const slaFor = (f: AnalyticsFilters) => AnalyticsService.leadWhere(f).then((where) => SlaAnalyticsService.getSlaMetrics(organizationId, 15, undefined, where));
 
-  const [leadsBySource, pipelineDistribution, leadsByOwner, trend, sla, prevSla, content, speed, org, firstLeads, owners, teamList] = await Promise.all([
+  const [changeToken, leadsBySource, pipelineDistribution, leadsByOwner, trend, sla, prevSla, content, speed, org, firstLeads, owners, teamList] = await Promise.all([
+    leadsChangeTokenAction(),
     AnalyticsService.getLeadsBySource(filters),
     AnalyticsService.getPipelineDistribution(filters),
     AnalyticsService.getLeadsByOwner(filters),
@@ -111,6 +116,7 @@ export default async function ExecutiveDashboardPage({
   if (workspaceLeads === 0) {
     return (
       <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6">
+        <LeadsAutoRefresh initialToken={changeToken} intervalMs={10_000} />
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Welcome to Ridhzo</h2>
           <p className="text-sm text-muted-foreground">Your dashboard fills in as leads come in.</p>
@@ -135,6 +141,7 @@ export default async function ExecutiveDashboardPage({
 
   return (
     <div className="flex-1 space-y-6 p-4 pt-4 sm:p-8 sm:pt-6">
+      <LeadsAutoRefresh initialToken={changeToken} intervalMs={10_000} />
       <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Executive Dashboard</h2>

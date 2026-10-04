@@ -22,6 +22,7 @@ import { normalizePhone } from "@/lib/leads/normalize";
 import { preCallBrief } from "@/lib/leads/preCallBrief";
 import { orgDialCode } from "@/lib/leads/orgDialCode";
 import type { LeadService } from "@/domains/leads/service";
+import { REENGAGE_AFTER_DAYS } from "@/lib/leads/inactivity";
 
 // Everything the web lead profile shows beyond the core record — next best action, score, answers,
 // source/attribution, WhatsApp thread, sequences, files, shared content — computed the same way,
@@ -181,6 +182,7 @@ export async function buildLeadProfile(lead: Lead, ctx: { userId: string | null;
     statusCategory,
     unansweredStreak: callStats.unansweredStreak,
     meeting: scheduled ? { startAt: scheduled.startAt, durationMinutes: scheduled.durationMinutes, label: modeLabel(scheduled.mode) } : null,
+    bestContactWindow: contactWindow?.label ?? null,
   });
 
   const score = ScoringService.breakdown({
@@ -256,7 +258,7 @@ export async function buildLeadProfile(lead: Lead, ctx: { userId: string | null;
     attachments: attachments.map((a) => ({ id: a.id, fileName: a.fileName, fileType: a.fileType, fileSize: a.fileSize, createdAt: a.createdAt })),
     shares: shares.map((s) => ({ id: s.id, title: s.title, slug: s.slug, viewCount: s.viewCount, lastViewedAt: s.lastViewedAt })),
     reengagement:
-      reengagement && reengagement.daysInactive >= 14 && reengagement.recommendedCadence.length
+      reengagement && reengagement.daysInactive >= REENGAGE_AFTER_DAYS && reengagement.recommendedCadence.length
         ? {
             daysInactive: reengagement.daysInactive,
             steps: reengagement.recommendedCadence.map((s) => ({ dayOffset: s.dayOffset, channel: s.channel, title: s.actionTitle })),

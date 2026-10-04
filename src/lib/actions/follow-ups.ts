@@ -47,6 +47,8 @@ const followUpSchema = z.object({
 });
 
 function refresh(leadId: string) {
+  revalidatePath('/');
+  revalidatePath('/my-dashboard');
   revalidatePath(`/leads/${leadId}`);
   revalidatePath("/follow-ups");
 }

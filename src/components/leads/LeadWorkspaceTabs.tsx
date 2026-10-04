@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { emitLeadAction, useLeadAction, type LeadUiAction } from "@/components/leads/leadEvents";
+import { parseCompose } from "@/lib/leads/composeLinks";
 
 export type LeadTab = { value: string; label: React.ReactNode; content: React.ReactNode };
 
@@ -53,6 +54,18 @@ export function LeadWorkspaceTabs({ tabs, defaultValue }: { tabs: LeadTab[]; def
     setTimeout(() => emitLeadAction(a.ai ? { type: "ai-draft", channel: a.channel } : { type: "focus-composer", channel: a.channel, text: a.text }), 60);
   }, []);
   useLeadAction(onLeadAction);
+
+  // A `?compose=…&text=…` link lands on the right tab with the text already in the box. Read once
+  // on mount and strip the params, so a refresh doesn't silently re-fire the same draft.
+  React.useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const channel = parseCompose(params.get("compose"));
+    if (!channel) return;
+    const text = params.get("text");
+    const ai = params.get("ai") === "1";
+    window.history.replaceState(null, "", window.location.pathname);
+    onLeadAction({ type: "compose", channel, ai, text: text ?? undefined });
+  }, [onLeadAction]);
 
   return (
     <div ref={ref} className="scroll-mt-4 overflow-hidden rounded-2xl border border-border bg-card">

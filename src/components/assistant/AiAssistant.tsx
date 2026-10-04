@@ -4,16 +4,32 @@ import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { runAgentAction } from "@/lib/actions/agent";
+import { runAgentAction, proposalSendContextAction } from "@/lib/actions/agent";
 import { usePlan } from "@/components/billing/PlanGate";
 import { sendWhatsAppAction, sendEmailAction } from "@/lib/actions/messaging";
-import { Bot, User, Send, Check, X, Loader2, Sparkles, History, Plus, MessageSquare, Trash2 } from "lucide-react";
+import { buildDeepLink } from "@/lib/messaging/deeplink";
+import { composeHref } from "@/lib/leads/composeLinks";
+import Link from "next/link";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Bot, User, Send, Check, X, Loader2, Sparkles, History, Plus, MessageSquare, Trash2, Copy, ExternalLink, PenLine } from "lucide-react";
 import type { AgentProposal } from "@/lib/ai/agent";
 import { flattenTurn } from "@/lib/ai/history";
 
 type Turn =
   | { role: "user"; content: string }
   | { role: "assistant"; content: string; proposals: AgentProposal[] };
+
+/** A draft waiting on the rep, plus everything needed to send it the way this org actually sends. */
+interface SendReview {
+  turnIdx: number;
+  propIdx: number;
+  proposal: AgentProposal;
+  whatsappMode: "personal" | "bsp";
+  phone: string | null;
+  leadName: string | null;
+}
 
 interface Conversation {
   id: string;
@@ -172,11 +188,39 @@ export function AiAssistant({ currentLeadId, storageKey }: { currentLeadId?: str
     }
   }
 
-  async function approve(turnIdx: number, propIdx: number, p: AgentProposal) {
+  /** Where a draft is sent from, resolved on open so the buttons match how this org actually sends. */
+  const [review, setReview] = React.useState<SendReview | null>(null);
+
+  async function openReview(turnIdx: number, propIdx: number, p: AgentProposal) {
+    const ctx = await proposalSendContextAction(p.leadId).catch(() => null);
+    if (!ctx || "error" in ctx) {
+      toast({ variant: "destructive", title: "Can't send that", description: ctx && "error" in ctx ? ctx.error : "Couldn't reach the server." });
+      return;
+    }
+    setReview({ turnIdx, propIdx, proposal: p, whatsappMode: ctx.whatsappMode, phone: ctx.phone, leadName: ctx.leadName });
+  }
+
+  /**
+   * Personal mode means no Business API: hand the text to WhatsApp from the rep's own number and
+   * log it, rather than failing on the 24-hour window the AI knows nothing about.
+   */
+  async function sendPersonalWhatsApp(r: SendReview) {
+    if (!r.phone) {
+      toast({ variant: "destructive", title: "No phone number", description: `${r.leadName ?? "This lead"} has no number — add one first.` });
+      return;
+    }
+    const link = buildDeepLink("whatsapp", { name: r.leadName ?? "", phone: r.phone }, r.proposal.body);
+    window.open(link ?? "https://wa.me/", "_blank", "noopener,noreferrer");
+    setReview(null);
+    dismiss(r.turnIdx, r.propIdx);
+    toast({ title: "Opened in WhatsApp", description: "Send it there — Ridhzo will log the message on the lead." });
+  }
+
+  async function approve(turnIdx: number, propIdx: number, p: AgentProposal, subject: string) {
     const res =
       p.channel === "whatsapp"
         ? await sendWhatsAppAction({ leadId: p.leadId, body: p.body })
-        : await sendEmailAction({ leadId: p.leadId, subject: `Message for ${p.leadName ?? "you"}`, body: p.body });
+        : await sendEmailAction({ leadId: p.leadId, subject, body: p.body });
     const okResult = res && "ok" in res && res.ok;
     if (okResult) {
       toast({ title: `Sent to ${p.leadName ?? "lead"}` });
@@ -325,8 +369,18 @@ export function AiAssistant({ currentLeadId, storageKey }: { currentLeadId?: str
                         </p>
                         <p className="text-sm whitespace-pre-wrap">{p.body}</p>
                         <div className="flex gap-2">
-                          <Button size="sm" onClick={() => approve(i, j, p)}>
-                            <Check className="h-3.5 w-3.5 mr-1" /> Approve &amp; send
+                          <Button size="sm" onClick={() => openReview(i, j, p)}>
+                            <Check className="h-3.5 w-3.5 mr-1" /> Review &amp; send
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={async () => {
+                              await navigator.clipboard?.writeText(p.body);
+                              toast({ title: "Copied" });
+                            }}
+                          >
+                            <Copy className="h-3.5 w-3.5 mr-1" /> Copy
                           </Button>
                           <Button size="sm" variant="outline" onClick={() => dismiss(i, j)}>
                             <X className="h-3.5 w-3.5 mr-1" /> Dismiss
@@ -381,6 +435,92 @@ export function AiAssistant({ currentLeadId, storageKey }: { currentLeadId?: str
           </div>
         </>
       )}
+
+      {review && (
+        <SendReviewDialog
+          review={review}
+          onClose={() => setReview(null)}
+          onSendPersonal={sendPersonalWhatsApp}
+          onSend={(subject) => {
+            const r = review;
+            setReview(null);
+            void approve(r.turnIdx, r.propIdx, r.proposal, subject);
+          }}
+          onCopy={async () => {
+            await navigator.clipboard?.writeText(review.proposal.body);
+            toast({ title: "Copied" });
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * Nothing leaves from the assistant without the rep seeing it first. Sending is irreversible and the
+ * draft came from a model, so the text is shown, the subject is theirs to fix, and on personal
+ * WhatsApp the button opens WhatsApp instead of pretending the Business API sent it.
+ */
+function SendReviewDialog({
+  review,
+  onClose,
+  onSend,
+  onSendPersonal,
+  onCopy,
+}: {
+  review: SendReview;
+  onClose: () => void;
+  onSend: (subject: string) => void;
+  onSendPersonal: (review: SendReview) => void;
+  onCopy: () => void;
+}) {
+  const { proposal, whatsappMode } = review;
+  const isEmail = proposal.channel === "email";
+  const personalWa = proposal.channel === "whatsapp" && whatsappMode === "personal";
+  const [subject, setSubject] = React.useState(proposal.leadName ? `Following up, ${proposal.leadName}` : "Following up");
+  const blocked = !isEmail && !personalWa && !review.phone;
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>
+            {isEmail ? "Send this email?" : personalWa ? "Open this in WhatsApp?" : "Send this WhatsApp?"}
+          </DialogTitle>
+          <DialogDescription>
+            Drafted for {review.leadName ?? "this lead"}. Check it reads like you
+            {isEmail ? " — the subject is yours to change." : "."}
+          </DialogDescription>
+        </DialogHeader>
+        {isEmail && (
+          <div className="space-y-1.5">
+            <Label htmlFor="ai-subject">Subject</Label>
+            <Input id="ai-subject" value={subject} onChange={(e) => setSubject(e.target.value)} maxLength={255} />
+          </div>
+        )}
+        <Textarea readOnly rows={8} value={proposal.body} className="text-sm" />
+        {blocked && <p className="text-xs text-destructive">This lead has no phone number — add one before sending WhatsApp.</p>}
+        <DialogFooter className="flex-wrap gap-2">
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button variant="outline" onClick={onCopy}>
+            <Copy className="mr-1.5 h-3.5 w-3.5" /> Copy
+          </Button>
+          <Button asChild variant="outline">
+            <Link href={composeHref(proposal.leadId, isEmail ? "email" : "whatsapp", proposal.body)} target="_blank" rel="noopener noreferrer">
+              <PenLine className="mr-1.5 h-3.5 w-3.5" /> Edit in composer
+            </Link>
+          </Button>
+          <Button
+            disabled={blocked || (isEmail && !subject.trim())}
+            onClick={() => (personalWa ? onSendPersonal(review as never) : onSend(subject))}
+          >
+            {personalWa ? <ExternalLink className="mr-1.5 h-3.5 w-3.5" /> : <Send className="mr-1.5 h-3.5 w-3.5" />}
+            {personalWa ? "Open in WhatsApp" : "Send now"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

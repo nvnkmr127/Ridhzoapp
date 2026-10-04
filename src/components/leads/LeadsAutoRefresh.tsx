@@ -38,9 +38,11 @@ export function LeadsAutoRefresh({ initialToken, intervalMs = 30_000 }: { initia
     const t = setInterval(check, intervalMs);
     const onVisible = () => void check();
     document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
     return () => {
       clearInterval(t);
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
     };
   }, [router, intervalMs]);
 

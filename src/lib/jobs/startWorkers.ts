@@ -71,6 +71,12 @@ export async function startWorkers(): Promise<void> {
   createLeadAiPrewarmWorker();
   await scheduleLeadAiPrewarmScan();
 
+  // Reads only what the prewarm scan above already wrote — no model calls, no credits. Must start
+  // after prewarm so the first urgency scan sees a populated cache rather than an empty one.
+  const { createAiUrgencyWorker, scheduleAiUrgencyScan } = await import("@/lib/jobs/workers/aiUrgencyAlertWorker");
+  createAiUrgencyWorker();
+  await scheduleAiUrgencyScan();
+
   // Consumers with an external producer (event bus).
   const { createWebhookRetryWorker } = await import("@/lib/jobs/workers/webhookRetryWorker");
   createWebhookRetryWorker();

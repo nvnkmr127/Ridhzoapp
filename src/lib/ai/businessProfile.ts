@@ -95,20 +95,43 @@ export function chunk(text: string, size = 700): string[] {
   return out;
 }
 
-// Pick the chunks that share the most words with `query` (the lead's context / the question).
-// ponytail: keyword overlap, not embeddings — fine for a few price lists/FAQs; switch to pgvector
-// if tenants upload large or many documents and relevance suffers.
+/**
+ * Pick the chunks that best answer `query` (the lead's context, or the question being asked).
+ *
+ * Scoring is weighted by how rare each matched term is across the tenant's own docs, rather than by
+ * counting overlaps. The distinction matters: "course" and "lead" appear in nearly every document and
+ * so say nothing about which chunk answers the question, while "saturday" or "refund" appearing in one
+ * document *is* the answer. Counting both equally is how the old version kept returning the longest
+ * chunk that happened to share some common words.
+ *
+ * Three smaller corrections on top: a term in the document's *title* counts for more (the tenant
+ * naming the topic is a stronger signal than the topic being mentioned in passing), a match counts
+ * once per chunk rather than once per repetition (a chunk saying "course" five times isn't five times
+ * more relevant), and callers pass docs newest-first so a small per-document decay breaks ties
+ * towards what the tenant most recently updated — this year's price list should beat last year's.
+ *
+ * ponytail: weighted term scoring, not embeddings — fine for a few price lists/FAQs; switch to
+ * pgvector if tenants upload large or many documents and relevance still suffers.
+ */
 export function pickKnowledge(docs: { title: string; content: string }[], query: string, max = 3, budget = 3000): string {
   if (!docs.length) return "";
   const q = new Set(words(query));
-  const scored = docs.flatMap((d) =>
-    chunk(d.content).map((c) => {
-      const w = words(c);
-      const hits = w.filter((x) => q.has(x)).length;
-      return { text: `[${d.title}] ${c}`, score: hits / Math.sqrt(w.length + 1) };
-    }),
-  );
-  // Nothing matches (or no query): the first chunk of each doc is usually its overview.
+  const chunks = docs.flatMap((d, docIndex) => {
+    const titleWords = new Set(words(d.title));
+    return chunk(d.content).map((c) => ({ text: `[${d.title}] ${c}`, w: words(c), titleWords, docIndex }));
+  });
+  // How many chunks each term appears in, so a term in every doc is worth far less than one in a single doc.
+  const df = new Map<string, number>();
+  for (const c of chunks) for (const t of new Set(c.w)) df.set(t, (df.get(t) ?? 0) + 1);
+  const scored = chunks.map((c) => {
+    let weight = 0;
+    for (const t of new Set(c.w.filter((x) => q.has(x)))) weight += Math.log(1 + chunks.length / (df.get(t) ?? 1));
+    const titleHits = [...c.titleWords].filter((t) => q.has(t)).length;
+    if (titleHits) weight += titleHits * Math.log(2);
+    return { text: c.text, score: (weight / Math.sqrt(c.w.length + 1)) * Math.pow(0.97, c.docIndex) };
+  });
+  // Nothing matches (or no query): the first chunk of each doc is usually its overview, in the order
+  // given — which is newest-first, so that fallback is already the freshest material.
   const ranked = q.size && scored.some((s) => s.score > 0) ? scored.filter((s) => s.score > 0).sort((a, b) => b.score - a.score) : scored;
   let used = 0;
   const picked: string[] = [];

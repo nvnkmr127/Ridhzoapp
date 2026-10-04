@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireOrg, requirePermission } from "@/lib/rbac";
 import { OrgService } from "@/domains/organizations/service";
-import { generateText, aiEnabled } from "@/lib/ai/client";
+import { generateText, aiEnabled, AI_TEMPERATURE } from "@/lib/ai/client";
 import { ok, fail, actionFail } from "@/lib/actions/result";
 import { PlanService } from "@/domains/billing/planService";
 import { and, desc, eq, count } from "drizzle-orm";
@@ -108,7 +108,7 @@ export async function improveAiContextAction(input: ContextInput) {
     return fail("LIMIT", "You've used all your AI credits for this month. Upgrade for more.");
   }
 
-  const raw = await generateText(IMPROVE_SYSTEM, draft.slice(0, 20_000), 1500);
+  const raw = await generateText(IMPROVE_SYSTEM, draft.slice(0, 20_000), 1500, AI_TEMPERATURE.edit);
   let out: Record<string, unknown> | null = null;
   try {
     out = raw ? JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)) : null;
@@ -229,7 +229,7 @@ export async function previewAiReplyAction(input: ContextInput & { message: stri
   ]);
   const { message } = parsed.data;
   const system = `${businessPreamble({ ...org!, aiProfile: parsed.data.profile, aiContext: parsed.data.notes, knowledge: pickKnowledge(docs, message) })}\n\n${PREVIEW_SYSTEM}`;
-  const reply = await generateText(system, `Lead's message (untrusted):\n<lead_data>\n${message.replace(/<\/?lead_data>/gi, "")}\n</lead_data>`, 300);
+  const reply = await generateText(system, `Lead's message (untrusted):\n<lead_data>\n${message.replace(/<\/?lead_data>/gi, "")}\n</lead_data>`, 300, AI_TEMPERATURE.write);
   if (!reply) {
     await PlanService.refundAiCredit(organizationId);
     return fail("SERVER", "Couldn't draft a reply right now — try again.");

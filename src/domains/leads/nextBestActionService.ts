@@ -1,4 +1,6 @@
 import type { StatusCategory } from "./customStatusSchemaService";
+import { nextActionId, type NextAction, type NextActionKind } from "./nextAction";
+import { GOING_COLD_DAYS, daysSince } from "@/lib/leads/inactivity";
 
 export type ActionPriority = "high" | "medium" | "low";
 export type RecommendedActionType =
@@ -18,6 +20,12 @@ export interface NextBestActionRecommendation {
   label: string;
   reason: string;
   priority: ActionPriority;
+  /**
+   * The same recommendation in the shared vocabulary (see nextAction.ts). `action`/`label`/`reason`/
+   * `priority` are kept alongside it so the existing table, dashboard and lead-page callers keep
+   * working unchanged while the lead page migrates to one card.
+   */
+  nextAction: NextAction;
 }
 
 export interface NextBestActionInput {
@@ -30,12 +38,35 @@ export interface NextBestActionInput {
   phone?: string | null;
   email?: string | null;
   /** Recent open of shared content — a hot buying signal that trumps routine cadence. */
-  recentContentOpen?: { title: string; count: number } | null;
+  recentContentOpen?: { title: string; count: number; lastViewedAt?: Date | string | null } | null;
   /** Calls in a row that went unanswered since the lead last engaged. */
   unansweredStreak?: number;
   /** The lead's earliest still-scheduled meeting (may already have ended without an outcome). */
   meeting?: { startAt: Date | string; durationMinutes: number; label: string } | null;
+  /**
+   * When this lead actually tends to engage, e.g. "Afternoons (12–5 PM)". Appended to the reason of a
+   * contacting action: the single most useful piece of advice available and, until now, computed and
+   * then thrown away.
+   */
+  bestContactWindow?: string | null;
 }
+
+/** Each rule action's equivalent in the shared vocabulary. One place, so the two can't drift apart. */
+const KIND_FOR: Record<RecommendedActionType, NextActionKind> = {
+  send_template: "whatsapp",
+  call_lead: "call",
+  reschedule_followup: "follow_up",
+  qualify_lead: "ask_for_info",
+  reengage_cold_lead: "whatsapp",
+  close_deal: "meeting",
+  try_whatsapp: "whatsapp",
+  log_meeting_outcome: "log_meeting_outcome",
+  confirm_meeting: "confirm_meeting",
+  wait: "wait",
+};
+
+/** Kinds worth mentioning a good time to call in. Not wait/ask_for_info — there's nobody to reach. */
+const TIMING_WORTHWHILE: NextActionKind[] = ["call", "whatsapp", "email", "meeting"];
 
 const BASE_CATEGORY: Record<string, StatusCategory> = {
   new: "open",
@@ -49,6 +80,16 @@ export function statusCategoryOf(status: string, explicit?: StatusCategory): Sta
   return explicit ?? BASE_CATEGORY[status] ?? BASE_CATEGORY[status.toLowerCase()] ?? "open";
 }
 
+/** How long a content open still counts as "hot". */
+export const HOT_OPEN_MS = 3 * 24 * 60 * 60 * 1000;
+
+function isRecentOpen(lastViewedAt: Date | string | null | undefined, now: number): boolean {
+  // No timestamp means we can't date it; trust the caller rather than discard a real signal.
+  if (!lastViewedAt) return true;
+  const at = new Date(lastViewedAt).getTime();
+  return Number.isNaN(at) || now - at <= HOT_OPEN_MS;
+}
+
 export class NextBestActionService {
   /**
    * Evaluates lead status and activity metrics to recommend the immediate Next Best Action.
@@ -56,6 +97,30 @@ export class NextBestActionService {
    * get real advice instead of falling through to a generic default.
    */
   static getRecommendation(input: NextBestActionInput): NextBestActionRecommendation {
+    const rec = NextBestActionService.recommend(input);
+    return { ...rec, nextAction: NextBestActionService.toNextAction(rec, input) };
+  }
+
+  /** The same recommendation in the shared NextAction vocabulary, plus the best time to reach them. */
+  static toNextAction(rec: Omit<NextBestActionRecommendation, "nextAction">, input: NextBestActionInput): NextAction {
+    const kind = KIND_FOR[rec.action];
+    const timing = TIMING_WORTHWHILE.includes(kind) ? input.bestContactWindow : null;
+    const reason = timing ? `${rec.reason} They engage best ${timing.toLowerCase()}.` : rec.reason;
+    return {
+      // Keyed on the rule's identity (its action + label), not the reason — the reason now varies
+      // with the contact window, and a dismissal must survive that changing.
+      id: nextActionId(kind, `${rec.action}:${rec.label}`),
+      kind,
+      title: rec.label,
+      reason,
+      evidence: [],
+      urgency: rec.priority === "high" ? "now" : rec.priority === "medium" ? "today" : "this_week",
+      confidence: rec.priority === "high" ? "high" : rec.priority === "medium" ? "medium" : "low",
+      source: "rule",
+    };
+  }
+
+  private static recommend(input: NextBestActionInput): Omit<NextBestActionRecommendation, "nextAction"> {
     const category = statusCategoryOf(input.status, input.statusCategory);
 
     // Resolved leads are not active opportunities — never recommend chasing them.
@@ -69,13 +134,13 @@ export class NextBestActionService {
     }
 
     const now = Date.now();
-    const lastContactDays = input.lastContactedAt
-      ? (now - new Date(input.lastContactedAt).getTime()) / (1000 * 60 * 60 * 24)
-      : Infinity;
+    const lastContactDays = daysSince(input.lastContactedAt);
     const followUpAt = input.nextFollowUpAt ? new Date(input.nextFollowUpAt).getTime() : null;
 
     // 0. Recent content open — the strongest buying signal, act while they're warm.
-    if (input.recentContentOpen && input.recentContentOpen.count > 0) {
+    // The recency window lives here, not in the caller: every caller has to remember it, and one that
+    // doesn't turns a view from six weeks ago into "call them now".
+    if (input.recentContentOpen && input.recentContentOpen.count > 0 && isRecentOpen(input.recentContentOpen.lastViewedAt, now)) {
       const { title, count } = input.recentContentOpen;
       return {
         action: "call_lead",
@@ -167,7 +232,7 @@ export class NextBestActionService {
     }
 
     // 5. Going cold (not when contact was simply never logged on a lead that's already being worked)
-    if (Number.isFinite(lastContactDays) && lastContactDays > 5) {
+    if (Number.isFinite(lastContactDays) && lastContactDays > GOING_COLD_DAYS) {
       return {
         action: "reengage_cold_lead",
         label: "Send a re-engagement message",

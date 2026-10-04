@@ -2,13 +2,18 @@ import { createHash } from "crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { leads } from "@/db/schema";
-import { generateText, aiEnabled } from "@/lib/ai/client";
+import { generateText, generateObject, aiEnabled, AI_TEMPERATURE } from "@/lib/ai/client";
 import { hasAiWorthyContext, leadSystemPrompt } from "@/lib/ai/leadBrief";
 import { leadAiContext } from "@/lib/ai/leadContext";
 import { loadAiBusiness } from "@/domains/organizations/aiBusiness";
 import { PlanService } from "@/domains/billing/planService";
 import { CustomFieldService } from "@/domains/customFields/service";
-import { BROKEN_RECAP, briefFormatInstructions, parseLeadBrief, visiblePlan, type LeadPlan, type PlanInput } from "@/lib/ai/leadPlan";
+import { BROKEN_RECAP, briefFormatInstructions, leadBriefSchema, parseLeadBrief, planFromObject, visiblePlan, type LeadPlan, type PlanCapabilities, type PlanInput } from "@/lib/ai/leadPlan";
+import { RECAP_TTL_MS } from "@/lib/ai/recapCache";
+import { NextBestActionService } from "@/domains/leads/nextBestActionService";
+import { SequenceService } from "@/domains/leads/sequenceService";
+import type { NextActionKind } from "@/domains/leads/nextAction";
+import type { LeadExtras } from "@/lib/ai/leadBrief";
 import type { LeadService } from "@/domains/leads/service";
 
 // AI reply drafts and lead recaps. Shared by the web server actions and the mobile API; callers check
@@ -76,7 +81,7 @@ export async function draftReplyForLead(
   const { text: context } = await leadAiContext(lead, organizationId);
   const org = await loadAiBusiness(organizationId, { sourceId: lead.sourceId, query: context });
   const prompt = `${context}\n\nWrite the next ${channel === "email" ? "email" : "WhatsApp message"} to send this lead.`;
-  const raw = await generateText(leadSystemPrompt(org, draftSystem(channel, tone, language)), prompt);
+  const raw = await generateText(leadSystemPrompt(org, draftSystem(channel, tone, language)), prompt, 1000, AI_TEMPERATURE.write);
   if (!raw) {
     await PlanService.refundAiCredit(organizationId);
     return { ...fallback, ai: false };
@@ -131,13 +136,91 @@ export type RecapResult = {
 // owner, fields…), so opening it again costs no AI call but it's never stale.
 // cachedOnly (the mobile app on opening a lead): never spend a credit — return the saved recap even if
 // it's out of date (stale, without its suggestions), or `pending` when there is none yet.
-export const RECAP_TTL_MS = 3 * 60 * 60 * 1000; // 3 hours
+//
+// RECAP_TTL_MS lives in ./recapCache, not here: this file is server-only and the browser's recap
+// panel needs the same number.
+export { RECAP_TTL_MS };
 
-export async function recapForLead(lead: Lead, organizationId: string, refresh = false, opts: { cachedOnly?: boolean } = {}): Promise<RecapResult> {
+/** Minutes within which "you just spoke to them" makes another message a nuisance rather than service. */
+const RECENT_CONTACT_MINUTES = 120;
+
+/**
+ * Why reaching out right now would be the wrong move, phrased for the rep to read — or null.
+ *
+ * Deterministic, and derived *before* the model is asked, because the model is shown these same
+ * facts as prose and reliably talks past them. "No contact logged in two days, call them now" is
+ * the canonical failure: it's advice that costs a rep a relationship with someone they just reached.
+ * A future follow-up or a contact minutes ago outranks any judgement the model makes about urgency.
+ */
+function outreachHold(lead: Lead, now: Date, rule?: { kind: NextActionKind; reason: string } | null): string | null {
+  const followUp = lead.nextFollowUpAt ? new Date(lead.nextFollowUpAt) : null;
+  if (followUp && followUp.getTime() > now.getTime()) return `A follow-up is already booked for ${followUp.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}.`;
+  const last = lead.lastContactedAt ? new Date(lead.lastContactedAt) : null;
+  if (last) {
+    const mins = Math.round((now.getTime() - last.getTime()) / 60_000);
+    if (mins >= 0 && mins < RECENT_CONTACT_MINUTES) return mins < 60 ? `You contacted them ${mins} minute${mins === 1 ? "" : "s"} ago.` : `You contacted them ${Math.round(mins / 60)} hour${mins < 120 ? "" : "s"} ago.`;
+  }
+  // The rule engine's own "leave them alone" verdict — including a resolved (won/lost) lead.
+  if (rule && (rule.kind === "wait" || rule.kind === "do_nothing" || rule.kind === "follow_up")) return rule.reason;
+  return null;
+}
+
+/**
+ * What this lead actually supports right now, so the model is only ever offered executable actions
+ * and the validator has something concrete to re-check against. Read from data already loaded.
+ */
+function capabilitiesFor(lead: Lead, extras: LeadExtras, hasEnrollableSequence: boolean, now: Date): PlanCapabilities {
+  const meetings = extras.meetings ?? [];
+  return {
+    phone: !!lead.phone,
+    email: !!lead.email,
+    inSequence: (extras.sequences ?? []).some((s) => s.status === "active"),
+    hasEnrollableSequence,
+    shareableContent: (extras.contentOpens ?? []).length > 0,
+    upcomingMeeting: meetings.some((m) => m.status === "scheduled" && new Date(m.startAt).getTime() > now.getTime()),
+    // A meeting whose time has passed with no outcome recorded is exactly what needs logging.
+    unloggedMeeting: meetings.some((m) => new Date(m.startAt).getTime() + m.durationMinutes * 60_000 < now.getTime() && !m.outcome),
+    hasOwner: !!lead.ownerId,
+  };
+}
+
+/** The earliest meeting still ahead of us — the input shape `NextBestActionService` expects. */
+function upcomingMeetingFor(extras: LeadExtras, now: Date) {
+  // `meetings` is newest first, so the last scheduled-and-future one is the earliest upcoming.
+  const m = (extras.meetings ?? []).filter((x) => x.status === "scheduled" && new Date(x.startAt).getTime() > now.getTime()).at(-1);
+  return m ? { startAt: m.startAt, durationMinutes: m.durationMinutes, label: m.title } : null;
+}
+
+/**
+ * The deterministic rules' answer for this lead. Computed here rather than only on the lead page so
+ * that background recaps are vetted by exactly the same rules a rep sees — otherwise prewarmed
+ * suggestions (and the alerts they'll later trigger) would be judged by a weaker standard.
+ */
+function ruleNextFor(lead: Lead, extras: LeadExtras, now: Date) {
+  const recent = [...(extras.contentOpens ?? [])].filter((c) => c.viewCount > 0).sort((a, b) => new Date(b.lastViewedAt ?? 0).getTime() - new Date(a.lastViewedAt ?? 0).getTime())[0];
+  return NextBestActionService.getRecommendation({
+    status: lead.status,
+    statusCategory: extras.statusCategory,
+    lastContactedAt: lead.lastContactedAt,
+    nextFollowUpAt: lead.nextFollowUpAt,
+    score: lead.score ?? 0,
+    phone: lead.phone,
+    email: lead.email,
+    recentContentOpen: recent ? { title: recent.title, count: recent.viewCount, lastViewedAt: recent.lastViewedAt } : null,
+    unansweredStreak: extras.unansweredStreak,
+    meeting: upcomingMeetingFor(extras, now),
+    bestContactWindow: extras.bestContactTime,
+  }).nextAction;
+}
+
+export async function recapForLead(lead: Lead, organizationId: string, refresh = false, opts: { cachedOnly?: boolean; billable?: boolean; ruleNext?: { kind: NextActionKind; reason: string } | null } = {}): Promise<RecapResult> {
   const leadId = lead.id;
-  const [{ activities, extras, text: context, signature: leadSig, fieldDefs, statuses }, org] = await Promise.all([
+  const [{ activities, extras, text: context, signature: leadSig, fieldDefs, statuses }, org, enrollableSequences] = await Promise.all([
     leadAiContext(lead, organizationId),
     loadAiBusiness(organizationId, { sourceId: lead.sourceId }),
+    // Only so the AI can be told a sequence exists to enroll into. Cheap, and it stops the model
+    // offering "put them on a sequence" to a workspace that has none.
+    SequenceService.list(organizationId).then((rows) => rows.filter((s) => s.isActive && s.stepCount > 0)).catch(() => []),
   ]);
   // The recap is grounded in the business context too — editing it (what you sell, rules, currency,
   // the source note) must not leave recaps written under the old one. Reference docs are per-request
@@ -162,7 +245,12 @@ export async function recapForLead(lead: Lead, organizationId: string, refresh =
 
   // Brand-new leads with form answers are exactly when a recap helps most — only skip the AI when
   // there's genuinely nothing to read.
-  const outOfCredits = aiEnabled() && hasAiWorthyContext(activities, extras) && !(await PlanService.consumeAiCredit(organizationId));
+  // billable:false is the background prewarm — warming a cache the rep hasn't asked for is our cost,
+  // not theirs, so it never draws on the workspace's monthly AI credits (which exist to pay for work
+  // someone actually requested).
+  const billable = opts.billable !== false;
+  const outOfCredits =
+    billable && aiEnabled() && hasAiWorthyContext(activities, extras) && !(await PlanService.consumeAiCredit(organizationId));
   if (!aiEnabled() || !hasAiWorthyContext(activities, extras) || outOfCredits) {
     return { outOfCredits, summary: lastTouchSummary(activities, extras.statusLabel ?? lead.status), ai: false };
   }
@@ -183,24 +271,46 @@ export async function recapForLead(lead: Lead, organizationId: string, refresh =
     statuses: statuses.map((st) => ({ key: st.key, label: st.label })),
     currentStatus: lead.status,
     now: extras.now ?? new Date(),
+    capabilities: capabilitiesFor(lead, extras, enrollableSequences.length > 0, extras.now ?? new Date()),
+    holdOutreach: outreachHold(lead, extras.now ?? new Date(), opts.ruleNext ?? ruleNextFor(lead, extras, extras.now ?? new Date())),
   };
 
   const orgWithKnowledge = await loadAiBusiness(organizationId, { sourceId: lead.sourceId, query: context });
   const system = leadSystemPrompt(orgWithKnowledge, `${RECAP_SYSTEM}\n\n${briefFormatInstructions(planInput, extras.timezone ?? "UTC")}`);
-  // This model tends to write a long analysis before (or instead of) the JSON, so it gets room to finish,
-  // and one strict retry when the first reply has no usable JSON. Same credit — it's one recap.
-  let raw = await generateText(system, context, 3000);
-  if (raw && parseLeadBrief(raw, planInput).recap === BROKEN_RECAP) {
-    raw = (await generateText(`${system}\n\nReply with the JSON object ONLY. The first character of your reply must be "{". No analysis, no preface.`, context, 3000)) ?? raw;
+
+  // Primary path: generation is constrained by the schema, so there is no JSON to extract and no
+  // "cut off before the JSON" failure mode — the two things that used to cost a 3000-token retry.
+  // Everything still goes through validatePlan afterwards; a schema can't know which fields this
+  // tenant defined, so it replaces the parsing, not the checking.
+  const brief = await generateObject({
+    schema: leadBriefSchema,
+    schemaName: "lead_brief",
+    schemaDescription: "A short recap of where this lead stands, any field values found in their messages with the quote for each, an optional status change, and one concrete next step.",
+    system,
+    prompt: context,
+    maxTokens: 3000,
+  });
+  let parsed: { recap: string; plan: LeadPlan } | null = brief ? planFromObject(brief, planInput) : null;
+
+  if (!parsed) {
+    // The structured call failed (model can't satisfy the schema, or timed out). Fall back to asking
+    // for JSON in prose, with one strict retry — a weaker model may manage that when it can't manage
+    // the schema. Same credit: it is still one recap.
+    let raw = await generateText(system, context, 3000, AI_TEMPERATURE.extract);
+    if (raw && parseLeadBrief(raw, planInput).recap === BROKEN_RECAP) {
+      raw = (await generateText(`${system}\n\nReply with the JSON object ONLY. The first character of your reply must be "{". No analysis, no preface.`, context, 3000, AI_TEMPERATURE.extract)) ?? raw;
+    }
+    if (raw) parsed = parseLeadBrief(raw, planInput);
   }
-  if (!raw) {
-    await PlanService.refundAiCredit(organizationId);
+
+  if (!parsed) {
+    if (billable) await PlanService.refundAiCredit(organizationId);
     return { summary: `Status is ${extras.statusLabel ?? lead.status}. Review recent activity and follow up.`, ai: false };
   }
-  const { recap: summary, plan } = parseLeadBrief(raw, planInput);
+  const { recap: summary, plan } = parsed;
   if (summary === BROKEN_RECAP) {
     // Cut off or malformed: saving this would pin the error message as the recap until the lead changes.
-    await PlanService.refundAiCredit(organizationId);
+    if (billable) await PlanService.refundAiCredit(organizationId);
     return { summary: lastTouchSummary(activities, extras.statusLabel ?? lead.status), ai: false };
   }
 

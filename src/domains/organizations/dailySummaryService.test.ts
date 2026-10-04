@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { callsLine, isActionable, isDueToSend, milestoneFor, personalLine, renderSummaryHtml, summarySubject, type DailySummaryStats } from "./dailySummaryService";
+import { callsLine, isActionable, isDueToSend, milestoneFor, narrativeLine, personalLine, renderSummaryHtml, summaryNarrativePrompt, summarySubject, type DailySummaryStats } from "./dailySummaryService";
 
 const empty: DailySummaryStats = { overdueFollowUps: 0, meetingsNeedOutcome: 0, meetingsToday: 0, newLeads: 0, uncontactedLeads: 0, unassignedLeads: 0, byRep: [], calls: [], people: [] };
 
@@ -46,5 +46,32 @@ describe("daily summary", () => {
     expect(milestoneFor("2026-10-07", "Asia/Kolkata", created, null)).toBeNull();
     const trialEnd = new Date("2026-10-15T05:00:00Z");
     expect(milestoneFor("2026-10-14", "Asia/Kolkata", created, trialEnd)).toBe("trial_ends_tomorrow");
+  });
+
+  it("narrates the day from counts alone", () => {
+    const prompt = summaryNarrativePrompt({ ...empty, overdueFollowUps: 2, meetingsToday: 3, unassignedLeads: 1 });
+    expect(prompt).toContain("overdue follow-ups: 2");
+    expect(prompt).toContain("meetings today: 3");
+    expect(prompt).toContain("leads with no owner: 1");
+    expect(prompt).not.toContain("new leads in the last 24 hours"); // zero counts stay out
+    expect(summaryNarrativePrompt(empty)).not.toContain(": 0");
+  });
+
+  it("falls back to the plain table when the narrative is missing or unusable", () => {
+    expect(narrativeLine(null)).toBeNull();
+    expect(narrativeLine("   ")).toBeNull();
+    expect(narrativeLine("Fine.")).toBeNull(); // too short to read as a morning update
+    expect(narrativeLine("Two overdue follow-ups.\n\nOne meeting waits.")).toBe("Two overdue follow-ups. One meeting waits.");
+    expect(narrativeLine("<b>Clear the</b> overdue follow-ups first.")).toBe("Clear the overdue follow-ups first.");
+    const long = narrativeLine(`${"word ".repeat(120)}end`)!;
+    expect(long.length).toBeLessThanOrEqual(320);
+    expect(long.endsWith("…")).toBe(true);
+    expect(long).not.toContain("wor…"); // cut on a word boundary, never mid-word
+
+    const stats = { ...empty, overdueFollowUps: 1 };
+    const withNarrative = renderSummaryHtml("Acme", stats, "Clear the overdue follow-up first.");
+    expect(withNarrative).toContain("Clear the overdue follow-up first.");
+    expect(renderSummaryHtml("Acme", stats)).not.toContain("Clear the overdue");
+    expect(renderSummaryHtml("Acme", stats, "<script>x</script> Clear the overdue follow-up first.")).not.toContain("<script>");
   });
 });

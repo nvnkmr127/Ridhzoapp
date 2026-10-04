@@ -661,6 +661,9 @@ export class LeadService {
         email: leads.email,
         lastContactedAt: leads.lastContactedAt,
         nextFollowUpAt: leads.nextFollowUpAt,
+        // The cached AI plan, so the dashboard can rank by the AI's read without calling a model.
+        // It's the same blob the lead page reads; nothing here generates or refreshes it.
+        customData: leads.customData,
       })
       .from(leads)
       .where(and(

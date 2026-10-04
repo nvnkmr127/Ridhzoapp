@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { CustomStatusSchemaService } from "./customStatusSchemaService";
 import { leads, activities } from "@/db/schema";
 import { and, eq, gte, inArray } from "drizzle-orm";
+import { DAY_MS, VELOCITY_PREVIOUS_DAYS, VELOCITY_RECENT_DAYS } from "@/lib/leads/inactivity";
 
 export interface LeadVelocitySummary {
   id: string;
@@ -59,8 +60,8 @@ export class EngagementVelocityService {
       };
     }
 
-    const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const fourteenDaysAgo = new Date(Date.now() - VELOCITY_PREVIOUS_DAYS * DAY_MS);
+    const sevenDaysAgo = new Date(Date.now() - VELOCITY_RECENT_DAYS * DAY_MS);
 
     const actRows = await db
       .select({

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { BROKEN_RECAP, parseLeadBrief, validatePlan, visiblePlan, briefFormatInstructions, type PlanInput } from "./leadPlan";
+import { BROKEN_RECAP, EMPTY_PLAN, leadBriefSchema, parseLeadBrief, planFromObject, validateNextAction, validatePlan, visiblePlan, briefFormatInstructions, type PlanInput } from "./leadPlan";
 
 const now = new Date("2026-09-26T10:00:00Z");
 
@@ -133,10 +133,174 @@ describe("parseLeadBrief — malformed model output", () => {
   });
 });
 
+describe("planFromObject — the schema-constrained path", () => {
+  it("applies exactly the same rules as the text path", () => {
+    const obj = {
+      recap: "Wants a 3BHK, budget not discussed. Call today.",
+      fields: [
+        { key: "bhk", value: "3BHK", evidence: "we need a 3 BHK" },
+        { key: "budget", value: "not provided", evidence: "nothing said about budget" },
+      ],
+      status: { key: "site_visit", reason: "asked about Saturday visit" },
+      next: { kind: "call", title: "Call about Saturday", reason: "they asked a question we haven't answered" },
+    };
+    const fromObject = planFromObject(leadBriefSchema.parse(obj), input);
+    const fromText = parseLeadBrief(JSON.stringify(obj), input);
+    expect(fromObject).toEqual(fromText);
+    // The placeholder survives the schema, and only validatePlan drops it.
+    expect(fromObject.plan.fields.map((f) => f.key)).toEqual(["bhk"]);
+  });
+
+  it("fills the schema's defaults when the model omits the optional parts", () => {
+    const brief = leadBriefSchema.parse({ recap: "Just browsed the price list." });
+    expect(brief.fields).toEqual([]);
+    expect(brief.status).toBeNull();
+    expect(brief.next).toBeNull();
+    expect(planFromObject(brief, input)).toEqual({ recap: "Just browsed the price list.", plan: EMPTY_PLAN });
+  });
+
+  it("never returns an empty recap, so callers can test one value", () => {
+    expect(planFromObject({ recap: "" }, input).recap).toBe(BROKEN_RECAP);
+    expect(planFromObject(null, input).recap).toBe(BROKEN_RECAP);
+  });
+
+  it("rejects a brief whose recap isn't a string, before generation can be trusted", () => {
+    // The failure mode this replaces: the model emits a number or an object for "recap" and the old
+    // prose-asked path silently produced a recap of "" that got saved onto the lead.
+    expect(() => leadBriefSchema.parse({ recap: { text: "hi" } })).toThrow();
+  });
+});
+
 describe("validatePlan — placeholders", () => {
   it("drops 'Not provided' style values", () => {
     const input = { fields: [{ key: "location", label: "Location", type: "text", options: [] }], current: {}, coerce: (_k: string, v: unknown) => v, statuses: [], currentStatus: "new", now: new Date() };
     const plan = validatePlan({ fields: [{ key: "location", value: "Not provided", evidence: "no location" }] }, input);
     expect(plan.fields).toEqual([]);
+  });
+});
+
+// The three checks the prompt cannot be trusted with. All deterministic, all in the validator.
+describe("validateNextAction — impossibility", () => {
+  const noPhone: PlanInput = { ...input, capabilities: { phone: false, email: true } };
+
+  it("drops a call when there is no phone to call, and a WhatsApp for the same reason", () => {
+    expect(validateNextAction({ kind: "call", title: "Call them" }, noPhone)).toBeNull();
+    expect(validateNextAction({ kind: "whatsapp", title: "Message them" }, noPhone)).toBeNull();
+  });
+
+  it("keeps the same call when there is a phone — the filter is about the lead, not the kind", () => {
+    expect(validateNextAction({ kind: "call", title: "Call them" }, { ...input, capabilities: { phone: true } })?.kind).toBe("call");
+  });
+
+  it("drops a sequence stop when the lead isn't in one, and an enroll when none exists", () => {
+    const idle = { ...input, capabilities: { inSequence: false, hasEnrollableSequence: false } };
+    expect(validateNextAction({ kind: "stop_sequence", title: "Stop the sequence" }, idle)).toBeNull();
+    expect(validateNextAction({ kind: "enroll_sequence", title: "Enroll them" }, idle)).toBeNull();
+    expect(validateNextAction({ kind: "stop_sequence", title: "Stop the sequence" }, { ...input, capabilities: { inSequence: true } })?.kind).toBe("stop_sequence");
+  });
+
+  it("drops a status move to where the lead already is", () => {
+    const statusInput = { ...input, statuses: [{ key: "new", label: "New" }, { key: "hot", label: "Hot" }], currentStatus: "hot" };
+    expect(validateNextAction({ kind: "change_status", title: "Mark hot", statusKey: "hot" }, statusInput)).toBeNull();
+    expect(validateNextAction({ kind: "change_status", title: "Move to new", statusKey: "new" }, statusInput)?.statusKey).toBe("new");
+  });
+
+  it("infers the target status for mark_qualified, and gives up when the workspace has none", () => {
+    const withQual: PlanInput = { ...input, statuses: [{ key: "new", label: "New" }, { key: "qualified", label: "Qualified" }] };
+    expect(validateNextAction({ kind: "mark_qualified", title: "Mark qualified" }, withQual)?.statusKey).toBe("qualified");
+    expect(validateNextAction({ kind: "mark_qualified", title: "Mark qualified" }, input)).toBeNull();
+  });
+
+  it("keeps a suggestion it can't check — unknown capability is not the same as no", () => {
+    expect(validateNextAction({ kind: "stop_sequence", title: "Stop the sequence" }, { ...input, capabilities: {} })?.kind).toBe("stop_sequence");
+    expect(validateNextAction({ kind: "stop_sequence", title: "Stop the sequence" }, input)?.kind).toBe("stop_sequence");
+  });
+});
+
+describe("validateNextAction — outreach veto", () => {
+  const held: PlanInput = { ...input, holdOutreach: "You contacted them 12 minutes ago." };
+  const contacting = { reason: "Asked about the EMI twice this week and got no reply.", evidence: ["what is the EMI on the City"], urgency: "now", title: "Call about the EMI" };
+
+  it("downgrades a contacting action to this_week and shows the rep why", () => {
+    const a = validateNextAction({ kind: "call", ...contacting }, held);
+    expect(a?.urgency).toBe("this_week");
+    expect(a?.reason).toContain("12 minutes ago");
+  });
+
+  it("does not touch a non-contacting action — the veto is about reaching out, not record-keeping", () => {
+    const a = validateNextAction({ kind: "follow_up", ...contacting }, held);
+    expect(a?.urgency).not.toBe("this_week");
+  });
+
+  it("leaves an action alone when nothing is holding it back", () => {
+    expect(validateNextAction({ kind: "call", ...contacting }, input)?.urgency).toBe("now");
+  });
+
+  it("also lowers the derived confidence, so it can't read as certain", () => {
+    expect(validateNextAction({ kind: "call", ...contacting }, held)?.confidence).not.toBe("high");
+  });
+});
+
+describe("validateNextAction — confidence gate", () => {
+  const bare = { kind: "email", title: "Email them", reason: "Follow up", urgency: "now" };
+  const specific = {
+    kind: "email",
+    title: "Email about Saturday's visit",
+    reason: "Asked twice about the 11 AM slot on Saturday and hasn't confirmed.",
+    evidence: ["can we do saturday 11 am"],
+    urgency: "now",
+  };
+
+  it("rates a reason with no quote and no concrete fact as low, and stops it being urgent", () => {
+    const a = validateNextAction(bare, input);
+    expect(a?.confidence).toBe("low");
+    expect(a?.urgency).toBe("today");
+  });
+
+  it("rates a cited, specific reason as high", () => {
+    expect(validateNextAction(specific, input)?.confidence).toBe("high");
+  });
+
+  it("caps how urgent a low-confidence action can be, whatever the model asked for", () => {
+    expect(validateNextAction({ ...bare, urgency: "now" }, input)?.urgency).toBe("today");
+  });
+
+  it("marks the source as the AI and keeps the quote as evidence", () => {
+    const a = validateNextAction(specific, input);
+    expect(a?.source).toBe("ai");
+    expect(a?.evidence).toEqual(["can we do saturday 11 am"]);
+  });
+});
+
+describe("validateNextAction — shape", () => {
+  it("keeps a message only for the kinds that send one", () => {
+    expect(validateNextAction({ kind: "call", title: "Call", message: "hi" }, input)?.message).toBeUndefined();
+    expect(validateNextAction({ kind: "whatsapp", title: "WhatsApp", message: "hi there" }, input)?.message).toBe("hi there");
+  });
+
+  it("rejects anything that isn't a known kind, or has no title", () => {
+    expect(validateNextAction({ kind: "send_bribe", title: "Send a bribe" }, input)).toBeNull();
+    expect(validateNextAction({ kind: "call" }, input)).toBeNull();
+    expect(validateNextAction("call", input)).toBeNull();
+  });
+
+  it("gives the same id for the same action, so a dismissal survives a regeneration", () => {
+    const specific = { kind: "email", title: "Email about Saturday's visit", reason: "Asked twice about the 11 AM slot.", evidence: ["can we do saturday 11 am"] };
+    const a = validateNextAction(specific, input);
+    const b = validateNextAction({ ...specific, evidence: ["different words entirely", "more"] }, input);
+    expect(a?.id).toBe(b?.id);
+  });
+});
+
+describe("briefFormatInstructions — only teaches what the lead supports", () => {
+  it("omits kinds the lead can't support", () => {
+    const s = briefFormatInstructions({ ...input, capabilities: { phone: false, email: true } }, "Asia/Kolkata");
+    expect(s).not.toContain("call (call them");
+    expect(s).toContain("email (email them)");
+  });
+
+  it("tells the model when reaching out now would be wrong", () => {
+    const s = briefFormatInstructions({ ...input, holdOutreach: "A follow-up is already booked for 30 Sep." }, "Asia/Kolkata");
+    expect(s).toContain("Do NOT propose contacting them right now");
   });
 });

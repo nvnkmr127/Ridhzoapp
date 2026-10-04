@@ -8,7 +8,7 @@ import { leadAiContext } from "@/lib/ai/leadContext";
 import { assertLeadAccess } from "@/lib/leads/access";
 import { hasPermission } from "@/lib/rbac";
 import { CustomStatusSchemaService } from "@/domains/leads/customStatusSchemaService";
-import { aiEnabled, generateText as simpleGenerate } from "@/lib/ai/client";
+import { aiEnabled, generateText as simpleGenerate, AI_TEMPERATURE } from "@/lib/ai/client";
 import { changeLeadStatusAction, assignLeadAction } from "@/lib/actions/leads";
 import { addTagAction } from "@/lib/actions/tags";
 import { createFollowUp } from "@/lib/actions/follow-ups";
@@ -279,6 +279,9 @@ export async function runLeadAgent(
       messages: [...history, { role: "user", content: message }],
       tools,
       stopWhen: stepCountIs(6), // bound the loop → caps cost and runaway tool calls
+      // extract-level, not write-level: most of these steps are the model choosing a tool and
+      // filling its arguments, and a creative guess there means the wrong lead gets messaged.
+      temperature: AI_TEMPERATURE.extract,
       abortSignal: AbortSignal.timeout(60_000), // and bounds wall-clock time across those steps
     });
     return { text: text.trim(), proposals, steps: steps.length, enabled: true };
@@ -289,6 +292,8 @@ export async function runLeadAgent(
     const plain = await simpleGenerate(
       `${businessPreamble(org)}\n\nYou are a concise sales assistant in a WhatsApp-first lead CRM. Answer briefly and helpfully. (Live lead lookups are unavailable right now.)\n\n${LEAD_CONTEXT_RULES}\n\n${UNTRUSTED_NOTE}${leadContext}`,
       message,
+      1000,
+      AI_TEMPERATURE.write,
     );
     return {
       text: plain ?? "Sorry, I couldn't process that just now. Please try rephrasing.",

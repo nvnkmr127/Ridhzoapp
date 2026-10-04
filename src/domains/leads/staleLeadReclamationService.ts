@@ -3,6 +3,7 @@ import { CustomStatusSchemaService } from "./customStatusSchemaService";
 import { leads } from "@/db/schema";
 import { and, asc, eq, inArray, lt, or, isNull, sql } from "drizzle-orm";
 import { ActivityService } from "@/domains/activities/service";
+import { STALE_AFTER_DAYS } from "@/lib/leads/inactivity";
 
 export interface StaleLeadSummary {
   id: string;
@@ -40,7 +41,7 @@ export class StaleLeadReclamationService {
    */
   static async detectStaleLeads(
     organizationId: string,
-    daysInactiveThreshold: number = 14,
+    daysInactiveThreshold: number = STALE_AFTER_DAYS,
     enforceOwnerId?: string,
     page?: { limit: number; offset?: number }
   ): Promise<StaleLeadSummary[]> {
@@ -71,7 +72,7 @@ export class StaleLeadReclamationService {
     });
   }
 
-  static async countStaleLeads(organizationId: string, daysInactiveThreshold: number = 14, enforceOwnerId?: string): Promise<number> {
+  static async countStaleLeads(organizationId: string, daysInactiveThreshold: number = STALE_AFTER_DAYS, enforceOwnerId?: string): Promise<number> {
     const where = await this.staleWhere(organizationId, daysInactiveThreshold, enforceOwnerId);
     const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(leads).where(where);
     return Number(row?.n ?? 0);
@@ -82,7 +83,7 @@ export class StaleLeadReclamationService {
    */
   static async reclaimStaleLeads(
     organizationId: string,
-    daysInactiveThreshold: number = 14,
+    daysInactiveThreshold: number = STALE_AFTER_DAYS,
     actorUserId?: string,
     enforceOwnerId?: string
   ): Promise<{ reclaimedCount: number; leadIds: string[] }> {

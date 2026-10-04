@@ -20,7 +20,9 @@
     "mail:samples": "tsx -r dotenv/config src/scripts/send-sample-emails.ts",
     "newsletter:build": "tsx -r dotenv/config src/scripts/build-newsletter.ts",
     "encrypt:source-secrets": "tsx -r dotenv/config src/scripts/encrypt-source-secrets.ts",
-    "db:baseline": "tsx -r dotenv/config src/scripts/baseline-migrations.ts"
+    "db:baseline": "tsx -r dotenv/config src/scripts/baseline-migrations.ts",
+    "eval:ai": "tsx src/lib/ai/__eval__/run.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

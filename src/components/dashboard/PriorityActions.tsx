@@ -4,6 +4,8 @@ import { requireOrg } from "@/lib/rbac";
 import { LeadService } from "@/domains/leads/service";
 import { ContentSharingService } from "@/domains/leads/contentSharingService";
 import { NextBestActionService, type ActionPriority } from "@/domains/leads/nextBestActionService";
+import { aiSignalFor, rankByPriority } from "@/domains/leads/priorityRanking";
+import { RECAP_TTL_MS } from "@/lib/ai/recapCache";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -40,6 +42,7 @@ export async function PriorityActions() {
   const categories = await CustomStatusSchemaService.getStatusCategoryMap(organizationId);
   const { MeetingService } = await import("@/domains/meetings/service");
   const nextMeetings = await MeetingService.nextScheduledForLeads(data.map((l) => l.id)).catch(() => ({} as Record<string, never>));
+  const now = Date.now();
   const scored = data.map((l) => {
     const isEngaged = engaged.has(l.id);
     const nba = NextBestActionService.getRecommendation({
@@ -53,16 +56,13 @@ export async function PriorityActions() {
       recentContentOpen: isEngaged ? { title: "your shared content", count: 1 } : null,
       meeting: nextMeetings[l.id] ?? null,
     });
-    return { lead: l, nba, isEngaged };
+    // Read-only: the plan the prewarm worker already wrote. No generation, no credit spend.
+    const ai = aiSignalFor(l.customData, now, RECAP_TTL_MS).signal;
+    return { id: l.id, lead: l, nba, isEngaged, ai, score: l.score };
   });
 
-  const top = scored
-    .filter((s) => s.nba.priority === "high")
-    .sort((a, b) => {
-      if (a.isEngaged !== b.isEngaged) return a.isEngaged ? -1 : 1;
-      return (b.lead.score ?? 0) - (a.lead.score ?? 0);
-    })
-    .slice(0, 6);
+  // The rule still decides WHO is on this panel; the AI decides the ORDER among them.
+  const top = rankByPriority(scored.filter((s) => s.nba.priority === "high")).slice(0, 6);
 
   if (top.length === 0) return null;
 

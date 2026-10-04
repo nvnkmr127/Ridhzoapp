@@ -17,6 +17,8 @@ import {
 import { ok, fail, actionFail, zodFieldErrors } from "@/lib/actions/result";
 
 function revalidate(leadId: string) {
+  revalidatePath('/');
+  revalidatePath('/my-dashboard');
   revalidatePath(`/leads/${leadId}`);
   revalidatePath("/meetings");
   revalidatePath("/follow-ups");

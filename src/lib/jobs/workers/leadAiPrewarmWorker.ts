@@ -9,6 +9,9 @@ import { trialExpired } from "@/domains/billing/planNames";
 
 export const LEAD_AI_PREWARM_QUEUE_NAME = "lead-ai-prewarm-scan";
 export const PREWARM_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3 hours
+// Per-org ceiling per run. The batch is global and ordered by updatedAt, so without this the newest
+// workspace's leads fill all 50 slots every run.
+export const MAX_PER_ORG_PER_RUN = 5;
 
 export async function processLeadAiPrewarm(batchLimit = 50): Promise<{ warmed: number; skipped: number }> {
   if (!aiEnabled()) return { warmed: 0, skipped: 0 };
@@ -37,25 +40,28 @@ export async function processLeadAiPrewarm(batchLimit = 50): Promise<{ warmed: n
 
   let warmed = 0;
   let skipped = 0;
-  const exhaustedOrgs = new Set<string>();
+  // Pre-warming no longer draws on the workspace's credits, so outOfCredits can never arrive here and
+  // the old "stop this org once it's empty" gate was dead. Cap each org per run instead — that keeps
+  // one large workspace from taking every slot in the batch and starving everyone else.
+  const perOrg = new Map<string, number>();
 
   for (const { lead, plan, trialEndsAt } of candidates) {
-    if (exhaustedOrgs.has(lead.organizationId)) {
+    if ((perOrg.get(lead.organizationId) ?? 0) >= MAX_PER_ORG_PER_RUN) {
       skipped++;
       continue;
     }
-    // Only pre-warm for paid tiers or active trials (never burn limited Free plan credits in background)
-    if (plan === "free" && trialExpired({ trialEndsAt })) {
+    // Only pre-warm for paid tiers or ACTIVE trials. trialExpired() is false when trialEndsAt is null,
+    // so testing it alone let every trial-less Free org through; require an unexpired trial explicitly.
+    const onActiveTrial = !!trialEndsAt && !trialExpired({ trialEndsAt });
+    if (plan === "free" && !onActiveTrial) {
       skipped++;
       continue;
     }
 
     try {
-      const res = await recapForLead(lead, lead.organizationId, true);
-      if (res.outOfCredits) {
-        exhaustedOrgs.add(lead.organizationId);
-        skipped++;
-      } else if (res.ai) {
+      const res = await recapForLead(lead, lead.organizationId, true, { billable: false });
+      perOrg.set(lead.organizationId, (perOrg.get(lead.organizationId) ?? 0) + 1);
+      if (res.ai) {
         warmed++;
       }
     } catch (e) {

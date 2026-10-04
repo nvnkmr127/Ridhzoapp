@@ -151,6 +151,7 @@ export async function logLeadContactAction(input: z.infer<typeof logContactSchem
     await recordLeadContact({ leadId, userId: access.userId, channel, outcome, note, message });
     revalidatePath(`/leads/${leadId}`);
     revalidatePath("/");
+    revalidatePath("/my-dashboard");
     return ok({ logged: true });
   } catch (e) {
     return actionFail(e);
@@ -177,6 +178,8 @@ export async function logLeadReplyAction(input: z.infer<typeof logReplySchema>) 
     await recordLeadReply({ leadId, userId: access.userId, channel, message });
 
     revalidatePath(`/leads/${leadId}`);
+    revalidatePath("/");
+    revalidatePath("/my-dashboard");
     return ok({ logged: true });
   } catch (e) {
     return actionFail(e);

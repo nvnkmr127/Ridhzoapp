@@ -73,6 +73,12 @@ export const leads = pgTable('leads', {
   // Set once, on the first outreach — speed-to-lead/SLA measure THIS, not the latest touch.
   firstContactedAt: timestamp('first_contacted_at'),
   escalatedAt: timestamp('escalated_at'), // set when SLA escalation fires; prevents re-alerting
+  // Set when the AI-urgency worker notified the owner. The claim is what makes the alert free and
+  // bounded: one per lead per cooldown, and a crashed send can hand it back (unlike escalatedAt).
+  aiUrgencyAlertedAt: timestamp('ai_urgency_alerted_at'),
+  // The action id the alert was sent for. A lead that goes urgent again for a *different* next
+  // action is worth telling someone about; the same one twice is noise.
+  aiUrgencyActionId: varchar('ai_urgency_action_id', { length: 64 }),
   deletedAt: timestamp('deleted_at'), // recycle bin: soft-delete timestamp; auto-purged 30 days later
   deletedBy: uuid('deleted_by').references(() => users.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),

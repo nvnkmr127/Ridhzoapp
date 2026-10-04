@@ -4,11 +4,17 @@ import * as React from "react";
 import { Sparkles, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { summarizeLeadAction } from "@/lib/actions/ai";
+import { recapIsStale } from "@/lib/ai/recapCache";
 import { usePlan } from "@/components/billing/PlanGate";
 import { AiLeadSuggestions } from "@/components/leads/AiLeadSuggestions";
 import type { LeadPlan } from "@/lib/ai/leadPlan";
 
-type Recap = { text: string; at?: string; plan?: LeadPlan; ai?: boolean };
+/**
+ * `stale` / `cached` / `pending` are the server's own words about how much to trust this recap.
+ * They used to be computed and thrown away here, which is how a rep ended up reading advice
+ * written before the conversation they were looking at.
+ */
+type Recap = { text: string; at?: string; plan?: LeadPlan; ai?: boolean; stale?: boolean; cached?: boolean; pending?: boolean };
 
 function ago(iso?: string) {
   if (!iso) return "";
@@ -37,6 +43,8 @@ export function LeadAiRecap({
   changeKey?: string | null;
 }) {
   const [recap, setRecap] = React.useState<Recap | null>(initial ?? null);
+  // No saved recap and nothing generated yet — the button costs a credit, so say so before it's pressed.
+  const pending = !recap?.text;
 
   // A newer recap arrived with the page data (e.g. generated on another device) — show it.
   React.useEffect(() => {
@@ -58,7 +66,7 @@ export function LeadAiRecap({
           if (!auto) openUpgrade();
           return;
         }
-        setRecap({ text: res.summary, at: res.generatedAt, plan: res.plan, ai: res.ai });
+        setRecap({ text: res.summary, at: res.generatedAt, plan: res.plan, ai: res.ai, stale: res.stale, cached: res.cached, pending: res.pending });
       } catch {
         setError("Couldn't generate a recap right now. Try again in a moment.");
       } finally {
@@ -72,8 +80,7 @@ export function LeadAiRecap({
   const ranOnMount = React.useRef(false);
   React.useEffect(() => {
     if (ranOnMount.current || !paid) return;
-    const RECAP_TTL_MS = 3 * 60 * 60 * 1000;
-    const isStale = !initial?.at || Date.now() - new Date(initial.at).getTime() >= RECAP_TTL_MS;
+    const isStale = recapIsStale(initial?.at);
     if (!initial || isStale || autoRun) {
       ranOnMount.current = true;
       run(isStale && !!initial, true);
@@ -100,9 +107,22 @@ export function LeadAiRecap({
           <AiLeadSuggestions leadId={leadId} plan={recap.plan} onChange={(plan) => setRecap((r) => (r ? { ...r, plan } : r))} />
         )}
         <div className="flex items-center justify-between pl-6 text-[11px] text-muted-foreground">
-          <span>{recap.ai === false ? "Basic summary — AI couldn't run, tap Refresh" : recap.at ? `AI recap · ${ago(recap.at)}` : "Recap"}</span>
-          <button type="button" onClick={() => run(true)} disabled={loading} className="flex items-center gap-1 hover:text-foreground disabled:opacity-50">
-            <RefreshCw className="h-3 w-3" /> Refresh
+          <span>
+            {recap.stale
+              ? "Out of date — the lead has moved since this was written"
+              : recap.ai === false
+                ? "Basic summary — AI couldn't run, tap Refresh"
+                : recap.at
+                  ? `AI recap · ${ago(recap.at)}`
+                  : "Recap"}
+          </span>
+          <button
+            type="button"
+            onClick={() => run(true)}
+            disabled={loading}
+            className={`flex items-center gap-1 disabled:opacity-50 ${recap.stale ? "font-medium text-foreground" : "hover:text-foreground"}`}
+          >
+            <RefreshCw className="h-3 w-3" /> {recap.stale ? "Refresh" : loading ? "Refreshing…" : "Refresh"}
           </button>
         </div>
       </div>
@@ -115,6 +135,7 @@ export function LeadAiRecap({
         <Sparkles className="h-4 w-4" />
         {loading ? "Summarizing…" : "AI recap"}
       </Button>
+      {pending && !paid && <p className="text-xs text-muted-foreground">AI recap uses one of your monthly credits.</p>}
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );

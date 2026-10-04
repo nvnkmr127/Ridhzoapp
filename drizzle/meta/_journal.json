@@ -743,6 +743,13 @@
       "when": 1790960120000,
       "tag": "0105_push_opt_out",
       "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1791084282924,
+      "tag": "0106_ai_urgency_alert_claim",
+      "breakpoints": true
     }
   ]
 }
