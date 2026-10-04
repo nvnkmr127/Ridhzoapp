@@ -16,6 +16,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { emitLeadAction } from "@/components/leads/leadEvents";
 import { executeAiActionAction } from "@/lib/actions/aiActions";
+import { dismissAiSuggestionAction } from "@/lib/actions/ai";
 import type { NextAction, NextActionKind } from "@/domains/leads/nextAction";
 import type { ExecuteAnswer, ExecuteResult, NextActionPrompt } from "@/lib/ai/leadSuggestions";
 
@@ -73,6 +74,7 @@ export function NextActionCard({
   canEdit = true,
   hasPhone = false,
   hasEmail = false,
+  dismissible = false,
   extraActions,
   onExecuted,
   onDismiss,
@@ -82,6 +84,13 @@ export function NextActionCard({
   canEdit?: boolean;
   hasPhone?: boolean;
   hasEmail?: boolean;
+  /**
+   * Offer the dismiss button, and dismiss server-side by calling the action below. This is a flag
+   * rather than a callback because the lead page is a server component: it cannot hand a function to
+   * this client component, so the card has to own the call. `onDismiss` stays for in-app client
+   * callers that need to react locally; it runs *after* the action succeeds.
+   */
+  dismissible?: boolean;
   /** Buttons the caller owns — "Set follow-up", "Call now" — rendered after the action's own. */
   extraActions?: React.ReactNode;
   onExecuted?: (applied: string) => void;
@@ -212,8 +221,32 @@ export function NextActionCard({
             </p>
           ))}
         </div>
-        {onDismiss && (
-          <Button type="button" size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-muted-foreground" onClick={onDismiss} aria-label="Dismiss suggestion">
+        {(dismissible || onDismiss) && (
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7 shrink-0 text-muted-foreground"
+            disabled={busy}
+            onClick={async () => {
+              if (!dismissible) {
+                onDismiss?.();
+                return;
+              }
+              setBusy(true);
+              const res = await dismissAiSuggestionAction({ leadId, id: action.id });
+              setBusy(false);
+              if (!res?.ok) {
+                toast({ title: res?.message ?? "Couldn't dismiss that suggestion.", variant: "destructive" });
+                return;
+              }
+              // The dismissed action was rendered from the lead's cached plan, so the server has to
+              // re-render to drop it — otherwise the rep dismisses and it stays on screen.
+              router.refresh();
+              onDismiss?.();
+            }}
+            aria-label="Dismiss suggestion"
+          >
             <X className="h-3.5 w-3.5" />
           </Button>
         )}

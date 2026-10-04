@@ -46,7 +46,6 @@ import { LeadAiRecap } from "@/components/leads/LeadAiRecap";
 import type { RecapCache } from "@/lib/ai/leadAssist";
 import { recapIsStale } from "@/lib/ai/recapCache";
 import { visiblePlan } from "@/lib/ai/leadPlan";
-import { dismissAiSuggestionAction } from "@/lib/actions/ai";
 import { PreCallBrief } from "@/components/leads/PreCallBrief";
 import { preCallBrief } from "@/lib/leads/preCallBrief";
 import { LeadInsightsCard } from "@/components/leads/LeadInsightsCard";
@@ -529,7 +528,9 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                   canEdit={canEdit}
                   hasPhone={!!lead.phone}
                   hasEmail={!!lead.email}
-                  {...(aiNext ? { onDismiss: async () => { await dismissAiSuggestionAction({ leadId: lead.id, id: aiNext.id }); } } : {})}
+                  // Only the model's action can be dismissed. A flag, not a callback: this is a server
+                  // component and cannot pass a function down to the card.
+                  dismissible={!!aiNext}
                 />
                 {contactWindow && (aiNext ?? nba.nextAction).urgency !== "this_week" && (
                   <p className="text-xs text-muted-foreground">
